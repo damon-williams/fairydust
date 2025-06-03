@@ -25,4 +25,4 @@ ENV SERVICE_NAME=${SERVICE_NAME:-identity}
 EXPOSE 8000
 
 # Dynamic startup based on service
-CMD cd services/${SERVICE_NAME} && python main.py
+CMD cd services/${SERVICE_NAME} && PYTHONPATH=/app python main.py
