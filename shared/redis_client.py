@@ -1,3 +1,4 @@
+# shared/redis_client.py
 import os
 import redis.asyncio as redis
 from typing import Optional

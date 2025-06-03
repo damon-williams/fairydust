@@ -1,3 +1,4 @@
+# shared/database.py
 import os
 import ssl
 import asyncpg
@@ -140,11 +141,14 @@ async def create_tables():
             id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
             user_id UUID REFERENCES users(id) ON DELETE CASCADE,
             amount INTEGER NOT NULL,
-            type VARCHAR(50) NOT NULL, -- grant, consume, purchase, refund
+            type VARCHAR(50) NOT NULL,
             description TEXT,
             app_id UUID,
-            metadata JSONB,
-            created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+            idempotency_key VARCHAR(255) UNIQUE,
+            status VARCHAR(50) DEFAULT 'completed',
+            metadata JSONB DEFAULT '{}',
+            created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
         );
         
         CREATE INDEX IF NOT EXISTS idx_dust_transactions_user 
@@ -153,25 +157,59 @@ async def create_tables():
         ON dust_transactions(app_id, created_at DESC);
     ''')
     
-    # Apps table (for later phases)
+    # Apps table
     await db.execute('''
         CREATE TABLE IF NOT EXISTS apps (
-            id UUID PRIMARY KEY,
+            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
             builder_id UUID REFERENCES users(id) ON DELETE CASCADE,
             name VARCHAR(255) NOT NULL,
             slug VARCHAR(255) UNIQUE NOT NULL,
-            description TEXT,
+            description TEXT NOT NULL,
             icon_url TEXT,
             dust_per_use INTEGER NOT NULL DEFAULT 5,
-            is_active BOOLEAN DEFAULT TRUE,
-            is_approved BOOLEAN DEFAULT FALSE,
-            category VARCHAR(100),
+            status VARCHAR(50) NOT NULL DEFAULT 'pending',
+            category VARCHAR(100) NOT NULL,
+            website_url TEXT,
+            demo_url TEXT,
+            callback_url TEXT,
+            is_active BOOLEAN DEFAULT FALSE,
+            admin_notes TEXT,
             created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
             updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
         );
         
         CREATE INDEX IF NOT EXISTS idx_apps_builder ON apps(builder_id);
         CREATE INDEX IF NOT EXISTS idx_apps_slug ON apps(slug);
-        CREATE INDEX IF NOT EXISTS idx_apps_active_approved 
-        ON apps(is_active, is_approved);
+        CREATE INDEX IF NOT EXISTS idx_apps_status ON apps(status);
+        CREATE INDEX IF NOT EXISTS idx_apps_category ON apps(category);
+    ''')
+
+    # Hourly analytics aggregation table
+    await db.execute('''
+        CREATE TABLE IF NOT EXISTS hourly_app_stats (
+            app_id UUID REFERENCES apps(id) ON DELETE CASCADE,
+            hour TIMESTAMP WITH TIME ZONE NOT NULL,
+            unique_users INTEGER NOT NULL DEFAULT 0,
+            transactions INTEGER NOT NULL DEFAULT 0,
+            dust_consumed INTEGER NOT NULL DEFAULT 0,
+            created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+            PRIMARY KEY (app_id, hour)
+        );
+        
+        CREATE INDEX IF NOT EXISTS idx_hourly_stats_hour 
+        ON hourly_app_stats(hour DESC);
+    ''')
+
+    # Performance indexes
+    await db.execute('''
+        CREATE INDEX IF NOT EXISTS idx_dust_tx_user_type_created 
+        ON dust_transactions(user_id, type, created_at DESC);
+        
+        CREATE INDEX IF NOT EXISTS idx_dust_tx_idempotency 
+        ON dust_transactions(idempotency_key) 
+        WHERE idempotency_key IS NOT NULL;
+        
+        CREATE INDEX IF NOT EXISTS idx_dust_tx_pending 
+        ON dust_transactions(status, created_at) 
+        WHERE status = 'pending';
     ''')

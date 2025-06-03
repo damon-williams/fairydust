@@ -1,6 +1,3 @@
-# docker-compose.yml
-version: '3.8'
-
 services:
   postgres:
     image: postgres:16-alpine
@@ -40,6 +37,11 @@ services:
       DATABASE_URL: postgresql://postgres:password@postgres:5432/fairydust
       REDIS_URL: redis://redis:6379/0
       ENVIRONMENT: development
+      JWT_SECRET_KEY: dev-secret-key-change-in-production
+      SMTP_HOST: smtp.resend.com
+      SMTP_PORT: 587
+      SMTP_USERNAME: resend
+      SMTP_PASSWORD: re_PZTPM7q1_GCXmm64oNusGgUdfYAAVVSbT
     depends_on:
       postgres:
         condition: service_healthy
@@ -47,6 +49,56 @@ services:
         condition: service_healthy
     volumes:
       - ./services/identity:/app
+      - ./shared:/app/shared
+
+  ledger:
+    build:
+      context: .
+      dockerfile: services/ledger/Dockerfile
+    ports:
+      - "8002:8002"
+    environment:
+      DATABASE_URL: postgresql://postgres:password@postgres:5432/fairydust
+      REDIS_URL: redis://redis:6379/0
+      ENVIRONMENT: development
+      JWT_SECRET_KEY: dev-secret-key-change-in-production
+      IDENTITY_SERVICE_URL: http://identity:8001
+      APPS_SERVICE_URL: http://apps:8003
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      identity:
+        condition: service_started
+      apps:
+        condition: service_started
+    volumes:
+      - ./services/ledger:/app
+      - ./shared:/app/shared
+
+  apps:
+    build:
+      context: .
+      dockerfile: services/apps/Dockerfile
+    ports:
+      - "8003:8003"
+    environment:
+      DATABASE_URL: postgresql://postgres:password@postgres:5432/fairydust
+      REDIS_URL: redis://redis:6379/0
+      ENVIRONMENT: development
+      JWT_SECRET_KEY: dev-secret-key-change-in-production
+      IDENTITY_SERVICE_URL: http://identity:8001
+      LEDGER_SERVICE_URL: http://ledger:8002
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      identity:
+        condition: service_started
+    volumes:
+      - ./services/apps:/app
       - ./shared:/app/shared
 
 volumes:

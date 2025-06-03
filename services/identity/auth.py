@@ -71,7 +71,10 @@ class AuthService:
         if not stored_otp:
             return False
         
-        if stored_otp.decode() == otp:
+        # Handle both bytes and string responses from Redis
+        if isinstance(stored_otp, bytes):
+            stored_otp = stored_otp.decode()
+        if stored_otp == otp:
             await self.redis.delete(key)  # Delete after successful verification
             return True
         
