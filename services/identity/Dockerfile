@@ -3,14 +3,14 @@ FROM python:3.11-slim
 WORKDIR /app
 
 # Copy requirements first for better caching
-COPY requirements.txt .
+COPY services/identity/requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Copy shared code - adjust path for Railway's root directory context
-COPY ../shared ./shared
+# Copy shared code
+COPY shared ./shared
 
 # Copy service code
-COPY . .
+COPY services/identity .
 
 EXPOSE 8001
 

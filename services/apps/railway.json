@@ -5,6 +5,7 @@
     "dockerfilePath": "services/apps/Dockerfile"
   },
   "deploy": {
+    "startCommand": "cd services/apps && python main.py",
     "numReplicas": 1,
     "healthcheckPath": "/health",
     "healthcheckTimeout": 30,

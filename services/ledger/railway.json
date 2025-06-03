@@ -5,6 +5,7 @@
     "dockerfilePath": "services/ledger/Dockerfile"
   },
   "deploy": {
+    "startCommand": "cd services/ledger && python main.py",
     "numReplicas": 1,
     "healthcheckPath": "/health",
     "healthcheckTimeout": 30,
