@@ -8,7 +8,7 @@ WORKDIR /app
 ARG SERVICE_NAME
 ENV SERVICE_NAME=${SERVICE_NAME}
 
-# Copy shared dependencies first
+# Copy the shared dependencies first
 COPY shared ./shared
 
 # Copy all service requirements
