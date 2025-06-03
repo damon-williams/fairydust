@@ -54,32 +54,32 @@ class Database:
             async with conn.transaction():
                 yield conn
 
-    async def init_db():
-        """Initialize database connection pool"""
-        global _pool
-        
-        # Configure SSL for production environments
-        ssl_context = None
-        environment = os.getenv("ENVIRONMENT", "development")
-        
-        if environment in ["production", "staging"]:
-            # Create SSL context for production/staging (Railway requires this)
-            ssl_context = ssl.create_default_context()
-            ssl_context.check_hostname = False
-            ssl_context.verify_mode = ssl.CERT_NONE
-        
-        _pool = await asyncpg.create_pool(
-            DATABASE_URL,
-            ssl=ssl_context,  # Add SSL context
-            min_size=10,
-            max_size=20,
-            max_queries=50000,
-            max_cached_statement_lifetime=300,
-            command_timeout=60,
-        )
-        
-        # Create tables if they don't exist
-        await create_tables()
+async def init_db():
+    """Initialize database connection pool"""
+    global _pool
+    
+    # Configure SSL for production environments
+    ssl_context = None
+    environment = os.getenv("ENVIRONMENT", "development")
+    
+    if environment in ["production", "staging"]:
+        # Create SSL context for production/staging (Railway requires this)
+        ssl_context = ssl.create_default_context()
+        ssl_context.check_hostname = False
+        ssl_context.verify_mode = ssl.CERT_NONE
+    
+    _pool = await asyncpg.create_pool(
+        DATABASE_URL,
+        ssl=ssl_context,  # Add SSL context
+        min_size=10,
+        max_size=20,
+        max_queries=50000,
+        max_cached_statement_lifetime=300,
+        command_timeout=60,
+    )
+    
+    # Create tables if they don't exist
+    await create_tables()
 
 async def close_db():
     """Close database connection pool"""
