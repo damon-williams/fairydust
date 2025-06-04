@@ -1,0 +1,28 @@
+# services/ledger/requirements.txt
+# Core FastAPI and ASGI
+fastapi==0.104.1
+uvicorn[standard]==0.24.0
+
+# Database
+asyncpg==0.29.0
+
+# Redis
+redis==5.0.1
+
+# Data validation
+pydantic==2.5.0
+pydantic-settings==2.1.0
+
+# Authentication and JWT
+PyJWT==2.8.0
+
+# HTTP client (for calling other services)
+httpx==0.25.2
+
+# Development and testing
+pytest==7.4.3
+pytest-asyncio==0.21.1
+
+# Additional utilities
+python-dateutil==2.8.2
+typing-extensions==4.8.0

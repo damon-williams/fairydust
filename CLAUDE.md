@@ -19,7 +19,18 @@ python main.py
 
 ### Testing
 ```bash
-pytest  # No tests implemented yet
+# Run all tests
+./test.sh
+
+# Run specific service tests
+cd services/identity
+PYTHONPATH=/Users/damonwilliams/Projects/fairydust pytest tests/ -v
+
+# Run with coverage
+pytest --cov=. --cov-report=term-missing
+
+# Run specific test
+pytest tests/test_auth.py::test_request_otp_email
 ```
 
 ### Deployment
@@ -40,13 +51,13 @@ fairydust is a microservices-based payment and identity platform for AI-powered 
 ### Shared Infrastructure
 - **PostgreSQL**: Primary database with UUID keys, timestamps, and JSONB metadata
 - **Redis**: Session management, OTP storage, token revocation
-- **Shared utilities** (`/shared`): Database connections, Redis client, email service (SendGrid), SMS service (Twilio)
+- **Shared utilities** (`/shared`): Database connections, Redis client, email service (Resend), SMS service (Twilio)
 
 ### Key Patterns
 
 **Authentication Flow**:
 1. Users can register/login with email OR phone (at least one required)
-2. OTP verification via email/SMS (10-minute expiry)
+2. OTP verification via email (Resend) /SMS (Twilio) (10-minute expiry)
 3. JWT access tokens (1-hour expiry) + refresh tokens (30-day expiry)
 4. OAuth support for Google, Apple (partial), Facebook
 5. Token revocation tracked in Redis
