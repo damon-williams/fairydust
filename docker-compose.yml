@@ -38,10 +38,12 @@ services:
       REDIS_URL: redis://redis:6379/0
       ENVIRONMENT: development
       JWT_SECRET_KEY: dev-secret-key-change-in-production
+      ALLOWED_ORIGINS: "*,null,file://,http://localhost:3000,http://127.0.0.1:3000"
       SMTP_HOST: smtp.resend.com
       SMTP_PORT: 587
       SMTP_USERNAME: resend
       SMTP_PASSWORD: re_PZTPM7q1_GCXmm64oNusGgUdfYAAVVSbT
+      FROM_EMAIL: noreply@fairydust.fun
     depends_on:
       postgres:
         condition: service_healthy
@@ -62,6 +64,7 @@ services:
       REDIS_URL: redis://redis:6379/0
       ENVIRONMENT: development
       JWT_SECRET_KEY: dev-secret-key-change-in-production
+      ALLOWED_ORIGINS: "*,null,file://,http://localhost:3000,http://127.0.0.1:3000"
       IDENTITY_SERVICE_URL: http://identity:8001
       APPS_SERVICE_URL: http://apps:8003
     depends_on:
