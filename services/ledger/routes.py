@@ -406,14 +406,21 @@ async def get_app_analytics(
         "daily_breakdown": daily_stats
     }
 
-# Add this function to validate apps
 async def validate_app(app_id: UUID) -> dict:
     """Validate app with Apps Service"""
     apps_service_url = os.getenv("APPS_SERVICE_URL", "http://localhost:8003")
     
+    # Add logging
+    print(f"APPS_SERVICE_URL: {apps_service_url}")
+    full_url = f"{apps_service_url}/apps/validate/{app_id}"
+    print(f"Validating app at: {full_url}")
+    
     async with httpx.AsyncClient() as client:
         try:
-            response = await client.get(f"{apps_service_url}/apps/validate/{app_id}")
+            response = await client.get(full_url)
+            print(f"Apps service response status: {response.status_code}")
+            print(f"Apps service response body: {response.text[:200]}...")  # First 200 chars
+            
             if response.status_code == 200:
                 return response.json()
             else:
