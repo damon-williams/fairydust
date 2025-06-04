@@ -16,5 +16,5 @@ COPY services ./services
 # Set Python path
 ENV PYTHONPATH=/app
 
-# Dynamic startup based on SERVICE_NAME environment variable
-CMD python -c "import os; import uvicorn; service = os.getenv('SERVICE_NAME', 'identity'); port_map = {'apps': 8003, 'identity': 8001, 'ledger': 8002}; port = int(os.getenv('PORT', port_map[service])); uvicorn.run(f'services.{service}.main:app', host='0.0.0.0', port=port)"
+# Change to service directory before running
+CMD bash -c "service=\${SERVICE_NAME:-identity}; cd /app/services/\$service; python -c \"import os; import uvicorn; port = int(os.getenv('PORT', 8001)); uvicorn.run('main:app', host='0.0.0.0', port=port)\""
