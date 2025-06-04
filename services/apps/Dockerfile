@@ -2,16 +2,18 @@ FROM python:3.11-slim
 
 WORKDIR /app
 
-# Copy requirements first for improved caching
-COPY services/apps/requirements.txt .
+# Copy and install requirements
+COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Copy shared code
-COPY shared ./shared
+# Copy shared utilities from parent directory
+COPY ../shared ./shared
 
-# Copy service code
-COPY services/apps .
+# Copy this service's code
+COPY . .
 
-EXPOSE 8003
+# Set Python path so imports work
+ENV PYTHONPATH=/app
 
-CMD ["python", "main.py"]
+# Use Railway's PORT environment variable
+CMD python -c "import os; import uvicorn; port = int(os.getenv('PORT', 8003)); uvicorn.run('main:app', host='0.0.0.0', port=port)"
