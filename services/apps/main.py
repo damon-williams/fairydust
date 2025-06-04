@@ -4,7 +4,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from shared.database import init_db, close_db
+from shared.database import init_db, close_db, get_db
 from shared.redis_client import init_redis, close_redis
 from routes import app_router, admin_router, marketplace_router
 
