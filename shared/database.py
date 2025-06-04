@@ -79,8 +79,10 @@ async def init_db():
         command_timeout=60,
     )
     
-    # Create tables if they don't exist
-    await create_tables()
+    # Create tables if they don't exist (skip in production if SKIP_SCHEMA_INIT is set)
+    skip_schema_init = os.getenv("SKIP_SCHEMA_INIT", "false").lower() == "true"
+    if not skip_schema_init:
+        await create_tables()
 
 async def close_db():
     """Close database connection pool"""
