@@ -1,21 +1,24 @@
-from pydantic import BaseModel, EmailStr, Field, validator
+from pydantic import BaseModel, EmailStr, Field, field_validator
 from typing import Optional, List, Literal
 from datetime import datetime
 import re
 from uuid import UUID
 
 # Auth models
+# Auth models
 class OTPRequest(BaseModel):
     identifier: str  # Email or phone number
     identifier_type: Literal["email", "phone"]
     
-    @validator("identifier")
-    def validate_identifier(cls, v, values):
-        if values.get("identifier_type") == "email":
+    @field_validator("identifier")
+    @classmethod
+    def validate_identifier(cls, v, info):
+        # Get identifier_type from the data being validated
+        if hasattr(info, 'data') and info.data.get("identifier_type") == "email":
             # Basic email validation
             if not re.match(r"^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$", v):
                 raise ValueError("Invalid email format")
-        elif values.get("identifier_type") == "phone":
+        elif hasattr(info, 'data') and info.data.get("identifier_type") == "phone":
             # Basic phone validation (E.164 format)
             if not re.match(r"^\+[1-9]\d{1,14}$", v):
                 raise ValueError("Phone must be in E.164 format (e.g., +1234567890)")
@@ -25,12 +28,12 @@ class OTPVerify(BaseModel):
     identifier: str
     code: str = Field(..., min_length=6, max_length=6)
     
-    @validator("code")
+    @field_validator("code")
+    @classmethod
     def validate_code(cls, v):
         if not v.isdigit():
             raise ValueError("OTP code must contain only digits")
         return v
-
 class OAuthCallback(BaseModel):
     provider: Literal["google", "apple", "facebook"]
     code: str
