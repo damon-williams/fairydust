@@ -1,3 +1,4 @@
+# services/ledger/main.py
 from fastapi import FastAPI, HTTPException, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
@@ -9,35 +10,37 @@ from dotenv import load_dotenv
 load_dotenv()
 
 # Import our routes and dependencies
-from routes import auth_router, user_router
+from routes import balance_router, transaction_router, admin_router
 from shared.database import init_db, close_db
 from shared.redis_client import init_redis, close_redis
+from background import start_background_tasks, stop_background_tasks
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # Startup
     await init_db()
     await init_redis()
+    await start_background_tasks()
     yield
     # Shutdown
+    await stop_background_tasks()
     await close_db()
     await close_redis()
 
 # Create FastAPI app
 app = FastAPI(
-    title="fairydust Identity Service",
+    title="Fairydust Ledger Service",
     version="1.0.0",
-    description="Authentication and identity management for fairydust platform",
+    description="DUST balance and transaction management for fairydust platform",
     lifespan=lifespan
 )
 
 # Configure CORS
-allowed_origins = os.getenv("ALLOWED_ORIGINS", "*").split(",")
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=allowed_origins,
+    allow_origins=os.getenv("ALLOWED_ORIGINS", "*").split(","),
     allow_credentials=True,
-    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+    allow_methods=["*"],
     allow_headers=["*"],
 )
 
@@ -46,16 +49,17 @@ app.add_middleware(
 async def health_check():
     return {
         "status": "healthy",
-        "service": "identity",
+        "service": "ledger",
         "version": "1.0.0"
     }
 
 # Include routers
-app.include_router(auth_router, prefix="/auth", tags=["authentication"])
-app.include_router(user_router, prefix="/users", tags=["users"])
+app.include_router(balance_router, prefix="/balance", tags=["balance"])
+app.include_router(transaction_router, prefix="/transactions", tags=["transactions"])
+app.include_router(admin_router, prefix="/admin", tags=["admin"])
 
 if __name__ == "__main__":
-    port = int(os.getenv("PORT", 8001))
+    port = int(os.getenv("PORT", 8002))
     uvicorn.run(
         "main:app",
         host="0.0.0.0",

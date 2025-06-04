@@ -71,7 +71,10 @@ class AuthService:
         if not stored_otp:
             return False
         
-        if stored_otp.decode() == otp:
+        # Handle both string and bytes from Redis
+        stored_otp_str = stored_otp.decode() if isinstance(stored_otp, bytes) else stored_otp
+        
+        if stored_otp_str == otp:
             await self.redis.delete(key)  # Delete after successful verification
             return True
         
@@ -189,10 +192,12 @@ class AuthService:
 
 # Dependency to get current user from JWT token
 async def get_current_user(
-    credentials: HTTPAuthorizationCredentials = Security(security),
-    redis_client: redis.Redis = Depends(lambda: redis.Redis())  # This will be injected properly
+    credentials: HTTPAuthorizationCredentials = Security(security)
 ) -> TokenData:
     """Dependency to get current user from JWT token"""
+    from shared.redis_client import get_redis
+    
+    redis_client = await get_redis()
     auth_service = AuthService(redis_client)
     token_data = await auth_service.decode_token(credentials.credentials)
     

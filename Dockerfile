@@ -1,24 +1,20 @@
 FROM python:3.11-slim
-
 WORKDIR /app
-
-# Install system dependencies
-RUN apt-get update && apt-get install -y \
-    gcc \
-    && rm -rf /var/lib/apt/lists/*
-
-# Copy requirements and install Python dependencies
-COPY services/identity/requirements.txt ./requirements.txt
-RUN pip install --no-cache-dir -r requirements.txt
 
 # Copy shared code
 COPY shared ./shared
 
-# Copy identity service code
-COPY services/identity ./
+# Install all service dependencies
+COPY services/apps/requirements.txt ./apps-requirements.txt
+COPY services/identity/requirements.txt ./identity-requirements.txt  
+COPY services/ledger/requirements.txt ./ledger-requirements.txt
+RUN pip install --no-cache-dir -r apps-requirements.txt -r identity-requirements.txt -r ledger-requirements.txt
 
-# Expose port (Railway will set PORT environment variable)
-EXPOSE $PORT
+# Copy all service code
+COPY services ./services
 
-# Run the application
-CMD uvicorn main:app --host 0.0.0.0 --port $PORT
+# Set Python path
+ENV PYTHONPATH=/app
+
+# Change to service directory before running
+CMD bash -c "service=\${SERVICE_NAME:-identity}; cd /app/services/\$service; python -c \"import os; import uvicorn; port = int(os.getenv('PORT', 8001)); uvicorn.run('main:app', host='0.0.0.0', port=port)\""
