@@ -5,9 +5,15 @@ WORKDIR /app
 # Copy shared dependencies first
 COPY shared ./shared
 
-# Copy all service requirements and install them
-COPY services/*/requirements.txt ./services/
-RUN find services -name "requirements.txt" -exec pip install --no-cache-dir -r {} \;
+# Copy all service requirements and install them with more explicit commands
+COPY services/identity/requirements.txt ./identity-requirements.txt
+COPY services/ledger/requirements.txt ./ledger-requirements.txt  
+COPY services/apps/requirements.txt ./apps-requirements.txt
+
+# Install all requirements explicitly
+RUN pip install --no-cache-dir -r identity-requirements.txt && \
+    pip install --no-cache-dir -r ledger-requirements.txt && \
+    pip install --no-cache-dir -r apps-requirements.txt
 
 # Copy all service code
 COPY services ./services
