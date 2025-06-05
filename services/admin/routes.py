@@ -383,14 +383,111 @@ async def users_list(
     total_count = await db.fetch_one(f"{count_query}{where_clause}", *params)
     total_pages = (total_count["total"] + limit - 1) // limit
     
-    return templates.TemplateResponse("users.html", {
-        "request": request,
-        "admin_user": admin_user,
-        "users": users,
-        "current_page": page,
-        "total_pages": total_pages,
-        "search": search or ""
-    })
+    users_html = ""
+    for user in users:
+        admin_badge = '<span class="badge bg-danger me-1">Admin</span>' if user["is_admin"] else ""
+        builder_badge = '<span class="badge bg-info">Builder</span>' if user["is_builder"] else ""
+        status_badge = '<span class="badge bg-success">Active</span>' if user["is_active"] else '<span class="badge bg-secondary">Inactive</span>'
+        
+        users_html += f"""
+        <tr>
+            <td><strong>{user["fairyname"]}</strong></td>
+            <td>{user["email"] or user["phone"] or "N/A"}</td>
+            <td><span class="fairy-dust">{user["dust_balance"]:,}</span></td>
+            <td>{admin_badge}{builder_badge}</td>
+            <td>{status_badge}</td>
+            <td>
+                <button class="btn btn-sm btn-primary" onclick="grantDust('{user["id"]}', '{user["fairyname"]}')">
+                    <i class="fas fa-magic"></i> Grant DUST
+                </button>
+            </td>
+        </tr>
+        """
+    
+    return HTMLResponse(f"""
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <title>User Management - Fairydust Admin</title>
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
+        <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+        <style>
+            .fairy-dust {{ color: #ffd700; text-shadow: 0 0 5px rgba(255,215,0,0.5); }}
+        </style>
+    </head>
+    <body>
+        <nav class="navbar navbar-expand-lg navbar-dark bg-primary">
+            <div class="container-fluid">
+                <a class="navbar-brand" href="/admin/dashboard">
+                    <i class="fas fa-magic fairy-dust"></i> Fairydust Admin
+                </a>
+                <div class="navbar-nav ms-auto">
+                    <span class="navbar-text me-3">Welcome, {admin_user['fairyname']}</span>
+                    <a class="nav-link" href="/admin/logout">Logout</a>
+                </div>
+            </div>
+        </nav>
+        
+        <div class="container-fluid mt-4">
+            <div class="d-flex justify-content-between align-items-center mb-4">
+                <h1><i class="fas fa-users me-2"></i>User Management</h1>
+                <a href="/admin/dashboard" class="btn btn-secondary">← Back to Dashboard</a>
+            </div>
+            
+            <div class="card">
+                <div class="card-body">
+                    <div class="table-responsive">
+                        <table class="table table-hover">
+                            <thead>
+                                <tr>
+                                    <th>Fairyname</th>
+                                    <th>Contact</th>
+                                    <th>DUST Balance</th>
+                                    <th>Roles</th>
+                                    <th>Status</th>
+                                    <th>Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {users_html}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
+        <script>
+            function grantDust(userId, userName) {{
+                const amount = prompt(`Grant DUST to ${{userName}}:`, '100');
+                const reason = prompt('Reason:', 'Admin grant');
+                if (amount && reason) {{
+                    const form = document.createElement('form');
+                    form.method = 'POST';
+                    form.action = `/admin/users/${{userId}}/grant-dust`;
+                    
+                    const amountInput = document.createElement('input');
+                    amountInput.type = 'hidden';
+                    amountInput.name = 'amount';
+                    amountInput.value = amount;
+                    
+                    const reasonInput = document.createElement('input');
+                    reasonInput.type = 'hidden';
+                    reasonInput.name = 'reason';
+                    reasonInput.value = reason;
+                    
+                    form.appendChild(amountInput);
+                    form.appendChild(reasonInput);
+                    document.body.appendChild(form);
+                    form.submit();
+                }}
+            }}
+        </script>
+    </body>
+    </html>
+    """)
 
 @admin_router.post("/users/{user_id}/grant-dust")
 async def grant_dust(
@@ -477,12 +574,127 @@ async def apps_list(
         *params
     )
     
-    return templates.TemplateResponse("apps.html", {
-        "request": request,
-        "admin_user": admin_user,
-        "apps": apps,
-        "status_filter": status_filter or "all"
-    })
+    apps_html = ""
+    for app in apps:
+        status_badge = ""
+        if app["status"] == "approved":
+            status_badge = '<span class="badge bg-success">Approved</span>'
+        elif app["status"] == "pending":
+            status_badge = '<span class="badge bg-warning">Pending</span>'
+        elif app["status"] == "rejected":
+            status_badge = '<span class="badge bg-danger">Rejected</span>'
+        else:
+            status_badge = f'<span class="badge bg-secondary">{app["status"]}</span>'
+        
+        approve_btn = f'<button class="btn btn-sm btn-success me-1" onclick="approveApp(\'{app["id"]}\', \'{app["name"]}\')"><i class="fas fa-check"></i></button>' if app["status"] == "pending" else ""
+        reject_btn = f'<button class="btn btn-sm btn-danger" onclick="rejectApp(\'{app["id"]}\', \'{app["name"]}\')"><i class="fas fa-times"></i></button>' if app["status"] == "pending" else ""
+        
+        apps_html += f"""
+        <tr>
+            <td><strong>{app["name"]}</strong><br><small class="text-muted">{app["description"][:100]}...</small></td>
+            <td>{app["builder_name"]}<br><small class="text-muted">{app["builder_email"]}</small></td>
+            <td><span class="text-capitalize">{app["category"]}</span></td>
+            <td><span class="fairy-dust">{app["dust_per_use"]}</span></td>
+            <td>{status_badge}</td>
+            <td>{approve_btn}{reject_btn}</td>
+        </tr>
+        """
+    
+    return HTMLResponse(f"""
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <title>App Management - Fairydust Admin</title>
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
+        <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+        <style>
+            .fairy-dust {{ color: #ffd700; text-shadow: 0 0 5px rgba(255,215,0,0.5); }}
+        </style>
+    </head>
+    <body>
+        <nav class="navbar navbar-expand-lg navbar-dark bg-primary">
+            <div class="container-fluid">
+                <a class="navbar-brand" href="/admin/dashboard">
+                    <i class="fas fa-magic fairy-dust"></i> Fairydust Admin
+                </a>
+                <div class="navbar-nav ms-auto">
+                    <span class="navbar-text me-3">Welcome, {admin_user['fairyname']}</span>
+                    <a class="nav-link" href="/admin/logout">Logout</a>
+                </div>
+            </div>
+        </nav>
+        
+        <div class="container-fluid mt-4">
+            <div class="d-flex justify-content-between align-items-center mb-4">
+                <h1><i class="fas fa-mobile-alt me-2"></i>App Management</h1>
+                <a href="/admin/dashboard" class="btn btn-secondary">← Back to Dashboard</a>
+            </div>
+            
+            <div class="card">
+                <div class="card-body">
+                    <div class="table-responsive">
+                        <table class="table table-hover">
+                            <thead>
+                                <tr>
+                                    <th>App Details</th>
+                                    <th>Builder</th>
+                                    <th>Category</th>
+                                    <th>DUST Cost</th>
+                                    <th>Status</th>
+                                    <th>Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {apps_html}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
+        <script>
+            function approveApp(appId, appName) {{
+                const notes = prompt(`Approve "${{appName}}"? Add notes (optional):`, '');
+                if (notes !== null) {{
+                    const form = document.createElement('form');
+                    form.method = 'POST';
+                    form.action = `/admin/apps/${{appId}}/approve`;
+                    
+                    const notesInput = document.createElement('input');
+                    notesInput.type = 'hidden';
+                    notesInput.name = 'admin_notes';
+                    notesInput.value = notes;
+                    
+                    form.appendChild(notesInput);
+                    document.body.appendChild(form);
+                    form.submit();
+                }}
+            }}
+            
+            function rejectApp(appId, appName) {{
+                const reason = prompt(`Reject "${{appName}}"? Please provide reason:`, '');
+                if (reason) {{
+                    const form = document.createElement('form');
+                    form.method = 'POST';
+                    form.action = `/admin/apps/${{appId}}/reject`;
+                    
+                    const reasonInput = document.createElement('input');
+                    reasonInput.type = 'hidden';
+                    reasonInput.name = 'admin_notes';
+                    reasonInput.value = reason;
+                    
+                    form.appendChild(reasonInput);
+                    document.body.appendChild(form);
+                    form.submit();
+                }}
+            }}
+        </script>
+    </body>
+    </html>
+    """)
 
 @admin_router.post("/apps/{app_id}/approve")
 async def approve_app(
