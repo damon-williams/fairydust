@@ -1,6 +1,5 @@
 from fastapi import FastAPI, Request, Depends, HTTPException, Form, status
 from fastapi.responses import HTMLResponse, RedirectResponse
-from fastapi.templating import Jinja2Templates
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
 import os
@@ -22,7 +21,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-templates = Jinja2Templates(directory=str(Path(__file__).parent / "templates"))
+# Mount static files first
 app.mount("/static", StaticFiles(directory=str(Path(__file__).parent / "static")), name="static")
 
 from routes import admin_router
@@ -39,8 +38,8 @@ async def shutdown():
     await close_db()
     await close_redis()
 
-@app.get("/", response_class=HTMLResponse)
-async def root(request: Request):
+@app.get("/")
+async def root():
     return RedirectResponse(url="/admin/login")
 
 @app.get("/health")

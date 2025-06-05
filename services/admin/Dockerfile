@@ -9,7 +9,11 @@ RUN apt-get update && apt-get install -y \
 
 # Copy requirements and install Python dependencies
 COPY requirements.txt .
+RUN pip install --no-cache-dir --upgrade pip
 RUN pip install --no-cache-dir -r requirements.txt
+
+# Verify jinja2 installation
+RUN python -c "import jinja2; print('Jinja2 version:', jinja2.__version__)"
 
 # Copy application code
 COPY . .
