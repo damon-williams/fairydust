@@ -6,31 +6,7 @@ import httpx
 import os
 from pathlib import Path
 
-# Test jinja2 import
-try:
-    import jinja2
-    print(f"Jinja2 imported successfully: {jinja2.__version__}")
-    print(f"Jinja2 module: {jinja2}")
-    print(f"Jinja2 location: {jinja2.__file__}")
-except ImportError as e:
-    print(f"Failed to import jinja2: {e}")
-
-# Test FastAPI templating import
-try:
-    from fastapi.templating import Jinja2Templates
-    print("Jinja2Templates imported successfully")
-    
-    # Create templates with debug
-    template_dir = str(Path(__file__).parent / "templates")
-    print(f"Template directory: {template_dir}")
-    print(f"Template directory exists: {Path(template_dir).exists()}")
-    
-    templates = Jinja2Templates(directory=template_dir)
-    print("Jinja2Templates initialized successfully")
-except Exception as e:
-    print(f"Failed to initialize Jinja2Templates: {e}")
-    # Fallback to None for now
-    templates = None
+# No more template dependencies needed!
 
 from shared.database import get_db, Database
 from shared.redis_client import get_redis
@@ -45,10 +21,89 @@ async def login_page(request: Request, admin_user: Optional[dict] = Depends(opti
     if admin_user:
         return RedirectResponse(url="/admin/dashboard", status_code=302)
     
-    if templates is None:
-        return HTMLResponse("<h1>Admin Login</h1><p>Templates not available. Please check jinja2 installation.</p>")
-    
-    return templates.TemplateResponse("login.html", {"request": request})
+    return HTMLResponse("""
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <title>Fairydust Admin Login</title>
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
+        <style>
+            body { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); min-height: 100vh; }
+            .login-card { border-radius: 20px; box-shadow: 0 10px 40px rgba(0,0,0,0.3); }
+            .fairy-dust { color: #ffd700; text-shadow: 0 0 10px rgba(255,215,0,0.5); }
+        </style>
+    </head>
+    <body class="d-flex align-items-center">
+        <div class="container">
+            <div class="row justify-content-center">
+                <div class="col-md-6 col-lg-4">
+                    <div class="card login-card">
+                        <div class="card-body p-5">
+                            <div class="text-center mb-4">
+                                <h1><i class="fas fa-magic fairy-dust fs-1"></i></h1>
+                                <h2 class="h4">Fairydust Admin</h2>
+                            </div>
+                            
+                            <form method="post" action="/admin/login" id="loginForm">
+                                <div class="mb-3">
+                                    <label class="form-label">Email or Phone</label>
+                                    <input type="text" class="form-control" name="identifier" required>
+                                </div>
+                                
+                                <div class="mb-3" id="otpSection" style="display: none;">
+                                    <label class="form-label">OTP Code</label>
+                                    <input type="text" class="form-control" name="otp" maxlength="6">
+                                </div>
+                                
+                                <div class="d-grid gap-2">
+                                    <button type="button" class="btn btn-outline-primary" id="requestOtpBtn" onclick="requestOTP()">
+                                        Send OTP
+                                    </button>
+                                    <button type="submit" class="btn btn-primary" id="loginBtn" style="display: none;">
+                                        Login
+                                    </button>
+                                </div>
+                            </form>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
+        <script src="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/js/all.min.js"></script>
+        <script>
+            async function requestOTP() {
+                const identifier = document.querySelector('input[name="identifier"]').value;
+                if (!identifier) { alert('Please enter email or phone'); return; }
+                
+                const btn = document.getElementById('requestOtpBtn');
+                btn.innerHTML = 'Sending...'; btn.disabled = true;
+                
+                try {
+                    const formData = new FormData();
+                    formData.append('identifier', identifier);
+                    const response = await fetch('/admin/request-otp', { method: 'POST', body: formData });
+                    const result = await response.json();
+                    
+                    if (result.success) {
+                        document.getElementById('otpSection').style.display = 'block';
+                        document.getElementById('loginBtn').style.display = 'block';
+                        btn.style.display = 'none';
+                    } else {
+                        alert(result.message || 'Failed to send OTP');
+                    }
+                } catch (error) {
+                    alert('Network error');
+                } finally {
+                    btn.innerHTML = 'Send OTP'; btn.disabled = false;
+                }
+            }
+        </script>
+    </body>
+    </html>
+    """)
 
 @admin_router.post("/login")
 async def login(
@@ -164,18 +219,135 @@ async def dashboard(
         """
     )
     
-    return templates.TemplateResponse("dashboard.html", {
-        "request": request,
-        "admin_user": admin_user,
-        "stats": {
-            "total_users": total_users["count"],
-            "total_apps": total_apps["count"],
-            "pending_apps": pending_apps["count"],
-            "total_dust_issued": total_dust_issued["total"]
-        },
-        "recent_users": recent_users,
-        "recent_apps": recent_apps
-    })
+    return HTMLResponse(f"""
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <title>Fairydust Admin Dashboard</title>
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
+        <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+        <style>
+            .fairy-dust {{ color: #ffd700; text-shadow: 0 0 5px rgba(255,215,0,0.5); }}
+            .stat-card {{ border-left: 4px solid; }}
+            .stat-card-primary {{ border-left-color: #4e73df; }}
+            .stat-card-success {{ border-left-color: #1cc88a; }}
+            .stat-card-warning {{ border-left-color: #f6c23e; }}
+            .stat-card-info {{ border-left-color: #36b9cc; }}
+        </style>
+    </head>
+    <body>
+        <nav class="navbar navbar-expand-lg navbar-dark bg-primary">
+            <div class="container-fluid">
+                <a class="navbar-brand" href="/admin/dashboard">
+                    <i class="fas fa-magic fairy-dust"></i> Fairydust Admin
+                </a>
+                <div class="navbar-nav ms-auto">
+                    <span class="navbar-text me-3">Welcome, {admin_user['fairyname']}</span>
+                    <a class="nav-link" href="/admin/logout">Logout</a>
+                </div>
+            </div>
+        </nav>
+        
+        <div class="container-fluid mt-4">
+            <h1>Dashboard</h1>
+            
+            <!-- Stats Cards -->
+            <div class="row mb-4">
+                <div class="col-xl-3 col-md-6 mb-4">
+                    <div class="card stat-card stat-card-primary h-100">
+                        <div class="card-body">
+                            <div class="row align-items-center">
+                                <div class="col">
+                                    <div class="text-uppercase mb-1">Total Users</div>
+                                    <div class="h5 mb-0">{total_users["count"]}</div>
+                                </div>
+                                <div class="col-auto">
+                                    <i class="fas fa-users fa-2x text-muted"></i>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="col-xl-3 col-md-6 mb-4">
+                    <div class="card stat-card stat-card-success h-100">
+                        <div class="card-body">
+                            <div class="row align-items-center">
+                                <div class="col">
+                                    <div class="text-uppercase mb-1">Total Apps</div>
+                                    <div class="h5 mb-0">{total_apps["count"]}</div>
+                                </div>
+                                <div class="col-auto">
+                                    <i class="fas fa-mobile-alt fa-2x text-muted"></i>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="col-xl-3 col-md-6 mb-4">
+                    <div class="card stat-card stat-card-warning h-100">
+                        <div class="card-body">
+                            <div class="row align-items-center">
+                                <div class="col">
+                                    <div class="text-uppercase mb-1">Pending Apps</div>
+                                    <div class="h5 mb-0">{pending_apps["count"]}</div>
+                                </div>
+                                <div class="col-auto">
+                                    <i class="fas fa-clock fa-2x text-muted"></i>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="col-xl-3 col-md-6 mb-4">
+                    <div class="card stat-card stat-card-info h-100">
+                        <div class="card-body">
+                            <div class="row align-items-center">
+                                <div class="col">
+                                    <div class="text-uppercase mb-1">DUST Issued</div>
+                                    <div class="h5 mb-0 fairy-dust">{total_dust_issued["total"]:,}</div>
+                                </div>
+                                <div class="col-auto">
+                                    <i class="fas fa-magic fa-2x text-warning"></i>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Quick Actions -->
+            <div class="row mb-4">
+                <div class="col-md-6">
+                    <div class="card">
+                        <div class="card-header">Quick Actions</div>
+                        <div class="card-body">
+                            <a href="/admin/users" class="btn btn-primary me-2">Manage Users</a>
+                            <a href="/admin/apps" class="btn btn-success">Manage Apps</a>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="col-md-6">
+                    <div class="card">
+                        <div class="card-header">System Status</div>
+                        <div class="card-body">
+                            <span class="badge bg-success">All Services Online</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            {f'<div class="alert alert-warning"><strong>Action Required:</strong> {pending_apps["count"]} apps pending approval. <a href="/admin/apps?status=pending">Review now</a></div>' if pending_apps["count"] > 0 else ''}
+        </div>
+        
+        <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
+    </body>
+    </html>
+    """)
 
 @admin_router.get("/users", response_class=HTMLResponse)
 async def users_list(

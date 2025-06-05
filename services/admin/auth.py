@@ -6,15 +6,7 @@ from fastapi import HTTPException, Request, Depends, Cookie
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 import redis.asyncio as redis
 
-# Debug JWT module
-print(f"JWT module: {jwt}")
-print(f"JWT attributes: {dir(jwt)}")
-try:
-    print(f"JWTError available: {hasattr(jwt, 'JWTError')}")
-    if hasattr(jwt, 'JWTError'):
-        print(f"JWTError: {jwt.JWTError}")
-except Exception as e:
-    print(f"Error checking JWTError: {e}")
+# JWT is working fine now
 
 from shared.database import get_db, Database
 from shared.redis_client import get_redis
@@ -55,7 +47,12 @@ class AdminAuth:
             
             # Check if session exists in Redis
             stored_token = await self.redis.get(f"admin_session:{payload['user_id']}")
-            if not stored_token or stored_token.decode() != token:
+            if not stored_token:
+                return None
+            
+            # Handle both bytes and string from Redis
+            stored_token_str = stored_token.decode() if isinstance(stored_token, bytes) else stored_token
+            if stored_token_str != token:
                 return None
             
             return payload
