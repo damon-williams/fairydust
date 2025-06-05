@@ -5,13 +5,14 @@ from typing import Optional
 from uuid import UUID
 import httpx
 import os
+from pathlib import Path
 
 from shared.database import get_db, Database
 from shared.redis_client import get_redis
 from auth import AdminAuth, get_current_admin_user, optional_admin_user
 
 admin_router = APIRouter()
-templates = Jinja2Templates(directory="templates")
+templates = Jinja2Templates(directory=str(Path(__file__).parent / "templates"))
 
 IDENTITY_SERVICE_URL = os.getenv("IDENTITY_SERVICE_URL", "http://identity:8001")
 
