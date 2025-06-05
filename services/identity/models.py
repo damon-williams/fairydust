@@ -60,6 +60,7 @@ class User(BaseModel):
     phone: Optional[str] = None
     avatar_url: Optional[str] = None
     is_builder: bool = False
+    is_admin: bool = False
     is_active: bool = True
     created_at: datetime
     updated_at: datetime
@@ -86,6 +87,7 @@ class TokenData(BaseModel):
     user_id: str
     fairyname: str
     is_builder: bool = False
+    is_admin: bool = False
     exp: Optional[datetime] = None
 
 # Response models

@@ -110,6 +110,7 @@ async def create_tables():
             phone VARCHAR(20) UNIQUE,
             avatar_url TEXT,
             is_builder BOOLEAN DEFAULT FALSE,
+            is_admin BOOLEAN DEFAULT FALSE,
             is_active BOOLEAN DEFAULT TRUE,
             dust_balance INTEGER DEFAULT 0,
             auth_provider VARCHAR(50) NOT NULL,

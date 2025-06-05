@@ -126,7 +126,8 @@ async def verify_otp(
     token_data = {
         "user_id": str(user["id"]),
         "fairyname": user["fairyname"],
-        "is_builder": user["is_builder"]
+        "is_builder": user["is_builder"],
+        "is_admin": user.get("is_admin", False)
     }
     
     access_token = await auth_service.create_access_token(token_data)
@@ -226,7 +227,8 @@ async def oauth_login(
     token_data = {
         "user_id": str(user["id"]),
         "fairyname": user["fairyname"],
-        "is_builder": user["is_builder"]
+        "is_builder": user["is_builder"],
+        "is_admin": user.get("is_admin", False)
     }
     
     access_token = await auth_service.create_access_token(token_data)

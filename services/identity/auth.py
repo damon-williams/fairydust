@@ -215,3 +215,10 @@ async def require_builder(current_user: TokenData = Depends(get_current_user)) -
     if not current_user.is_builder:
         raise HTTPException(status_code=403, detail="Builder access required")
     return current_user
+
+# Admin access dependency
+async def require_admin(current_user: TokenData = Depends(get_current_user)) -> TokenData:
+    """Require the current user to be an admin"""
+    if not current_user.is_admin:
+        raise HTTPException(status_code=403, detail="Admin privileges required")
+    return current_user
