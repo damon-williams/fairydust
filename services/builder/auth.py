@@ -6,6 +6,9 @@ from fastapi import HTTPException, Request, Depends, Cookie
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 import redis.asyncio as redis
 
+import sys
+import os
+sys.path.append(os.path.join(os.path.dirname(__file__), '..', '..'))
 from shared.database import get_db, Database
 from shared.redis_client import get_redis
 

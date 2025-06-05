@@ -6,6 +6,9 @@ import httpx
 import os
 from pathlib import Path
 
+import sys
+import os
+sys.path.append(os.path.join(os.path.dirname(__file__), '..', '..'))
 from shared.database import get_db, Database
 from shared.redis_client import get_redis
 from auth import BuilderAuth, get_current_builder_user, optional_builder_user

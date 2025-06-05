@@ -6,6 +6,9 @@ from contextlib import asynccontextmanager
 import os
 from pathlib import Path
 
+import sys
+import os
+sys.path.append(os.path.join(os.path.dirname(__file__), '..', '..'))
 from shared.database import init_db, close_db
 from shared.redis_client import init_redis, close_redis
 
