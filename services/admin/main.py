@@ -21,8 +21,10 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Mount static files first
-app.mount("/static", StaticFiles(directory=str(Path(__file__).parent / "static")), name="static")
+# Mount static files if directory exists
+static_dir = Path(__file__).parent / "static"
+if static_dir.exists():
+    app.mount("/static", StaticFiles(directory=str(static_dir)), name="static")
 
 from routes import admin_router
 
