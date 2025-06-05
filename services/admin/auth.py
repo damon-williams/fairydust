@@ -6,6 +6,16 @@ from fastapi import HTTPException, Request, Depends, Cookie
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 import redis.asyncio as redis
 
+# Debug JWT module
+print(f"JWT module: {jwt}")
+print(f"JWT attributes: {dir(jwt)}")
+try:
+    print(f"JWTError available: {hasattr(jwt, 'JWTError')}")
+    if hasattr(jwt, 'JWTError'):
+        print(f"JWTError: {jwt.JWTError}")
+except Exception as e:
+    print(f"Error checking JWTError: {e}")
+
 from shared.database import get_db, Database
 from shared.redis_client import get_redis
 
@@ -49,9 +59,9 @@ class AdminAuth:
                 return None
             
             return payload
-        except jwt.ExpiredSignatureError:
-            return None
-        except jwt.JWTError:
+        except Exception as e:
+            # Handle any JWT-related errors
+            print(f"JWT verification error: {e}")
             return None
     
     async def revoke_admin_session(self, user_id: str):
