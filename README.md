@@ -125,7 +125,7 @@ Run tests:
 pytest
 ```
 
-## Security Notes
+## Security Notes 
 
 - All passwords are hashed using bcrypt
 - JWTs expire after 1 hour
