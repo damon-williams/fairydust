@@ -87,14 +87,14 @@ async def get_current_builder_user(
     if not session_data:
         raise HTTPException(status_code=401, detail="Invalid or expired session")
     
-    # Verify user exists and is a builder
+    # Verify user exists and is active
     user = await db.fetch_one(
-        "SELECT * FROM users WHERE id = $1 AND is_builder = true AND is_active = true",
+        "SELECT * FROM users WHERE id = $1 AND is_active = true",
         session_data["user_id"]
     )
     
     if not user:
-        raise HTTPException(status_code=403, detail="Builder access required")
+        raise HTTPException(status_code=403, detail="User not found or inactive")
     
     return {
         "user_id": session_data["user_id"],

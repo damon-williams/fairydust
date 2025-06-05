@@ -68,11 +68,6 @@ async def login_page(request: Request, builder_user: Optional[dict] = Depends(op
                                 </div>
                             </form>
                             
-                            <div class="text-center mt-4">
-                                <small class="text-muted">
-                                    Need builder access? <a href="/builder/become-builder" class="btn btn-link btn-sm p-0">Become a Builder</a>
-                                </small>
-                            </div>
                         </div>
                     </div>
                 </div>
@@ -120,17 +115,17 @@ async def login(
     otp: str = Form(...),
     db: Database = Depends(get_db)
 ):
-    # Verify user exists and is a builder
+    # Verify user exists and is active
     identifier_type = "email" if "@" in identifier else "phone"
     user = await db.fetch_one(
-        f"SELECT * FROM users WHERE {identifier_type} = $1 AND is_builder = true AND is_active = true",
+        f"SELECT * FROM users WHERE {identifier_type} = $1 AND is_active = true",
         identifier
     )
     
     if not user:
         return HTMLResponse("""
             <script>
-                alert('Builder access required. Please contact support.');
+                alert('User not found or inactive. Please register first.');
                 window.location.href = '/builder/login';
             </script>
         """)
@@ -577,176 +572,3 @@ async def submit_new_app(
     
     return RedirectResponse(url=f"/builder/dashboard?submitted=1", status_code=302)
 
-@builder_router.get("/become-builder", response_class=HTMLResponse)
-async def become_builder_form(request: Request):
-    return HTMLResponse("""
-    <!DOCTYPE html>
-    <html>
-    <head>
-        <title>Become a Builder - Fairydust</title>
-        <meta name="viewport" content="width=device-width, initial-scale=1">
-        <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
-        <style>
-            body { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); min-height: 100vh; }
-            .signup-card { border-radius: 20px; box-shadow: 0 10px 40px rgba(0,0,0,0.3); }
-            .fairy-dust { color: #ffd700; text-shadow: 0 0 10px rgba(255,215,0,0.5); }
-        </style>
-    </head>
-    <body class="d-flex align-items-center">
-        <div class="container">
-            <div class="row justify-content-center">
-                <div class="col-md-6 col-lg-5">
-                    <div class="card signup-card">
-                        <div class="card-body p-5">
-                            <div class="text-center mb-4">
-                                <h1><i class="fas fa-hammer fairy-dust fs-1"></i></h1>
-                                <h2 class="h4">Become a Builder</h2>
-                                <p class="text-muted">Join the fairydust ecosystem</p>
-                            </div>
-                            
-                            <form method="post" action="/builder/become-builder" id="signupForm">
-                                <div class="mb-3">
-                                    <label class="form-label">Email or Phone</label>
-                                    <input type="text" class="form-control" name="identifier" required>
-                                </div>
-                                
-                                <div class="mb-3" id="otpSection" style="display: none;">
-                                    <label class="form-label">OTP Code</label>
-                                    <input type="text" class="form-control" name="otp" maxlength="6">
-                                </div>
-                                
-                                <div class="mb-3">
-                                    <div class="form-check">
-                                        <input class="form-check-input" type="checkbox" id="terms" required>
-                                        <label class="form-check-label" for="terms">
-                                            I agree to the <a href="#" target="_blank">Terms of Service</a> and understand that I can submit apps for review on the fairydust platform.
-                                        </label>
-                                    </div>
-                                </div>
-                                
-                                <div class="d-grid gap-2">
-                                    <button type="button" class="btn btn-outline-primary" id="requestOtpBtn" onclick="requestOTP()">
-                                        Send OTP & Become Builder
-                                    </button>
-                                    <button type="submit" class="btn btn-primary" id="signupBtn" style="display: none;">
-                                        Complete Builder Registration
-                                    </button>
-                                </div>
-                            </form>
-                            
-                            <div class="text-center mt-4">
-                                <small class="text-muted">
-                                    Already a builder? <a href="/builder/login">Login here</a>
-                                </small>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            </div>
-        </div>
-        
-        <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
-        <script src="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/js/all.min.js"></script>
-        <script>
-            async function requestOTP() {
-                const identifier = document.querySelector('input[name="identifier"]').value;
-                const terms = document.getElementById('terms').checked;
-                
-                if (!identifier) { alert('Please enter email or phone'); return; }
-                if (!terms) { alert('Please accept the terms of service'); return; }
-                
-                const btn = document.getElementById('requestOtpBtn');
-                btn.innerHTML = 'Sending...'; btn.disabled = true;
-                
-                try {
-                    const formData = new FormData();
-                    formData.append('identifier', identifier);
-                    const response = await fetch('/builder/request-otp', { method: 'POST', body: formData });
-                    const result = await response.json();
-                    
-                    if (result.success) {
-                        document.getElementById('otpSection').style.display = 'block';
-                        document.getElementById('signupBtn').style.display = 'block';
-                        btn.style.display = 'none';
-                    } else {
-                        alert(result.message || 'Failed to send OTP');
-                    }
-                } catch (error) {
-                    alert('Network error');
-                } finally {
-                    btn.innerHTML = 'Send OTP & Become Builder'; btn.disabled = false;
-                }
-            }
-        </script>
-    </body>
-    </html>
-    """)
-
-@builder_router.post("/become-builder")
-async def become_builder(
-    request: Request,
-    identifier: str = Form(...),
-    otp: str = Form(...),
-    db: Database = Depends(get_db)
-):
-    # Verify OTP via identity service
-    async with httpx.AsyncClient() as client:
-        try:
-            response = await client.post(
-                f"{IDENTITY_SERVICE_URL}/auth/otp/verify",
-                json={"identifier": identifier, "code": otp}
-            )
-            
-            if response.status_code != 200:
-                return HTMLResponse("""
-                    <script>
-                        alert('Invalid OTP');
-                        window.location.href = '/builder/become-builder';
-                    </script>
-                """)
-        except Exception:
-            return HTMLResponse("""
-                <script>
-                    alert('Authentication service unavailable');
-                    window.location.href = '/builder/become-builder';
-                </script>
-            """)
-    
-    # Find or create user and grant builder access
-    identifier_type = "email" if "@" in identifier else "phone"
-    user = await db.fetch_one(
-        f"SELECT * FROM users WHERE {identifier_type} = $1",
-        identifier
-    )
-    
-    if not user:
-        return HTMLResponse("""
-            <script>
-                alert('User not found. Please register first at the main fairydust portal.');
-                window.location.href = '/builder/become-builder';
-            </script>
-        """)
-    
-    # Grant builder access
-    await db.execute(
-        "UPDATE users SET is_builder = true, updated_at = CURRENT_TIMESTAMP WHERE id = $1",
-        user["id"]
-    )
-    
-    # Create builder session
-    redis_client = await get_redis()
-    auth = BuilderAuth(redis_client)
-    session_token = await auth.create_builder_session(str(user["id"]), user["fairyname"])
-    
-    # Set session cookie and redirect
-    response = RedirectResponse(url="/builder/dashboard?welcome=1", status_code=302)
-    response.set_cookie(
-        key="builder_session",
-        value=session_token,
-        httponly=True,
-        secure=True if os.getenv("ENVIRONMENT") == "production" else False,
-        samesite="lax",
-        max_age=8 * 3600  # 8 hours
-    )
-    
-    return response
