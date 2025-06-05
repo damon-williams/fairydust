@@ -583,11 +583,16 @@ async def apps_list(
             status_badge = '<span class="badge bg-warning">Pending</span>'
         elif app["status"] == "rejected":
             status_badge = '<span class="badge bg-danger">Rejected</span>'
+        elif app["status"] == "suspended":
+            status_badge = '<span class="badge bg-dark">Suspended</span>'
         else:
             status_badge = f'<span class="badge bg-secondary">{app["status"]}</span>'
         
+        # Action buttons based on current status
         approve_btn = f'<button class="btn btn-sm btn-success me-1" onclick="approveApp(\'{app["id"]}\', \'{app["name"]}\')"><i class="fas fa-check"></i></button>' if app["status"] == "pending" else ""
-        reject_btn = f'<button class="btn btn-sm btn-danger" onclick="rejectApp(\'{app["id"]}\', \'{app["name"]}\')"><i class="fas fa-times"></i></button>' if app["status"] == "pending" else ""
+        reject_btn = f'<button class="btn btn-sm btn-danger me-1" onclick="rejectApp(\'{app["id"]}\', \'{app["name"]}\')"><i class="fas fa-times"></i></button>' if app["status"] == "pending" else ""
+        suspend_btn = f'<button class="btn btn-sm btn-warning me-1" onclick="suspendApp(\'{app["id"]}\', \'{app["name"]}\')"><i class="fas fa-pause"></i></button>' if app["status"] == "approved" else ""
+        reactivate_btn = f'<button class="btn btn-sm btn-info me-1" onclick="reactivateApp(\'{app["id"]}\', \'{app["name"]}\')"><i class="fas fa-play"></i></button>' if app["status"] == "suspended" else ""
         
         apps_html += f"""
         <tr>
@@ -595,7 +600,7 @@ async def apps_list(
             <td>{app["builder_name"]}<br><small class="text-muted">{app["builder_email"]}</small></td>
             <td><span class="text-capitalize">{app["category"]}</span></td>
             <td>{status_badge}</td>
-            <td>{approve_btn}{reject_btn}</td>
+            <td>{approve_btn}{reject_btn}{suspend_btn}{reactivate_btn}</td>
         </tr>
         """
     
@@ -689,6 +694,35 @@ async def apps_list(
                     form.submit();
                 }}
             }}
+            
+            function suspendApp(appId, appName) {{
+                const reason = prompt(`Suspend "${{appName}}"? Please provide reason:`, '');
+                if (reason) {{
+                    const form = document.createElement('form');
+                    form.method = 'POST';
+                    form.action = `/admin/apps/${{appId}}/suspend`;
+                    
+                    const reasonInput = document.createElement('input');
+                    reasonInput.type = 'hidden';
+                    reasonInput.name = 'admin_notes';
+                    reasonInput.value = reason;
+                    
+                    form.appendChild(reasonInput);
+                    document.body.appendChild(form);
+                    form.submit();
+                }}
+            }}
+            
+            function reactivateApp(appId, appName) {{
+                if (confirm(`Reactivate "${{appName}}"?`)) {{
+                    const form = document.createElement('form');
+                    form.method = 'POST';
+                    form.action = `/admin/apps/${{appId}}/reactivate`;
+                    
+                    document.body.appendChild(form);
+                    form.submit();
+                }}
+            }}
         </script>
     </body>
     </html>
@@ -727,6 +761,43 @@ async def reject_app(
         WHERE id = $2
         """,
         f"Rejected by {admin_user['fairyname']}: {admin_notes}",
+        app_id
+    )
+    
+    return RedirectResponse(url="/admin/apps", status_code=302)
+
+@admin_router.post("/apps/{app_id}/suspend")
+async def suspend_app(
+    app_id: str,
+    admin_notes: str = Form(...),
+    admin_user: dict = Depends(get_current_admin_user),
+    db: Database = Depends(get_db)
+):
+    await db.execute(
+        """
+        UPDATE apps 
+        SET status = 'suspended', is_active = false, admin_notes = $1, updated_at = CURRENT_TIMESTAMP
+        WHERE id = $2
+        """,
+        f"Suspended by {admin_user['fairyname']}: {admin_notes}",
+        app_id
+    )
+    
+    return RedirectResponse(url="/admin/apps", status_code=302)
+
+@admin_router.post("/apps/{app_id}/reactivate")
+async def reactivate_app(
+    app_id: str,
+    admin_user: dict = Depends(get_current_admin_user),
+    db: Database = Depends(get_db)
+):
+    await db.execute(
+        """
+        UPDATE apps 
+        SET status = 'approved', is_active = true, admin_notes = $1, updated_at = CURRENT_TIMESTAMP
+        WHERE id = $2
+        """,
+        f"Reactivated by {admin_user['fairyname']}",
         app_id
     )
     
