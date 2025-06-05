@@ -104,6 +104,30 @@ services:
       - ./services/apps:/app
       - ./shared:/app/shared
 
+  admin:
+    build:
+      context: .
+      dockerfile: services/admin/Dockerfile
+    ports:
+      - "8004:8003"
+    environment:
+      DATABASE_URL: postgresql://postgres:password@postgres:5432/fairydust
+      REDIS_URL: redis://redis:6379/0
+      ENVIRONMENT: development
+      JWT_SECRET_KEY: dev-secret-key-change-in-production
+      IDENTITY_SERVICE_URL: http://identity:8001
+      ALLOWED_ORIGINS: "*,null,file://,http://localhost:3000,http://127.0.0.1:3000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      identity:
+        condition: service_started
+    volumes:
+      - ./services/admin:/app
+      - ./shared:/app/shared
+
 volumes:
   postgres_data:
   redis_data:

@@ -1,0 +1,217 @@
+{% extends "base.html" %}
+
+{% block title %}Users - Fairydust Admin{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between flex-wrap flex-md-nowrap align-items-center pt-3 pb-2 mb-3 border-bottom">
+    <h1 class="h2">
+        <i class="fas fa-users me-2"></i>
+        User Management
+    </h1>
+</div>
+
+<!-- Search and Filters -->
+<div class="row mb-4">
+    <div class="col-md-6">
+        <form method="get" action="/admin/users" class="d-flex">
+            <input type="text" class="form-control me-2" name="search" 
+                   placeholder="Search users..." value="{{ search }}">
+            <button type="submit" class="btn btn-outline-primary">
+                <i class="fas fa-search"></i>
+            </button>
+        </form>
+    </div>
+    {% if request.args.get('granted') %}
+    <div class="col-md-6">
+        <div class="alert alert-success alert-dismissible fade show" role="alert">
+            <i class="fas fa-check-circle me-2"></i>
+            Successfully granted {{ request.args.get('granted') }} DUST!
+            <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+        </div>
+    </div>
+    {% endif %}
+</div>
+
+<!-- Users Table -->
+<div class="card">
+    <div class="card-body">
+        <div class="table-responsive">
+            <table class="table table-hover">
+                <thead>
+                    <tr>
+                        <th>Fairyname</th>
+                        <th>Contact</th>
+                        <th>DUST Balance</th>
+                        <th>Roles</th>
+                        <th>Status</th>
+                        <th>Joined</th>
+                        <th>Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for user in users %}
+                    <tr>
+                        <td>
+                            <div class="d-flex align-items-center">
+                                <div class="fw-bold">{{ user.fairyname }}</div>
+                            </div>
+                        </td>
+                        <td>
+                            {% if user.email %}
+                                <div class="text-muted">{{ user.email }}</div>
+                            {% endif %}
+                            {% if user.phone %}
+                                <div class="text-muted">{{ user.phone }}</div>
+                            {% endif %}
+                        </td>
+                        <td>
+                            <span class="fairy-dust fw-bold">{{ "{:,}".format(user.dust_balance) }}</span>
+                        </td>
+                        <td>
+                            {% if user.is_admin %}
+                                <span class="badge bg-danger me-1">Admin</span>
+                            {% endif %}
+                            {% if user.is_builder %}
+                                <span class="badge bg-info">Builder</span>
+                            {% endif %}
+                            {% if not user.is_admin and not user.is_builder %}
+                                <span class="text-muted">User</span>
+                            {% endif %}
+                        </td>
+                        <td>
+                            {% if user.is_active %}
+                                <span class="badge bg-success">Active</span>
+                            {% else %}
+                                <span class="badge bg-secondary">Inactive</span>
+                            {% endif %}
+                        </td>
+                        <td>
+                            <small class="text-muted">{{ user.created_at.strftime('%m/%d/%Y') }}</small>
+                        </td>
+                        <td>
+                            <div class="btn-group" role="group">
+                                <!-- Grant DUST Button -->
+                                <button type="button" class="btn btn-sm btn-primary" 
+                                        data-bs-toggle="modal" 
+                                        data-bs-target="#grantDustModal"
+                                        data-user-id="{{ user.id }}"
+                                        data-user-name="{{ user.fairyname }}">
+                                    <i class="fas fa-magic"></i>
+                                </button>
+                                
+                                <!-- Toggle Admin Button -->
+                                <form method="post" action="/admin/users/{{ user.id }}/toggle-admin" style="display: inline;">
+                                    <button type="submit" class="btn btn-sm {% if user.is_admin %}btn-danger{% else %}btn-warning{% endif %}"
+                                            onclick="return confirm('Are you sure you want to {% if user.is_admin %}remove admin{% else %}grant admin{% endif %} privileges for {{ user.fairyname }}?')"
+                                            {% if user.id == admin_user.user_id and user.is_admin %}disabled title="Cannot remove your own admin privileges"{% endif %}>
+                                        <i class="fas fa-user-shield"></i>
+                                    </button>
+                                </form>
+                            </div>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<!-- Pagination -->
+{% if total_pages > 1 %}
+<nav aria-label="Users pagination" class="mt-4">
+    <ul class="pagination justify-content-center">
+        {% if current_page > 1 %}
+        <li class="page-item">
+            <a class="page-link" href="/admin/users?page={{ current_page - 1 }}{% if search %}&search={{ search }}{% endif %}">Previous</a>
+        </li>
+        {% endif %}
+        
+        {% for page in range(1, total_pages + 1) %}
+            {% if page == current_page %}
+            <li class="page-item active">
+                <span class="page-link">{{ page }}</span>
+            </li>
+            {% elif page <= 3 or page >= total_pages - 2 or (page >= current_page - 1 and page <= current_page + 1) %}
+            <li class="page-item">
+                <a class="page-link" href="/admin/users?page={{ page }}{% if search %}&search={{ search }}{% endif %}">{{ page }}</a>
+            </li>
+            {% elif page == 4 or page == total_pages - 3 %}
+            <li class="page-item disabled">
+                <span class="page-link">...</span>
+            </li>
+            {% endif %}
+        {% endfor %}
+        
+        {% if current_page < total_pages %}
+        <li class="page-item">
+            <a class="page-link" href="/admin/users?page={{ current_page + 1 }}{% if search %}&search={{ search }}{% endif %}">Next</a>
+        </li>
+        {% endif %}
+    </ul>
+</nav>
+{% endif %}
+
+<!-- Grant DUST Modal -->
+<div class="modal fade" id="grantDustModal" tabindex="-1" aria-labelledby="grantDustModalLabel" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="grantDustModalLabel">
+                    <i class="fas fa-magic fairy-dust me-2"></i>
+                    Grant DUST
+                </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <form method="post" id="grantDustForm">
+                <div class="modal-body">
+                    <div class="mb-3">
+                        <label for="grantAmount" class="form-label">Amount</label>
+                        <input type="number" class="form-control" id="grantAmount" name="amount" 
+                               min="1" max="10000" required placeholder="Enter DUST amount">
+                    </div>
+                    <div class="mb-3">
+                        <label for="grantReason" class="form-label">Reason</label>
+                        <input type="text" class="form-control" id="grantReason" name="reason" 
+                               required placeholder="e.g., Bug bounty, Special promotion">
+                    </div>
+                    <div class="alert alert-info">
+                        <i class="fas fa-info-circle me-2"></i>
+                        Granting DUST to: <strong id="targetUserName"></strong>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="submit" class="btn btn-primary">
+                        <i class="fas fa-magic me-2"></i>
+                        Grant DUST
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+// Handle Grant DUST Modal
+document.getElementById('grantDustModal').addEventListener('show.bs.modal', function (event) {
+    const button = event.relatedTarget;
+    const userId = button.getAttribute('data-user-id');
+    const userName = button.getAttribute('data-user-name');
+    
+    const form = document.getElementById('grantDustForm');
+    form.action = `/admin/users/${userId}/grant-dust`;
+    
+    document.getElementById('targetUserName').textContent = userName;
+    document.getElementById('grantAmount').focus();
+});
+
+// Clear form when modal is hidden
+document.getElementById('grantDustModal').addEventListener('hidden.bs.modal', function (event) {
+    document.getElementById('grantDustForm').reset();
+});
+</script>
+{% endblock %}
