@@ -1,18 +1,33 @@
 from fastapi import APIRouter, Request, Depends, HTTPException, Form, status
 from fastapi.responses import HTMLResponse, RedirectResponse
-from fastapi.templating import Jinja2Templates
 from typing import Optional
 from uuid import UUID
 import httpx
 import os
 from pathlib import Path
 
+# Ensure jinja2 is available
+try:
+    import jinja2
+    print(f"Jinja2 version: {jinja2.__version__}")
+except ImportError as e:
+    print(f"Jinja2 import error: {e}")
+    raise
+
+from fastapi.templating import Jinja2Templates
+
 from shared.database import get_db, Database
 from shared.redis_client import get_redis
 from auth import AdminAuth, get_current_admin_user, optional_admin_user
 
 admin_router = APIRouter()
-templates = Jinja2Templates(directory=str(Path(__file__).parent / "templates"))
+
+# Initialize templates with debug info
+template_dir = str(Path(__file__).parent / "templates")
+print(f"Template directory: {template_dir}")
+print(f"Template directory exists: {Path(template_dir).exists()}")
+
+templates = Jinja2Templates(directory=template_dir)
 
 IDENTITY_SERVICE_URL = os.getenv("IDENTITY_SERVICE_URL", "http://identity:8001")
 
