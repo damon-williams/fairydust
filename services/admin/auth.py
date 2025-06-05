@@ -59,9 +59,14 @@ class AdminAuth:
                 return None
             
             return payload
+        except jwt.ExpiredSignatureError:
+            print("JWT token expired")
+            return None
+        except jwt.PyJWTError:
+            print("JWT verification failed")
+            return None
         except Exception as e:
-            # Handle any JWT-related errors
-            print(f"JWT verification error: {e}")
+            print(f"Unexpected JWT error: {e}")
             return None
     
     async def revoke_admin_session(self, user_id: str):

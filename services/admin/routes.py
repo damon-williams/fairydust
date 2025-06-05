@@ -1,18 +1,42 @@
 from fastapi import APIRouter, Request, Depends, HTTPException, Form, status
 from fastapi.responses import HTMLResponse, RedirectResponse
-from fastapi.templating import Jinja2Templates
 from typing import Optional
 from uuid import UUID
 import httpx
 import os
 from pathlib import Path
 
+# Test jinja2 import
+try:
+    import jinja2
+    print(f"Jinja2 imported successfully: {jinja2.__version__}")
+    print(f"Jinja2 module: {jinja2}")
+    print(f"Jinja2 location: {jinja2.__file__}")
+except ImportError as e:
+    print(f"Failed to import jinja2: {e}")
+
+# Test FastAPI templating import
+try:
+    from fastapi.templating import Jinja2Templates
+    print("Jinja2Templates imported successfully")
+    
+    # Create templates with debug
+    template_dir = str(Path(__file__).parent / "templates")
+    print(f"Template directory: {template_dir}")
+    print(f"Template directory exists: {Path(template_dir).exists()}")
+    
+    templates = Jinja2Templates(directory=template_dir)
+    print("Jinja2Templates initialized successfully")
+except Exception as e:
+    print(f"Failed to initialize Jinja2Templates: {e}")
+    # Fallback to None for now
+    templates = None
+
 from shared.database import get_db, Database
 from shared.redis_client import get_redis
 from auth import AdminAuth, get_current_admin_user, optional_admin_user
 
 admin_router = APIRouter()
-templates = Jinja2Templates(directory=str(Path(__file__).parent / "templates"))
 
 IDENTITY_SERVICE_URL = os.getenv("IDENTITY_SERVICE_URL", "http://identity:8001")
 
@@ -20,6 +44,9 @@ IDENTITY_SERVICE_URL = os.getenv("IDENTITY_SERVICE_URL", "http://identity:8001")
 async def login_page(request: Request, admin_user: Optional[dict] = Depends(optional_admin_user)):
     if admin_user:
         return RedirectResponse(url="/admin/dashboard", status_code=302)
+    
+    if templates is None:
+        return HTMLResponse("<h1>Admin Login</h1><p>Templates not available. Please check jinja2 installation.</p>")
     
     return templates.TemplateResponse("login.html", {"request": request})
 
