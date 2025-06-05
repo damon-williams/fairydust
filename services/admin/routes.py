@@ -594,7 +594,6 @@ async def apps_list(
             <td><strong>{app["name"]}</strong><br><small class="text-muted">{app["description"][:100]}...</small></td>
             <td>{app["builder_name"]}<br><small class="text-muted">{app["builder_email"]}</small></td>
             <td><span class="text-capitalize">{app["category"]}</span></td>
-            <td><span class="fairy-dust">{app["dust_per_use"]}</span></td>
             <td>{status_badge}</td>
             <td>{approve_btn}{reject_btn}</td>
         </tr>
@@ -640,7 +639,6 @@ async def apps_list(
                                     <th>App Details</th>
                                     <th>Builder</th>
                                     <th>Category</th>
-                                    <th>DUST Cost</th>
                                     <th>Status</th>
                                     <th>Actions</th>
                                 </tr>
