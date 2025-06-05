@@ -12,7 +12,16 @@ try:
     print(f"Jinja2 version: {jinja2.__version__}")
 except ImportError as e:
     print(f"Jinja2 import error: {e}")
-    raise
+    print("Attempting to install jinja2 at runtime...")
+    import subprocess
+    import sys
+    try:
+        subprocess.check_call([sys.executable, "-m", "pip", "install", "jinja2==3.1.4", "markupsafe==2.1.3"])
+        import jinja2
+        print(f"Successfully installed jinja2 version: {jinja2.__version__}")
+    except Exception as install_error:
+        print(f"Failed to install jinja2: {install_error}")
+        raise e
 
 from fastapi.templating import Jinja2Templates
 

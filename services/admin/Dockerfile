@@ -7,17 +7,17 @@ RUN apt-get update && apt-get install -y \
     gcc \
     && rm -rf /var/lib/apt/lists/*
 
-# Install jinja2 first explicitly
+# Upgrade pip and install dependencies
 RUN pip install --no-cache-dir --upgrade pip
-RUN pip install --no-cache-dir jinja2==3.1.4
 
-# Copy requirements and install other dependencies
+# Copy requirements and install dependencies
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Verify jinja2 installation
+# Verify critical dependencies
 RUN python -c "import jinja2; print('Jinja2 version:', jinja2.__version__)"
-RUN python -c "from fastapi.templating import Jinja2Templates; print('Jinja2Templates import successful')"
+RUN python -c "import fastapi; print('FastAPI installed')"
+RUN python -c "from fastapi.templating import Jinja2Templates; print('Jinja2Templates available')"
 
 # Copy application code
 COPY . .
