@@ -208,7 +208,7 @@ async def dashboard(
     # Get builder's apps and stats
     apps = await db.fetch_all(
         """
-        SELECT id, name, status, is_active, category, created_at, updated_at, admin_notes
+        SELECT id, name, status, is_active, category, created_at, updated_at
         FROM apps 
         WHERE builder_id = $1 
         ORDER BY created_at DESC
@@ -238,12 +238,15 @@ async def dashboard(
     # Generate apps HTML
     apps_html = ""
     for app in apps:
-        status_color = {
-            "pending": "warning",
-            "approved": "success", 
-            "rejected": "danger",
-            "suspended": "dark"
-        }.get(app["status"], "secondary")
+        # Show appropriate badge based on status
+        if app["status"] == "approved" and app["is_active"]:
+            status_html = '<span class="badge bg-success">Active</span>'
+        elif app["status"] == "suspended":
+            status_html = '<span class="badge bg-danger">Suspended</span>'
+        elif app["status"] == "rejected":
+            status_html = '<span class="badge bg-danger">Rejected</span>'
+        else:
+            status_html = '<span class="badge bg-success">Active</span>'  # Default to active for new instant approval
         
         apps_html += f"""
         <div class="col-md-6 col-lg-4 mb-3">
@@ -251,14 +254,17 @@ async def dashboard(
                 <div class="card-body">
                     <div class="d-flex justify-content-between align-items-start mb-2">
                         <h6 class="card-title">{app["name"]}</h6>
-                        <span class="badge bg-{status_color}">{app["status"].title()}</span>
+                        {status_html}
                     </div>
                     <p class="text-muted small">Category: {app["category"].title()}</p>
+                    <div class="bg-light p-2 rounded mb-2">
+                        <small class="text-muted">App ID:</small><br>
+                        <code style="font-size: 0.85rem;">{str(app["id"])}</code>
+                    </div>
                     <p class="text-muted small">Created: {app["created_at"].strftime('%m/%d/%Y')}</p>
-                    {f'<p class="text-muted small">Notes: {app["admin_notes"]}</p>' if app["admin_notes"] else ''}
                 </div>
                 <div class="card-footer">
-                    <a href="/builder/apps/{app["id"]}" class="btn btn-sm btn-primary">Manage</a>
+                    <button class="btn btn-sm btn-outline-primary" onclick="copyAppId('{str(app["id"])}')">Copy App ID</button>
                 </div>
             </div>
         </div>
@@ -538,7 +544,6 @@ async def new_app_form(
 async def submit_new_app(
     request: Request,
     name: str = Form(...),
-    slug: str = Form(...),
     description: str = Form(...),
     category: str = Form(...),
     website_url: Optional[str] = Form(None),
@@ -547,26 +552,133 @@ async def submit_new_app(
     builder_user: dict = Depends(get_current_builder_user),
     db: Database = Depends(get_db)
 ):
-    # Validate slug uniqueness
-    existing_app = await db.fetch_one("SELECT id FROM apps WHERE slug = $1", slug)
-    if existing_app:
-        return HTMLResponse("""
-            <script>
-                alert('App slug already exists. Please choose a different slug.');
-                history.back();
-            </script>
-        """)
+    # Generate slug from name
+    import re
+    slug = re.sub(r'[^a-z0-9\s-]', '', name.lower()).replace(' ', '-')
+    slug = re.sub(r'-+', '-', slug).strip('-')
     
-    # Create new app
+    # Ensure slug uniqueness by appending numbers if needed
+    base_slug = slug
+    counter = 1
+    while True:
+        existing_app = await db.fetch_one("SELECT id FROM apps WHERE slug = $1", slug)
+        if not existing_app:
+            break
+        slug = f"{base_slug}-{counter}"
+        counter += 1
+    
+    # Create new app (immediately active)
     app_id = uuid4()
     await db.execute(
         """
         INSERT INTO apps (id, builder_id, name, slug, description, category, website_url, demo_url, icon_url, status, is_active)
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 'pending', false)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 'approved', true)
         """,
         app_id, builder_user["user_id"], name, slug, description, category, 
         website_url or None, demo_url or None, icon_url or None
     )
     
-    return RedirectResponse(url=f"/builder/dashboard?submitted=1", status_code=302)
+    return RedirectResponse(url=f"/builder/app-success/{app_id}", status_code=302)
+
+@builder_router.get("/app-success/{app_id}", response_class=HTMLResponse)
+async def app_success(
+    request: Request,
+    app_id: UUID,
+    builder_user: dict = Depends(get_current_builder_user),
+    db: Database = Depends(get_db)
+):
+    # Get the app details
+    app = await db.fetch_one(
+        "SELECT * FROM apps WHERE id = $1 AND builder_id = $2",
+        app_id, builder_user["user_id"]
+    )
+    
+    if not app:
+        return RedirectResponse(url="/builder/dashboard", status_code=302)
+    
+    return HTMLResponse(f"""
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <title>App Registered Successfully - Fairydust Builder</title>
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
+        <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+        <style>
+            .fairy-dust {{ color: #ffd700; text-shadow: 0 0 5px rgba(255,215,0,0.5); }}
+            .success-card {{ border-radius: 20px; box-shadow: 0 10px 40px rgba(0,0,0,0.1); }}
+            .app-id-box {{ background: #f8f9fa; border: 2px dashed #dee2e6; border-radius: 10px; padding: 20px; font-family: monospace; font-size: 1.2rem; }}
+        </style>
+    </head>
+    <body>
+        <nav class="navbar navbar-expand-lg navbar-dark bg-primary">
+            <div class="container-fluid">
+                <a class="navbar-brand" href="/builder/dashboard">
+                    <i class="fas fa-hammer fairy-dust"></i> Fairydust Builder
+                </a>
+                <div class="navbar-nav ms-auto">
+                    <span class="navbar-text me-3">Welcome, {builder_user['fairyname']}</span>
+                    <a class="nav-link" href="/builder/logout">Logout</a>
+                </div>
+            </div>
+        </nav>
+        
+        <div class="container mt-5">
+            <div class="row justify-content-center">
+                <div class="col-md-8">
+                    <div class="card success-card">
+                        <div class="card-body text-center py-5">
+                            <i class="fas fa-check-circle text-success mb-4" style="font-size: 4rem;"></i>
+                            <h2 class="mb-4">App Registered Successfully!</h2>
+                            <p class="lead mb-4">Your app "{app['name']}" is now live and ready to earn DUST.</p>
+                            
+                            <div class="app-id-box mb-4">
+                                <p class="mb-2"><strong>Your App ID:</strong></p>
+                                <div class="d-flex align-items-center justify-content-center">
+                                    <span id="appId">{str(app['id'])}</span>
+                                    <button class="btn btn-sm btn-outline-primary ms-3" onclick="copyAppId('{str(app['id'])}')">
+                                        <i class="fas fa-copy"></i> Copy
+                                    </button>
+                                </div>
+                            </div>
+                            
+                            <div class="alert alert-info">
+                                <i class="fas fa-info-circle me-2"></i>
+                                Use this App ID in your API calls to start earning DUST for each usage.
+                            </div>
+                            
+                            <div class="d-grid gap-2 d-md-block">
+                                <a href="/builder/dashboard" class="btn btn-primary">
+                                    <i class="fas fa-tachometer-alt me-2"></i>Go to Dashboard
+                                </a>
+                                <a href="/builder/apps/new" class="btn btn-outline-primary">
+                                    <i class="fas fa-plus me-2"></i>Register Another App
+                                </a>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
+        <script>
+            function copyAppId(appId) {{
+                navigator.clipboard.writeText(appId).then(function() {{
+                    alert('App ID copied to clipboard!');
+                }}).catch(function() {{
+                    // Fallback for older browsers
+                    const textArea = document.createElement('textarea');
+                    textArea.value = appId;
+                    document.body.appendChild(textArea);
+                    textArea.select();
+                    document.execCommand('copy');
+                    document.body.removeChild(textArea);
+                    alert('App ID copied to clipboard!');
+                }});
+            }}
+        </script>
+    </body>
+    </html>
+    """)
 
