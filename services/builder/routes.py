@@ -309,7 +309,7 @@ async def dashboard(
             <div class="d-flex justify-content-between align-items-center mb-4">
                 <h1>Builder Dashboard</h1>
                 <a href="/builder/apps/new" class="btn btn-success">
-                    <i class="fas fa-plus me-2"></i>Submit New App
+                    <i class="fas fa-plus me-2"></i>Register New App
                 </a>
             </div>
             
@@ -410,6 +410,22 @@ async def dashboard(
         </div>
         
         <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
+        <script>
+            function copyAppId(appId) {{
+                navigator.clipboard.writeText(appId).then(function() {{
+                    alert('App ID copied to clipboard!');
+                }}).catch(function() {{
+                    // Fallback for older browsers
+                    const textArea = document.createElement('textarea');
+                    textArea.value = appId;
+                    document.body.appendChild(textArea);
+                    textArea.select();
+                    document.execCommand('copy');
+                    document.body.removeChild(textArea);
+                    alert('App ID copied to clipboard!');
+                }});
+            }}
+        </script>
     </body>
     </html>
     """)
@@ -461,12 +477,6 @@ async def new_app_form(
                                     <input type="text" class="form-control" id="name" name="name" required maxlength="255">
                                 </div>
                                 
-                                <div class="mb-3">
-                                    <label for="slug" class="form-label">App Slug <span class="text-danger">*</span></label>
-                                    <input type="text" class="form-control" id="slug" name="slug" required maxlength="255" 
-                                           pattern="[a-z0-9-]+" placeholder="my-awesome-app">
-                                    <div class="form-text">Lowercase letters, numbers, and hyphens only</div>
-                                </div>
                                 
                                 <div class="mb-3">
                                     <label for="description" class="form-label">Description <span class="text-danger">*</span></label>
@@ -504,13 +514,13 @@ async def new_app_form(
                                     <div class="form-text">PNG or JPG, recommended 256x256px</div>
                                 </div>
                                 
-                                <div class="alert alert-info">
-                                    <h6><i class="fas fa-info-circle me-2"></i>Review Process</h6>
-                                    <p class="mb-0">Your app will be reviewed by our team within 24-48 hours. You'll be notified via email once the review is complete.</p>
+                                <div class="alert alert-success">
+                                    <h6><i class="fas fa-rocket me-2"></i>Ready to Launch</h6>
+                                    <p class="mb-0">Your app will be instantly registered and you'll receive your App ID immediately. Start earning DUST right away!</p>
                                 </div>
                                 
                                 <div class="d-grid">
-                                    <button type="submit" class="btn btn-primary">Submit App for Review</button>
+                                    <button type="submit" class="btn btn-primary">Register App & Get App ID</button>
                                 </div>
                             </form>
                         </div>
@@ -520,18 +530,6 @@ async def new_app_form(
         </div>
         
         <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
-        <script>
-            // Auto-generate slug from name
-            document.getElementById('name').addEventListener('input', function(e) {{
-                const slug = e.target.value
-                    .toLowerCase()
-                    .replace(/[^a-z0-9\s-]/g, '')
-                    .replace(/\s+/g, '-')
-                    .replace(/-+/g, '-')
-                    .trim();
-                document.getElementById('slug').value = slug;
-            }});
-        </script>
     </body>
     </html>
     """)
