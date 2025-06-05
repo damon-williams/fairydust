@@ -1,0 +1,244 @@
+{% extends "base.html" %}
+
+{% block title %}Apps - Fairydust Admin{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between flex-wrap flex-md-nowrap align-items-center pt-3 pb-2 mb-3 border-bottom">
+    <h1 class="h2">
+        <i class="fas fa-mobile-alt me-2"></i>
+        App Management
+    </h1>
+</div>
+
+<!-- Status Filter -->
+<div class="row mb-4">
+    <div class="col-md-6">
+        <div class="btn-group" role="group" aria-label="Status filter">
+            <a href="/admin/apps?status=all" class="btn {% if status_filter == 'all' %}btn-primary{% else %}btn-outline-primary{% endif %}">
+                All Apps
+            </a>
+            <a href="/admin/apps?status=pending" class="btn {% if status_filter == 'pending' %}btn-warning{% else %}btn-outline-warning{% endif %}">
+                Pending
+            </a>
+            <a href="/admin/apps?status=approved" class="btn {% if status_filter == 'approved' %}btn-success{% else %}btn-outline-success{% endif %}">
+                Approved
+            </a>
+            <a href="/admin/apps?status=rejected" class="btn {% if status_filter == 'rejected' %}btn-danger{% else %}btn-outline-danger{% endif %}">
+                Rejected
+            </a>
+        </div>
+    </div>
+</div>
+
+<!-- Apps List -->
+<div class="row">
+    {% for app in apps %}
+    <div class="col-md-6 col-lg-4 mb-4">
+        <div class="card h-100">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <h6 class="mb-0">{{ app.name }}</h6>
+                {% if app.status == 'approved' %}
+                    <span class="badge bg-success">{{ app.status }}</span>
+                {% elif app.status == 'pending' %}
+                    <span class="badge bg-warning">{{ app.status }}</span>
+                {% elif app.status == 'rejected' %}
+                    <span class="badge bg-danger">{{ app.status }}</span>
+                {% else %}
+                    <span class="badge bg-secondary">{{ app.status }}</span>
+                {% endif %}
+            </div>
+            <div class="card-body">
+                <div class="mb-2">
+                    <small class="text-muted">Builder:</small>
+                    <div>{{ app.builder_name }}</div>
+                    <small class="text-muted">{{ app.builder_email }}</small>
+                </div>
+                
+                <div class="mb-2">
+                    <small class="text-muted">Category:</small>
+                    <div class="text-capitalize">{{ app.category }}</div>
+                </div>
+                
+                <div class="mb-2">
+                    <small class="text-muted">DUST per use:</small>
+                    <div class="fairy-dust fw-bold">{{ app.dust_per_use }}</div>
+                </div>
+                
+                <div class="mb-3">
+                    <small class="text-muted">Description:</small>
+                    <div class="text-truncate" style="max-height: 3em; overflow: hidden;">
+                        {{ app.description }}
+                    </div>
+                </div>
+                
+                {% if app.website_url %}
+                <div class="mb-2">
+                    <a href="{{ app.website_url }}" target="_blank" class="btn btn-sm btn-outline-primary">
+                        <i class="fas fa-external-link-alt me-1"></i>
+                        Website
+                    </a>
+                </div>
+                {% endif %}
+                
+                {% if app.admin_notes %}
+                <div class="mb-3">
+                    <small class="text-muted">Admin Notes:</small>
+                    <div class="text-muted small">{{ app.admin_notes }}</div>
+                </div>
+                {% endif %}
+            </div>
+            <div class="card-footer">
+                <div class="d-flex justify-content-between align-items-center">
+                    <small class="text-muted">
+                        Created: {{ app.created_at.strftime('%m/%d/%Y') }}
+                    </small>
+                    
+                    {% if app.status == 'pending' %}
+                    <div class="btn-group" role="group">
+                        <button type="button" class="btn btn-sm btn-success" 
+                                data-bs-toggle="modal" 
+                                data-bs-target="#approveModal"
+                                data-app-id="{{ app.id }}"
+                                data-app-name="{{ app.name }}">
+                            <i class="fas fa-check"></i>
+                        </button>
+                        <button type="button" class="btn btn-sm btn-danger" 
+                                data-bs-toggle="modal" 
+                                data-bs-target="#rejectModal"
+                                data-app-id="{{ app.id }}"
+                                data-app-name="{{ app.name }}">
+                            <i class="fas fa-times"></i>
+                        </button>
+                    </div>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+    </div>
+    {% endfor %}
+</div>
+
+{% if not apps %}
+<div class="text-center py-5">
+    <i class="fas fa-mobile-alt fa-3x text-muted mb-3"></i>
+    <h4 class="text-muted">No apps found</h4>
+    <p class="text-muted">
+        {% if status_filter != 'all' %}
+            No apps with status "{{ status_filter }}" found.
+        {% else %}
+            No apps have been submitted yet.
+        {% endif %}
+    </p>
+</div>
+{% endif %}
+
+<!-- Approve Modal -->
+<div class="modal fade" id="approveModal" tabindex="-1" aria-labelledby="approveModalLabel" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="approveModalLabel">
+                    <i class="fas fa-check-circle text-success me-2"></i>
+                    Approve App
+                </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <form method="post" id="approveForm">
+                <div class="modal-body">
+                    <div class="mb-3">
+                        <p>Are you sure you want to approve <strong id="approveAppName"></strong>?</p>
+                        <p class="text-muted">This will make the app active and allow users to interact with it.</p>
+                    </div>
+                    <div class="mb-3">
+                        <label for="approveNotes" class="form-label">Admin Notes (Optional)</label>
+                        <textarea class="form-control" id="approveNotes" name="admin_notes" rows="3" 
+                                  placeholder="Add any notes about the approval..."></textarea>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="submit" class="btn btn-success">
+                        <i class="fas fa-check me-2"></i>
+                        Approve App
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<!-- Reject Modal -->
+<div class="modal fade" id="rejectModal" tabindex="-1" aria-labelledby="rejectModalLabel" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="rejectModalLabel">
+                    <i class="fas fa-times-circle text-danger me-2"></i>
+                    Reject App
+                </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <form method="post" id="rejectForm">
+                <div class="modal-body">
+                    <div class="mb-3">
+                        <p>Are you sure you want to reject <strong id="rejectAppName"></strong>?</p>
+                        <p class="text-muted">This will prevent the app from being used until it's re-submitted and approved.</p>
+                    </div>
+                    <div class="mb-3">
+                        <label for="rejectNotes" class="form-label">Reason for Rejection <span class="text-danger">*</span></label>
+                        <textarea class="form-control" id="rejectNotes" name="admin_notes" rows="3" 
+                                  required placeholder="Please provide a detailed reason for rejection..."></textarea>
+                        <div class="form-text">This will help the builder understand what needs to be changed.</div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="submit" class="btn btn-danger">
+                        <i class="fas fa-times me-2"></i>
+                        Reject App
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+// Handle Approve Modal
+document.getElementById('approveModal').addEventListener('show.bs.modal', function (event) {
+    const button = event.relatedTarget;
+    const appId = button.getAttribute('data-app-id');
+    const appName = button.getAttribute('data-app-name');
+    
+    const form = document.getElementById('approveForm');
+    form.action = `/admin/apps/${appId}/approve`;
+    
+    document.getElementById('approveAppName').textContent = appName;
+});
+
+// Handle Reject Modal
+document.getElementById('rejectModal').addEventListener('show.bs.modal', function (event) {
+    const button = event.relatedTarget;
+    const appId = button.getAttribute('data-app-id');
+    const appName = button.getAttribute('data-app-name');
+    
+    const form = document.getElementById('rejectForm');
+    form.action = `/admin/apps/${appId}/reject`;
+    
+    document.getElementById('rejectAppName').textContent = appName;
+    document.getElementById('rejectNotes').focus();
+});
+
+// Clear forms when modals are hidden
+document.getElementById('approveModal').addEventListener('hidden.bs.modal', function (event) {
+    document.getElementById('approveForm').reset();
+});
+
+document.getElementById('rejectModal').addEventListener('hidden.bs.modal', function (event) {
+    document.getElementById('rejectForm').reset();
+});
+</script>
+{% endblock %}
