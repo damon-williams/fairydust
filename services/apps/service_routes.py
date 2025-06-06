@@ -32,12 +32,16 @@ async def verify_service_token(
     db: Database = Depends(get_db)
 ) -> dict:
     """Verify service token and return service account info"""
-    # For now, check against environment variable
-    # In production, this would validate against a service_accounts table
     import os
+    import logging
+    logger = logging.getLogger(__name__)
+    
+    # Check against environment variable
     valid_tokens = os.getenv("FAIRYDUST_SERVICE_TOKENS", "").split(",")
+    logger.info(f"[Service] Checking token: {x_service_token[:8]}... against {len(valid_tokens)} valid tokens")
     
     if x_service_token not in valid_tokens:
+        logger.warning(f"[Service] Invalid service token attempted: {x_service_token[:8]}...")
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid service token"
@@ -58,6 +62,11 @@ async def register_app_via_service(
     db: Database = Depends(get_db)
 ):
     """Register a new app via service account (for MCP, API integrations)"""
+    import logging
+    logger = logging.getLogger(__name__)
+    
+    logger.info(f"[Service] Registering app: {app_data.name} for builder: {app_data.builder_email}")
+    logger.info(f"[Service] Service account: {service_account['service_name']}")
     
     # First, find or create the builder user
     builder = await db.fetch_one(
