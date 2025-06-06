@@ -45,6 +45,8 @@ async def verify_service_token(
     
     if x_service_token not in valid_tokens:
         logger.warning(f"[Service] Invalid service token attempted: {x_service_token[:8]}...")
+        logger.warning(f"[Service] Token mismatch - received: {x_service_token}")
+        logger.warning(f"[Service] Valid tokens from env: {valid_tokens}")
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid service token"
