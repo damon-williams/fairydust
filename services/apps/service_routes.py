@@ -126,6 +126,7 @@ async def register_app_via_service(
     app_id = uuid4()
     
     # Build registration metadata
+    import json
     registration_metadata = {
         "framework": app_data.framework,
         "mcp_version": app_data.mcp_version,
@@ -133,6 +134,7 @@ async def register_app_via_service(
         "service_account": service_account["service_name"],
         "timestamp": datetime.utcnow().isoformat()
     }
+    registration_metadata_json = json.dumps(registration_metadata)
     
     # Insert app into database with registration tracking
     await db.execute("""
@@ -151,7 +153,7 @@ async def register_app_via_service(
         True,  # Active immediately
         "mcp",  # registration_source
         service_account["service_id"],  # registered_by_service
-        registration_metadata,  # registration_metadata as JSONB
+        registration_metadata_json,  # registration_metadata as JSONB
         datetime.utcnow(), datetime.utcnow()
     )
     
