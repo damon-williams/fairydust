@@ -82,7 +82,18 @@ async def register_app_via_service(
     if not builder:
         # Create a new user for the builder
         # Generate a fairyname for them
-        from shared.auth_middleware import generate_fairyname
+        def generate_fairyname() -> str:
+            """Generate a unique fairyname for new users"""
+            import secrets
+            import string
+            adjectives = ["crystal", "lunar", "stellar", "mystic", "cosmic", "ethereal", "radiant", "twilight"]
+            nouns = ["spark", "dream", "wish", "star", "moon", "light", "dawn", "dusk"]
+            
+            adj = secrets.choice(adjectives)
+            noun = secrets.choice(nouns)
+            suffix = ''.join(secrets.choice(string.digits) for _ in range(4))
+            
+            return f"{adj}{noun}{suffix}"
         
         builder_id = uuid4()
         fairyname = generate_fairyname()
