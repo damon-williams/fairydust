@@ -37,7 +37,7 @@ async def verify_service_token(
     logger = logging.getLogger(__name__)
     
     # Check against environment variable
-    env_tokens = os.getenv("FAIRYDUST_SERVICE_TOKEN", "")
+    env_tokens = os.getenv("FAIRYDUST_SERVICE_TOKENS", "")
     logger.info(f"[Service] Raw env tokens: {env_tokens[:20]}... (length: {len(env_tokens)})")
     valid_tokens = [t.strip() for t in env_tokens.split(",") if t.strip()]
     logger.info(f"[Service] Checking token: {x_service_token[:8]}... against {len(valid_tokens)} valid tokens")
