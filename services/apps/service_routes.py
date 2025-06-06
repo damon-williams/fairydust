@@ -101,11 +101,12 @@ async def register_app_via_service(
         await db.execute("""
             INSERT INTO users (
                 id, email, fairyname, dust_balance, is_builder, 
-                created_at, updated_at
-            ) VALUES ($1, $2, $3, $4, $5, $6, $7)
+                auth_provider, created_at, updated_at
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
         """, 
             builder_id, app_data.builder_email, fairyname, 25,  # New users get 25 DUST
             True,  # Mark as builder
+            'mcp',  # auth_provider for MCP-created users
             datetime.utcnow(), datetime.utcnow()
         )
         
