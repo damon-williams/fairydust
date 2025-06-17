@@ -74,12 +74,14 @@ async def init_db():
     logger.info(f"Connecting to database: {safe_url}")
     logger.info(f"Environment: {environment}")
     
-    if environment in ["production", "staging"]:
-        # Create SSL context for production/staging (Railway requires this)
-        ssl_context = ssl.create_default_context()
-        ssl_context.check_hostname = False
-        ssl_context.verify_mode = ssl.CERT_NONE
-        logger.info("SSL enabled for production/staging")
+    # Temporarily disable SSL to test basic connectivity
+    # if environment in ["production", "staging"]:
+    #     # Create SSL context for production/staging (Railway requires this)
+    #     ssl_context = ssl.create_default_context()
+    #     ssl_context.check_hostname = False
+    #     ssl_context.verify_mode = ssl.CERT_NONE
+    #     logger.info("SSL enabled for production/staging")
+    logger.info(f"SSL disabled for debugging - ssl_context: {ssl_context}")
     
     try:
         _pool = await asyncpg.create_pool(
