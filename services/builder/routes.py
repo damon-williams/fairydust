@@ -26,7 +26,7 @@ async def login_page(request: Request, builder_user: Optional[dict] = Depends(op
     <!DOCTYPE html>
     <html>
     <head>
-        <title>Fairydust Builder Login</title>
+        <title>fairydust Builder Login</title>
         <meta name="viewport" content="width=device-width, initial-scale=1">
         <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
         <style>
@@ -43,8 +43,8 @@ async def login_page(request: Request, builder_user: Optional[dict] = Depends(op
                         <div class="card-body p-5">
                             <div class="text-center mb-4">
                                 <h1><i class="fas fa-hammer fairy-dust fs-1"></i></h1>
-                                <h2 class="h4">Fairydust Builder</h2>
-                                <p class="text-muted">Portal Access</p>
+                                <h2 class="h4">fairydust</h2>
+                                <p class="text-muted">Builder Portal</p>
                             </div>
                             
                             <form method="post" action="/builder/login" id="loginForm">
@@ -63,7 +63,7 @@ async def login_page(request: Request, builder_user: Optional[dict] = Depends(op
                                         Send OTP
                                     </button>
                                     <button type="submit" class="btn btn-primary" id="loginBtn" style="display: none;">
-                                        Login to Builder Portal
+                                        Log in
                                     </button>
                                 </div>
                             </form>
