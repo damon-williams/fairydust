@@ -25,7 +25,7 @@ async def login_page(request: Request, admin_user: Optional[dict] = Depends(opti
     <!DOCTYPE html>
     <html>
     <head>
-        <title>Fairydust Admin Login</title>
+        <title>fairydust Admin Login</title>
         <meta name="viewport" content="width=device-width, initial-scale=1">
         <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
         <style>
@@ -42,7 +42,7 @@ async def login_page(request: Request, admin_user: Optional[dict] = Depends(opti
                         <div class="card-body p-5">
                             <div class="text-center mb-4">
                                 <h1><i class="fas fa-magic fairy-dust fs-1"></i></h1>
-                                <h2 class="h4">Fairydust Admin</h2>
+                                <h2 class="h4">fairydust</h2>
                             </div>
                             
                             <form method="post" action="/admin/login" id="loginForm">
@@ -229,7 +229,7 @@ async def dashboard(
     <!DOCTYPE html>
     <html>
     <head>
-        <title>Fairydust Admin Dashboard</title>
+        <title>fairydust Admin Dashboard</title>
         <meta name="viewport" content="width=device-width, initial-scale=1">
         <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
         <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
@@ -246,7 +246,7 @@ async def dashboard(
         <nav class="navbar navbar-expand-lg navbar-dark bg-primary">
             <div class="container-fluid">
                 <a class="navbar-brand" href="/admin/dashboard">
-                    <i class="fas fa-magic fairy-dust"></i> Fairydust Admin
+                    <i class="fas fa-magic fairy-dust"></i> fairydust
                 </a>
                 <div class="navbar-nav ms-auto">
                     <span class="navbar-text me-3">Welcome, {admin_user['fairyname']}</span>
@@ -425,7 +425,7 @@ async def users_list(
     <!DOCTYPE html>
     <html>
     <head>
-        <title>User Management - Fairydust Admin</title>
+        <title>User Management - fairydust Admin</title>
         <meta name="viewport" content="width=device-width, initial-scale=1">
         <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
         <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
@@ -437,7 +437,7 @@ async def users_list(
         <nav class="navbar navbar-expand-lg navbar-dark bg-primary">
             <div class="container-fluid">
                 <a class="navbar-brand" href="/admin/dashboard">
-                    <i class="fas fa-magic fairy-dust"></i> Fairydust Admin
+                    <i class="fas fa-magic fairy-dust"></i> fairydust
                 </a>
                 <div class="navbar-nav ms-auto">
                     <span class="navbar-text me-3">Welcome, {admin_user['fairyname']}</span>
@@ -667,7 +667,7 @@ async def apps_list(
     <!DOCTYPE html>
     <html>
     <head>
-        <title>App Management - Fairydust Admin</title>
+        <title>App Management - fairydust Admin</title>
         <meta name="viewport" content="width=device-width, initial-scale=1">
         <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
         <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
@@ -679,7 +679,7 @@ async def apps_list(
         <nav class="navbar navbar-expand-lg navbar-dark bg-primary">
             <div class="container-fluid">
                 <a class="navbar-brand" href="/admin/dashboard">
-                    <i class="fas fa-magic fairy-dust"></i> Fairydust Admin
+                    <i class="fas fa-magic fairy-dust"></i> fairydust
                 </a>
                 <div class="navbar-nav ms-auto">
                     <span class="navbar-text me-3">Welcome, {admin_user['fairyname']}</span>
