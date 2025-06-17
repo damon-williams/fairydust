@@ -26,7 +26,7 @@ async def login_page(request: Request, builder_user: Optional[dict] = Depends(op
     <!DOCTYPE html>
     <html>
     <head>
-        <title>Fairydust Builder Login</title>
+        <title>fairydust Builder Login</title>
         <meta name="viewport" content="width=device-width, initial-scale=1">
         <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
         <style>
@@ -43,8 +43,8 @@ async def login_page(request: Request, builder_user: Optional[dict] = Depends(op
                         <div class="card-body p-5">
                             <div class="text-center mb-4">
                                 <h1><i class="fas fa-hammer fairy-dust fs-1"></i></h1>
-                                <h2 class="h4">Fairydust Builder</h2>
-                                <p class="text-muted">Portal Access</p>
+                                <h2 class="h4">fairydust</h2>
+                                <p class="text-muted">Builder Portal</p>
                             </div>
                             
                             <form method="post" action="/builder/login" id="loginForm">
@@ -63,7 +63,7 @@ async def login_page(request: Request, builder_user: Optional[dict] = Depends(op
                                         Send OTP
                                     </button>
                                     <button type="submit" class="btn btn-primary" id="loginBtn" style="display: none;">
-                                        Login to Builder Portal
+                                        Log in
                                     </button>
                                 </div>
                             </form>
@@ -264,7 +264,7 @@ async def dashboard(
                     <p class="text-muted small">Created: {app["created_at"].strftime('%m/%d/%Y')}</p>
                 </div>
                 <div class="card-footer">
-                    <button class="btn btn-sm btn-outline-primary" onclick="copyAppId('{str(app["id"])}')">Copy App ID</button>
+                    <button class="btn btn-sm btn-outline-primary" onclick="copyAppId('{str(app["id"])}', this)">Copy App ID</button>
                 </div>
             </div>
         </div>
@@ -302,7 +302,7 @@ async def dashboard(
         <nav class="navbar navbar-expand-lg navbar-dark bg-primary">
             <div class="container-fluid">
                 <a class="navbar-brand" href="/builder/dashboard">
-                    <i class="fas fa-hammer fairy-dust"></i> Fairydust Builder
+                    <i class="fas fa-magic fairy-dust"></i> fairydust
                 </a>
                 <div class="navbar-nav ms-auto">
                     <span class="navbar-text me-3">Welcome, {builder_user['fairyname']}</span>
@@ -417,9 +417,9 @@ async def dashboard(
         
         <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
         <script>
-            function copyAppId(appId) {{
+            function copyAppId(appId, button) {{
                 navigator.clipboard.writeText(appId).then(function() {{
-                    alert('App ID copied to clipboard!');
+                    showCopyFeedback();
                 }}).catch(function() {{
                     // Fallback for older browsers
                     const textArea = document.createElement('textarea');
@@ -428,8 +428,18 @@ async def dashboard(
                     textArea.select();
                     document.execCommand('copy');
                     document.body.removeChild(textArea);
-                    alert('App ID copied to clipboard!');
+                    showCopyFeedback();
                 }});
+                
+                function showCopyFeedback() {{
+                    const feedback = document.getElementById('copyFeedback');
+                    if (feedback) {{
+                        feedback.style.display = 'inline';
+                        setTimeout(() => {{
+                            feedback.style.display = 'none';
+                        }}, 2000);
+                    }}
+                }}
             }}
         </script>
     </body>
@@ -457,7 +467,7 @@ async def new_app_form(
         <nav class="navbar navbar-expand-lg navbar-dark bg-primary">
             <div class="container-fluid">
                 <a class="navbar-brand" href="/builder/dashboard">
-                    <i class="fas fa-hammer fairy-dust"></i> Fairydust Builder
+                    <i class="fas fa-magic fairy-dust"></i> fairydust
                 </a>
                 <div class="navbar-nav ms-auto">
                     <span class="navbar-text me-3">Welcome, {builder_user['fairyname']}</span>
@@ -520,13 +530,8 @@ async def new_app_form(
                                     <div class="form-text">PNG or JPG, recommended 256x256px</div>
                                 </div>
                                 
-                                <div class="alert alert-success">
-                                    <h6><i class="fas fa-rocket me-2"></i>Ready to Launch</h6>
-                                    <p class="mb-0">Your app will be instantly registered and you'll receive your App ID immediately. Start earning DUST right away!</p>
-                                </div>
-                                
                                 <div class="d-grid">
-                                    <button type="submit" class="btn btn-primary">Register App & Get App ID</button>
+                                    <button type="submit" class="btn btn-primary">Register App</button>
                                 </div>
                             </form>
                         </div>
@@ -614,7 +619,7 @@ async def app_success(
         <nav class="navbar navbar-expand-lg navbar-dark bg-primary">
             <div class="container-fluid">
                 <a class="navbar-brand" href="/builder/dashboard">
-                    <i class="fas fa-hammer fairy-dust"></i> Fairydust Builder
+                    <i class="fas fa-magic fairy-dust"></i> fairydust
                 </a>
                 <div class="navbar-nav ms-auto">
                     <span class="navbar-text me-3">Welcome, {builder_user['fairyname']}</span>
@@ -636,16 +641,13 @@ async def app_success(
                                 <p class="mb-2"><strong>Your App ID:</strong></p>
                                 <div class="d-flex align-items-center justify-content-center">
                                     <span id="appId">{str(app['id'])}</span>
-                                    <button class="btn btn-sm btn-outline-primary ms-3" onclick="copyAppId('{str(app['id'])}')">
+                                    <button class="btn btn-sm btn-outline-primary ms-3" onclick="copyAppId('{str(app['id'])}', this)">
                                         <i class="fas fa-copy"></i> Copy
                                     </button>
+                                    <span id="copyFeedback" class="text-success ms-2" style="display: none;">Copied!</span>
                                 </div>
                             </div>
                             
-                            <div class="alert alert-info">
-                                <i class="fas fa-info-circle me-2"></i>
-                                Use this App ID in your API calls to start earning DUST for each usage.
-                            </div>
                             
                             <div class="d-grid gap-2 d-md-block">
                                 <a href="/builder/dashboard" class="btn btn-primary">
@@ -663,9 +665,9 @@ async def app_success(
         
         <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
         <script>
-            function copyAppId(appId) {{
+            function copyAppId(appId, button) {{
                 navigator.clipboard.writeText(appId).then(function() {{
-                    alert('App ID copied to clipboard!');
+                    showCopyFeedback();
                 }}).catch(function() {{
                     // Fallback for older browsers
                     const textArea = document.createElement('textarea');
@@ -674,8 +676,18 @@ async def app_success(
                     textArea.select();
                     document.execCommand('copy');
                     document.body.removeChild(textArea);
-                    alert('App ID copied to clipboard!');
+                    showCopyFeedback();
                 }});
+                
+                function showCopyFeedback() {{
+                    const feedback = document.getElementById('copyFeedback');
+                    if (feedback) {{
+                        feedback.style.display = 'inline';
+                        setTimeout(() => {{
+                            feedback.style.display = 'none';
+                        }}, 2000);
+                    }}
+                }}
             }}
         </script>
     </body>
