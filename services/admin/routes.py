@@ -43,6 +43,7 @@ async def login_page(request: Request, admin_user: Optional[dict] = Depends(opti
                             <div class="text-center mb-4">
                                 <h1><i class="fas fa-magic fairy-dust fs-1"></i></h1>
                                 <h2 class="h4">fairydust</h2>
+                                <p class="text-muted">Admin Portal</p>
                             </div>
                             
                             <form method="post" action="/admin/login" id="loginForm">
@@ -256,7 +257,7 @@ async def dashboard(
         </nav>
         
         <div class="container-fluid mt-4">
-            <h1>Dashboard</h1>
+            <h1>Admin Dashboard</h1>
             
             <!-- Stats Cards -->
             <div class="row mb-4">
@@ -449,7 +450,7 @@ async def users_list(
         <div class="container-fluid mt-4">
             <div class="d-flex justify-content-between align-items-center mb-4">
                 <h1><i class="fas fa-users me-2"></i>User Management</h1>
-                <a href="/admin/dashboard" class="btn btn-secondary">← Back to Dashboard</a>
+                <a href="/admin/dashboard" class="btn btn-secondary">← Back to Admin Dashboard</a>
             </div>
             
             <div class="card">
@@ -691,7 +692,7 @@ async def apps_list(
         <div class="container-fluid mt-4">
             <div class="d-flex justify-content-between align-items-center mb-4">
                 <h1><i class="fas fa-mobile-alt me-2"></i>App Management</h1>
-                <a href="/admin/dashboard" class="btn btn-secondary">← Back to Dashboard</a>
+                <a href="/admin/dashboard" class="btn btn-secondary">← Back to Admin Dashboard</a>
             </div>
             
             <div class="card">
