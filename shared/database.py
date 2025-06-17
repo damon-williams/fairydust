@@ -5,8 +5,13 @@ import asyncpg
 from typing import Optional, List, Dict, Any
 from contextlib import asynccontextmanager
 
-# Database configuration
+# Database configuration - DEBUG Railway environment variable issues
+import logging
+logger = logging.getLogger(__name__)
+
 DATABASE_URL = os.getenv("DATABASE_URL")
+logger.error(f"🔍 DATABASE_URL from env: {DATABASE_URL[:50] if DATABASE_URL else 'None'}...")
+
 if not DATABASE_URL:
     # Build from individual components if DATABASE_URL not provided
     DB_HOST = os.getenv("DB_HOST", "localhost")
@@ -15,11 +20,22 @@ if not DATABASE_URL:
     DB_USER = os.getenv("DB_USER", "postgres")
     DB_PASSWORD = os.getenv("DB_PASSWORD", "")
     
+    logger.error(f"🔍 Building DATABASE_URL from components: host={DB_HOST}, port={DB_PORT}")
     DATABASE_URL = f"postgresql://{DB_USER}:{DB_PASSWORD}@{DB_HOST}:{DB_PORT}/{DB_NAME}"
+    logger.error(f"🔍 Built DATABASE_URL: {DATABASE_URL[:50]}...")
 else:
     # Fix Railway's postgres:// to postgresql:// for asyncpg compatibility
     if DATABASE_URL.startswith("postgres://"):
         DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql://", 1)
+        logger.error("🔍 Fixed postgres:// to postgresql://")
+
+# Show all environment variables that might be relevant
+import os
+logger.error(f"🔍 Environment check:")
+logger.error(f"🔍 ENVIRONMENT: {os.getenv('ENVIRONMENT')}")
+logger.error(f"🔍 RAILWAY_ENVIRONMENT: {os.getenv('RAILWAY_ENVIRONMENT')}")
+logger.error(f"🔍 All env vars starting with DB: {[k for k in os.environ.keys() if k.startswith('DB')]}")
+logger.error(f"🔍 Final DATABASE_URL: {DATABASE_URL[:50]}...")
 
 # Connection pool
 _pool: Optional[asyncpg.Pool] = None
