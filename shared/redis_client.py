@@ -3,18 +3,30 @@ import os
 import redis.asyncio as redis
 from typing import Optional
 
-# Redis configuration
+# Redis configuration - DEBUG Railway environment variable issues
+import logging
+logger = logging.getLogger(__name__)
+
 REDIS_URL = os.getenv("REDIS_URL")
+logger.error(f"🔍 REDIS_URL from env: {REDIS_URL}")
+
 if not REDIS_URL:
     REDIS_HOST = os.getenv("REDIS_HOST", "localhost")
     REDIS_PORT = int(os.getenv("REDIS_PORT", "6379"))
     REDIS_PASSWORD = os.getenv("REDIS_PASSWORD", None)
     REDIS_DB = int(os.getenv("REDIS_DB", "0"))
     
+    logger.error(f"🔍 Building REDIS_URL from components: host={REDIS_HOST}, port={REDIS_PORT}")
+    
     if REDIS_PASSWORD:
         REDIS_URL = f"redis://:{REDIS_PASSWORD}@{REDIS_HOST}:{REDIS_PORT}/{REDIS_DB}"
     else:
         REDIS_URL = f"redis://{REDIS_HOST}:{REDIS_PORT}/{REDIS_DB}"
+    logger.error(f"🔍 Built REDIS_URL: {REDIS_URL}")
+
+# Show all Redis-related environment variables
+logger.error(f"🔍 All REDIS env vars: {[k for k in os.environ.keys() if 'REDIS' in k.upper()]}")
+logger.error(f"🔍 Final REDIS_URL: {REDIS_URL}")
 
 # Global Redis client
 _redis_client: Optional[redis.Redis] = None
