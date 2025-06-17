@@ -302,7 +302,7 @@ async def dashboard(
         <nav class="navbar navbar-expand-lg navbar-dark bg-primary">
             <div class="container-fluid">
                 <a class="navbar-brand" href="/builder/dashboard">
-                    <i class="fas fa-hammer fairy-dust"></i> Fairydust Builder
+                    <i class="fas fa-magic fairy-dust"></i> fairydust
                 </a>
                 <div class="navbar-nav ms-auto">
                     <span class="navbar-text me-3">Welcome, {builder_user['fairyname']}</span>
@@ -467,7 +467,7 @@ async def new_app_form(
         <nav class="navbar navbar-expand-lg navbar-dark bg-primary">
             <div class="container-fluid">
                 <a class="navbar-brand" href="/builder/dashboard">
-                    <i class="fas fa-hammer fairy-dust"></i> Fairydust Builder
+                    <i class="fas fa-magic fairy-dust"></i> fairydust
                 </a>
                 <div class="navbar-nav ms-auto">
                     <span class="navbar-text me-3">Welcome, {builder_user['fairyname']}</span>
@@ -619,7 +619,7 @@ async def app_success(
         <nav class="navbar navbar-expand-lg navbar-dark bg-primary">
             <div class="container-fluid">
                 <a class="navbar-brand" href="/builder/dashboard">
-                    <i class="fas fa-hammer fairy-dust"></i> Fairydust Builder
+                    <i class="fas fa-magic fairy-dust"></i> fairydust
                 </a>
                 <div class="navbar-nav ms-auto">
                     <span class="navbar-text me-3">Welcome, {builder_user['fairyname']}</span>
