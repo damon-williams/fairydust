@@ -1,6 +1,6 @@
 # CLAUDE.md
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository..
 
 ## Commands
 
@@ -33,10 +33,35 @@ pytest --cov=. --cov-report=term-missing
 pytest tests/test_auth.py::test_request_otp_email
 ```
 
-### Deployment
+### Deployment - CRITICAL GIT WORKFLOW
+
+**🚨 NEVER COMMIT DIRECTLY TO MAIN BRANCH 🚨**
+
+**Correct Git Workflow:**
+1. **Always work on `develop` branch**
+2. **Test in staging environment first** 
+3. **Only merge to `main` via Pull Request after staging validation**
+
 ```bash
-railway up  # Deploy to Railway
+# Correct workflow:
+git checkout develop          # Work on develop branch
+git add .
+git commit -m "feature"  
+git push origin develop      # Deploy to staging via develop branch
+
+# Test in staging environment thoroughly
+
+# Only after staging approval:
+# Create PR: develop → main (for production deployment)
 ```
+
+**Branch Strategy:**
+- `develop` → Staging environment (test everything here)
+- `main` → Production environment (only via PR after staging approval)
+
+**Railway Deployment:**
+- Develop branch auto-deploys to: `*-staging.up.railway.app`
+- Main branch auto-deploys to: `*-production.up.railway.app`
 
 ## Architecture Overview
 
@@ -44,9 +69,10 @@ fairydust is a microservices-based payment and identity platform for AI-powered 
 
 ### Service Architecture
 - **Identity Service** (port 8001): Authentication, user management, OAuth, OTP verification
-- **Ledger Service** (planned): DUST balance tracking and transactions
-- **Billing Service** (planned): Stripe integration for payments
-- **Apps Service** (planned): App marketplace and consumption tracking
+- **Ledger Service** (port 8002): DUST balance tracking and transactions
+- **Apps Service** (port 8003): App marketplace and consumption tracking
+- **Admin Portal** (port 8004): Admin dashboard for user/app management
+- **Builder Portal** (port 8005): Builder dashboard for app submission/management
 
 ### Shared Infrastructure
 - **PostgreSQL**: Primary database with UUID keys, timestamps, and JSONB metadata

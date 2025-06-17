@@ -120,10 +120,12 @@ async def login(
     )
     
     if not user:
-        return templates.TemplateResponse(
-            "login.html", 
-            {"request": request, "error": "Admin access required"}
-        )
+        return HTMLResponse("""
+            <script>
+                alert('Admin access required. Please contact support.');
+                window.location.href = '/admin/login';
+            </script>
+        """)
     
     # Verify OTP via identity service
     async with httpx.AsyncClient() as client:
@@ -134,15 +136,19 @@ async def login(
             )
             
             if response.status_code != 200:
-                return templates.TemplateResponse(
-                    "login.html",
-                    {"request": request, "error": "Invalid OTP"}
-                )
+                return HTMLResponse("""
+                    <script>
+                        alert('Invalid OTP');
+                        window.location.href = '/admin/login';
+                    </script>
+                """)
         except Exception:
-            return templates.TemplateResponse(
-                "login.html",
-                {"request": request, "error": "Authentication service unavailable"}
-            )
+            return HTMLResponse("""
+                <script>
+                    alert('Authentication service unavailable');
+                    window.location.href = '/admin/login';
+                </script>
+            """)
     
     # Create admin session
     redis_client = await get_redis()
@@ -397,8 +403,19 @@ async def users_list(
             <td>{admin_badge}{builder_badge}</td>
             <td>{status_badge}</td>
             <td>
-                <button class="btn btn-sm btn-primary" onclick="grantDust('{user["id"]}', '{user["fairyname"]}')">
-                    <i class="fas fa-magic"></i> Grant DUST
+                <button class="btn btn-sm btn-primary me-1" onclick="grantDust('{user["id"]}', '{user["fairyname"]}')">
+                    <i class="fas fa-magic"></i>
+                </button>
+                <button class="btn btn-sm {'btn-info' if user["is_builder"] else 'btn-outline-info'} me-1" 
+                        onclick="toggleBuilder('{user["id"]}', '{user["fairyname"]}', {str(user["is_builder"]).lower()})"
+                        title="{'Remove' if user["is_builder"] else 'Grant'} Builder Access">
+                    <i class="fas fa-hammer"></i>
+                </button>
+                <button class="btn btn-sm {'btn-danger' if user["is_admin"] else 'btn-outline-danger'}" 
+                        onclick="toggleAdmin('{user["id"]}', '{user["fairyname"]}', {str(user["is_admin"]).lower()})"
+                        title="{'Remove' if user["is_admin"] else 'Grant'} Admin Access"
+                        {'disabled' if user["id"] == admin_user["user_id"] and user["is_admin"] else ''}>
+                    <i class="fas fa-user-shield"></i>
                 </button>
             </td>
         </tr>
@@ -484,6 +501,28 @@ async def users_list(
                     form.submit();
                 }}
             }}
+            
+            function toggleBuilder(userId, userName, isCurrentlyBuilder) {{
+                const action = isCurrentlyBuilder ? 'remove' : 'grant';
+                if (confirm(`${{action === 'grant' ? 'Grant' : 'Remove'}} builder access for ${{userName}}?`)) {{
+                    const form = document.createElement('form');
+                    form.method = 'POST';
+                    form.action = `/admin/users/${{userId}}/toggle-builder`;
+                    document.body.appendChild(form);
+                    form.submit();
+                }}
+            }}
+            
+            function toggleAdmin(userId, userName, isCurrentlyAdmin) {{
+                const action = isCurrentlyAdmin ? 'remove' : 'grant';
+                if (confirm(`${{action === 'grant' ? 'Grant' : 'Remove'}} admin access for ${{userName}}?`)) {{
+                    const form = document.createElement('form');
+                    form.method = 'POST';
+                    form.action = `/admin/users/${{userId}}/toggle-admin`;
+                    document.body.appendChild(form);
+                    form.submit();
+                }}
+            }}
         </script>
     </body>
     </html>
@@ -523,6 +562,26 @@ async def grant_dust(
         )
     
     return RedirectResponse(url=f"/admin/users?granted={amount}", status_code=302)
+
+@admin_router.post("/users/{user_id}/toggle-builder")
+async def toggle_builder(
+    user_id: str,
+    admin_user: dict = Depends(get_current_admin_user),
+    db: Database = Depends(get_db)
+):
+    # Verify user exists
+    user = await db.fetch_one("SELECT * FROM users WHERE id = $1", user_id)
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    
+    # Toggle builder status
+    new_builder_status = not user["is_builder"]
+    await db.execute(
+        "UPDATE users SET is_builder = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2",
+        new_builder_status, user_id
+    )
+    
+    return RedirectResponse(url="/admin/users", status_code=302)
 
 @admin_router.post("/users/{user_id}/toggle-admin")
 async def toggle_admin(
