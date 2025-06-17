@@ -73,6 +73,32 @@ async def init_db():
     safe_url = DATABASE_URL.split('@')[0].split('//')[0] + '//' + '***:***@' + DATABASE_URL.split('@')[1] if '@' in DATABASE_URL else DATABASE_URL
     logger.info(f"Connecting to database: {safe_url}")
     logger.info(f"Environment: {environment}")
+    logger.info(f"Full DATABASE_URL length: {len(DATABASE_URL)}")
+    logger.info(f"DATABASE_URL starts with: {DATABASE_URL[:30]}...")
+    
+    # Test basic connectivity
+    import socket
+    try:
+        if '@' in DATABASE_URL:
+            host_part = DATABASE_URL.split('@')[1].split('/')[0]
+            if ':' in host_part:
+                host, port = host_part.split(':')
+                port = int(port)
+            else:
+                host, port = host_part, 5432
+            
+            logger.info(f"Testing TCP connection to {host}:{port}")
+            sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            sock.settimeout(5)
+            result = sock.connect_ex((host, port))
+            sock.close()
+            
+            if result == 0:
+                logger.info(f"✅ TCP connection to {host}:{port} successful")
+            else:
+                logger.error(f"❌ TCP connection to {host}:{port} failed with code: {result}")
+    except Exception as e:
+        logger.error(f"Socket test failed: {e}")
     
     # Temporarily disable SSL to test basic connectivity
     # if environment in ["production", "staging"]:
@@ -84,19 +110,25 @@ async def init_db():
     logger.info(f"SSL disabled for debugging - ssl_context: {ssl_context}")
     
     try:
+        # Force no SSL for Railway debugging
         _pool = await asyncpg.create_pool(
             DATABASE_URL,
-            ssl=ssl_context,  # Add SSL context
-            min_size=10,
-            max_size=20,
-            max_queries=50000,
-            max_cached_statement_lifetime=300,
-            command_timeout=60,
+            ssl=False,  # Explicitly disable SSL
+            min_size=2,  # Reduce pool size for testing
+            max_size=5,
+            command_timeout=30,
         )
         logger.info("Database connection pool created successfully")
     except Exception as e:
         logger.error(f"Failed to create database pool: {e}")
         logger.error(f"DATABASE_URL format: {DATABASE_URL[:20]}...")
+        # Try to extract host info from URL for debugging
+        try:
+            if '@' in DATABASE_URL:
+                host_info = DATABASE_URL.split('@')[1].split('/')[0]
+                logger.error(f"Trying to connect to host: {host_info}")
+        except:
+            pass
         raise
     
     # Create tables if they don't exist (skip in production if SKIP_SCHEMA_INIT is set)
