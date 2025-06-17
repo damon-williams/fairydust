@@ -10,6 +10,11 @@ logger = logging.getLogger(__name__)
 REDIS_URL = os.getenv("REDIS_URL")
 logger.error(f"🔍 STAGING REDIS_URL from env: {REDIS_URL}")
 
+# Fix malformed REDIS_URL (Railway sometimes adds prefix)
+if REDIS_URL and REDIS_URL.startswith("REDIS_URL="):
+    REDIS_URL = REDIS_URL.replace("REDIS_URL=", "", 1)
+    logger.error(f"🔍 STAGING Fixed REDIS_URL: {REDIS_URL}")
+
 if not REDIS_URL:
     REDIS_HOST = os.getenv("REDIS_HOST", "localhost")
     REDIS_PORT = int(os.getenv("REDIS_PORT", "6379"))
