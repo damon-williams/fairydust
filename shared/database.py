@@ -16,6 +16,10 @@ if not DATABASE_URL:
     DB_PASSWORD = os.getenv("DB_PASSWORD", "")
     
     DATABASE_URL = f"postgresql://{DB_USER}:{DB_PASSWORD}@{DB_HOST}:{DB_PORT}/{DB_NAME}"
+else:
+    # Fix Railway's postgres:// to postgresql:// for asyncpg compatibility
+    if DATABASE_URL.startswith("postgres://"):
+        DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql://", 1)
 
 # Connection pool
 _pool: Optional[asyncpg.Pool] = None
@@ -63,21 +67,35 @@ async def init_db():
     ssl_context = None
     environment = os.getenv("ENVIRONMENT", "development")
     
+    # Log connection details for debugging (without password)
+    import logging
+    logger = logging.getLogger(__name__)
+    safe_url = DATABASE_URL.split('@')[0].split('//')[0] + '//' + '***:***@' + DATABASE_URL.split('@')[1] if '@' in DATABASE_URL else DATABASE_URL
+    logger.info(f"Connecting to database: {safe_url}")
+    logger.info(f"Environment: {environment}")
+    
     if environment in ["production", "staging"]:
         # Create SSL context for production/staging (Railway requires this)
         ssl_context = ssl.create_default_context()
         ssl_context.check_hostname = False
         ssl_context.verify_mode = ssl.CERT_NONE
+        logger.info("SSL enabled for production/staging")
     
-    _pool = await asyncpg.create_pool(
-        DATABASE_URL,
-        ssl=ssl_context,  # Add SSL context
-        min_size=10,
-        max_size=20,
-        max_queries=50000,
-        max_cached_statement_lifetime=300,
-        command_timeout=60,
-    )
+    try:
+        _pool = await asyncpg.create_pool(
+            DATABASE_URL,
+            ssl=ssl_context,  # Add SSL context
+            min_size=10,
+            max_size=20,
+            max_queries=50000,
+            max_cached_statement_lifetime=300,
+            command_timeout=60,
+        )
+        logger.info("Database connection pool created successfully")
+    except Exception as e:
+        logger.error(f"Failed to create database pool: {e}")
+        logger.error(f"DATABASE_URL format: {DATABASE_URL[:20]}...")
+        raise
     
     # Create tables if they don't exist (skip in production if SKIP_SCHEMA_INIT is set)
     skip_schema_init = os.getenv("SKIP_SCHEMA_INIT", "false").lower() == "true"
