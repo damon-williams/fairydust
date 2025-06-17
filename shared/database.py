@@ -100,36 +100,47 @@ async def init_db():
     except Exception as e:
         logger.error(f"Socket test failed: {e}")
     
-    # Temporarily disable SSL to test basic connectivity
-    # if environment in ["production", "staging"]:
-    #     # Create SSL context for production/staging (Railway requires this)
-    #     ssl_context = ssl.create_default_context()
-    #     ssl_context.check_hostname = False
-    #     ssl_context.verify_mode = ssl.CERT_NONE
-    #     logger.info("SSL enabled for production/staging")
-    logger.info(f"SSL disabled for debugging - ssl_context: {ssl_context}")
+    # Railway PostgreSQL requires SSL - try different SSL configurations
+    if environment in ["production", "staging"]:
+        # Try Railway's preferred SSL settings
+        ssl_context = ssl.create_default_context()
+        ssl_context.check_hostname = False
+        ssl_context.verify_mode = ssl.CERT_NONE
+        logger.info("SSL enabled with Railway settings")
+    else:
+        logger.info("SSL disabled for local development")
     
-    try:
-        # Force no SSL for Railway debugging
-        _pool = await asyncpg.create_pool(
-            DATABASE_URL,
-            ssl=False,  # Explicitly disable SSL
-            min_size=2,  # Reduce pool size for testing
-            max_size=5,
-            command_timeout=30,
-        )
-        logger.info("Database connection pool created successfully")
-    except Exception as e:
-        logger.error(f"Failed to create database pool: {e}")
-        logger.error(f"DATABASE_URL format: {DATABASE_URL[:20]}...")
-        # Try to extract host info from URL for debugging
+    # Try multiple connection approaches
+    connection_attempts = [
+        {"ssl": ssl_context, "desc": "with SSL"},
+        {"ssl": "require", "desc": "with SSL require"},
+        {"ssl": False, "desc": "without SSL"}
+    ]
+    
+    last_error = None
+    for attempt in connection_attempts:
         try:
-            if '@' in DATABASE_URL:
-                host_info = DATABASE_URL.split('@')[1].split('/')[0]
-                logger.error(f"Trying to connect to host: {host_info}")
-        except:
-            pass
-        raise
+            logger.info(f"Attempting connection {attempt['desc']}")
+            _pool = await asyncpg.create_pool(
+                DATABASE_URL,
+                ssl=attempt["ssl"],
+                min_size=2,
+                max_size=5,
+                command_timeout=30,
+            )
+            logger.info(f"✅ Connection successful {attempt['desc']}")
+            break
+        except Exception as e:
+            logger.error(f"❌ Connection failed {attempt['desc']}: {e}")
+            last_error = e
+            continue
+    else:
+        # All attempts failed
+        logger.error("All connection attempts failed")
+        if last_error:
+            raise last_error
+        else:
+            raise Exception("Could not establish database connection")
     
     # Create tables if they don't exist (skip in production if SKIP_SCHEMA_INIT is set)
     skip_schema_init = os.getenv("SKIP_SCHEMA_INIT", "false").lower() == "true"
