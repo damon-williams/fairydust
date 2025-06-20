@@ -1,8 +1,11 @@
 from fastapi import Depends, APIRouter, HTTPException, Depends, BackgroundTasks, status, Security
-from typing import Optional
+from typing import Optional, List
 import secrets
 import string
 from uuid import uuid4
+import json
+import httpx
+import os
 
 from models import (
     OTPRequest, OTPVerify, OAuthCallback, 
@@ -693,3 +696,437 @@ async def get_person_profile_data(
     )
     
     return [PersonProfileData(**data) for data in profile_data]
+
+@user_router.get("/{user_id}/ai-context", response_model=AIContextResponse)
+async def get_ai_context(
+    user_id: str,
+    current_user: TokenData = Depends(get_current_user),
+    db: Database = Depends(get_db),
+    redis_client = Depends(get_redis),
+    app_id: Optional[str] = None
+):
+    """Get AI context for LLM personalization"""
+    if current_user.user_id != user_id and not current_user.is_admin:
+        raise HTTPException(status_code=403, detail="Access denied")
+    
+    # Check cache first
+    cache_key = f"ai_context:{user_id}"
+    if app_id:
+        cache_key += f":{app_id}"
+    
+    cached_context = await redis_client.get(cache_key)
+    if cached_context:
+        return AIContextResponse(**json.loads(cached_context))
+    
+    # Get user profile data
+    user_profile = await db.fetch_all(
+        "SELECT * FROM user_profile_data WHERE user_id = $1",
+        user_id
+    )
+    
+    # Get people in user's life with their profile data
+    people = await db.fetch_all(
+        """
+        SELECT p.*, 
+               COALESCE(
+                   json_agg(
+                       json_build_object(
+                           'field_name', ppd.field_name,
+                           'field_value', ppd.field_value,
+                           'category', ppd.category
+                       )
+                   ) FILTER (WHERE ppd.id IS NOT NULL), 
+                   '[]'
+               ) as profile_data
+        FROM people_in_my_life p
+        LEFT JOIN person_profile_data ppd ON p.id = ppd.person_id
+        WHERE p.user_id = $1
+        GROUP BY p.id, p.name, p.age_range, p.relationship, p.created_at, p.updated_at
+        ORDER BY p.created_at ASC
+        """,
+        user_id
+    )
+    
+    # Build user context string
+    user_traits = {}
+    for profile in user_profile:
+        category = profile['category']
+        field_name = profile['field_name']
+        field_value = profile['field_value']
+        
+        if category not in user_traits:
+            user_traits[category] = {}
+        user_traits[category][field_name] = field_value
+    
+    user_context_parts = []
+    
+    # Add personality traits
+    if 'personality' in user_traits:
+        personality = user_traits['personality']
+        if 'adventure_level' in personality:
+            level = personality['adventure_level']
+            if level >= 4:
+                user_context_parts.append("Adventure level: high")
+            elif level >= 3:
+                user_context_parts.append("Adventure level: moderate") 
+            else:
+                user_context_parts.append("Adventure level: low")
+        
+        if 'creativity_level' in personality:
+            level = personality['creativity_level']
+            if level >= 4:
+                user_context_parts.append("Creativity level: very creative")
+            elif level >= 3:
+                user_context_parts.append("Creativity level: creative")
+            else:
+                user_context_parts.append("Creativity level: practical")
+    
+    # Add interests
+    if 'interests' in user_traits and 'interests' in user_traits['interests']:
+        interests = user_traits['interests']['interests']
+        if isinstance(interests, list):
+            user_context_parts.append(f"Interests: {', '.join(interests)}")
+    
+    # Add goals
+    if 'goals' in user_traits and 'lifestyle_goals' in user_traits['goals']:
+        goals = user_traits['goals']['lifestyle_goals']
+        if isinstance(goals, list):
+            user_context_parts.append(f"Goals: {', '.join(goals)}")
+    
+    # Add dietary preferences
+    if 'cooking' in user_traits and 'dietary_preferences' in user_traits['cooking']:
+        dietary = user_traits['cooking']['dietary_preferences']
+        if isinstance(dietary, list):
+            user_context_parts.append(f"Dietary: {', '.join(dietary)}")
+    
+    user_context = ". ".join(user_context_parts) if user_context_parts else "No profile data available"
+    
+    # Build relationship context
+    relationship_context = []
+    for person in people:
+        name = person['name']
+        age_range = person['age_range'] or 'unknown age'
+        relationship = person['relationship'] or 'person'
+        
+        person_context_parts = []
+        profile_data = person['profile_data']
+        
+        # Parse person's profile data
+        person_traits = {}
+        for data in profile_data:
+            if data['field_name'] and data['field_value']:
+                person_traits[data['field_name']] = data['field_value']
+        
+        # Build person context
+        if 'interests' in person_traits:
+            interests = person_traits['interests']
+            if isinstance(interests, list):
+                person_context_parts.append(f"Interests: {', '.join(interests)}")
+        
+        if 'food_preferences' in person_traits:
+            food_prefs = person_traits['food_preferences']
+            if isinstance(food_prefs, dict):
+                if 'likes' in food_prefs:
+                    person_context_parts.append(f"Likes: {', '.join(food_prefs['likes'])}")
+                if 'dislikes' in food_prefs:
+                    person_context_parts.append(f"Dislikes: {', '.join(food_prefs['dislikes'])}")
+        
+        person_context = ". ".join(person_context_parts) if person_context_parts else "Limited profile data"
+        
+        relationship_context.append({
+            "person": f"{name} ({relationship}, {age_range})",
+            "relationship": relationship,
+            "context": person_context,
+            "suggestions_for": ["quality_time", "gift_ideas", "activities"]
+        })
+    
+    # Build app-specific context
+    app_specific_context = {}
+    
+    if app_id == "fairydust-inspire" or not app_id:
+        inspire_context = "Focus on personalized activity suggestions"
+        if relationship_context:
+            inspire_context += " that work well for relationships"
+        if 'personality' in user_traits:
+            adventure = user_traits['personality'].get('adventure_level', 3)
+            if adventure >= 4:
+                inspire_context += ". Suggest adventurous activities"
+            elif adventure <= 2:
+                inspire_context += ". Suggest calm, low-key activities"
+        app_specific_context["fairydust-inspire"] = inspire_context
+    
+    if app_id == "fairydust-recipe" or not app_id:
+        recipe_context = "Provide personalized recipe suggestions"
+        if 'cooking' in user_traits:
+            dietary = user_traits['cooking'].get('dietary_preferences', [])
+            if dietary:
+                recipe_context += f". Must accommodate: {', '.join(dietary)}"
+            skill = user_traits['cooking'].get('cooking_skill_level')
+            if skill:
+                recipe_context += f". Cooking skill: {skill}"
+        app_specific_context["fairydust-recipe"] = recipe_context
+    
+    # Build response
+    ai_context = AIContextResponse(
+        user_context=user_context,
+        relationship_context=relationship_context,
+        app_specific_context=app_specific_context
+    )
+    
+    # Cache for 15 minutes
+    await redis_client.setex(
+        cache_key,
+        900,  # 15 minutes
+        json.dumps(ai_context.dict())
+    )
+    
+    return ai_context
+
+@user_router.post("/{user_id}/question-responses")
+async def submit_question_responses(
+    user_id: str,
+    responses: QuestionResponseSubmission,
+    current_user: TokenData = Depends(get_current_user),
+    db: Database = Depends(get_db)
+):
+    """Submit question responses and award DUST"""
+    if current_user.user_id != user_id and not current_user.is_admin:
+        raise HTTPException(status_code=403, detail="Access denied")
+    
+    total_dust_awarded = 0
+    saved_responses = []
+    
+    for response in responses.responses:
+        # Check if question already answered
+        existing = await db.fetch_one(
+            "SELECT id FROM user_question_responses WHERE user_id = $1 AND question_id = $2",
+            user_id, response.question_id
+        )
+        
+        if existing:
+            continue  # Skip already answered questions
+        
+        # Award DUST (1 DUST per question)
+        dust_reward = 1
+        total_dust_awarded += dust_reward
+        
+        # Save response
+        saved_response = await db.fetch_one(
+            """
+            INSERT INTO user_question_responses 
+            (user_id, question_id, response_value, session_id, dust_reward)
+            VALUES ($1, $2, $3, $4, $5)
+            RETURNING *
+            """,
+            user_id, response.question_id, response.response_value, 
+            responses.session_id, dust_reward
+        )
+        
+        saved_responses.append(UserQuestionResponse(**saved_response))
+    
+    # Award DUST via ledger service if any questions were answered
+    if total_dust_awarded > 0:
+        # Update user's profiling session count
+        await db.execute(
+            """
+            UPDATE users 
+            SET total_profiling_sessions = total_profiling_sessions + 1,
+                last_profiling_session = CURRENT_TIMESTAMP
+            WHERE id = $1
+            """,
+            user_id
+        )
+        
+        # Create DUST transaction via ledger service
+        ledger_url = os.getenv("LEDGER_SERVICE_URL", "http://ledger:8002")
+        async with httpx.AsyncClient() as client:
+            try:
+                await client.post(
+                    f"{ledger_url}/transactions/grant",
+                    json={
+                        "user_id": user_id,
+                        "amount": total_dust_awarded,
+                        "reason": "profile_questions",
+                        "idempotency_key": f"questions_{user_id}_{responses.session_id}",
+                        "metadata": {
+                            "questions_answered": len(saved_responses),
+                            "session_id": responses.session_id
+                        }
+                    }
+                )
+            except Exception as e:
+                # Log error but don't fail the request
+                print(f"Failed to award DUST: {e}")
+    
+    # Invalidate AI context cache
+    redis_client = await get_redis()
+    cache_pattern = f"ai_context:{user_id}*"
+    # In production, you'd want a more sophisticated cache invalidation
+    await redis_client.delete(f"ai_context:{user_id}")
+    
+    return {
+        "responses_saved": len(saved_responses),
+        "dust_awarded": total_dust_awarded,
+        "responses": saved_responses
+    }
+
+@user_router.post("/{user_id}/migrate-local-data")
+async def migrate_local_data(
+    user_id: str,
+    local_data: LocalProfileData,
+    current_user: TokenData = Depends(get_current_user),
+    db: Database = Depends(get_db)
+):
+    """Migrate local profile data to backend"""
+    if current_user.user_id != user_id and not current_user.is_admin:
+        raise HTTPException(status_code=403, detail="Access denied")
+    
+    migrated_items = {
+        "profile_fields": 0,
+        "people": 0,
+        "answered_questions": 0
+    }
+    
+    profile = local_data.profile
+    
+    # Helper function to convert age to age_range
+    def age_to_range(age):
+        if age <= 2:
+            return 'infant'
+        elif age <= 5:
+            return 'toddler'
+        elif age <= 12:
+            return 'child'
+        elif age <= 17:
+            return 'teen'
+        elif age <= 25:
+            return 'young_adult'
+        elif age <= 40:
+            return 'adult'
+        elif age <= 60:
+            return 'middle_aged'
+        else:
+            return 'senior'
+    
+    # Update basic profile fields that go in users table
+    basic_fields = ['first_name', 'age_range', 'city', 'country']
+    user_updates = {}
+    for field in basic_fields:
+        if field in profile:
+            user_updates[field] = profile[field]
+    
+    if user_updates:
+        update_parts = []
+        values = []
+        param_count = 1
+        
+        for field, value in user_updates.items():
+            update_parts.append(f"{field} = ${param_count}")
+            values.append(value)
+            param_count += 1
+        
+        values.append(user_id)
+        
+        await db.execute(
+            f"""
+            UPDATE users 
+            SET {', '.join(update_parts)}, updated_at = CURRENT_TIMESTAMP
+            WHERE id = ${param_count}
+            """,
+            *values
+        )
+    
+    # Migrate progressive profiling fields
+    profile_field_mapping = {
+        'interests': ('interests', 'interests'),
+        'dietary_preferences': ('cooking', 'dietary_preferences'),
+        'cooking_skill_level': ('cooking', 'cooking_skill_level'),
+        'lifestyle_goals': ('goals', 'lifestyle_goals'),
+        'personality_traits': ('personality', 'personality_traits'),
+        'adventure_level': ('personality', 'adventure_level'),
+        'creativity_level': ('personality', 'creativity_level'),
+        'social_preference': ('personality', 'social_preference')
+    }
+    
+    for field_name, (category, profile_field) in profile_field_mapping.items():
+        if field_name in profile:
+            # Upsert profile data
+            await db.execute(
+                """
+                INSERT INTO user_profile_data 
+                (user_id, category, field_name, field_value, source)
+                VALUES ($1, $2, $3, $4, 'migration')
+                ON CONFLICT (user_id, field_name) 
+                DO UPDATE SET 
+                    field_value = EXCLUDED.field_value,
+                    source = 'migration',
+                    updated_at = CURRENT_TIMESTAMP
+                """,
+                user_id, category, profile_field, profile[field_name]
+            )
+            migrated_items["profile_fields"] += 1
+    
+    # Migrate people in my life
+    for person_data in local_data.people_in_my_life:
+        name = person_data.get('name')
+        age = person_data.get('age')
+        relationship = person_data.get('relationship')
+        
+        if not name:
+            continue
+        
+        # Convert age to age_range
+        age_range = age_to_range(age) if age else None
+        
+        # Check if person already exists
+        existing_person = await db.fetch_one(
+            "SELECT id FROM people_in_my_life WHERE user_id = $1 AND name = $2",
+            user_id, name
+        )
+        
+        if not existing_person:
+            await db.execute(
+                """
+                INSERT INTO people_in_my_life (user_id, name, age_range, relationship)
+                VALUES ($1, $2, $3, $4)
+                """,
+                user_id, name, age_range, relationship
+            )
+            migrated_items["people"] += 1
+    
+    # Migrate answered questions
+    progressive_state = profile.get('progressive_profiling_state', {})
+    answered_questions = progressive_state.get('questions_answered', [])
+    
+    for question_id in answered_questions:
+        # Check if already recorded
+        existing = await db.fetch_one(
+            "SELECT id FROM user_question_responses WHERE user_id = $1 AND question_id = $2",
+            user_id, question_id
+        )
+        
+        if not existing:
+            # Create placeholder response (we don't have the actual response value)
+            await db.execute(
+                """
+                INSERT INTO user_question_responses 
+                (user_id, question_id, response_value, session_id, dust_reward)
+                VALUES ($1, $2, $3, 'migration', 0)
+                """,
+                user_id, question_id, {"migrated": True}
+            )
+            migrated_items["answered_questions"] += 1
+    
+    # Update profiling session stats
+    total_sessions = progressive_state.get('total_sessions', 0)
+    if total_sessions > 0:
+        await db.execute(
+            "UPDATE users SET total_profiling_sessions = $1 WHERE id = $2",
+            total_sessions, user_id
+        )
+    
+    return {
+        "success": True,
+        "migrated": migrated_items,
+        "message": f"Successfully migrated {sum(migrated_items.values())} items"
+    }
