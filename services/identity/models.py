@@ -52,6 +52,10 @@ class UserUpdate(BaseModel):
     email: Optional[EmailStr] = None
     phone: Optional[str] = None
     avatar_url: Optional[str] = None
+    first_name: Optional[str] = Field(None, max_length=100)
+    age_range: Optional[str] = Field(None, max_length=20)
+    city: Optional[str] = Field(None, max_length=100)
+    country: Optional[str] = Field(None, max_length=100)
 
 class User(BaseModel):
     id: UUID
@@ -62,6 +66,10 @@ class User(BaseModel):
     is_builder: bool = False
     is_admin: bool = False
     is_active: bool = True
+    first_name: Optional[str] = None
+    age_range: Optional[str] = None
+    city: Optional[str] = None
+    country: Optional[str] = None
     created_at: datetime
     updated_at: datetime
     dust_balance: int = 0  # Denormalized for performance
