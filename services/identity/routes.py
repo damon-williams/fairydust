@@ -7,7 +7,12 @@ from uuid import uuid4
 from models import (
     OTPRequest, OTPVerify, OAuthCallback, 
     User, UserCreate, UserUpdate, UserPublic,
-    Token, AuthResponse
+    Token, AuthResponse,
+    UserProfileData, UserProfileDataCreate, UserProfileDataUpdate,
+    PersonInMyLife, PersonInMyLifeCreate, PersonInMyLifeUpdate,
+    PersonProfileData, PersonProfileDataCreate,
+    QuestionResponseSubmission, UserQuestionResponse,
+    LocalProfileData, AIContextResponse, ProfileDataBatch
 )
 from auth import AuthService, get_current_user, TokenData
 from shared.database import get_db, Database
@@ -407,3 +412,284 @@ async def get_user_public_profile(
         raise HTTPException(status_code=404, detail="User not found")
     
     return UserPublic(**user)
+
+# Progressive Profiling Routes
+
+@user_router.get("/{user_id}/profile-data", response_model=List[UserProfileData])
+async def get_user_profile_data(
+    user_id: str,
+    current_user: TokenData = Depends(get_current_user),
+    db: Database = Depends(get_db),
+    category: Optional[str] = None
+):
+    """Get user's profile data"""
+    # Users can only access their own profile data
+    if current_user.user_id != user_id and not current_user.is_admin:
+        raise HTTPException(status_code=403, detail="Access denied")
+    
+    query = "SELECT * FROM user_profile_data WHERE user_id = $1"
+    params = [user_id]
+    
+    if category:
+        query += " AND category = $2"
+        params.append(category)
+    
+    query += " ORDER BY updated_at DESC"
+    
+    profile_data = await db.fetch_all(query, *params)
+    return [UserProfileData(**data) for data in profile_data]
+
+@user_router.patch("/{user_id}/profile-data", response_model=List[UserProfileData])
+async def update_user_profile_data(
+    user_id: str,
+    profile_batch: ProfileDataBatch,
+    current_user: TokenData = Depends(get_current_user),
+    db: Database = Depends(get_db)
+):
+    """Update user profile data (batch operation)"""
+    # Users can only update their own profile data
+    if current_user.user_id != user_id and not current_user.is_admin:
+        raise HTTPException(status_code=403, detail="Access denied")
+    
+    updated_data = []
+    
+    for profile_data in profile_batch.profile_data:
+        # Check if field exists
+        existing = await db.fetch_one(
+            "SELECT id FROM user_profile_data WHERE user_id = $1 AND field_name = $2",
+            user_id, profile_data.field_name
+        )
+        
+        if existing:
+            # Update existing
+            updated = await db.fetch_one(
+                """
+                UPDATE user_profile_data 
+                SET field_value = $1, confidence_score = $2, source = $3, 
+                    app_context = $4, category = $5, updated_at = CURRENT_TIMESTAMP
+                WHERE user_id = $6 AND field_name = $7
+                RETURNING *
+                """,
+                profile_data.field_value, profile_data.confidence_score, 
+                profile_data.source, profile_data.app_context, profile_data.category,
+                user_id, profile_data.field_name
+            )
+        else:
+            # Create new
+            updated = await db.fetch_one(
+                """
+                INSERT INTO user_profile_data 
+                (user_id, category, field_name, field_value, confidence_score, source, app_context)
+                VALUES ($1, $2, $3, $4, $5, $6, $7)
+                RETURNING *
+                """,
+                user_id, profile_data.category, profile_data.field_name, 
+                profile_data.field_value, profile_data.confidence_score, 
+                profile_data.source, profile_data.app_context
+            )
+        
+        updated_data.append(UserProfileData(**updated))
+    
+    return updated_data
+
+@user_router.post("/{user_id}/people", response_model=PersonInMyLife)
+async def add_person_to_life(
+    user_id: str,
+    person: PersonInMyLifeCreate,
+    current_user: TokenData = Depends(get_current_user),
+    db: Database = Depends(get_db)
+):
+    """Add person to user's life"""
+    if current_user.user_id != user_id and not current_user.is_admin:
+        raise HTTPException(status_code=403, detail="Access denied")
+    
+    new_person = await db.fetch_one(
+        """
+        INSERT INTO people_in_my_life (user_id, name, age_range, relationship)
+        VALUES ($1, $2, $3, $4)
+        RETURNING *
+        """,
+        user_id, person.name, person.age_range, person.relationship
+    )
+    
+    return PersonInMyLife(**new_person)
+
+@user_router.get("/{user_id}/people", response_model=List[PersonInMyLife])
+async def get_people_in_my_life(
+    user_id: str,
+    current_user: TokenData = Depends(get_current_user),
+    db: Database = Depends(get_db)
+):
+    """Get all people in user's life"""
+    if current_user.user_id != user_id and not current_user.is_admin:
+        raise HTTPException(status_code=403, detail="Access denied")
+    
+    people = await db.fetch_all(
+        "SELECT * FROM people_in_my_life WHERE user_id = $1 ORDER BY created_at ASC",
+        user_id
+    )
+    
+    return [PersonInMyLife(**person) for person in people]
+
+@user_router.patch("/{user_id}/people/{person_id}", response_model=PersonInMyLife)
+async def update_person_in_my_life(
+    user_id: str,
+    person_id: str,
+    person_update: PersonInMyLifeUpdate,
+    current_user: TokenData = Depends(get_current_user),
+    db: Database = Depends(get_db)
+):
+    """Update person in user's life"""
+    if current_user.user_id != user_id and not current_user.is_admin:
+        raise HTTPException(status_code=403, detail="Access denied")
+    
+    # Verify person belongs to user
+    existing = await db.fetch_one(
+        "SELECT id FROM people_in_my_life WHERE id = $1 AND user_id = $2",
+        person_id, user_id
+    )
+    
+    if not existing:
+        raise HTTPException(status_code=404, detail="Person not found")
+    
+    # Build update query
+    updates = []
+    values = []
+    param_count = 1
+    
+    if person_update.name is not None:
+        updates.append(f"name = ${param_count}")
+        values.append(person_update.name)
+        param_count += 1
+    
+    if person_update.age_range is not None:
+        updates.append(f"age_range = ${param_count}")
+        values.append(person_update.age_range)
+        param_count += 1
+    
+    if person_update.relationship is not None:
+        updates.append(f"relationship = ${param_count}")
+        values.append(person_update.relationship)
+        param_count += 1
+    
+    if not updates:
+        raise HTTPException(status_code=400, detail="No fields to update")
+    
+    values.append(person_id)
+    
+    query = f"""
+        UPDATE people_in_my_life 
+        SET {', '.join(updates)}, updated_at = CURRENT_TIMESTAMP
+        WHERE id = ${param_count}
+        RETURNING *
+    """
+    
+    updated_person = await db.fetch_one(query, *values)
+    return PersonInMyLife(**updated_person)
+
+@user_router.delete("/{user_id}/people/{person_id}")
+async def remove_person_from_life(
+    user_id: str,
+    person_id: str,
+    current_user: TokenData = Depends(get_current_user),
+    db: Database = Depends(get_db)
+):
+    """Remove person from user's life"""
+    if current_user.user_id != user_id and not current_user.is_admin:
+        raise HTTPException(status_code=403, detail="Access denied")
+    
+    # Verify person belongs to user before deletion
+    existing = await db.fetch_one(
+        "SELECT id FROM people_in_my_life WHERE id = $1 AND user_id = $2",
+        person_id, user_id
+    )
+    
+    if not existing:
+        raise HTTPException(status_code=404, detail="Person not found")
+    
+    await db.execute(
+        "DELETE FROM people_in_my_life WHERE id = $1",
+        person_id
+    )
+    
+    return {"message": "Person removed successfully"}
+
+@user_router.post("/{user_id}/people/{person_id}/profile-data", response_model=PersonProfileData)
+async def add_person_profile_data(
+    user_id: str,
+    person_id: str,
+    profile_data: PersonProfileDataCreate,
+    current_user: TokenData = Depends(get_current_user),
+    db: Database = Depends(get_db)
+):
+    """Add profile data for person in user's life"""
+    if current_user.user_id != user_id and not current_user.is_admin:
+        raise HTTPException(status_code=403, detail="Access denied")
+    
+    # Verify person belongs to user
+    person = await db.fetch_one(
+        "SELECT id FROM people_in_my_life WHERE id = $1 AND user_id = $2",
+        person_id, user_id
+    )
+    
+    if not person:
+        raise HTTPException(status_code=404, detail="Person not found")
+    
+    # Upsert person profile data
+    existing = await db.fetch_one(
+        "SELECT id FROM person_profile_data WHERE person_id = $1 AND field_name = $2",
+        person_id, profile_data.field_name
+    )
+    
+    if existing:
+        updated = await db.fetch_one(
+            """
+            UPDATE person_profile_data 
+            SET field_value = $1, confidence_score = $2, source = $3, 
+                category = $4, updated_at = CURRENT_TIMESTAMP
+            WHERE person_id = $5 AND field_name = $6
+            RETURNING *
+            """,
+            profile_data.field_value, profile_data.confidence_score,
+            profile_data.source, profile_data.category, person_id, profile_data.field_name
+        )
+    else:
+        updated = await db.fetch_one(
+            """
+            INSERT INTO person_profile_data 
+            (person_id, user_id, category, field_name, field_value, confidence_score, source)
+            VALUES ($1, $2, $3, $4, $5, $6, $7)
+            RETURNING *
+            """,
+            person_id, user_id, profile_data.category, profile_data.field_name,
+            profile_data.field_value, profile_data.confidence_score, profile_data.source
+        )
+    
+    return PersonProfileData(**updated)
+
+@user_router.get("/{user_id}/people/{person_id}/profile-data", response_model=List[PersonProfileData])
+async def get_person_profile_data(
+    user_id: str,
+    person_id: str,
+    current_user: TokenData = Depends(get_current_user),
+    db: Database = Depends(get_db)
+):
+    """Get profile data for person in user's life"""
+    if current_user.user_id != user_id and not current_user.is_admin:
+        raise HTTPException(status_code=403, detail="Access denied")
+    
+    # Verify person belongs to user
+    person = await db.fetch_one(
+        "SELECT id FROM people_in_my_life WHERE id = $1 AND user_id = $2",
+        person_id, user_id
+    )
+    
+    if not person:
+        raise HTTPException(status_code=404, detail="Person not found")
+    
+    profile_data = await db.fetch_all(
+        "SELECT * FROM person_profile_data WHERE person_id = $1 ORDER BY updated_at DESC",
+        person_id
+    )
+    
+    return [PersonProfileData(**data) for data in profile_data]
