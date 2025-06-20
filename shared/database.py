@@ -5,12 +5,7 @@ import asyncpg
 from typing import Optional, List, Dict, Any
 from contextlib import asynccontextmanager
 
-# Database configuration - Temporary staging debug
-import logging
-logger = logging.getLogger(__name__)
-
 DATABASE_URL = os.getenv("DATABASE_URL")
-logger.error(f"🔍 STAGING DATABASE_URL from env: {DATABASE_URL}")
 
 if not DATABASE_URL:
     # Build from individual components if DATABASE_URL not provided
@@ -20,9 +15,7 @@ if not DATABASE_URL:
     DB_USER = os.getenv("DB_USER", "postgres")
     DB_PASSWORD = os.getenv("DB_PASSWORD", "")
     
-    logger.error(f"🔍 STAGING Building from components: host={DB_HOST}, port={DB_PORT}")
     DATABASE_URL = f"postgresql://{DB_USER}:{DB_PASSWORD}@{DB_HOST}:{DB_PORT}/{DB_NAME}"
-    logger.error(f"🔍 STAGING Built URL: {DATABASE_URL[:50]}...")
 else:
     # Fix Railway's postgres:// to postgresql:// for asyncpg compatibility
     if DATABASE_URL.startswith("postgres://"):
@@ -125,6 +118,10 @@ async def create_tables():
             is_active BOOLEAN DEFAULT TRUE,
             dust_balance INTEGER DEFAULT 0,
             auth_provider VARCHAR(50) NOT NULL,
+            first_name VARCHAR(100),
+            age_range VARCHAR(20),
+            city VARCHAR(100),
+            country VARCHAR(100) DEFAULT 'US',
             created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
             updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
             CONSTRAINT check_contact CHECK (email IS NOT NULL OR phone IS NOT NULL)

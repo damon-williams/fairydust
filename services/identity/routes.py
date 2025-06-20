@@ -352,6 +352,26 @@ async def update_user_profile(
         values.append(update_data.avatar_url)
         param_count += 1
     
+    if update_data.first_name is not None:
+        updates.append(f"first_name = ${param_count}")
+        values.append(update_data.first_name)
+        param_count += 1
+    
+    if update_data.age_range is not None:
+        updates.append(f"age_range = ${param_count}")
+        values.append(update_data.age_range)
+        param_count += 1
+    
+    if update_data.city is not None:
+        updates.append(f"city = ${param_count}")
+        values.append(update_data.city)
+        param_count += 1
+    
+    if update_data.country is not None:
+        updates.append(f"country = ${param_count}")
+        values.append(update_data.country)
+        param_count += 1
+    
     if not updates:
         raise HTTPException(status_code=400, detail="No fields to update")
     
