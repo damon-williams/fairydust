@@ -70,6 +70,8 @@ class User(BaseModel):
     age_range: Optional[str] = None
     city: Optional[str] = None
     country: Optional[str] = None
+    last_profiling_session: Optional[datetime] = None
+    total_profiling_sessions: int = 0
     created_at: datetime
     updated_at: datetime
     dust_balance: int = 0  # Denormalized for performance
@@ -97,6 +99,122 @@ class TokenData(BaseModel):
     is_builder: bool = False
     is_admin: bool = False
     exp: Optional[datetime] = None
+
+# Progressive Profiling models
+class UserProfileDataCreate(BaseModel):
+    category: str = Field(..., max_length=50)
+    field_name: str = Field(..., max_length=100)
+    field_value: dict | list | str | int | float | bool
+    confidence_score: float = Field(1.0, ge=0.0, le=1.0)
+    source: str = Field("user_input", max_length=50)
+    app_context: Optional[str] = Field(None, max_length=50)
+
+class UserProfileDataUpdate(BaseModel):
+    field_value: Optional[dict | list | str | int | float | bool] = None
+    confidence_score: Optional[float] = Field(None, ge=0.0, le=1.0)
+    source: Optional[str] = Field(None, max_length=50)
+    app_context: Optional[str] = Field(None, max_length=50)
+
+class UserProfileData(BaseModel):
+    id: UUID
+    user_id: UUID
+    category: str
+    field_name: str
+    field_value: dict | list | str | int | float | bool
+    confidence_score: float
+    source: str
+    app_context: Optional[str] = None
+    created_at: datetime
+    updated_at: datetime
+    
+    class Config:
+        from_attributes = True
+
+class PersonInMyLifeCreate(BaseModel):
+    name: str = Field(..., max_length=100)
+    age_range: Optional[str] = Field(None, max_length=50)
+    relationship: Optional[str] = Field(None, max_length=100)
+
+class PersonInMyLifeUpdate(BaseModel):
+    name: Optional[str] = Field(None, max_length=100)
+    age_range: Optional[str] = Field(None, max_length=50)
+    relationship: Optional[str] = Field(None, max_length=100)
+
+class PersonInMyLife(BaseModel):
+    id: UUID
+    user_id: UUID
+    name: str
+    age_range: Optional[str] = None
+    relationship: Optional[str] = None
+    created_at: datetime
+    updated_at: datetime
+    
+    class Config:
+        from_attributes = True
+
+class PersonProfileDataCreate(BaseModel):
+    category: str = Field(..., max_length=50)
+    field_name: str = Field(..., max_length=100)
+    field_value: dict | list | str | int | float | bool
+    confidence_score: float = Field(1.0, ge=0.0, le=1.0)
+    source: str = Field("user_input", max_length=50)
+
+class PersonProfileData(BaseModel):
+    id: UUID
+    person_id: UUID
+    user_id: UUID
+    category: str
+    field_name: str
+    field_value: dict | list | str | int | float | bool
+    confidence_score: float
+    source: str
+    created_at: datetime
+    updated_at: datetime
+    
+    class Config:
+        from_attributes = True
+
+class QuestionResponse(BaseModel):
+    question_id: str
+    response_value: dict | list | str | int | float | bool
+    session_id: Optional[str] = None
+
+class QuestionResponseSubmission(BaseModel):
+    responses: List[QuestionResponse]
+    session_id: Optional[str] = None
+
+class UserQuestionResponse(BaseModel):
+    id: UUID
+    user_id: UUID
+    question_id: str
+    response_value: dict | list | str | int | float | bool
+    session_id: Optional[str] = None
+    dust_reward: int = 0
+    answered_at: datetime
+    
+    class Config:
+        from_attributes = True
+
+# Migration models
+class LocalProfileData(BaseModel):
+    id: str
+    profile: dict
+    people_in_my_life: List[dict]
+
+class AIContextResponse(BaseModel):
+    user_context: str
+    relationship_context: List[dict]
+    app_specific_context: dict
+
+class AIContextPerson(BaseModel):
+    person: str
+    relationship: str
+    context: str
+    suggestions_for: List[str]
+
+# Batch operations
+class ProfileDataBatch(BaseModel):
+    profile_data: List[UserProfileDataCreate]
 
 # Response models
 class AuthResponse(BaseModel):

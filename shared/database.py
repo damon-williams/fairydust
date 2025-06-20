@@ -132,6 +132,16 @@ async def create_tables():
         CREATE INDEX IF NOT EXISTS idx_users_phone ON users(phone);
     ''')
     
+    # Add new profile columns to existing users table
+    await db.execute('''
+        ALTER TABLE users ADD COLUMN IF NOT EXISTS first_name VARCHAR(100);
+        ALTER TABLE users ADD COLUMN IF NOT EXISTS age_range VARCHAR(20);
+        ALTER TABLE users ADD COLUMN IF NOT EXISTS city VARCHAR(100);
+        ALTER TABLE users ADD COLUMN IF NOT EXISTS country VARCHAR(100) DEFAULT 'US';
+        ALTER TABLE users ADD COLUMN IF NOT EXISTS last_profiling_session TIMESTAMP;
+        ALTER TABLE users ADD COLUMN IF NOT EXISTS total_profiling_sessions INTEGER DEFAULT 0;
+    ''')
+    
     # User auth providers table (for OAuth)
     await db.execute('''
         CREATE TABLE IF NOT EXISTS user_auth_providers (
@@ -209,6 +219,98 @@ async def create_tables():
         
         CREATE INDEX IF NOT EXISTS idx_hourly_stats_hour 
         ON hourly_app_stats(hour DESC);
+    ''')
+
+    # Progressive Profiling Tables
+    await db.execute('''
+        CREATE TABLE IF NOT EXISTS user_profile_data (
+            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            category VARCHAR(50) NOT NULL,
+            field_name VARCHAR(100) NOT NULL,
+            field_value JSONB NOT NULL,
+            confidence_score FLOAT DEFAULT 1.0,
+            source VARCHAR(50) DEFAULT 'user_input',
+            app_context VARCHAR(50),
+            created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE(user_id, field_name),
+            CONSTRAINT check_confidence_score CHECK (confidence_score >= 0.0 AND confidence_score <= 1.0)
+        );
+        
+        CREATE INDEX IF NOT EXISTS idx_user_profile_data_user_id ON user_profile_data(user_id);
+        CREATE INDEX IF NOT EXISTS idx_user_profile_data_category ON user_profile_data(category);
+        CREATE INDEX IF NOT EXISTS idx_user_profile_data_field_name ON user_profile_data(field_name);
+        CREATE INDEX IF NOT EXISTS idx_user_profile_data_composite ON user_profile_data(user_id, category, field_name);
+        CREATE INDEX IF NOT EXISTS idx_user_profile_data_updated_at ON user_profile_data(updated_at);
+    ''')
+    
+    await db.execute('''
+        CREATE TABLE IF NOT EXISTS profiling_questions (
+            id VARCHAR(100) PRIMARY KEY,
+            category VARCHAR(50) NOT NULL,
+            question_text TEXT NOT NULL,
+            question_type VARCHAR(50) NOT NULL,
+            profile_field VARCHAR(100) NOT NULL,
+            priority INTEGER NOT NULL DEFAULT 5,
+            app_context JSONB,
+            min_app_uses INTEGER DEFAULT 0,
+            options JSONB,
+            created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+            is_active BOOLEAN DEFAULT TRUE
+        );
+        
+        CREATE INDEX IF NOT EXISTS idx_profiling_questions_category ON profiling_questions(category);
+        CREATE INDEX IF NOT EXISTS idx_profiling_questions_priority ON profiling_questions(priority);
+    ''')
+    
+    await db.execute('''
+        CREATE TABLE IF NOT EXISTS user_question_responses (
+            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            question_id VARCHAR(100) NOT NULL REFERENCES profiling_questions(id),
+            response_value JSONB NOT NULL,
+            session_id VARCHAR(100),
+            dust_reward INTEGER DEFAULT 0,
+            answered_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE(user_id, question_id)
+        );
+        
+        CREATE INDEX IF NOT EXISTS idx_user_question_responses_user_id ON user_question_responses(user_id);
+        CREATE INDEX IF NOT EXISTS idx_user_question_responses_session ON user_question_responses(session_id);
+    ''')
+    
+    await db.execute('''
+        CREATE TABLE IF NOT EXISTS people_in_my_life (
+            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            name VARCHAR(100) NOT NULL,
+            age_range VARCHAR(50),
+            relationship VARCHAR(100),
+            created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+        );
+        
+        CREATE INDEX IF NOT EXISTS idx_people_in_my_life_user_id ON people_in_my_life(user_id);
+    ''')
+    
+    await db.execute('''
+        CREATE TABLE IF NOT EXISTS person_profile_data (
+            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            person_id UUID NOT NULL REFERENCES people_in_my_life(id) ON DELETE CASCADE,
+            user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            category VARCHAR(50) NOT NULL,
+            field_name VARCHAR(100) NOT NULL,
+            field_value JSONB NOT NULL,
+            confidence_score FLOAT DEFAULT 1.0,
+            source VARCHAR(50) DEFAULT 'user_input',
+            created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE(person_id, field_name)
+        );
+        
+        CREATE INDEX IF NOT EXISTS idx_person_profile_data_user_id ON person_profile_data(user_id);
+        CREATE INDEX IF NOT EXISTS idx_person_profile_data_person_id ON person_profile_data(person_id);
     ''')
 
     # Performance indexes
