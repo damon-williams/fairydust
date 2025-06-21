@@ -800,21 +800,31 @@ async def get_ai_context(
         personality = user_traits['personality']
         if 'adventure_level' in personality:
             level = personality['adventure_level']
-            if level >= 4:
-                user_context_parts.append("Adventure level: high")
-            elif level >= 3:
-                user_context_parts.append("Adventure level: moderate") 
-            else:
-                user_context_parts.append("Adventure level: low")
+            try:
+                level = int(level) if isinstance(level, str) else level
+                if level >= 4:
+                    user_context_parts.append("Adventure level: high")
+                elif level >= 3:
+                    user_context_parts.append("Adventure level: moderate") 
+                else:
+                    user_context_parts.append("Adventure level: low")
+            except (ValueError, TypeError):
+                # Skip if level can't be converted to int
+                pass
         
         if 'creativity_level' in personality:
             level = personality['creativity_level']
-            if level >= 4:
-                user_context_parts.append("Creativity level: very creative")
-            elif level >= 3:
-                user_context_parts.append("Creativity level: creative")
-            else:
-                user_context_parts.append("Creativity level: practical")
+            try:
+                level = int(level) if isinstance(level, str) else level
+                if level >= 4:
+                    user_context_parts.append("Creativity level: very creative")
+                elif level >= 3:
+                    user_context_parts.append("Creativity level: creative")
+                else:
+                    user_context_parts.append("Creativity level: practical")
+            except (ValueError, TypeError):
+                # Skip if level can't be converted to int
+                pass
     
     # Add interests
     if 'interests' in user_traits and 'interests' in user_traits['interests']:
