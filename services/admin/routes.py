@@ -1880,6 +1880,10 @@ async def llm_app_config(
 ):
     """LLM configuration interface for specific app"""
     
+    # Check for success/error messages
+    updated = request.query_params.get('updated')
+    error = request.query_params.get('error')
+    
     # Get app details (handle both UUID and slug)
     try:
         # Try UUID first
@@ -1922,6 +1926,14 @@ async def llm_app_config(
                 app_id, primary_provider, primary_model_id, primary_parameters,
                 fallback_models, cost_limits, feature_flags
             ) VALUES ($1, $2, $3, $4::jsonb, $5::jsonb, $6::jsonb, $7::jsonb)
+            ON CONFLICT (app_id) DO UPDATE SET
+                primary_provider = EXCLUDED.primary_provider,
+                primary_model_id = EXCLUDED.primary_model_id,
+                primary_parameters = EXCLUDED.primary_parameters,
+                fallback_models = EXCLUDED.fallback_models,
+                cost_limits = EXCLUDED.cost_limits,
+                feature_flags = EXCLUDED.feature_flags,
+                updated_at = CURRENT_TIMESTAMP
         """, 
             app['id'], default_provider, default_model, default_params,
             default_fallbacks, default_cost_limits,
@@ -1954,13 +1966,30 @@ async def llm_app_config(
         ]
     }
     
+    # Parse JSONB fields from database (they come as strings)
+    def parse_json_field(field_value, default=None):
+        if field_value is None:
+            return default or {}
+        if isinstance(field_value, str):
+            try:
+                return json.loads(field_value)
+            except json.JSONDecodeError:
+                return default or {}
+        return field_value
+    
+    # Parse all JSON fields
+    primary_parameters = parse_json_field(config['primary_parameters'], {'temperature': 0.8, 'max_tokens': 150, 'top_p': 0.9})
+    fallback_models = parse_json_field(config['fallback_models'], [])
+    cost_limits = parse_json_field(config['cost_limits'], {'per_request_max': 0.05, 'daily_max': 10.0, 'monthly_max': 100.0})
+    feature_flags = parse_json_field(config['feature_flags'], {'streaming_enabled': True, 'cache_responses': True, 'log_prompts': False})
+    
     config_json = {
         'primary_provider': config['primary_provider'],
         'primary_model_id': config['primary_model_id'],
-        'primary_parameters': config['primary_parameters'],
-        'fallback_models': config['fallback_models'],
-        'cost_limits': config['cost_limits'],
-        'feature_flags': config['feature_flags']
+        'primary_parameters': primary_parameters,
+        'fallback_models': fallback_models,
+        'cost_limits': cost_limits,
+        'feature_flags': feature_flags
     }
     
     return HTMLResponse(f"""
@@ -1991,6 +2020,23 @@ async def llm_app_config(
                 <h1><i class="fas fa-cog me-2"></i>Configure {app['name']}</h1>
                 <a href="/admin/llm" class="btn btn-secondary">← Back to LLM Dashboard</a>
             </div>
+            
+            <!-- Success/Error Messages -->
+            {f'''
+            <div class="alert alert-success alert-dismissible fade show" role="alert">
+                <i class="fas fa-check-circle me-2"></i>
+                <strong>Success!</strong> LLM configuration has been updated successfully.
+                <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+            </div>
+            ''' if updated else ''}
+            
+            {f'''
+            <div class="alert alert-danger alert-dismissible fade show" role="alert">
+                <i class="fas fa-exclamation-triangle me-2"></i>
+                <strong>Error!</strong> There was a problem updating the configuration. Please try again.
+                <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+            </div>
+            ''' if error else ''}
             
             <div class="row">
                 <div class="col-lg-8">
@@ -2026,7 +2072,7 @@ async def llm_app_config(
                                         <div class="mb-3">
                                             <label class="form-label">Temperature</label>
                                             <input type="number" class="form-control" name="temperature" 
-                                                   value="{config['primary_parameters'].get('temperature', 0.8)}" 
+                                                   value="{primary_parameters.get('temperature', 0.8)}" 
                                                    min="0" max="2" step="0.1">
                                         </div>
                                     </div>
@@ -2034,7 +2080,7 @@ async def llm_app_config(
                                         <div class="mb-3">
                                             <label class="form-label">Max Tokens</label>
                                             <input type="number" class="form-control" name="max_tokens" 
-                                                   value="{config['primary_parameters'].get('max_tokens', 150)}" 
+                                                   value="{primary_parameters.get('max_tokens', 150)}" 
                                                    min="1" max="4000">
                                         </div>
                                     </div>
@@ -2042,7 +2088,7 @@ async def llm_app_config(
                                         <div class="mb-3">
                                             <label class="form-label">Top P</label>
                                             <input type="number" class="form-control" name="top_p" 
-                                                   value="{config['primary_parameters'].get('top_p', 0.9)}" 
+                                                   value="{primary_parameters.get('top_p', 0.9)}" 
                                                    min="0" max="1" step="0.1">
                                         </div>
                                     </div>
@@ -2076,7 +2122,7 @@ async def llm_app_config(
                                         <div class="mb-3">
                                             <label class="form-label">Per Request Max ($)</label>
                                             <input type="number" class="form-control" name="per_request_max" 
-                                                   value="{config['cost_limits'].get('per_request_max', 0.05)}" 
+                                                   value="{cost_limits.get('per_request_max', 0.05)}" 
                                                    min="0" step="0.01">
                                         </div>
                                     </div>
@@ -2084,7 +2130,7 @@ async def llm_app_config(
                                         <div class="mb-3">
                                             <label class="form-label">Daily Max ($)</label>
                                             <input type="number" class="form-control" name="daily_max" 
-                                                   value="{config['cost_limits'].get('daily_max', 10.0)}" 
+                                                   value="{cost_limits.get('daily_max', 10.0)}" 
                                                    min="0" step="0.01">
                                         </div>
                                     </div>
@@ -2092,7 +2138,7 @@ async def llm_app_config(
                                         <div class="mb-3">
                                             <label class="form-label">Monthly Max ($)</label>
                                             <input type="number" class="form-control" name="monthly_max" 
-                                                   value="{config['cost_limits'].get('monthly_max', 100.0)}" 
+                                                   value="{cost_limits.get('monthly_max', 100.0)}" 
                                                    min="0" step="0.01">
                                         </div>
                                     </div>
@@ -2110,21 +2156,21 @@ async def llm_app_config(
                                     <div class="col-md-4">
                                         <div class="form-check">
                                             <input class="form-check-input" type="checkbox" name="streaming_enabled" 
-                                                   {'checked' if config['feature_flags'].get('streaming_enabled', True) else ''}>
+                                                   {'checked' if feature_flags.get('streaming_enabled', True) else ''}>
                                             <label class="form-check-label">Streaming Enabled</label>
                                         </div>
                                     </div>
                                     <div class="col-md-4">
                                         <div class="form-check">
                                             <input class="form-check-input" type="checkbox" name="cache_responses" 
-                                                   {'checked' if config['feature_flags'].get('cache_responses', True) else ''}>
+                                                   {'checked' if feature_flags.get('cache_responses', True) else ''}>
                                             <label class="form-check-label">Cache Responses</label>
                                         </div>
                                     </div>
                                     <div class="col-md-4">
                                         <div class="form-check">
                                             <input class="form-check-input" type="checkbox" name="log_prompts" 
-                                                   {'checked' if config['feature_flags'].get('log_prompts', False) else ''}>
+                                                   {'checked' if feature_flags.get('log_prompts', False) else ''}>
                                             <label class="form-check-label">Log Prompts</label>
                                         </div>
                                     </div>
@@ -2334,67 +2380,81 @@ async def update_llm_app_config(
     # Get form data
     form = await request.form()
     
+    # Debug: print form data
+    print(f"Form data: {dict(form)}")
+    
     # Parse fallback models from JSON if provided
     fallback_models = []
     if form.get("fallback_models_json"):
         import json
         try:
             fallback_models = json.loads(form.get("fallback_models_json"))
-        except json.JSONDecodeError:
+            print(f"Parsed fallback models: {fallback_models}")
+        except json.JSONDecodeError as e:
+            print(f"JSON decode error for fallback models: {e}")
             fallback_models = []
+    else:
+        print("No fallback_models_json in form")
     
-    # Make API call to Apps service to update configuration
-    apps_service_url = os.getenv("APPS_SERVICE_URL", "http://apps:8003")
+    # Update configuration directly in database (admin portal has direct DB access)
+    import json
     
-    # Build update payload
-    update_data = {
-        "primary_provider": form.get("primary_provider"),
-        "primary_model_id": form.get("primary_model_id"),
-        "primary_parameters": {
+    try:
+        # Build JSON data for database
+        primary_parameters_json = json.dumps({
             "temperature": float(form.get("temperature", 0.8)),
             "max_tokens": int(form.get("max_tokens", 150)),
             "top_p": float(form.get("top_p", 0.9))
-        },
-        "fallback_models": fallback_models,
-        "cost_limits": {
+        })
+        
+        cost_limits_json = json.dumps({
             "per_request_max": float(form.get("per_request_max", 0.05)),
             "daily_max": float(form.get("daily_max", 10.0)),
             "monthly_max": float(form.get("monthly_max", 100.0))
-        },
-        "feature_flags": {
+        })
+        
+        feature_flags_json = json.dumps({
             "streaming_enabled": "streaming_enabled" in form,
             "cache_responses": "cache_responses" in form,
             "log_prompts": "log_prompts" in form
-        }
-    }
-    
-    try:
-        async with httpx.AsyncClient() as client:
-            # Get admin token for API call
-            admin_token = request.cookies.get("admin_token")
-            headers = {"Authorization": f"Bearer {admin_token}"}
-            
-            response = await client.put(
-                f"{apps_service_url}/llm/{app['id']}/model-config",
-                json=update_data,
-                headers=headers
-            )
-            
-            if response.status_code == 200:
-                return RedirectResponse(
-                    url=f"/admin/llm/apps/{app_id}?updated=1",
-                    status_code=302
-                )
-            else:
-                raise HTTPException(
-                    status_code=response.status_code,
-                    detail=f"Failed to update configuration: {response.text}"
-                )
-    
+        })
+        
+        fallback_models_json = json.dumps(fallback_models)
+        
+        # Update the database directly
+        await db.execute("""
+            UPDATE app_model_configs 
+            SET 
+                primary_provider = $1,
+                primary_model_id = $2, 
+                primary_parameters = $3::jsonb,
+                fallback_models = $4::jsonb,
+                cost_limits = $5::jsonb,
+                feature_flags = $6::jsonb,
+                updated_at = CURRENT_TIMESTAMP
+            WHERE app_id = $7
+        """, 
+            form.get("primary_provider"),
+            form.get("primary_model_id"),
+            primary_parameters_json,
+            fallback_models_json,
+            cost_limits_json,
+            feature_flags_json,
+            app['id']
+        )
+        
+        print(f"Successfully updated configuration for app {app['id']}")
+        
+        return RedirectResponse(
+            url=f"/admin/llm/apps/{app_id}?updated=1",
+            status_code=302
+        )
+        
     except Exception as e:
+        print(f"Database update error: {type(e).__name__}: {str(e)}")
         raise HTTPException(
             status_code=500,
-            detail=f"Error updating configuration: {str(e)}"
+            detail=f"Error updating configuration: {type(e).__name__}: {str(e)}"
         )
     
     return RedirectResponse(
