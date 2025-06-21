@@ -457,6 +457,9 @@ async def update_user_profile_data(
     updated_data = []
     
     for profile_data in profile_batch.profile_data:
+        # Serialize field_value for JSONB storage
+        field_value_json = json.dumps(profile_data.field_value)
+        
         # Check if field exists
         existing = await db.fetch_one(
             "SELECT id FROM user_profile_data WHERE user_id = $1 AND field_name = $2",
@@ -468,12 +471,12 @@ async def update_user_profile_data(
             updated = await db.fetch_one(
                 """
                 UPDATE user_profile_data 
-                SET field_value = $1, confidence_score = $2, source = $3, 
+                SET field_value = $1::jsonb, confidence_score = $2, source = $3, 
                     app_context = $4, category = $5, updated_at = CURRENT_TIMESTAMP
                 WHERE user_id = $6 AND field_name = $7
                 RETURNING *
                 """,
-                profile_data.field_value, profile_data.confidence_score, 
+                field_value_json, profile_data.confidence_score, 
                 profile_data.source, profile_data.app_context, profile_data.category,
                 user_id, profile_data.field_name
             )
@@ -483,11 +486,11 @@ async def update_user_profile_data(
                 """
                 INSERT INTO user_profile_data 
                 (user_id, category, field_name, field_value, confidence_score, source, app_context)
-                VALUES ($1, $2, $3, $4, $5, $6, $7)
+                VALUES ($1, $2, $3, $4::jsonb, $5, $6, $7)
                 RETURNING *
                 """,
                 user_id, profile_data.category, profile_data.field_name, 
-                profile_data.field_value, profile_data.confidence_score, 
+                field_value_json, profile_data.confidence_score, 
                 profile_data.source, profile_data.app_context
             )
         
@@ -638,6 +641,9 @@ async def add_person_profile_data(
     if not person:
         raise HTTPException(status_code=404, detail="Person not found")
     
+    # Serialize field_value for JSONB storage
+    field_value_json = json.dumps(profile_data.field_value)
+    
     # Upsert person profile data
     existing = await db.fetch_one(
         "SELECT id FROM person_profile_data WHERE person_id = $1 AND field_name = $2",
@@ -648,12 +654,12 @@ async def add_person_profile_data(
         updated = await db.fetch_one(
             """
             UPDATE person_profile_data 
-            SET field_value = $1, confidence_score = $2, source = $3, 
+            SET field_value = $1::jsonb, confidence_score = $2, source = $3, 
                 category = $4, updated_at = CURRENT_TIMESTAMP
             WHERE person_id = $5 AND field_name = $6
             RETURNING *
             """,
-            profile_data.field_value, profile_data.confidence_score,
+            field_value_json, profile_data.confidence_score,
             profile_data.source, profile_data.category, person_id, profile_data.field_name
         )
     else:
@@ -661,11 +667,11 @@ async def add_person_profile_data(
             """
             INSERT INTO person_profile_data 
             (person_id, user_id, category, field_name, field_value, confidence_score, source)
-            VALUES ($1, $2, $3, $4, $5, $6, $7)
+            VALUES ($1, $2, $3, $4, $5::jsonb, $6, $7)
             RETURNING *
             """,
             person_id, user_id, profile_data.category, profile_data.field_name,
-            profile_data.field_value, profile_data.confidence_score, profile_data.source
+            field_value_json, profile_data.confidence_score, profile_data.source
         )
     
     return PersonProfileData(**updated)
@@ -1041,19 +1047,20 @@ async def migrate_local_data(
     
     for field_name, (category, profile_field) in profile_field_mapping.items():
         if field_name in profile:
-            # Upsert profile data
+            # Serialize field_value for JSONB and upsert profile data
+            field_value_json = json.dumps(profile[field_name])
             await db.execute(
                 """
                 INSERT INTO user_profile_data 
                 (user_id, category, field_name, field_value, source)
-                VALUES ($1, $2, $3, $4, 'migration')
+                VALUES ($1, $2, $3, $4::jsonb, 'migration')
                 ON CONFLICT (user_id, field_name) 
                 DO UPDATE SET 
                     field_value = EXCLUDED.field_value,
                     source = 'migration',
                     updated_at = CURRENT_TIMESTAMP
                 """,
-                user_id, category, profile_field, profile[field_name]
+                user_id, category, profile_field, field_value_json
             )
             migrated_items["profile_fields"] += 1
     
