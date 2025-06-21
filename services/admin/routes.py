@@ -1847,3 +1847,314 @@ async def llm_dashboard(
     </body>
     </html>
     """)
+
+@admin_router.get("/llm/apps/{app_id}", response_class=HTMLResponse)
+async def llm_app_config(
+    request: Request,
+    app_id: str,
+    admin_user: dict = Depends(get_current_admin_user),
+    db: Database = Depends(get_db)
+):
+    """LLM configuration interface for specific app"""
+    
+    # Get app details
+    app = await db.fetch_one("""
+        SELECT id, name, slug FROM apps WHERE id = $1 OR slug = $1
+    """, app_id)
+    
+    if not app:
+        raise HTTPException(status_code=404, detail="App not found")
+    
+    # Get current model configuration
+    config = await db.fetch_one("""
+        SELECT * FROM app_model_configs WHERE app_id = $1
+    """, app['id'])
+    
+    if not config:
+        # Create default config if none exists
+        await db.execute("""
+            INSERT INTO app_model_configs (
+                app_id, primary_provider, primary_model_id, primary_parameters,
+                fallback_models, cost_limits, feature_flags
+            ) VALUES ($1, $2, $3, $4::jsonb, $5::jsonb, $6::jsonb, $7::jsonb)
+        """, 
+            app['id'], 'anthropic', 'claude-3-haiku-20240307',
+            '{"temperature": 0.8, "max_tokens": 150, "top_p": 0.9}',
+            '[]',
+            '{"per_request_max": 0.05, "daily_max": 10.0, "monthly_max": 100.0}',
+            '{"streaming_enabled": true, "cache_responses": true, "log_prompts": false}'
+        )
+        
+        config = await db.fetch_one("""
+            SELECT * FROM app_model_configs WHERE app_id = $1
+        """, app['id'])
+    
+    import json
+    config_json = {
+        'primary_provider': config['primary_provider'],
+        'primary_model_id': config['primary_model_id'],
+        'primary_parameters': config['primary_parameters'],
+        'fallback_models': config['fallback_models'],
+        'cost_limits': config['cost_limits'],
+        'feature_flags': config['feature_flags']
+    }
+    
+    return HTMLResponse(f"""
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <title>Configure {app['name']} - fairydust Admin</title>
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
+        <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+        <style>
+            .fairy-dust {{ color: #ffd700; text-shadow: 0 0 5px rgba(255,215,0,0.5); }}
+            .json-preview {{ background: #f8f9fa; border: 1px solid #dee2e6; border-radius: 0.375rem; padding: 1rem; }}
+            .fallback-model {{ border: 1px solid #dee2e6; border-radius: 0.375rem; padding: 1rem; margin-bottom: 1rem; }}
+        </style>
+    </head>
+    <body class="bg-light">
+        <nav class="navbar navbar-expand-lg navbar-dark bg-primary">
+            <div class="container-fluid">
+                <a class="navbar-brand" href="/admin/dashboard">
+                    <i class="fas fa-magic fairy-dust me-2"></i>fairydust Admin
+                </a>
+            </div>
+        </nav>
+        
+        <div class="container-fluid mt-4">
+            <div class="d-flex justify-content-between align-items-center mb-4">
+                <h1><i class="fas fa-cog me-2"></i>Configure {app['name']}</h1>
+                <a href="/admin/llm" class="btn btn-secondary">← Back to LLM Dashboard</a>
+            </div>
+            
+            <div class="row">
+                <div class="col-lg-8">
+                    <form id="configForm" method="post" action="/admin/llm/apps/{app['id']}/update">
+                        <!-- Primary Model Configuration -->
+                        <div class="card mb-4">
+                            <div class="card-header">
+                                <h5 class="mb-0"><i class="fas fa-brain me-2"></i>Primary Model</h5>
+                            </div>
+                            <div class="card-body">
+                                <div class="row">
+                                    <div class="col-md-6">
+                                        <div class="mb-3">
+                                            <label class="form-label">Provider</label>
+                                            <select class="form-select" name="primary_provider" required>
+                                                <option value="anthropic" {'selected' if config['primary_provider'] == 'anthropic' else ''}>Anthropic</option>
+                                                <option value="openai" {'selected' if config['primary_provider'] == 'openai' else ''}>OpenAI</option>
+                                            </select>
+                                        </div>
+                                    </div>
+                                    <div class="col-md-6">
+                                        <div class="mb-3">
+                                            <label class="form-label">Model ID</label>
+                                            <input type="text" class="form-control" name="primary_model_id" 
+                                                   value="{config['primary_model_id']}" required>
+                                        </div>
+                                    </div>
+                                </div>
+                                
+                                <div class="row">
+                                    <div class="col-md-4">
+                                        <div class="mb-3">
+                                            <label class="form-label">Temperature</label>
+                                            <input type="number" class="form-control" name="temperature" 
+                                                   value="{config['primary_parameters'].get('temperature', 0.8)}" 
+                                                   min="0" max="2" step="0.1">
+                                        </div>
+                                    </div>
+                                    <div class="col-md-4">
+                                        <div class="mb-3">
+                                            <label class="form-label">Max Tokens</label>
+                                            <input type="number" class="form-control" name="max_tokens" 
+                                                   value="{config['primary_parameters'].get('max_tokens', 150)}" 
+                                                   min="1" max="4000">
+                                        </div>
+                                    </div>
+                                    <div class="col-md-4">
+                                        <div class="mb-3">
+                                            <label class="form-label">Top P</label>
+                                            <input type="number" class="form-control" name="top_p" 
+                                                   value="{config['primary_parameters'].get('top_p', 0.9)}" 
+                                                   min="0" max="1" step="0.1">
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <!-- Cost Limits -->
+                        <div class="card mb-4">
+                            <div class="card-header">
+                                <h5 class="mb-0"><i class="fas fa-dollar-sign me-2"></i>Cost Limits</h5>
+                            </div>
+                            <div class="card-body">
+                                <div class="row">
+                                    <div class="col-md-4">
+                                        <div class="mb-3">
+                                            <label class="form-label">Per Request Max ($)</label>
+                                            <input type="number" class="form-control" name="per_request_max" 
+                                                   value="{config['cost_limits'].get('per_request_max', 0.05)}" 
+                                                   min="0" step="0.01">
+                                        </div>
+                                    </div>
+                                    <div class="col-md-4">
+                                        <div class="mb-3">
+                                            <label class="form-label">Daily Max ($)</label>
+                                            <input type="number" class="form-control" name="daily_max" 
+                                                   value="{config['cost_limits'].get('daily_max', 10.0)}" 
+                                                   min="0" step="0.01">
+                                        </div>
+                                    </div>
+                                    <div class="col-md-4">
+                                        <div class="mb-3">
+                                            <label class="form-label">Monthly Max ($)</label>
+                                            <input type="number" class="form-control" name="monthly_max" 
+                                                   value="{config['cost_limits'].get('monthly_max', 100.0)}" 
+                                                   min="0" step="0.01">
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <!-- Feature Flags -->
+                        <div class="card mb-4">
+                            <div class="card-header">
+                                <h5 class="mb-0"><i class="fas fa-flag me-2"></i>Feature Flags</h5>
+                            </div>
+                            <div class="card-body">
+                                <div class="row">
+                                    <div class="col-md-4">
+                                        <div class="form-check">
+                                            <input class="form-check-input" type="checkbox" name="streaming_enabled" 
+                                                   {'checked' if config['feature_flags'].get('streaming_enabled', True) else ''}>
+                                            <label class="form-check-label">Streaming Enabled</label>
+                                        </div>
+                                    </div>
+                                    <div class="col-md-4">
+                                        <div class="form-check">
+                                            <input class="form-check-input" type="checkbox" name="cache_responses" 
+                                                   {'checked' if config['feature_flags'].get('cache_responses', True) else ''}>
+                                            <label class="form-check-label">Cache Responses</label>
+                                        </div>
+                                    </div>
+                                    <div class="col-md-4">
+                                        <div class="form-check">
+                                            <input class="form-check-input" type="checkbox" name="log_prompts" 
+                                                   {'checked' if config['feature_flags'].get('log_prompts', False) else ''}>
+                                            <label class="form-check-label">Log Prompts</label>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <div class="d-grid gap-2">
+                            <button type="submit" class="btn btn-primary btn-lg">
+                                <i class="fas fa-save me-2"></i>Update Configuration
+                            </button>
+                        </div>
+                    </form>
+                </div>
+                
+                <div class="col-lg-4">
+                    <!-- Current Configuration Preview -->
+                    <div class="card">
+                        <div class="card-header">
+                            <h5 class="mb-0"><i class="fas fa-code me-2"></i>Current Configuration</h5>
+                        </div>
+                        <div class="card-body">
+                            <div class="json-preview">
+                                <pre><code>{json.dumps(config_json, indent=2)}</code></pre>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
+    </body>
+    </html>
+    """)
+
+@admin_router.post("/llm/apps/{app_id}/update")
+async def update_llm_app_config(
+    app_id: str,
+    request: Request,
+    admin_user: dict = Depends(get_current_admin_user),
+    db: Database = Depends(get_db)
+):
+    """Update LLM configuration for an app"""
+    
+    # Get app details
+    app = await db.fetch_one("""
+        SELECT id, name, slug FROM apps WHERE id = $1 OR slug = $1
+    """, app_id)
+    
+    if not app:
+        raise HTTPException(status_code=404, detail="App not found")
+    
+    # Get form data
+    form = await request.form()
+    
+    # Make API call to Apps service to update configuration
+    apps_service_url = os.getenv("APPS_SERVICE_URL", "http://apps:8003")
+    
+    # Build update payload
+    update_data = {
+        "primary_provider": form.get("primary_provider"),
+        "primary_model_id": form.get("primary_model_id"),
+        "primary_parameters": {
+            "temperature": float(form.get("temperature", 0.8)),
+            "max_tokens": int(form.get("max_tokens", 150)),
+            "top_p": float(form.get("top_p", 0.9))
+        },
+        "cost_limits": {
+            "per_request_max": float(form.get("per_request_max", 0.05)),
+            "daily_max": float(form.get("daily_max", 10.0)),
+            "monthly_max": float(form.get("monthly_max", 100.0))
+        },
+        "feature_flags": {
+            "streaming_enabled": "streaming_enabled" in form,
+            "cache_responses": "cache_responses" in form,
+            "log_prompts": "log_prompts" in form
+        }
+    }
+    
+    try:
+        async with httpx.AsyncClient() as client:
+            # Get admin token for API call
+            admin_token = request.cookies.get("admin_token")
+            headers = {"Authorization": f"Bearer {admin_token}"}
+            
+            response = await client.put(
+                f"{apps_service_url}/llm/{app['id']}/model-config",
+                json=update_data,
+                headers=headers
+            )
+            
+            if response.status_code == 200:
+                return RedirectResponse(
+                    url=f"/admin/llm/apps/{app_id}?updated=1",
+                    status_code=302
+                )
+            else:
+                raise HTTPException(
+                    status_code=response.status_code,
+                    detail=f"Failed to update configuration: {response.text}"
+                )
+    
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Error updating configuration: {str(e)}"
+        )
+    
+    return RedirectResponse(
+        url=f"/admin/llm/apps/{app_id}?error=1",
+        status_code=302
+    )
