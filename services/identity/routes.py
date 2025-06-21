@@ -1128,3 +1128,35 @@ async def migrate_local_data(
         "migrated": migrated_items,
         "message": f"Successfully migrated {sum(migrated_items.values())} items"
     }
+
+@user_router.get("/questions", response_model=dict)
+async def get_all_questions(
+    db: Database = Depends(get_db)
+):
+    """Get all available profiling questions from the database"""
+    questions_data = await db.fetch_all(
+        """
+        SELECT id, category, question_text, question_type, profile_field, 
+               priority, app_context, min_app_uses, options, is_active
+        FROM profiling_questions 
+        WHERE is_active = true
+        ORDER BY priority DESC, category, id
+        """
+    )
+    
+    questions = []
+    for q in questions_data:
+        question = {
+            "id": q["id"],
+            "category": q["category"],
+            "question": q["question_text"],
+            "type": q["question_type"],
+            "profile_field": q["profile_field"],
+            "priority": q["priority"],
+            "app_context": q["app_context"] or [],
+            "min_app_uses": q["min_app_uses"],
+            "options": q["options"] or []
+        }
+        questions.append(question)
+    
+    return {"questions": questions}
