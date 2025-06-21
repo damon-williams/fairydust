@@ -937,7 +937,7 @@ async def questions_list(
                 <button class="btn btn-sm btn-primary me-1" onclick="editQuestion('{q["id"]}')" title="Edit">
                     <i class="fas fa-edit"></i>
                 </button>
-                <button class="btn btn-sm {'btn-warning' if q["is_active"] else 'btn-success'} me-1" 
+                <button class="btn btn-sm {'btn-success' if q["is_active"] else 'btn-warning'} me-1" 
                         onclick="toggleQuestion('{q["id"]}', '{q["question_text"][:30]}...', {str(q["is_active"]).lower()})"
                         title="{'Disable' if q["is_active"] else 'Enable'}">
                     <i class="fas fa-{'toggle-on' if q["is_active"] else 'toggle-off'}"></i>
