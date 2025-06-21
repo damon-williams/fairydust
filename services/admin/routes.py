@@ -1872,16 +1872,27 @@ async def llm_app_config(
     
     if not config:
         # Create default config if none exists
+        # Create default config based on app type
+        default_provider = 'anthropic'
+        default_model = 'claude-3-5-haiku-20241022'
+        default_params = '{"temperature": 0.8, "max_tokens": 150, "top_p": 0.9}'
+        default_fallbacks = '[{"provider": "openai", "model_id": "gpt-4o-mini", "trigger": "provider_error", "parameters": {"temperature": 0.8, "max_tokens": 150}}]'
+        default_cost_limits = '{"per_request_max": 0.05, "daily_max": 10.0, "monthly_max": 100.0}'
+        
+        if app['slug'] == 'fairydust-recipe':
+            default_model = 'claude-3-5-sonnet-20241022'
+            default_params = '{"temperature": 0.7, "max_tokens": 1000, "top_p": 0.9}'
+            default_fallbacks = '[{"provider": "openai", "model_id": "gpt-4o", "trigger": "provider_error", "parameters": {"temperature": 0.7, "max_tokens": 1000}}, {"provider": "openai", "model_id": "gpt-4o-mini", "trigger": "cost_threshold_exceeded", "parameters": {"temperature": 0.7, "max_tokens": 1000}}]'
+            default_cost_limits = '{"per_request_max": 0.15, "daily_max": 25.0, "monthly_max": 200.0}'
+        
         await db.execute("""
             INSERT INTO app_model_configs (
                 app_id, primary_provider, primary_model_id, primary_parameters,
                 fallback_models, cost_limits, feature_flags
             ) VALUES ($1, $2, $3, $4::jsonb, $5::jsonb, $6::jsonb, $7::jsonb)
         """, 
-            app['id'], 'anthropic', 'claude-3-haiku-20240307',
-            '{"temperature": 0.8, "max_tokens": 150, "top_p": 0.9}',
-            '[]',
-            '{"per_request_max": 0.05, "daily_max": 10.0, "monthly_max": 100.0}',
+            app['id'], default_provider, default_model, default_params,
+            default_fallbacks, default_cost_limits,
             '{"streaming_enabled": true, "cache_responses": true, "log_prompts": false}'
         )
         
@@ -1890,6 +1901,27 @@ async def llm_app_config(
         """, app['id'])
     
     import json
+    
+    # Available models by provider
+    available_models = {
+        'anthropic': [
+            'claude-3-5-sonnet-20241022',
+            'claude-3-5-haiku-20241022',
+            'claude-3-sonnet-20240229',
+            'claude-3-haiku-20240307',
+            'claude-3-opus-20240229'
+        ],
+        'openai': [
+            'gpt-4o',
+            'gpt-4o-mini',
+            'gpt-4-turbo',
+            'gpt-4-turbo-preview',
+            'gpt-4',
+            'gpt-3.5-turbo',
+            'gpt-3.5-turbo-16k'
+        ]
+    }
+    
     config_json = {
         'primary_provider': config['primary_provider'],
         'primary_model_id': config['primary_model_id'],
@@ -1950,8 +1982,9 @@ async def llm_app_config(
                                     <div class="col-md-6">
                                         <div class="mb-3">
                                             <label class="form-label">Model ID</label>
-                                            <input type="text" class="form-control" name="primary_model_id" 
-                                                   value="{config['primary_model_id']}" required>
+                                            <select class="form-select" name="primary_model_id" id="primary_model_id" required>
+                                                <!-- Options will be populated by JavaScript -->
+                                            </select>
                                         </div>
                                     </div>
                                 </div>
@@ -1982,6 +2015,21 @@ async def llm_app_config(
                                         </div>
                                     </div>
                                 </div>
+                            </div>
+                        </div>
+                        
+                        <!-- Fallback Models -->
+                        <div class="card mb-4">
+                            <div class="card-header">
+                                <h5 class="mb-0"><i class="fas fa-shield-alt me-2"></i>Fallback Models</h5>
+                            </div>
+                            <div class="card-body">
+                                <div id="fallback-models-container">
+                                    <!-- Fallback models will be populated by JavaScript -->
+                                </div>
+                                <button type="button" class="btn btn-outline-primary btn-sm" onclick="addFallbackModel()">
+                                    <i class="fas fa-plus me-2"></i>Add Fallback Model
+                                </button>
                             </div>
                         </div>
                         
@@ -2077,6 +2125,150 @@ async def llm_app_config(
         </div>
         
         <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
+        <script>
+            // Available models data
+            const availableModels = {json.dumps(available_models)};
+            const currentConfig = {json.dumps(config_json)};
+            
+            let fallbackCounter = 0;
+            
+            // Initialize form
+            document.addEventListener('DOMContentLoaded', function() {{
+                updateModelDropdown('primary_provider', 'primary_model_id', currentConfig.primary_model_id);
+                loadFallbackModels();
+                
+                // Add event listener for provider change
+                document.querySelector('select[name="primary_provider"]').addEventListener('change', function() {{
+                    updateModelDropdown('primary_provider', 'primary_model_id');
+                }});
+            }});
+            
+            function updateModelDropdown(providerSelectId, modelSelectId, selectedModel = '') {{
+                const providerSelect = document.querySelector(`select[name="${{providerSelectId}}"]`);
+                const modelSelect = document.querySelector(`select[name="${{modelSelectId}}"], #${{modelSelectId}}`);
+                const provider = providerSelect.value;
+                
+                // Clear existing options
+                modelSelect.innerHTML = '';
+                
+                // Add models for selected provider
+                if (availableModels[provider]) {{
+                    availableModels[provider].forEach(model => {{
+                        const option = document.createElement('option');
+                        option.value = model;
+                        option.textContent = model;
+                        if (model === selectedModel) {{
+                            option.selected = true;
+                        }}
+                        modelSelect.appendChild(option);
+                    }});
+                }}
+            }}
+            
+            function loadFallbackModels() {{
+                const container = document.getElementById('fallback-models-container');
+                container.innerHTML = '';
+                
+                if (currentConfig.fallback_models && currentConfig.fallback_models.length > 0) {{
+                    currentConfig.fallback_models.forEach((fallback, index) => {{
+                        addFallbackModelElement(fallback, index);
+                    }});
+                }}
+            }}
+            
+            function addFallbackModel() {{
+                addFallbackModelElement({{
+                    provider: 'openai',
+                    model_id: 'gpt-3.5-turbo',
+                    trigger: 'provider_error',
+                    parameters: {{ temperature: 0.8, max_tokens: 150 }}
+                }}, fallbackCounter++);
+            }}
+            
+            function addFallbackModelElement(fallback, index) {{
+                const container = document.getElementById('fallback-models-container');
+                const fallbackDiv = document.createElement('div');
+                fallbackDiv.className = 'fallback-model mb-3';
+                fallbackDiv.innerHTML = `
+                    <div class="row g-2">
+                        <div class="col-md-3">
+                            <label class="form-label">Provider</label>
+                            <select class="form-select" name="fallback_provider_${{index}}" onchange="updateModelDropdown('fallback_provider_${{index}}', 'fallback_model_${{index}}')">
+                                <option value="anthropic" ${{fallback.provider === 'anthropic' ? 'selected' : ''}}>Anthropic</option>
+                                <option value="openai" ${{fallback.provider === 'openai' ? 'selected' : ''}}>OpenAI</option>
+                            </select>
+                        </div>
+                        <div class="col-md-3">
+                            <label class="form-label">Model</label>
+                            <select class="form-select" name="fallback_model_${{index}}" id="fallback_model_${{index}}">
+                            </select>
+                        </div>
+                        <div class="col-md-3">
+                            <label class="form-label">Trigger</label>
+                            <select class="form-select" name="fallback_trigger_${{index}}">
+                                <option value="provider_error" ${{fallback.trigger === 'provider_error' ? 'selected' : ''}}>Provider Error</option>
+                                <option value="cost_threshold_exceeded" ${{fallback.trigger === 'cost_threshold_exceeded' ? 'selected' : ''}}>Cost Threshold Exceeded</option>
+                                <option value="rate_limit" ${{fallback.trigger === 'rate_limit' ? 'selected' : ''}}>Rate Limit</option>
+                                <option value="model_unavailable" ${{fallback.trigger === 'model_unavailable' ? 'selected' : ''}}>Model Unavailable</option>
+                            </select>
+                        </div>
+                        <div class="col-md-2">
+                            <label class="form-label">Temperature</label>
+                            <input type="number" class="form-control" name="fallback_temperature_${{index}}" 
+                                   value="${{fallback.parameters?.temperature || 0.8}}" min="0" max="2" step="0.1">
+                        </div>
+                        <div class="col-md-1 d-flex align-items-end">
+                            <button type="button" class="btn btn-outline-danger btn-sm" onclick="removeFallbackModel(this)">
+                                <i class="fas fa-trash"></i>
+                            </button>
+                        </div>
+                    </div>
+                `;
+                container.appendChild(fallbackDiv);
+                
+                // Update model dropdown for this fallback
+                setTimeout(() => {{
+                    updateModelDropdown(`fallback_provider_${{index}}`, `fallback_model_${{index}}`, fallback.model_id);
+                }}, 10);
+                
+                fallbackCounter = Math.max(fallbackCounter, index + 1);
+            }}
+            
+            function removeFallbackModel(button) {{
+                button.closest('.fallback-model').remove();
+            }}
+            
+            // Form submission handler
+            document.getElementById('configForm').addEventListener('submit', function(e) {{
+                // Collect fallback models data
+                const fallbackModels = [];
+                const fallbackElements = document.querySelectorAll('.fallback-model');
+                
+                fallbackElements.forEach((element, index) => {{
+                    const provider = element.querySelector(`select[name^="fallback_provider_"]`).value;
+                    const modelId = element.querySelector(`select[name^="fallback_model_"]`).value;
+                    const trigger = element.querySelector(`select[name^="fallback_trigger_"]`).value;
+                    const temperature = parseFloat(element.querySelector(`input[name^="fallback_temperature_"]`).value);
+                    
+                    fallbackModels.push({{
+                        provider: provider,
+                        model_id: modelId,
+                        trigger: trigger,
+                        parameters: {{
+                            temperature: temperature,
+                            max_tokens: parseInt(document.querySelector('input[name="max_tokens"]').value)
+                        }}
+                    }});
+                }});
+                
+                // Add hidden input for fallback models
+                const hiddenInput = document.createElement('input');
+                hiddenInput.type = 'hidden';
+                hiddenInput.name = 'fallback_models_json';
+                hiddenInput.value = JSON.stringify(fallbackModels);
+                this.appendChild(hiddenInput);
+            }});
+        </script>
     </body>
     </html>
     """)
@@ -2101,6 +2293,15 @@ async def update_llm_app_config(
     # Get form data
     form = await request.form()
     
+    # Parse fallback models from JSON if provided
+    fallback_models = []
+    if form.get("fallback_models_json"):
+        import json
+        try:
+            fallback_models = json.loads(form.get("fallback_models_json"))
+        except json.JSONDecodeError:
+            fallback_models = []
+    
     # Make API call to Apps service to update configuration
     apps_service_url = os.getenv("APPS_SERVICE_URL", "http://apps:8003")
     
@@ -2113,6 +2314,7 @@ async def update_llm_app_config(
             "max_tokens": int(form.get("max_tokens", 150)),
             "top_p": float(form.get("top_p", 0.9))
         },
+        "fallback_models": fallback_models,
         "cost_limits": {
             "per_request_max": float(form.get("per_request_max", 0.05)),
             "daily_max": float(form.get("daily_max", 10.0)),
