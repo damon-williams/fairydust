@@ -73,6 +73,7 @@ fairydust is a microservices-based payment and identity platform for AI-powered 
 - **Apps Service** (port 8003): App marketplace and consumption tracking
 - **Admin Portal** (port 8004): Admin dashboard for user/app management
 - **Builder Portal** (port 8005): Builder dashboard for app submission/management
+- **Content Service** (port 8006): User-generated content storage and management
 
 ### Shared Infrastructure
 - **PostgreSQL**: Primary database with UUID keys, timestamps, and JSONB metadata
@@ -108,11 +109,11 @@ fairydust is a microservices-based payment and identity platform for AI-powered 
 - Health check endpoints for each service
 - OpenAPI documentation at `/docs` and `/redoc`
 
-## Recipe Storage System
+## Content Service
 
-**Overview**: User-generated content storage for app-specific data, starting with recipes from fairydust-recipe app.
+**Overview**: Dedicated microservice for user-generated content storage and management across all fairydust apps.
 
-**Architecture**: Implemented within Apps Service for simplified deployment and authentication integration.
+**Architecture**: Standalone service with domain-driven design, handling app-specific content with proper separation of concerns.
 
 ### Database Schema
 
@@ -137,9 +138,13 @@ CREATE TABLE user_recipes (
 - Use `app_id` field to distinguish between different apps
 - Store app-specific data in JSONB `metadata` field for flexibility
 
-### API Endpoints
+### Service Details
 
-**Base URL**: `https://apps.fairydust.fun/recipes`
+**Port**: 8006  
+**Base URL**: `https://content.fairydust.fun/recipes`  
+**Health Check**: `/health`
+
+### API Endpoints
 
 - `GET /users/{user_id}/recipes` - Get user recipes with pagination/filtering
 - `POST /users/{user_id}/recipes` - Save new recipe
@@ -176,12 +181,28 @@ CREATE TABLE user_recipes (
 - Recipe content size limit: 10MB
 - Proper error handling with standard HTTP codes
 
+### Service Benefits
+
+**Separation of Concerns**: Clear distinction between app lifecycle management (Apps Service) and content storage (Content Service)  
+**Independent Scaling**: Content can scale independently based on storage and retrieval patterns  
+**Dedicated Domain**: Focused on content management patterns, search, and user-generated data  
+**Extensible Architecture**: Easy to add new content types for different apps  
+
 ### Future Extensions
 
-This pattern can be extended for other apps:
+This service can be extended for other apps:
 - `fairydust-inspire`: Activity suggestions and user collections
-- `smart-study-assistant`: Study materials and notes
-- Add `app_id` filtering to support multiple content types per user
+- `smart-study-assistant`: Study materials and notes  
+- Content sharing and collaboration features
+- Advanced search and recommendation systems
+- Content moderation and community features
+
+### Integration with Other Services
+
+- **Authentication**: Integrates with Identity Service for JWT validation
+- **App Validation**: References Apps Service for app_id validation
+- **Database**: Shares PostgreSQL instance with other services
+- **Deployment**: Independent Railway service for dedicated scaling
 
 ## Development Notes
 
