@@ -1954,13 +1954,30 @@ async def llm_app_config(
         ]
     }
     
+    # Parse JSONB fields from database (they come as strings)
+    def parse_json_field(field_value, default=None):
+        if field_value is None:
+            return default or {}
+        if isinstance(field_value, str):
+            try:
+                return json.loads(field_value)
+            except json.JSONDecodeError:
+                return default or {}
+        return field_value
+    
+    # Parse all JSON fields
+    primary_parameters = parse_json_field(config['primary_parameters'], {'temperature': 0.8, 'max_tokens': 150, 'top_p': 0.9})
+    fallback_models = parse_json_field(config['fallback_models'], [])
+    cost_limits = parse_json_field(config['cost_limits'], {'per_request_max': 0.05, 'daily_max': 10.0, 'monthly_max': 100.0})
+    feature_flags = parse_json_field(config['feature_flags'], {'streaming_enabled': True, 'cache_responses': True, 'log_prompts': False})
+    
     config_json = {
         'primary_provider': config['primary_provider'],
         'primary_model_id': config['primary_model_id'],
-        'primary_parameters': config['primary_parameters'],
-        'fallback_models': config['fallback_models'],
-        'cost_limits': config['cost_limits'],
-        'feature_flags': config['feature_flags']
+        'primary_parameters': primary_parameters,
+        'fallback_models': fallback_models,
+        'cost_limits': cost_limits,
+        'feature_flags': feature_flags
     }
     
     return HTMLResponse(f"""
@@ -2026,7 +2043,7 @@ async def llm_app_config(
                                         <div class="mb-3">
                                             <label class="form-label">Temperature</label>
                                             <input type="number" class="form-control" name="temperature" 
-                                                   value="{config['primary_parameters'].get('temperature', 0.8)}" 
+                                                   value="{primary_parameters.get('temperature', 0.8)}" 
                                                    min="0" max="2" step="0.1">
                                         </div>
                                     </div>
@@ -2034,7 +2051,7 @@ async def llm_app_config(
                                         <div class="mb-3">
                                             <label class="form-label">Max Tokens</label>
                                             <input type="number" class="form-control" name="max_tokens" 
-                                                   value="{config['primary_parameters'].get('max_tokens', 150)}" 
+                                                   value="{primary_parameters.get('max_tokens', 150)}" 
                                                    min="1" max="4000">
                                         </div>
                                     </div>
@@ -2042,7 +2059,7 @@ async def llm_app_config(
                                         <div class="mb-3">
                                             <label class="form-label">Top P</label>
                                             <input type="number" class="form-control" name="top_p" 
-                                                   value="{config['primary_parameters'].get('top_p', 0.9)}" 
+                                                   value="{primary_parameters.get('top_p', 0.9)}" 
                                                    min="0" max="1" step="0.1">
                                         </div>
                                     </div>
@@ -2076,7 +2093,7 @@ async def llm_app_config(
                                         <div class="mb-3">
                                             <label class="form-label">Per Request Max ($)</label>
                                             <input type="number" class="form-control" name="per_request_max" 
-                                                   value="{config['cost_limits'].get('per_request_max', 0.05)}" 
+                                                   value="{cost_limits.get('per_request_max', 0.05)}" 
                                                    min="0" step="0.01">
                                         </div>
                                     </div>
@@ -2084,7 +2101,7 @@ async def llm_app_config(
                                         <div class="mb-3">
                                             <label class="form-label">Daily Max ($)</label>
                                             <input type="number" class="form-control" name="daily_max" 
-                                                   value="{config['cost_limits'].get('daily_max', 10.0)}" 
+                                                   value="{cost_limits.get('daily_max', 10.0)}" 
                                                    min="0" step="0.01">
                                         </div>
                                     </div>
@@ -2092,7 +2109,7 @@ async def llm_app_config(
                                         <div class="mb-3">
                                             <label class="form-label">Monthly Max ($)</label>
                                             <input type="number" class="form-control" name="monthly_max" 
-                                                   value="{config['cost_limits'].get('monthly_max', 100.0)}" 
+                                                   value="{cost_limits.get('monthly_max', 100.0)}" 
                                                    min="0" step="0.01">
                                         </div>
                                     </div>
@@ -2110,21 +2127,21 @@ async def llm_app_config(
                                     <div class="col-md-4">
                                         <div class="form-check">
                                             <input class="form-check-input" type="checkbox" name="streaming_enabled" 
-                                                   {'checked' if config['feature_flags'].get('streaming_enabled', True) else ''}>
+                                                   {'checked' if feature_flags.get('streaming_enabled', True) else ''}>
                                             <label class="form-check-label">Streaming Enabled</label>
                                         </div>
                                     </div>
                                     <div class="col-md-4">
                                         <div class="form-check">
                                             <input class="form-check-input" type="checkbox" name="cache_responses" 
-                                                   {'checked' if config['feature_flags'].get('cache_responses', True) else ''}>
+                                                   {'checked' if feature_flags.get('cache_responses', True) else ''}>
                                             <label class="form-check-label">Cache Responses</label>
                                         </div>
                                     </div>
                                     <div class="col-md-4">
                                         <div class="form-check">
                                             <input class="form-check-input" type="checkbox" name="log_prompts" 
-                                                   {'checked' if config['feature_flags'].get('log_prompts', False) else ''}>
+                                                   {'checked' if feature_flags.get('log_prompts', False) else ''}>
                                             <label class="form-check-label">Log Prompts</label>
                                         </div>
                                     </div>
