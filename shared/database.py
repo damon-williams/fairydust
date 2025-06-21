@@ -519,3 +519,25 @@ async def create_tables():
             feature_flags = EXCLUDED.feature_flags,
             updated_at = CURRENT_TIMESTAMP;
     ''')
+    
+    # User Recipes table for app-specific content storage
+    await db.execute('''
+        CREATE TABLE IF NOT EXISTS user_recipes (
+            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            app_id VARCHAR(255) NOT NULL,
+            title VARCHAR(500),
+            content TEXT NOT NULL,
+            category VARCHAR(255),
+            metadata JSONB DEFAULT '{}',
+            is_favorited BOOLEAN DEFAULT FALSE,
+            created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+        );
+        
+        CREATE INDEX IF NOT EXISTS idx_user_recipes_user_id ON user_recipes(user_id);
+        CREATE INDEX IF NOT EXISTS idx_user_recipes_created_at ON user_recipes(created_at DESC);
+        CREATE INDEX IF NOT EXISTS idx_user_recipes_app_id ON user_recipes(app_id);
+        CREATE INDEX IF NOT EXISTS idx_user_recipes_favorited ON user_recipes(user_id, is_favorited) WHERE is_favorited = TRUE;
+        CREATE INDEX IF NOT EXISTS idx_user_recipes_user_app ON user_recipes(user_id, app_id);
+    ''')

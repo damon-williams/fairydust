@@ -108,6 +108,81 @@ fairydust is a microservices-based payment and identity platform for AI-powered 
 - Health check endpoints for each service
 - OpenAPI documentation at `/docs` and `/redoc`
 
+## Recipe Storage System
+
+**Overview**: User-generated content storage for app-specific data, starting with recipes from fairydust-recipe app.
+
+**Architecture**: Implemented within Apps Service for simplified deployment and authentication integration.
+
+### Database Schema
+
+**Table: `user_recipes`**
+```sql
+CREATE TABLE user_recipes (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    app_id VARCHAR(255) NOT NULL, -- 'fairydust-recipe', future: 'fairydust-inspire'
+    title VARCHAR(500),
+    content TEXT NOT NULL, -- Full recipe markdown content
+    category VARCHAR(255), -- Dish name (e.g., "spaghetti carbonara")
+    metadata JSONB DEFAULT '{}', -- Recipe parameters & additional data
+    is_favorited BOOLEAN DEFAULT FALSE,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
+```
+
+**Naming Convention for App-Specific Content:**
+- Pattern: `{content_type}_{entity}` (e.g., `user_recipes`, `user_activities`)
+- Use `app_id` field to distinguish between different apps
+- Store app-specific data in JSONB `metadata` field for flexibility
+
+### API Endpoints
+
+**Base URL**: `https://apps.fairydust.fun/recipes`
+
+- `GET /users/{user_id}/recipes` - Get user recipes with pagination/filtering
+- `POST /users/{user_id}/recipes` - Save new recipe
+- `PUT /users/{user_id}/recipes/{recipe_id}` - Update recipe (favorite, title)
+- `DELETE /users/{user_id}/recipes/{recipe_id}` - Delete recipe
+- `POST /users/{user_id}/recipes/sync` - Bulk sync for mobile apps
+
+### Metadata Structure (JSONB)
+
+```json
+{
+  "complexity": "Simple|Medium|Gourmet",
+  "dish": "string",
+  "include": "string",
+  "exclude": "string", 
+  "generation_params": {
+    "model_used": "claude-3-5-sonnet-20241022",
+    "dust_consumed": 3,
+    "session_id": "string"
+  },
+  "parsed_data": {
+    "prep_time": "string",
+    "cook_time": "string", 
+    "serves": "number",
+    "nutrition": "string"
+  }
+}
+```
+
+### Security & Authorization
+
+- Users can only access their own recipes (unless admin)
+- JWT token validation via shared auth middleware
+- Recipe content size limit: 10MB
+- Proper error handling with standard HTTP codes
+
+### Future Extensions
+
+This pattern can be extended for other apps:
+- `fairydust-inspire`: Activity suggestions and user collections
+- `smart-study-assistant`: Study materials and notes
+- Add `app_id` filtering to support multiple content types per user
+
 ## Development Notes
 
 - Environment detection via `ENVIRONMENT` variable (development/production)
