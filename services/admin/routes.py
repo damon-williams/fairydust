@@ -1880,6 +1880,10 @@ async def llm_app_config(
 ):
     """LLM configuration interface for specific app"""
     
+    # Check for success/error messages
+    updated = request.query_params.get('updated')
+    error = request.query_params.get('error')
+    
     # Get app details (handle both UUID and slug)
     try:
         # Try UUID first
@@ -2016,6 +2020,23 @@ async def llm_app_config(
                 <h1><i class="fas fa-cog me-2"></i>Configure {app['name']}</h1>
                 <a href="/admin/llm" class="btn btn-secondary">← Back to LLM Dashboard</a>
             </div>
+            
+            <!-- Success/Error Messages -->
+            {f'''
+            <div class="alert alert-success alert-dismissible fade show" role="alert">
+                <i class="fas fa-check-circle me-2"></i>
+                <strong>Success!</strong> LLM configuration has been updated successfully.
+                <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+            </div>
+            ''' if updated else ''}
+            
+            {f'''
+            <div class="alert alert-danger alert-dismissible fade show" role="alert">
+                <i class="fas fa-exclamation-triangle me-2"></i>
+                <strong>Error!</strong> There was a problem updating the configuration. Please try again.
+                <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+            </div>
+            ''' if error else ''}
             
             <div class="row">
                 <div class="col-lg-8">
