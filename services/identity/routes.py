@@ -897,6 +897,10 @@ async def submit_question_responses(
     saved_responses = []
     
     for response in responses.responses:
+        # Debug logging
+        print(f"DEBUG: Received response_value type: {type(response.response_value)}")
+        print(f"DEBUG: Received response_value content: {response.response_value}")
+        
         # Check if question already answered
         existing = await db.fetch_one(
             "SELECT id FROM user_question_responses WHERE user_id = $1 AND question_id = $2",
@@ -910,6 +914,15 @@ async def submit_question_responses(
         dust_reward = 1
         total_dust_awarded += dust_reward
         
+        # Ensure response_value is properly formatted for JSONB
+        response_value = response.response_value
+        if isinstance(response_value, str):
+            # If it's a plain string, we need to store it as a JSON string
+            response_value = response_value
+        
+        print(f"DEBUG: Storing response_value type: {type(response_value)}")
+        print(f"DEBUG: Storing response_value content: {response_value}")
+        
         # Save response
         saved_response = await db.fetch_one(
             """
@@ -918,7 +931,7 @@ async def submit_question_responses(
             VALUES ($1, $2, $3, $4, $5)
             RETURNING *
             """,
-            user_id, response.question_id, response.response_value, 
+            user_id, response.question_id, response_value, 
             responses.session_id, dust_reward
         )
         
