@@ -928,7 +928,7 @@ async def submit_question_responses(
             """
             INSERT INTO user_question_responses 
             (user_id, question_id, response_value, session_id, dust_reward)
-            VALUES ($1, $2, $3, $4, $5)
+            VALUES ($1, $2, $3::jsonb, $4, $5)
             RETURNING *
             """,
             user_id, response.question_id, response_value, 
