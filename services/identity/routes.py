@@ -897,7 +897,7 @@ async def submit_question_responses(
     saved_responses = []
     
     for response in responses.responses:
-        # Debug logging
+        # Debug logging  
         print(f"DEBUG: Received response_value type: {type(response.response_value)}")
         print(f"DEBUG: Received response_value content: {response.response_value}")
         
