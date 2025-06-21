@@ -22,6 +22,7 @@ from shared.database import get_db, Database
 from shared.redis_client import get_redis
 from shared.email_service import send_otp_email
 from shared.sms_service import send_otp_sms
+from shared.streak_utils import calculate_daily_streak
 
 from fastapi.security import HTTPBearer
 
@@ -130,6 +131,20 @@ async def verify_otp(
             user_id, dust_granted
         )
     
+    # Calculate and update daily login streak
+    streak_days, last_login_date = await calculate_daily_streak(
+        db, 
+        str(user["id"]), 
+        user.get("streak_days", 0), 
+        user.get("last_login_date")
+    )
+    
+    # Update user record with new streak info
+    user = await db.fetch_one(
+        "SELECT * FROM users WHERE id = $1",
+        user["id"]
+    )
+    
     # Create tokens
     token_data = {
         "user_id": str(user["id"]),
@@ -230,6 +245,20 @@ async def oauth_login(
             """,
             user_id, dust_granted
         )
+    
+    # Calculate and update daily login streak
+    streak_days, last_login_date = await calculate_daily_streak(
+        db, 
+        str(user["id"]), 
+        user.get("streak_days", 0), 
+        user.get("last_login_date")
+    )
+    
+    # Update user record with new streak info
+    user = await db.fetch_one(
+        "SELECT * FROM users WHERE id = $1",
+        user["id"]
+    )
     
     # Create tokens
     token_data = {
