@@ -354,3 +354,166 @@ async def create_tables():
         ON dust_transactions(status, created_at) 
         WHERE status = 'pending';
     ''')
+
+    # LLM Architecture Tables
+    await db.execute('''
+        CREATE TABLE IF NOT EXISTS app_model_configs (
+            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            app_id UUID NOT NULL REFERENCES apps(id) ON DELETE CASCADE,
+            
+            -- Primary model configuration
+            primary_provider VARCHAR(50) NOT NULL,
+            primary_model_id VARCHAR(100) NOT NULL,
+            primary_parameters JSONB DEFAULT '{}',
+            
+            -- Fallback models (array of objects)
+            fallback_models JSONB DEFAULT '[]',
+            
+            -- Cost and usage limits
+            cost_limits JSONB DEFAULT '{}',
+            
+            -- Feature flags
+            feature_flags JSONB DEFAULT '{}',
+            
+            created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+            
+            UNIQUE(app_id)
+        );
+        
+        CREATE INDEX IF NOT EXISTS idx_app_model_configs_app_id ON app_model_configs(app_id);
+    ''')
+    
+    await db.execute('''
+        CREATE TABLE IF NOT EXISTS llm_usage_logs (
+            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            app_id UUID NOT NULL REFERENCES apps(id) ON DELETE CASCADE,
+            
+            -- Model information
+            provider VARCHAR(50) NOT NULL,
+            model_id VARCHAR(100) NOT NULL,
+            
+            -- Usage metrics
+            prompt_tokens INTEGER NOT NULL,
+            completion_tokens INTEGER NOT NULL,
+            total_tokens INTEGER NOT NULL,
+            
+            -- Cost and performance
+            cost_usd DECIMAL(10, 6) NOT NULL,
+            latency_ms INTEGER NOT NULL,
+            
+            -- Request metadata
+            prompt_hash VARCHAR(64),
+            finish_reason VARCHAR(50),
+            was_fallback BOOLEAN DEFAULT FALSE,
+            fallback_reason VARCHAR(100),
+            
+            -- Context
+            request_metadata JSONB DEFAULT '{}',
+            
+            created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+        );
+        
+        CREATE INDEX IF NOT EXISTS idx_llm_usage_logs_user_id ON llm_usage_logs(user_id);
+        CREATE INDEX IF NOT EXISTS idx_llm_usage_logs_app_id ON llm_usage_logs(app_id);
+        CREATE INDEX IF NOT EXISTS idx_llm_usage_logs_created_at ON llm_usage_logs(created_at);
+        CREATE INDEX IF NOT EXISTS idx_llm_usage_logs_cost ON llm_usage_logs(cost_usd);
+        CREATE INDEX IF NOT EXISTS idx_llm_usage_logs_provider_model ON llm_usage_logs(provider, model_id);
+    ''')
+    
+    await db.execute('''
+        CREATE TABLE IF NOT EXISTS llm_cost_tracking (
+            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            app_id UUID REFERENCES apps(id) ON DELETE CASCADE,
+            
+            -- Time period
+            tracking_date DATE NOT NULL,
+            tracking_month VARCHAR(7) NOT NULL,
+            
+            -- Aggregated metrics
+            total_requests INTEGER DEFAULT 0,
+            total_tokens INTEGER DEFAULT 0,
+            total_cost_usd DECIMAL(10, 6) DEFAULT 0,
+            
+            -- Model breakdown
+            model_usage JSONB DEFAULT '{}',
+            
+            created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+            
+            UNIQUE(user_id, app_id, tracking_date)
+        );
+        
+        CREATE INDEX IF NOT EXISTS idx_llm_cost_tracking_user_date ON llm_cost_tracking(user_id, tracking_date);
+        CREATE INDEX IF NOT EXISTS idx_llm_cost_tracking_month ON llm_cost_tracking(tracking_month);
+        CREATE INDEX IF NOT EXISTS idx_llm_cost_tracking_app_date ON llm_cost_tracking(app_id, tracking_date);
+    ''')
+    
+    # Insert default model configurations for existing apps
+    # First, try to insert configurations for apps that exist
+    await db.execute('''
+        INSERT INTO app_model_configs (
+            app_id, primary_provider, primary_model_id, primary_parameters, 
+            fallback_models, cost_limits, feature_flags
+        )
+        SELECT 
+            a.id,
+            CASE 
+                WHEN a.slug = 'fairydust-inspire' THEN 'anthropic'
+                WHEN a.slug = 'fairydust-recipe' THEN 'anthropic'
+                ELSE 'anthropic'
+            END,
+            CASE 
+                WHEN a.slug = 'fairydust-inspire' THEN 'claude-3-haiku-20240307'
+                WHEN a.slug = 'fairydust-recipe' THEN 'claude-3-sonnet-20240229'
+                ELSE 'claude-3-haiku-20240307'
+            END,
+            CASE 
+                WHEN a.slug = 'fairydust-inspire' THEN '{"temperature": 0.8, "max_tokens": 150, "top_p": 0.9}'::jsonb
+                WHEN a.slug = 'fairydust-recipe' THEN '{"temperature": 0.7, "max_tokens": 1000, "top_p": 0.9}'::jsonb
+                ELSE '{"temperature": 0.8, "max_tokens": 150, "top_p": 0.9}'::jsonb
+            END,
+            CASE 
+                WHEN a.slug = 'fairydust-inspire' THEN '[
+                    {
+                        "provider": "openai",
+                        "model_id": "gpt-3.5-turbo",
+                        "trigger": "provider_error",
+                        "parameters": {"temperature": 0.8, "max_tokens": 150}
+                    }
+                ]'::jsonb
+                WHEN a.slug = 'fairydust-recipe' THEN '[
+                    {
+                        "provider": "openai",
+                        "model_id": "gpt-4-turbo-preview",
+                        "trigger": "provider_error",
+                        "parameters": {"temperature": 0.7, "max_tokens": 1000}
+                    },
+                    {
+                        "provider": "openai",
+                        "model_id": "gpt-3.5-turbo",
+                        "trigger": "cost_threshold_exceeded",
+                        "parameters": {"temperature": 0.7, "max_tokens": 1000}
+                    }
+                ]'::jsonb
+                ELSE '[]'::jsonb
+            END,
+            CASE 
+                WHEN a.slug = 'fairydust-inspire' THEN '{"per_request_max": 0.05, "daily_max": 10.0, "monthly_max": 100.0}'::jsonb
+                WHEN a.slug = 'fairydust-recipe' THEN '{"per_request_max": 0.15, "daily_max": 25.0, "monthly_max": 200.0}'::jsonb
+                ELSE '{"per_request_max": 0.05, "daily_max": 10.0, "monthly_max": 100.0}'::jsonb
+            END,
+            '{"streaming_enabled": true, "cache_responses": true, "log_prompts": false}'::jsonb
+        FROM apps a
+        WHERE a.slug IN ('fairydust-inspire', 'fairydust-recipe')
+        ON CONFLICT (app_id) DO UPDATE SET
+            primary_provider = EXCLUDED.primary_provider,
+            primary_model_id = EXCLUDED.primary_model_id,
+            primary_parameters = EXCLUDED.primary_parameters,
+            fallback_models = EXCLUDED.fallback_models,
+            cost_limits = EXCLUDED.cost_limits,
+            feature_flags = EXCLUDED.feature_flags,
+            updated_at = CURRENT_TIMESTAMP;
+    ''')
