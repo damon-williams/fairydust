@@ -281,35 +281,32 @@ async def create_tables():
         CREATE INDEX IF NOT EXISTS idx_user_question_responses_question_id ON user_question_responses(question_id);
     ''')
     
-    # Insert default profiling questions
-    await db.execute('''
-        INSERT INTO profiling_questions (id, category, question_text, question_type, profile_field, priority, app_context, options, is_active)
-        VALUES 
-        ('interests_hobbies', 'interests', 'What activities do you enjoy in your free time?', 'multi_select', 'interests', 10, '["fairydust-inspire"]'::jsonb, '[{"id": "cooking", "label": "Cooking"}, {"id": "fitness", "label": "Fitness"}, {"id": "music", "label": "Music"}, {"id": "reading", "label": "Reading"}, {"id": "gaming", "label": "Gaming"}, {"id": "art", "label": "Art & Crafts"}, {"id": "outdoor", "label": "Outdoor Activities"}, {"id": "travel", "label": "Travel"}]'::jsonb, true),
-        
-        ('adventure_level', 'personality', 'How adventurous are you?', 'scale', 'adventure_level', 8, '["fairydust-inspire"]'::jsonb, '{"min": 1, "max": 5, "labels": {"1": "Prefer familiar", "3": "Sometimes try new things", "5": "Always seeking adventure"}}'::jsonb, true),
-        
-        ('creativity_level', 'personality', 'How creative would you say you are?', 'scale', 'creativity_level', 7, '["fairydust-inspire", "fairydust-recipe"]'::jsonb, '{"min": 1, "max": 5, "labels": {"1": "Practical", "3": "Somewhat creative", "5": "Very creative"}}'::jsonb, true),
-        
-        ('dietary_preferences', 'cooking', 'Do you follow any specific dietary preferences?', 'multi_select', 'dietary_preferences', 9, '["fairydust-recipe"]'::jsonb, '[{"id": "none", "label": "No restrictions"}, {"id": "vegetarian", "label": "Vegetarian"}, {"id": "vegan", "label": "Vegan"}, {"id": "gluten_free", "label": "Gluten-free"}, {"id": "dairy_free", "label": "Dairy-free"}, {"id": "keto", "label": "Keto"}, {"id": "paleo", "label": "Paleo"}, {"id": "low_carb", "label": "Low-carb"}]'::jsonb, true),
-        
-        ('cooking_skill_level', 'cooking', 'How would you describe your cooking skills?', 'single_choice', 'cooking_skill_level', 6, '["fairydust-recipe"]'::jsonb, '[{"id": "beginner", "label": "Beginner"}, {"id": "intermediate", "label": "Intermediate"}, {"id": "advanced", "label": "Advanced"}, {"id": "expert", "label": "Expert"}]'::jsonb, true),
-        
-        ('lifestyle_goals', 'goals', 'What are your main lifestyle goals?', 'multi_select', 'lifestyle_goals', 8, '["fairydust-inspire"]'::jsonb, '[{"id": "health", "label": "Health & Wellness"}, {"id": "relationships", "label": "Relationships"}, {"id": "career", "label": "Career Growth"}, {"id": "learning", "label": "Learning & Growth"}, {"id": "creativity", "label": "Creative Expression"}, {"id": "adventure", "label": "Adventure & Travel"}, {"id": "family", "label": "Family Time"}, {"id": "relaxation", "label": "Rest & Relaxation"}]'::jsonb, true),
-        
-        ('social_preference', 'personality', 'What size groups do you prefer for activities?', 'single_choice', 'social_preference', 5, '["fairydust-inspire"]'::jsonb, '[{"id": "solo", "label": "Solo activities"}, {"id": "small_group", "label": "Small groups (2-4 people)"}, {"id": "large_group", "label": "Large groups (5+ people)"}, {"id": "varies", "label": "Depends on the activity"}]'::jsonb, true),
-        
-        ('cooking_skill', 'cooking', 'How would you describe your cooking skills?', 'single_choice', 'cooking_skill', 6, '["fairydust-recipe"]'::jsonb, '[{"id": "beginner", "label": "Beginner"}, {"id": "intermediate", "label": "Intermediate"}, {"id": "advanced", "label": "Advanced"}, {"id": "expert", "label": "Expert"}]'::jsonb, true)
-        
-        ON CONFLICT (id) DO UPDATE SET
-            question_text = EXCLUDED.question_text,
-            question_type = EXCLUDED.question_type,
-            profile_field = EXCLUDED.profile_field,
-            priority = EXCLUDED.priority,
-            app_context = EXCLUDED.app_context,
-            options = EXCLUDED.options,
-            is_active = EXCLUDED.is_active;
-    ''')
+    # Insert default profiling questions (with smaller batches to avoid timeout)
+    questions = [
+        ('interests_hobbies', 'interests', 'What activities do you enjoy in your free time?', 'multi_select', 'interests', 10, '["fairydust-inspire"]', '[{"id": "cooking", "label": "Cooking"}, {"id": "fitness", "label": "Fitness"}, {"id": "music", "label": "Music"}, {"id": "reading", "label": "Reading"}, {"id": "gaming", "label": "Gaming"}, {"id": "art", "label": "Art & Crafts"}, {"id": "outdoor", "label": "Outdoor Activities"}, {"id": "travel", "label": "Travel"}]', True),
+        ('adventure_level', 'personality', 'How adventurous are you?', 'scale', 'adventure_level', 8, '["fairydust-inspire"]', '{"min": 1, "max": 5, "labels": {"1": "Prefer familiar", "3": "Sometimes try new things", "5": "Always seeking adventure"}}', True),
+        ('creativity_level', 'personality', 'How creative would you say you are?', 'scale', 'creativity_level', 7, '["fairydust-inspire", "fairydust-recipe"]', '{"min": 1, "max": 5, "labels": {"1": "Practical", "3": "Somewhat creative", "5": "Very creative"}}', True),
+        ('dietary_preferences', 'cooking', 'Do you follow any specific dietary preferences?', 'multi_select', 'dietary_preferences', 9, '["fairydust-recipe"]', '[{"id": "none", "label": "No restrictions"}, {"id": "vegetarian", "label": "Vegetarian"}, {"id": "vegan", "label": "Vegan"}, {"id": "gluten_free", "label": "Gluten-free"}, {"id": "dairy_free", "label": "Dairy-free"}, {"id": "keto", "label": "Keto"}, {"id": "paleo", "label": "Paleo"}, {"id": "low_carb", "label": "Low-carb"}]', True),
+        ('cooking_skill_level', 'cooking', 'How would you describe your cooking skills?', 'single_choice', 'cooking_skill_level', 6, '["fairydust-recipe"]', '[{"id": "beginner", "label": "Beginner"}, {"id": "intermediate", "label": "Intermediate"}, {"id": "advanced", "label": "Advanced"}, {"id": "expert", "label": "Expert"}]', True),
+        ('lifestyle_goals', 'goals', 'What are your main lifestyle goals?', 'multi_select', 'lifestyle_goals', 8, '["fairydust-inspire"]', '[{"id": "health", "label": "Health & Wellness"}, {"id": "relationships", "label": "Relationships"}, {"id": "career", "label": "Career Growth"}, {"id": "learning", "label": "Learning & Growth"}, {"id": "creativity", "label": "Creative Expression"}, {"id": "adventure", "label": "Adventure & Travel"}, {"id": "family", "label": "Family Time"}, {"id": "relaxation", "label": "Rest & Relaxation"}]', True),
+        ('social_preference', 'personality', 'What size groups do you prefer for activities?', 'single_choice', 'social_preference', 5, '["fairydust-inspire"]', '[{"id": "solo", "label": "Solo activities"}, {"id": "small_group", "label": "Small groups (2-4 people)"}, {"id": "large_group", "label": "Large groups (5+ people)"}, {"id": "varies", "label": "Depends on the activity"}]', True),
+        ('cooking_skill', 'cooking', 'How would you describe your cooking skills?', 'single_choice', 'cooking_skill', 6, '["fairydust-recipe"]', '[{"id": "beginner", "label": "Beginner"}, {"id": "intermediate", "label": "Intermediate"}, {"id": "advanced", "label": "Advanced"}, {"id": "expert", "label": "Expert"}]', True)
+    ]
+    
+    # Insert questions individually to avoid timeout
+    for question in questions:
+        await db.execute('''
+            INSERT INTO profiling_questions (id, category, question_text, question_type, profile_field, priority, app_context, options, is_active)
+            VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb, $8::jsonb, $9)
+            ON CONFLICT (id) DO UPDATE SET
+                question_text = EXCLUDED.question_text,
+                question_type = EXCLUDED.question_type,
+                profile_field = EXCLUDED.profile_field,
+                priority = EXCLUDED.priority,
+                app_context = EXCLUDED.app_context,
+                options = EXCLUDED.options,
+                is_active = EXCLUDED.is_active
+        ''', *question)
     
     await db.execute('''
         CREATE TABLE IF NOT EXISTS people_in_my_life (
