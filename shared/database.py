@@ -359,7 +359,7 @@ async def create_tables():
     await db.execute('''
         CREATE TABLE IF NOT EXISTS app_model_configs (
             id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-            app_id VARCHAR(255) NOT NULL REFERENCES apps(id) ON DELETE CASCADE,
+            app_id UUID NOT NULL REFERENCES apps(id) ON DELETE CASCADE,
             
             -- Primary model configuration
             primary_provider VARCHAR(50) NOT NULL,
@@ -388,7 +388,7 @@ async def create_tables():
         CREATE TABLE IF NOT EXISTS llm_usage_logs (
             id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
             user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-            app_id VARCHAR(255) NOT NULL REFERENCES apps(id) ON DELETE CASCADE,
+            app_id UUID NOT NULL REFERENCES apps(id) ON DELETE CASCADE,
             
             -- Model information
             provider VARCHAR(50) NOT NULL,
@@ -426,7 +426,7 @@ async def create_tables():
         CREATE TABLE IF NOT EXISTS llm_cost_tracking (
             id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
             user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-            app_id VARCHAR(255) REFERENCES apps(id) ON DELETE CASCADE,
+            app_id UUID REFERENCES apps(id) ON DELETE CASCADE,
             
             -- Time period
             tracking_date DATE NOT NULL,
@@ -452,49 +452,62 @@ async def create_tables():
     ''')
     
     # Insert default model configurations for existing apps
+    # First, try to insert configurations for apps that exist
     await db.execute('''
         INSERT INTO app_model_configs (
             app_id, primary_provider, primary_model_id, primary_parameters, 
             fallback_models, cost_limits, feature_flags
-        ) VALUES 
-        (
-            'fairydust-inspire',
-            'anthropic',
-            'claude-3-haiku-20240307',
-            '{"temperature": 0.8, "max_tokens": 150, "top_p": 0.9}'::jsonb,
-            '[
-                {
-                    "provider": "openai",
-                    "model_id": "gpt-3.5-turbo",
-                    "trigger": "provider_error",
-                    "parameters": {"temperature": 0.8, "max_tokens": 150}
-                }
-            ]'::jsonb,
-            '{"per_request_max": 0.05, "daily_max": 10.0, "monthly_max": 100.0}'::jsonb,
-            '{"streaming_enabled": true, "cache_responses": true, "log_prompts": false}'::jsonb
-        ),
-        (
-            'fairydust-recipe',
-            'anthropic',
-            'claude-3-sonnet-20240229',
-            '{"temperature": 0.7, "max_tokens": 1000, "top_p": 0.9}'::jsonb,
-            '[
-                {
-                    "provider": "openai",
-                    "model_id": "gpt-4-turbo-preview",
-                    "trigger": "provider_error",
-                    "parameters": {"temperature": 0.7, "max_tokens": 1000}
-                },
-                {
-                    "provider": "openai",
-                    "model_id": "gpt-3.5-turbo",
-                    "trigger": "cost_threshold_exceeded",
-                    "parameters": {"temperature": 0.7, "max_tokens": 1000}
-                }
-            ]'::jsonb,
-            '{"per_request_max": 0.15, "daily_max": 25.0, "monthly_max": 200.0}'::jsonb,
-            '{"streaming_enabled": true, "cache_responses": true, "log_prompts": false}'::jsonb
         )
+        SELECT 
+            a.id,
+            CASE 
+                WHEN a.slug = 'fairydust-inspire' THEN 'anthropic'
+                WHEN a.slug = 'fairydust-recipe' THEN 'anthropic'
+                ELSE 'anthropic'
+            END,
+            CASE 
+                WHEN a.slug = 'fairydust-inspire' THEN 'claude-3-haiku-20240307'
+                WHEN a.slug = 'fairydust-recipe' THEN 'claude-3-sonnet-20240229'
+                ELSE 'claude-3-haiku-20240307'
+            END,
+            CASE 
+                WHEN a.slug = 'fairydust-inspire' THEN '{"temperature": 0.8, "max_tokens": 150, "top_p": 0.9}'::jsonb
+                WHEN a.slug = 'fairydust-recipe' THEN '{"temperature": 0.7, "max_tokens": 1000, "top_p": 0.9}'::jsonb
+                ELSE '{"temperature": 0.8, "max_tokens": 150, "top_p": 0.9}'::jsonb
+            END,
+            CASE 
+                WHEN a.slug = 'fairydust-inspire' THEN '[
+                    {
+                        "provider": "openai",
+                        "model_id": "gpt-3.5-turbo",
+                        "trigger": "provider_error",
+                        "parameters": {"temperature": 0.8, "max_tokens": 150}
+                    }
+                ]'::jsonb
+                WHEN a.slug = 'fairydust-recipe' THEN '[
+                    {
+                        "provider": "openai",
+                        "model_id": "gpt-4-turbo-preview",
+                        "trigger": "provider_error",
+                        "parameters": {"temperature": 0.7, "max_tokens": 1000}
+                    },
+                    {
+                        "provider": "openai",
+                        "model_id": "gpt-3.5-turbo",
+                        "trigger": "cost_threshold_exceeded",
+                        "parameters": {"temperature": 0.7, "max_tokens": 1000}
+                    }
+                ]'::jsonb
+                ELSE '[]'::jsonb
+            END,
+            CASE 
+                WHEN a.slug = 'fairydust-inspire' THEN '{"per_request_max": 0.05, "daily_max": 10.0, "monthly_max": 100.0}'::jsonb
+                WHEN a.slug = 'fairydust-recipe' THEN '{"per_request_max": 0.15, "daily_max": 25.0, "monthly_max": 200.0}'::jsonb
+                ELSE '{"per_request_max": 0.05, "daily_max": 10.0, "monthly_max": 100.0}'::jsonb
+            END,
+            '{"streaming_enabled": true, "cache_responses": true, "log_prompts": false}'::jsonb
+        FROM apps a
+        WHERE a.slug IN ('fairydust-inspire', 'fairydust-recipe')
         ON CONFLICT (app_id) DO UPDATE SET
             primary_provider = EXCLUDED.primary_provider,
             primary_model_id = EXCLUDED.primary_model_id,
