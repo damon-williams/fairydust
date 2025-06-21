@@ -914,10 +914,11 @@ async def submit_question_responses(
         dust_reward = 0
         
         # Ensure response_value is properly formatted for JSONB
-        response_value = response.response_value
-        if isinstance(response_value, str):
-            # If it's a plain string, we need to store it as a JSON string
-            response_value = response_value
+        # asyncpg requires JSON string for JSONB fields, not Python objects
+        if isinstance(response.response_value, (dict, list)):
+            response_value = json.dumps(response.response_value)
+        else:
+            response_value = json.dumps(response.response_value)
         
         print(f"DEBUG: Storing response_value type: {type(response_value)}")
         print(f"DEBUG: Storing response_value content: {response_value}")
