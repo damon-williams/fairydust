@@ -43,7 +43,7 @@ services:
       SMTP_HOST: smtp.resend.com
       SMTP_PORT: 587
       SMTP_USERNAME: resend
-      SMTP_PASSWORD: re_PZTPM7q1_GCXmm64oNusGgUdfYAAVVSbT
+      SMTP_PASSWORD: ${SMTP_PASSWORD}
       FROM_EMAIL: noreply@fairydust.fun
     depends_on:
       postgres:

@@ -297,7 +297,9 @@ async def create_tables():
         
         ('lifestyle_goals', 'goals', 'What are your main lifestyle goals?', 'multi_select', 'lifestyle_goals', 8, '["fairydust-inspire"]'::jsonb, '[{"id": "health", "label": "Health & Wellness"}, {"id": "relationships", "label": "Relationships"}, {"id": "career", "label": "Career Growth"}, {"id": "learning", "label": "Learning & Growth"}, {"id": "creativity", "label": "Creative Expression"}, {"id": "adventure", "label": "Adventure & Travel"}, {"id": "family", "label": "Family Time"}, {"id": "relaxation", "label": "Rest & Relaxation"}]'::jsonb, true),
         
-        ('social_preference', 'personality', 'What size groups do you prefer for activities?', 'single_choice', 'social_preference', 5, '["fairydust-inspire"]'::jsonb, '[{"id": "solo", "label": "Solo activities"}, {"id": "small_group", "label": "Small groups (2-4 people)"}, {"id": "large_group", "label": "Large groups (5+ people)"}, {"id": "varies", "label": "Depends on the activity"}]'::jsonb, true)
+        ('social_preference', 'personality', 'What size groups do you prefer for activities?', 'single_choice', 'social_preference', 5, '["fairydust-inspire"]'::jsonb, '[{"id": "solo", "label": "Solo activities"}, {"id": "small_group", "label": "Small groups (2-4 people)"}, {"id": "large_group", "label": "Large groups (5+ people)"}, {"id": "varies", "label": "Depends on the activity"}]'::jsonb, true),
+        
+        ('cooking_skill', 'cooking', 'How would you describe your cooking skills?', 'single_choice', 'cooking_skill', 6, '["fairydust-recipe"]'::jsonb, '[{"id": "beginner", "label": "Beginner"}, {"id": "intermediate", "label": "Intermediate"}, {"id": "advanced", "label": "Advanced"}, {"id": "expert", "label": "Expert"}]'::jsonb, true)
         
         ON CONFLICT (id) DO UPDATE SET
             question_text = EXCLUDED.question_text,
