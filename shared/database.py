@@ -466,9 +466,9 @@ async def create_tables():
                 ELSE 'anthropic'
             END,
             CASE 
-                WHEN a.slug = 'fairydust-inspire' THEN 'claude-3-haiku-20240307'
-                WHEN a.slug = 'fairydust-recipe' THEN 'claude-3-sonnet-20240229'
-                ELSE 'claude-3-haiku-20240307'
+                WHEN a.slug = 'fairydust-inspire' THEN 'claude-3-5-haiku-20241022'
+                WHEN a.slug = 'fairydust-recipe' THEN 'claude-3-5-sonnet-20241022'
+                ELSE 'claude-3-5-haiku-20241022'
             END,
             CASE 
                 WHEN a.slug = 'fairydust-inspire' THEN '{"temperature": 0.8, "max_tokens": 150, "top_p": 0.9}'::jsonb
@@ -479,7 +479,7 @@ async def create_tables():
                 WHEN a.slug = 'fairydust-inspire' THEN '[
                     {
                         "provider": "openai",
-                        "model_id": "gpt-3.5-turbo",
+                        "model_id": "gpt-4o-mini",
                         "trigger": "provider_error",
                         "parameters": {"temperature": 0.8, "max_tokens": 150}
                     }
@@ -487,13 +487,13 @@ async def create_tables():
                 WHEN a.slug = 'fairydust-recipe' THEN '[
                     {
                         "provider": "openai",
-                        "model_id": "gpt-4-turbo-preview",
+                        "model_id": "gpt-4o",
                         "trigger": "provider_error",
                         "parameters": {"temperature": 0.7, "max_tokens": 1000}
                     },
                     {
                         "provider": "openai",
-                        "model_id": "gpt-3.5-turbo",
+                        "model_id": "gpt-4o-mini",
                         "trigger": "cost_threshold_exceeded",
                         "parameters": {"temperature": 0.7, "max_tokens": 1000}
                     }
