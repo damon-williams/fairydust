@@ -1331,6 +1331,15 @@ async def create_question(
         )
         
         return RedirectResponse(url="/admin/questions?created=1", status_code=302)
+        
+    except Exception as e:
+        # Handle errors (duplicate ID, invalid JSON, etc.)
+        return HTMLResponse(f"""
+            <script>
+                alert('Error creating question: {str(e)}');
+                window.history.back();
+            </script>
+        """)
 
 @admin_router.get("/questions/{question_id}/edit", response_class=HTMLResponse)
 async def edit_question_form(
@@ -1550,15 +1559,6 @@ async def update_question(
         return HTMLResponse(f"""
             <script>
                 alert('Error updating question: {str(e)}');
-                window.history.back();
-            </script>
-        """)
-        
-    except Exception as e:
-        # Handle errors (duplicate ID, invalid JSON, etc.)
-        return HTMLResponse(f"""
-            <script>
-                alert('Error creating question: {str(e)}');
                 window.history.back();
             </script>
         """)
