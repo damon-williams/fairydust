@@ -6,7 +6,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from shared.database import init_db, close_db, get_db
 from shared.redis_client import init_redis, close_redis
-from routes import app_router, admin_router, marketplace_router
+from routes import app_router, admin_router, marketplace_router, llm_router
 from service_routes import service_router
 
 @asynccontextmanager
@@ -42,6 +42,7 @@ app.include_router(app_router, prefix="/apps", tags=["apps"])
 app.include_router(admin_router, prefix="/admin", tags=["admin"])
 app.include_router(marketplace_router, prefix="/marketplace", tags=["marketplace"])
 app.include_router(service_router, prefix="/service", tags=["service"])
+app.include_router(llm_router, prefix="/llm", tags=["llm"])
 
 @app.get("/")
 async def root():

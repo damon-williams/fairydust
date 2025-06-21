@@ -334,7 +334,8 @@ async def dashboard(
                         <div class="card-body">
                             <a href="/admin/users" class="btn btn-primary me-2">Manage Users</a>
                             <a href="/admin/apps" class="btn btn-success me-2">Manage Apps</a>
-                            <a href="/admin/questions" class="btn btn-info">Manage Questions</a>
+                            <a href="/admin/questions" class="btn btn-info me-2">Manage Questions</a>
+                            <a href="/admin/llm" class="btn btn-warning">LLM Analytics</a>
                         </div>
                     </div>
                 </div>
@@ -1607,3 +1608,242 @@ async def delete_question(
     await db.execute("DELETE FROM profiling_questions WHERE id = $1", question_id)
     
     return RedirectResponse(url="/admin/questions?deleted=1", status_code=302)
+
+# ============================================================================
+# LLM MANAGEMENT ROUTES
+# ============================================================================
+
+@admin_router.get("/llm", response_class=HTMLResponse)
+async def llm_dashboard(
+    request: Request,
+    admin_user: dict = Depends(get_current_admin_user),
+    db: Database = Depends(get_db)
+):
+    """LLM analytics and configuration dashboard"""
+    
+    # Get total usage stats (last 30 days)
+    stats = await db.fetch_one("""
+        SELECT 
+            COUNT(*) as total_requests,
+            SUM(total_tokens) as total_tokens,
+            SUM(cost_usd) as total_cost_usd,
+            AVG(latency_ms) as avg_latency_ms
+        FROM llm_usage_logs
+        WHERE created_at >= NOW() - INTERVAL '30 days'
+    """)
+    
+    # Get model breakdown
+    model_stats = await db.fetch_all("""
+        SELECT 
+            provider,
+            model_id,
+            COUNT(*) as requests,
+            SUM(cost_usd) as cost,
+            AVG(latency_ms) as avg_latency
+        FROM llm_usage_logs
+        WHERE created_at >= NOW() - INTERVAL '30 days'
+        GROUP BY provider, model_id
+        ORDER BY cost DESC
+        LIMIT 10
+    """)
+    
+    # Get app configurations
+    app_configs = await db.fetch_all("""
+        SELECT c.*, a.name as app_name
+        FROM app_model_configs c
+        JOIN apps a ON c.app_id = a.id
+        ORDER BY c.updated_at DESC
+    """)
+    
+    # Build model stats HTML
+    model_stats_html = ""
+    for stat in model_stats:
+        model_stats_html += f"""
+        <tr>
+            <td>{stat['provider']}</td>
+            <td>{stat['model_id']}</td>
+            <td>{stat['requests']:,}</td>
+            <td>${stat['cost']:.4f}</td>
+            <td>{stat['avg_latency']:.0f}ms</td>
+        </tr>
+        """
+    
+    # Build app configs HTML
+    app_configs_html = ""
+    for config in app_configs:
+        app_configs_html += f"""
+        <tr>
+            <td><strong>{config['app_name'] or config['app_id']}</strong></td>
+            <td>{config['primary_provider']}</td>
+            <td>{config['primary_model_id']}</td>
+            <td>
+                <a href="/admin/llm/apps/{config['app_id']}" class="btn btn-sm btn-primary">
+                    <i class="fas fa-cog"></i> Configure
+                </a>
+            </td>
+        </tr>
+        """
+    
+    return HTMLResponse(f"""
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <title>LLM Management - fairydust Admin</title>
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
+        <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+        <style>
+            .fairy-dust {{ color: #ffd700; text-shadow: 0 0 5px rgba(255,215,0,0.5); }}
+            .stat-card {{ border-left: 4px solid; }}
+            .stat-card-primary {{ border-left-color: #4e73df; }}
+            .stat-card-success {{ border-left-color: #1cc88a; }}
+            .stat-card-warning {{ border-left-color: #f6c23e; }}
+            .stat-card-info {{ border-left-color: #36b9cc; }}
+        </style>
+    </head>
+    <body>
+        <nav class="navbar navbar-expand-lg navbar-dark bg-primary">
+            <div class="container-fluid">
+                <a class="navbar-brand" href="/admin/dashboard">
+                    <i class="fas fa-magic fairy-dust"></i> fairydust
+                </a>
+                <div class="navbar-nav ms-auto">
+                    <span class="navbar-text me-3">Welcome, {admin_user['fairyname']}</span>
+                    <a class="nav-link" href="/admin/logout">Logout</a>
+                </div>
+            </div>
+        </nav>
+        
+        <div class="container-fluid mt-4">
+            <div class="d-flex justify-content-between align-items-center mb-4">
+                <h1><i class="fas fa-brain me-2"></i>LLM Management</h1>
+                <a href="/admin/dashboard" class="btn btn-secondary">← Back to Dashboard</a>
+            </div>
+            
+            <!-- Stats Cards -->
+            <div class="row mb-4">
+                <div class="col-xl-3 col-md-6 mb-4">
+                    <div class="card stat-card stat-card-primary h-100">
+                        <div class="card-body">
+                            <div class="row align-items-center">
+                                <div class="col">
+                                    <div class="text-uppercase mb-1">Total Requests (30d)</div>
+                                    <div class="h5 mb-0">{stats['total_requests'] or 0:,}</div>
+                                </div>
+                                <div class="col-auto">
+                                    <i class="fas fa-comments fa-2x text-muted"></i>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="col-xl-3 col-md-6 mb-4">
+                    <div class="card stat-card stat-card-success h-100">
+                        <div class="card-body">
+                            <div class="row align-items-center">
+                                <div class="col">
+                                    <div class="text-uppercase mb-1">Total Tokens</div>
+                                    <div class="h5 mb-0">{stats['total_tokens'] or 0:,}</div>
+                                </div>
+                                <div class="col-auto">
+                                    <i class="fas fa-coins fa-2x text-muted"></i>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="col-xl-3 col-md-6 mb-4">
+                    <div class="card stat-card stat-card-warning h-100">
+                        <div class="card-body">
+                            <div class="row align-items-center">
+                                <div class="col">
+                                    <div class="text-uppercase mb-1">Total Cost</div>
+                                    <div class="h5 mb-0">${stats['total_cost_usd'] or 0:.2f}</div>
+                                </div>
+                                <div class="col-auto">
+                                    <i class="fas fa-dollar-sign fa-2x text-muted"></i>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="col-xl-3 col-md-6 mb-4">
+                    <div class="card stat-card stat-card-info h-100">
+                        <div class="card-body">
+                            <div class="row align-items-center">
+                                <div class="col">
+                                    <div class="text-uppercase mb-1">Avg Latency</div>
+                                    <div class="h5 mb-0">{stats['avg_latency_ms'] or 0:.0f}ms</div>
+                                </div>
+                                <div class="col-auto">
+                                    <i class="fas fa-clock fa-2x text-muted"></i>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="row">
+                <!-- Model Performance -->
+                <div class="col-md-6">
+                    <div class="card">
+                        <div class="card-header">
+                            <h6 class="mb-0">Top Models by Cost (30 days)</h6>
+                        </div>
+                        <div class="card-body">
+                            <div class="table-responsive">
+                                <table class="table table-sm">
+                                    <thead>
+                                        <tr>
+                                            <th>Provider</th>
+                                            <th>Model</th>
+                                            <th>Requests</th>
+                                            <th>Cost</th>
+                                            <th>Avg Latency</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {model_stats_html}
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- App Configurations -->
+                <div class="col-md-6">
+                    <div class="card">
+                        <div class="card-header">
+                            <h6 class="mb-0">App Model Configurations</h6>
+                        </div>
+                        <div class="card-body">
+                            <div class="table-responsive">
+                                <table class="table table-sm">
+                                    <thead>
+                                        <tr>
+                                            <th>App</th>
+                                            <th>Provider</th>
+                                            <th>Model</th>
+                                            <th>Actions</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {app_configs_html}
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
+    </body>
+    </html>
+    """)
