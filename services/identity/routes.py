@@ -897,6 +897,10 @@ async def submit_question_responses(
     saved_responses = []
     
     for response in responses.responses:
+        # Debug logging  
+        print(f"DEBUG: Received response_value type: {type(response.response_value)}")
+        print(f"DEBUG: Received response_value content: {response.response_value}")
+        
         # Check if question already answered
         existing = await db.fetch_one(
             "SELECT id FROM user_question_responses WHERE user_id = $1 AND question_id = $2",
@@ -906,9 +910,17 @@ async def submit_question_responses(
         if existing:
             continue  # Skip already answered questions
         
-        # Award DUST (1 DUST per question)
-        dust_reward = 1
-        total_dust_awarded += dust_reward
+        # No DUST reward for profile questions
+        dust_reward = 0
+        
+        # Ensure response_value is properly formatted for JSONB
+        response_value = response.response_value
+        if isinstance(response_value, str):
+            # If it's a plain string, we need to store it as a JSON string
+            response_value = response_value
+        
+        print(f"DEBUG: Storing response_value type: {type(response_value)}")
+        print(f"DEBUG: Storing response_value content: {response_value}")
         
         # Save response
         saved_response = await db.fetch_one(
@@ -918,15 +930,14 @@ async def submit_question_responses(
             VALUES ($1, $2, $3, $4, $5)
             RETURNING *
             """,
-            user_id, response.question_id, response.response_value, 
+            user_id, response.question_id, response_value, 
             responses.session_id, dust_reward
         )
         
         saved_responses.append(UserQuestionResponse(**saved_response))
     
-    # Award DUST via ledger service if any questions were answered
-    if total_dust_awarded > 0:
-        # Update user's profiling session count
+    # Update user's profiling session count if any questions were answered
+    if len(saved_responses) > 0:
         await db.execute(
             """
             UPDATE users 
@@ -936,27 +947,6 @@ async def submit_question_responses(
             """,
             user_id
         )
-        
-        # Create DUST transaction via ledger service
-        ledger_url = os.getenv("LEDGER_SERVICE_URL", "http://ledger:8002")
-        async with httpx.AsyncClient() as client:
-            try:
-                await client.post(
-                    f"{ledger_url}/transactions/grant",
-                    json={
-                        "user_id": user_id,
-                        "amount": total_dust_awarded,
-                        "reason": "profile_questions",
-                        "idempotency_key": f"questions_{user_id}_{responses.session_id}",
-                        "metadata": {
-                            "questions_answered": len(saved_responses),
-                            "session_id": responses.session_id
-                        }
-                    }
-                )
-            except Exception as e:
-                # Log error but don't fail the request
-                print(f"Failed to award DUST: {e}")
     
     # Invalidate AI context cache
     redis_client = await get_redis()
@@ -966,7 +956,7 @@ async def submit_question_responses(
     
     return {
         "responses_saved": len(saved_responses),
-        "dust_awarded": total_dust_awarded,
+        "dust_awarded": 0,
         "responses": saved_responses
     }
 
