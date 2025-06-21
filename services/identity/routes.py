@@ -1160,3 +1160,31 @@ async def get_all_questions(
         questions.append(question)
     
     return {"questions": questions}
+
+@user_router.get("/{user_id}/question-responses", response_model=dict)
+async def get_user_question_responses(
+    user_id: str,
+    db: Database = Depends(get_db)
+):
+    """Get all question responses for a specific user"""
+    responses_data = await db.fetch_all(
+        """
+        SELECT question_id, response_value, session_id, answered_at as created_at
+        FROM user_question_responses 
+        WHERE user_id = $1
+        ORDER BY answered_at DESC
+        """,
+        user_id
+    )
+    
+    responses = []
+    for r in responses_data:
+        response = {
+            "question_id": r["question_id"],
+            "response_value": r["response_value"],
+            "session_id": r["session_id"],
+            "created_at": r["created_at"]
+        }
+        responses.append(response)
+    
+    return {"responses": responses}
