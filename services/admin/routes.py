@@ -1661,10 +1661,6 @@ async def llm_dashboard(
         ORDER BY a.name
     """)
     
-    # Debug: check all apps in database
-    all_apps = await db.fetch_all("SELECT id, name, slug, is_active, status FROM apps")
-    print(f"All apps in DB: {[(app['name'], app['is_active'], app['status']) for app in all_apps]}")
-    print(f"Found {len(app_configs)} apps for LLM dashboard: {[config['app_name'] for config in app_configs]}")
     
     # Build model stats HTML
     model_stats_html = ""
@@ -2380,21 +2376,14 @@ async def update_llm_app_config(
     # Get form data
     form = await request.form()
     
-    # Debug: print form data
-    print(f"Form data: {dict(form)}")
-    
     # Parse fallback models from JSON if provided
     fallback_models = []
     if form.get("fallback_models_json"):
         import json
         try:
             fallback_models = json.loads(form.get("fallback_models_json"))
-            print(f"Parsed fallback models: {fallback_models}")
-        except json.JSONDecodeError as e:
-            print(f"JSON decode error for fallback models: {e}")
+        except json.JSONDecodeError:
             fallback_models = []
-    else:
-        print("No fallback_models_json in form")
     
     # Update configuration directly in database (admin portal has direct DB access)
     import json
@@ -2443,15 +2432,12 @@ async def update_llm_app_config(
             app['id']
         )
         
-        print(f"Successfully updated configuration for app {app['id']}")
-        
         return RedirectResponse(
             url=f"/admin/llm/apps/{app_id}?updated=1",
             status_code=302
         )
         
     except Exception as e:
-        print(f"Database update error: {type(e).__name__}: {str(e)}")
         raise HTTPException(
             status_code=500,
             detail=f"Error updating configuration: {type(e).__name__}: {str(e)}"
