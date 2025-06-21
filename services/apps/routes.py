@@ -225,10 +225,20 @@ async def log_llm_usage(
     import json
     from datetime import date
     
-    # Verify app exists
-    app = await db.fetch_one("SELECT id FROM apps WHERE id = $1", usage.app_id)
+    # Verify app exists and get UUID (handle both UUID and slug)
+    try:
+        # Try as UUID first
+        app_uuid = UUID(usage.app_id)
+        app = await db.fetch_one("SELECT id FROM apps WHERE id = $1", app_uuid)
+    except ValueError:
+        # If not UUID, treat as slug
+        app = await db.fetch_one("SELECT id FROM apps WHERE slug = $1", usage.app_id)
+    
     if not app:
         raise HTTPException(status_code=404, detail="App not found")
+    
+    # Use the actual app UUID for database operations
+    app_uuid = app["id"]
     
     # Verify user exists  
     user = await db.fetch_one("SELECT id FROM users WHERE id = $1", usage.user_id)
@@ -245,7 +255,7 @@ async def log_llm_usage(
             was_fallback, fallback_reason, request_metadata
         ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15::jsonb)
     """, 
-        usage_id, usage.user_id, usage.app_id, usage.provider.value, usage.model_id,
+        usage_id, usage.user_id, app_uuid, usage.provider.value, usage.model_id,
         usage.prompt_tokens, usage.completion_tokens, usage.total_tokens,
         usage.cost_usd, usage.latency_ms, usage.prompt_hash, usage.finish_reason,
         usage.was_fallback, usage.fallback_reason, json.dumps(usage.request_metadata)
@@ -268,7 +278,7 @@ async def log_llm_usage(
             model_usage = COALESCE(llm_cost_tracking.model_usage, '{}'::jsonb) || $7::jsonb,
             updated_at = CURRENT_TIMESTAMP
     """,
-        usage.user_id, usage.app_id, today, month,
+        usage.user_id, app_uuid, today, month,
         usage.total_tokens, usage.cost_usd,
         json.dumps({usage.model_id: {"requests": 1, "cost": float(usage.cost_usd)}})
     )
