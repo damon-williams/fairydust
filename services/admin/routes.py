@@ -1922,6 +1922,14 @@ async def llm_app_config(
                 app_id, primary_provider, primary_model_id, primary_parameters,
                 fallback_models, cost_limits, feature_flags
             ) VALUES ($1, $2, $3, $4::jsonb, $5::jsonb, $6::jsonb, $7::jsonb)
+            ON CONFLICT (app_id) DO UPDATE SET
+                primary_provider = EXCLUDED.primary_provider,
+                primary_model_id = EXCLUDED.primary_model_id,
+                primary_parameters = EXCLUDED.primary_parameters,
+                fallback_models = EXCLUDED.fallback_models,
+                cost_limits = EXCLUDED.cost_limits,
+                feature_flags = EXCLUDED.feature_flags,
+                updated_at = CURRENT_TIMESTAMP
         """, 
             app['id'], default_provider, default_model, default_params,
             default_fallbacks, default_cost_limits,
