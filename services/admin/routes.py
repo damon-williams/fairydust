@@ -2351,67 +2351,81 @@ async def update_llm_app_config(
     # Get form data
     form = await request.form()
     
+    # Debug: print form data
+    print(f"Form data: {dict(form)}")
+    
     # Parse fallback models from JSON if provided
     fallback_models = []
     if form.get("fallback_models_json"):
         import json
         try:
             fallback_models = json.loads(form.get("fallback_models_json"))
-        except json.JSONDecodeError:
+            print(f"Parsed fallback models: {fallback_models}")
+        except json.JSONDecodeError as e:
+            print(f"JSON decode error for fallback models: {e}")
             fallback_models = []
+    else:
+        print("No fallback_models_json in form")
     
-    # Make API call to Apps service to update configuration
-    apps_service_url = os.getenv("APPS_SERVICE_URL", "http://apps:8003")
+    # Update configuration directly in database (admin portal has direct DB access)
+    import json
     
-    # Build update payload
-    update_data = {
-        "primary_provider": form.get("primary_provider"),
-        "primary_model_id": form.get("primary_model_id"),
-        "primary_parameters": {
+    try:
+        # Build JSON data for database
+        primary_parameters_json = json.dumps({
             "temperature": float(form.get("temperature", 0.8)),
             "max_tokens": int(form.get("max_tokens", 150)),
             "top_p": float(form.get("top_p", 0.9))
-        },
-        "fallback_models": fallback_models,
-        "cost_limits": {
+        })
+        
+        cost_limits_json = json.dumps({
             "per_request_max": float(form.get("per_request_max", 0.05)),
             "daily_max": float(form.get("daily_max", 10.0)),
             "monthly_max": float(form.get("monthly_max", 100.0))
-        },
-        "feature_flags": {
+        })
+        
+        feature_flags_json = json.dumps({
             "streaming_enabled": "streaming_enabled" in form,
             "cache_responses": "cache_responses" in form,
             "log_prompts": "log_prompts" in form
-        }
-    }
-    
-    try:
-        async with httpx.AsyncClient() as client:
-            # Get admin token for API call
-            admin_token = request.cookies.get("admin_token")
-            headers = {"Authorization": f"Bearer {admin_token}"}
-            
-            response = await client.put(
-                f"{apps_service_url}/llm/{app['id']}/model-config",
-                json=update_data,
-                headers=headers
-            )
-            
-            if response.status_code == 200:
-                return RedirectResponse(
-                    url=f"/admin/llm/apps/{app_id}?updated=1",
-                    status_code=302
-                )
-            else:
-                raise HTTPException(
-                    status_code=response.status_code,
-                    detail=f"Failed to update configuration: {response.text}"
-                )
-    
+        })
+        
+        fallback_models_json = json.dumps(fallback_models)
+        
+        # Update the database directly
+        await db.execute("""
+            UPDATE app_model_configs 
+            SET 
+                primary_provider = $1,
+                primary_model_id = $2, 
+                primary_parameters = $3::jsonb,
+                fallback_models = $4::jsonb,
+                cost_limits = $5::jsonb,
+                feature_flags = $6::jsonb,
+                updated_at = CURRENT_TIMESTAMP
+            WHERE app_id = $7
+        """, 
+            form.get("primary_provider"),
+            form.get("primary_model_id"),
+            primary_parameters_json,
+            fallback_models_json,
+            cost_limits_json,
+            feature_flags_json,
+            app['id']
+        )
+        
+        print(f"Successfully updated configuration for app {app['id']}")
+        
+        return RedirectResponse(
+            url=f"/admin/llm/apps/{app_id}?updated=1",
+            status_code=302
+        )
+        
     except Exception as e:
+        print(f"Database update error: {type(e).__name__}: {str(e)}")
         raise HTTPException(
             status_code=500,
-            detail=f"Error updating configuration: {str(e)}"
+            detail=f"Error updating configuration: {type(e).__name__}: {str(e)}"
         )
     
     return RedirectResponse(
