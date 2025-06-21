@@ -268,7 +268,7 @@ async def create_tables():
         CREATE TABLE IF NOT EXISTS user_question_responses (
             id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
             user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-            question_id VARCHAR(100) NOT NULL REFERENCES profiling_questions(id),
+            question_id VARCHAR(100) NOT NULL,
             response_value JSONB NOT NULL,
             session_id VARCHAR(100),
             dust_reward INTEGER DEFAULT 0,
@@ -278,6 +278,13 @@ async def create_tables():
         
         CREATE INDEX IF NOT EXISTS idx_user_question_responses_user_id ON user_question_responses(user_id);
         CREATE INDEX IF NOT EXISTS idx_user_question_responses_session ON user_question_responses(session_id);
+        CREATE INDEX IF NOT EXISTS idx_user_question_responses_question_id ON user_question_responses(question_id);
+    ''')
+    
+    # Drop foreign key constraint if it exists
+    await db.execute('''
+        ALTER TABLE user_question_responses 
+        DROP CONSTRAINT IF EXISTS user_question_responses_question_id_fkey;
     ''')
     
     await db.execute('''
