@@ -741,6 +741,8 @@ async def get_ai_context(
     app_id: Optional[str] = None
 ):
     """Get AI context for LLM personalization"""
+    import json
+    
     if current_user.user_id != user_id and not current_user.is_admin:
         raise HTTPException(status_code=403, detail="Access denied")
     
@@ -788,6 +790,15 @@ async def get_ai_context(
         category = profile['category']
         field_name = profile['field_name']
         field_value = profile['field_value']
+        
+        # Parse JSON field_value if it's a string representation of JSON
+        if isinstance(field_value, str):
+            try:
+                # Try to parse as JSON (for arrays and objects)
+                field_value = json.loads(field_value)
+            except (json.JSONDecodeError, ValueError):
+                # If not valid JSON, keep as string
+                pass
         
         if category not in user_traits:
             user_traits[category] = {}
@@ -905,7 +916,21 @@ async def get_ai_context(
         if 'cooking' in user_traits:
             dietary = user_traits['cooking'].get('dietary_preferences', [])
             if dietary:
-                recipe_context += f". Must accommodate: {', '.join(dietary)}"
+                # Ensure dietary is a list before joining
+                if isinstance(dietary, list):
+                    recipe_context += f". Must accommodate: {', '.join(dietary)}"
+                elif isinstance(dietary, str):
+                    # If it's still a string, try to parse it as JSON one more time
+                    try:
+                        dietary_list = json.loads(dietary)
+                        if isinstance(dietary_list, list):
+                            recipe_context += f". Must accommodate: {', '.join(dietary_list)}"
+                        else:
+                            recipe_context += f". Must accommodate: {dietary}"
+                    except (json.JSONDecodeError, ValueError):
+                        recipe_context += f". Must accommodate: {dietary}"
+                else:
+                    recipe_context += f". Must accommodate: {dietary}"
             skill = user_traits['cooking'].get('cooking_skill_level')
             if skill:
                 recipe_context += f". Cooking skill: {skill}"
