@@ -335,7 +335,7 @@ async def dashboard(
                             <a href="/admin/users" class="btn btn-primary me-2">Manage Users</a>
                             <a href="/admin/apps" class="btn btn-success me-2">Manage Apps</a>
                             <a href="/admin/questions" class="btn btn-info me-2">Manage Questions</a>
-                            <a href="/admin/llm" class="btn btn-warning">LLM Analytics</a>
+                            <a href="/admin/llm" class="btn btn-warning">LLM Management</a>
                         </div>
                     </div>
                 </div>
@@ -1647,13 +1647,24 @@ async def llm_dashboard(
         LIMIT 10
     """)
     
-    # Get app configurations
+    # Get app configurations (show all apps, even without configs)
     app_configs = await db.fetch_all("""
-        SELECT c.*, a.name as app_name
-        FROM app_model_configs c
-        JOIN apps a ON c.app_id = a.id
-        ORDER BY c.updated_at DESC
+        SELECT 
+            a.id as app_id,
+            a.name as app_name,
+            a.slug as app_slug,
+            c.primary_provider,
+            c.primary_model_id,
+            c.updated_at
+        FROM apps a
+        LEFT JOIN app_model_configs c ON a.id = c.app_id
+        ORDER BY a.name
     """)
+    
+    # Debug: check all apps in database
+    all_apps = await db.fetch_all("SELECT id, name, slug, is_active, status FROM apps")
+    print(f"All apps in DB: {[(app['name'], app['is_active'], app['status']) for app in all_apps]}")
+    print(f"Found {len(app_configs)} apps for LLM dashboard: {[config['app_name'] for config in app_configs]}")
     
     # Build model stats HTML
     model_stats_html = ""
@@ -1670,16 +1681,28 @@ async def llm_dashboard(
     
     # Build app configs HTML
     app_configs_html = ""
-    for config in app_configs:
-        app_configs_html += f"""
+    if app_configs:
+        for config in app_configs:
+            provider = config['primary_provider'] or 'Not configured'
+            model = config['primary_model_id'] or 'Not configured'
+            
+            app_configs_html += f"""
+            <tr>
+                <td><strong>{config['app_name']}</strong><br><small class="text-muted">{config['app_slug']}</small></td>
+                <td>{provider}</td>
+                <td>{model}</td>
+                <td>
+                    <a href="/admin/llm/apps/{config['app_id']}" class="btn btn-sm btn-primary">
+                        <i class="fas fa-cog"></i> Configure
+                    </a>
+                </td>
+            </tr>
+            """
+    else:
+        app_configs_html = """
         <tr>
-            <td><strong>{config['app_name'] or config['app_id']}</strong></td>
-            <td>{config['primary_provider']}</td>
-            <td>{config['primary_model_id']}</td>
-            <td>
-                <a href="/admin/llm/apps/{config['app_id']}" class="btn btn-sm btn-primary">
-                    <i class="fas fa-cog"></i> Configure
-                </a>
+            <td colspan="4" class="text-center text-muted">
+                <i class="fas fa-info-circle me-2"></i>No active apps found. Create some apps first.
             </td>
         </tr>
         """
