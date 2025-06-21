@@ -1880,10 +1880,19 @@ async def llm_app_config(
 ):
     """LLM configuration interface for specific app"""
     
-    # Get app details
-    app = await db.fetch_one("""
-        SELECT id, name, slug FROM apps WHERE id = $1 OR slug = $1
-    """, app_id)
+    # Get app details (handle both UUID and slug)
+    try:
+        # Try UUID first
+        from uuid import UUID
+        uuid_app_id = UUID(app_id)
+        app = await db.fetch_one("""
+            SELECT id, name, slug FROM apps WHERE id = $1
+        """, uuid_app_id)
+    except (ValueError, TypeError):
+        # If not UUID, try as slug
+        app = await db.fetch_one("""
+            SELECT id, name, slug FROM apps WHERE slug = $1
+        """, app_id)
     
     if not app:
         raise HTTPException(status_code=404, detail="App not found")
@@ -2305,10 +2314,19 @@ async def update_llm_app_config(
 ):
     """Update LLM configuration for an app"""
     
-    # Get app details
-    app = await db.fetch_one("""
-        SELECT id, name, slug FROM apps WHERE id = $1 OR slug = $1
-    """, app_id)
+    # Get app details (handle both UUID and slug)
+    try:
+        # Try UUID first
+        from uuid import UUID
+        uuid_app_id = UUID(app_id)
+        app = await db.fetch_one("""
+            SELECT id, name, slug FROM apps WHERE id = $1
+        """, uuid_app_id)
+    except (ValueError, TypeError):
+        # If not UUID, try as slug
+        app = await db.fetch_one("""
+            SELECT id, name, slug FROM apps WHERE slug = $1
+        """, app_id)
     
     if not app:
         raise HTTPException(status_code=404, detail="App not found")
