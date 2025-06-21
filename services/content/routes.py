@@ -2,6 +2,7 @@
 from datetime import datetime
 from typing import Optional
 from uuid import UUID, uuid4
+import json
 from fastapi import APIRouter, HTTPException, Depends, Query, status
 
 from models import (
@@ -13,6 +14,18 @@ from shared.auth_middleware import get_current_user, TokenData
 
 # Create router
 content_router = APIRouter()
+
+def parse_recipe_metadata(recipe_data):
+    """Parse JSONB metadata field from database result"""
+    recipe_dict = dict(recipe_data)
+    if isinstance(recipe_dict.get('metadata'), str):
+        try:
+            recipe_dict['metadata'] = json.loads(recipe_dict['metadata'])
+        except (json.JSONDecodeError, TypeError):
+            recipe_dict['metadata'] = {}
+    elif recipe_dict.get('metadata') is None:
+        recipe_dict['metadata'] = {}
+    return recipe_dict
 
 # ============================================================================
 # RECIPE STORAGE ROUTES
@@ -68,7 +81,7 @@ async def get_user_recipes(
     has_more = (offset + limit) < total_count
     
     return RecipesResponse(
-        recipes=[UserRecipe(**recipe) for recipe in recipes],
+        recipes=[UserRecipe(**parse_recipe_metadata(recipe)) for recipe in recipes],
         total_count=total_count,
         has_more=has_more
     )
@@ -84,8 +97,6 @@ async def save_recipe(
     # Users can only save to their own account unless admin
     if current_user.user_id != str(user_id) and not current_user.is_admin:
         raise HTTPException(status_code=403, detail="Access denied")
-    
-    import json
     
     # Validate content size (10MB limit as per spec)
     if len(recipe_data.content.encode('utf-8')) > 10 * 1024 * 1024:
@@ -119,7 +130,7 @@ async def save_recipe(
         recipe_data.category, metadata_json, False
     )
     
-    return {"recipe": UserRecipe(**recipe)}
+    return {"recipe": UserRecipe(**parse_recipe_metadata(recipe))}
 
 @content_router.put("/users/{user_id}/recipes/{recipe_id}", response_model=dict)
 async def update_recipe(
@@ -160,7 +171,7 @@ async def update_recipe(
     
     if not update_fields:
         # Return current recipe if no updates
-        return {"recipe": UserRecipe(**recipe)}
+        return {"recipe": UserRecipe(**parse_recipe_metadata(recipe))}
     
     # Add updated_at field
     update_fields.append(f"updated_at = ${param_count}")
@@ -178,7 +189,7 @@ async def update_recipe(
     """
     
     updated_recipe = await db.fetch_one(query, *update_values)
-    return {"recipe": UserRecipe(**updated_recipe)}
+    return {"recipe": UserRecipe(**parse_recipe_metadata(updated_recipe))}
 
 @content_router.delete("/users/{user_id}/recipes/{recipe_id}")
 async def delete_recipe(
@@ -220,8 +231,6 @@ async def sync_recipes(
     # Users can only sync their own recipes unless admin
     if current_user.user_id != str(user_id) and not current_user.is_admin:
         raise HTTPException(status_code=403, detail="Access denied")
-    
-    import json
     
     sync_timestamp = datetime.utcnow()
     
@@ -281,7 +290,7 @@ async def sync_recipes(
             continue
     
     return RecipeSyncResponse(
-        server_recipes=[UserRecipe(**recipe) for recipe in server_recipes],
+        server_recipes=[UserRecipe(**parse_recipe_metadata(recipe)) for recipe in server_recipes],
         sync_conflicts=sync_conflicts,
         sync_timestamp=sync_timestamp
     )
