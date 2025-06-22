@@ -88,7 +88,11 @@ async def verify_otp(
     # Check if user exists
     identifier_type = "email" if "@" in otp_verify.identifier else "phone"
     user = await db.fetch_one(
-        f"SELECT * FROM users WHERE {identifier_type} = $1",
+        f"""SELECT id, fairyname, email, phone, avatar_url, is_builder, is_admin, is_active,
+                  first_name, age_range, city, country, dust_balance, auth_provider,
+                  last_profiling_session, total_profiling_sessions, streak_days, last_login_date,
+                  created_at, updated_at 
+           FROM users WHERE {identifier_type} = $1""",
         otp_verify.identifier
     )
     
@@ -141,7 +145,11 @@ async def verify_otp(
     
     # Update user record with new streak info
     user = await db.fetch_one(
-        "SELECT * FROM users WHERE id = $1",
+        """SELECT id, fairyname, email, phone, avatar_url, is_builder, is_admin, is_active,
+                  first_name, age_range, city, country, dust_balance, auth_provider,
+                  last_profiling_session, total_profiling_sessions, streak_days, last_login_date,
+                  created_at, updated_at 
+           FROM users WHERE id = $1""",
         user["id"]
     )
     
@@ -256,7 +264,11 @@ async def oauth_login(
     
     # Update user record with new streak info
     user = await db.fetch_one(
-        "SELECT * FROM users WHERE id = $1",
+        """SELECT id, fairyname, email, phone, avatar_url, is_builder, is_admin, is_active,
+                  first_name, age_range, city, country, dust_balance, auth_provider,
+                  last_profiling_session, total_profiling_sessions, streak_days, last_login_date,
+                  created_at, updated_at 
+           FROM users WHERE id = $1""",
         user["id"]
     )
     
@@ -340,7 +352,11 @@ async def get_current_user_profile(
 ):
     """Get current user profile"""
     user = await db.fetch_one(
-        "SELECT * FROM users WHERE id = $1",
+        """SELECT id, fairyname, email, phone, avatar_url, is_builder, is_admin, is_active,
+                  first_name, age_range, city, country, dust_balance, auth_provider,
+                  last_profiling_session, total_profiling_sessions, streak_days, last_login_date,
+                  created_at, updated_at 
+           FROM users WHERE id = $1""",
         current_user.user_id
     )
     
