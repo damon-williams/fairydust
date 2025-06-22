@@ -41,6 +41,25 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# Add centralized middleware
+from shared.middleware import add_middleware_to_app
+
+# Identity service specific endpoint limits
+endpoint_limits = {
+    "/auth/otp/request": 1024,  # 1KB limit for OTP requests
+    "/auth/otp/verify": 1024,   # 1KB limit for OTP verification
+    "/users/profile": 50 * 1024,  # 50KB for profile data
+    "/users/people": 10 * 1024   # 10KB for people data
+}
+
+add_middleware_to_app(
+    app=app,
+    service_name="identity",
+    max_request_size=1 * 1024 * 1024,  # 1MB default for identity service
+    endpoint_limits=endpoint_limits,
+    log_requests=True
+)
+
 # Health check endpoint
 @app.get("/health")
 async def health_check():

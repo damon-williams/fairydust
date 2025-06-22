@@ -38,6 +38,24 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# Add centralized middleware
+from shared.middleware import add_middleware_to_app
+
+# Content service specific endpoint limits
+endpoint_limits = {
+    "/recipes": 10 * 1024 * 1024,  # 10MB for recipe content
+    "/content/stories/generate": 50 * 1024,  # 50KB for story generation requests
+    "/content/stories": 1 * 1024 * 1024,  # 1MB for story content
+}
+
+add_middleware_to_app(
+    app=app,
+    service_name="content",
+    max_request_size=15 * 1024 * 1024,  # 15MB default for content service
+    endpoint_limits=endpoint_limits,
+    log_requests=True
+)
+
 # Include routers
 app.include_router(content_router, prefix="/recipes", tags=["recipes"])
 app.include_router(story_router, prefix="/content", tags=["stories"])
