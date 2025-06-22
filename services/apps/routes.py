@@ -39,8 +39,8 @@ async def create_app(
     """, 
         app_id, UUID(current_user.user_id), app_data.name, app_data.slug,
         app_data.description, app_data.icon_url,
-        AppStatus.PENDING, app_data.category, app_data.website_url,
-        app_data.demo_url, app_data.callback_url, False
+        AppStatus.APPROVED, app_data.category, app_data.website_url,
+        app_data.demo_url, app_data.callback_url, True
     )
     
     # Fetch the created app
@@ -224,6 +224,11 @@ async def log_llm_usage(
     """Log LLM usage for analytics and cost tracking"""
     import json
     from datetime import date
+    from shared.llm_pricing import calculate_llm_cost, validate_token_counts
+    
+    # Validate token counts
+    if not validate_token_counts(usage.prompt_tokens, usage.completion_tokens, usage.total_tokens):
+        raise HTTPException(status_code=400, detail="Invalid token counts")
     
     # Verify app exists and get UUID (handle both UUID and slug)
     try:
@@ -245,6 +250,17 @@ async def log_llm_usage(
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
     
+    # Calculate cost server-side (SECURITY: never trust client-provided costs)
+    try:
+        calculated_cost = calculate_llm_cost(
+            provider=usage.provider.value,
+            model_id=usage.model_id,
+            input_tokens=usage.prompt_tokens,
+            output_tokens=usage.completion_tokens
+        )
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Cost calculation failed: {str(e)}")
+    
     # Insert usage log
     usage_id = uuid4()
     await db.execute("""
@@ -257,7 +273,7 @@ async def log_llm_usage(
     """, 
         usage_id, usage.user_id, app_uuid, usage.provider.value, usage.model_id,
         usage.prompt_tokens, usage.completion_tokens, usage.total_tokens,
-        usage.cost_usd, usage.latency_ms, usage.prompt_hash, usage.finish_reason,
+        calculated_cost, usage.latency_ms, usage.prompt_hash, usage.finish_reason,
         usage.was_fallback, usage.fallback_reason, json.dumps(usage.request_metadata)
     )
     
@@ -279,11 +295,62 @@ async def log_llm_usage(
             updated_at = CURRENT_TIMESTAMP
     """,
         usage.user_id, app_uuid, today, month,
-        usage.total_tokens, usage.cost_usd,
-        json.dumps({usage.model_id: {"requests": 1, "cost": float(usage.cost_usd)}})
+        usage.total_tokens, calculated_cost,
+        json.dumps({usage.model_id: {"requests": 1, "cost": float(calculated_cost)}})
     )
     
-    return {"message": "Usage logged successfully", "usage_id": usage_id}
+    return {
+        "message": "Usage logged successfully", 
+        "usage_id": usage_id,
+        "calculated_cost_usd": calculated_cost
+    }
+
+@llm_router.get("/cost-estimate")
+async def estimate_llm_cost(
+    provider: str = Query(..., description="LLM provider (anthropic, openai)"),
+    model_id: str = Query(..., description="Model identifier"),
+    estimated_tokens: int = Query(..., ge=1, le=1000000, description="Estimated total tokens")
+):
+    """Estimate LLM cost for a given token count"""
+    from shared.llm_pricing import estimate_cost_range, get_model_pricing
+    
+    try:
+        # Get cost range estimation
+        cost_range = estimate_cost_range(provider, model_id, estimated_tokens)
+        
+        # Get model pricing details
+        pricing = get_model_pricing(provider, model_id)
+        
+        return {
+            "provider": provider,
+            "model_id": model_id,
+            "estimated_tokens": estimated_tokens,
+            "cost_range": cost_range,
+            "pricing_per_million_tokens": pricing,
+            "note": "Actual cost depends on input/output token ratio"
+        }
+        
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Cost estimation failed: {str(e)}")
+
+@llm_router.get("/supported-models")
+async def get_supported_models():
+    """Get list of all supported LLM models and their pricing"""
+    from shared.llm_pricing import get_all_supported_models, PRICING_CONFIG
+    
+    models = get_all_supported_models()
+    
+    # Add pricing info to response
+    models_with_pricing = {}
+    for provider, model_list in models.items():
+        models_with_pricing[provider] = {}
+        for model_id in model_list:
+            models_with_pricing[provider][model_id] = PRICING_CONFIG[provider][model_id]
+    
+    return {
+        "supported_models": models_with_pricing,
+        "note": "Pricing is per million tokens (input/output)"
+    }
 
 @llm_router.get("/users/{user_id}/usage", response_model=LLMUsageStats)
 async def get_user_llm_usage(

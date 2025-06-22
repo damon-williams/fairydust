@@ -147,6 +147,7 @@ TITLE: [Story Title]
 
 async def call_llm_service(prompt: str, model_config: dict) -> tuple[str, dict]:
     """Call the LLM service to generate story content"""
+    from shared.llm_pricing import calculate_llm_cost
     start_time = time.time()
     
     try:
@@ -181,15 +182,29 @@ As they reached home, both Sarah and her dad knew they would treasure this magic
         title = lines[0].replace('TITLE: ', '') if lines[0].startswith('TITLE: ') else "Generated Story"
         content = '\n'.join(lines[1:]).strip() if len(lines) > 1 else mock_response
         
-        # Mock token usage
-        tokens_used = len(prompt.split()) + len(content.split())
+        # Calculate realistic token usage
+        prompt_tokens = len(prompt.split())
+        completion_tokens = len(content.split())
+        total_tokens = prompt_tokens + completion_tokens
         generation_time = int((time.time() - start_time) * 1000)
         
+        # Calculate real cost using centralized pricing
+        provider = model_config.get("primary_provider", "anthropic")
+        model_id = model_config.get("primary_model_id", "claude-3-5-sonnet-20241022")
+        calculated_cost = calculate_llm_cost(
+            provider=provider,
+            model_id=model_id,
+            input_tokens=prompt_tokens,
+            output_tokens=completion_tokens
+        )
+        
         generation_metadata = {
-            "model_used": model_config["primary_model_id"],
-            "tokens_used": tokens_used,
+            "model_used": model_id,
+            "tokens_used": total_tokens,
+            "prompt_tokens": prompt_tokens,
+            "completion_tokens": completion_tokens,
             "generation_time_ms": generation_time,
-            "cost_usd": tokens_used * 0.0001  # Mock cost
+            "cost_usd": calculated_cost
         }
         
         return title + "\n\n" + content, generation_metadata
