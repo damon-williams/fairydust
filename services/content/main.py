@@ -7,6 +7,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from shared.database import init_db, close_db
 from shared.redis_client import init_redis, close_redis
 from routes import content_router
+from story_routes import router as story_router
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -39,6 +40,7 @@ app.add_middleware(
 
 # Include routers
 app.include_router(content_router, prefix="/recipes", tags=["recipes"])
+app.include_router(story_router, prefix="/content", tags=["stories"])
 
 @app.get("/")
 async def root():
