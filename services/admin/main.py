@@ -61,9 +61,15 @@ static_dir = Path(__file__).parent / "static"
 if static_dir.exists():
     app.mount("/static", StaticFiles(directory=str(static_dir)), name="static")
 
-from routes import admin_router
+from routes import auth_router, dashboard_router, users_router, apps_router, questions_router, llm_router
 
-app.include_router(admin_router, prefix="/admin")
+# Include all route modules
+app.include_router(auth_router, prefix="/admin")
+app.include_router(dashboard_router, prefix="/admin")
+app.include_router(users_router, prefix="/admin/users")
+app.include_router(apps_router, prefix="/admin/apps")
+app.include_router(questions_router, prefix="/admin/questions")
+app.include_router(llm_router, prefix="/admin/llm")
 
 @app.get("/")
 async def root():

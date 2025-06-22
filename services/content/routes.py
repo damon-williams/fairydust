@@ -179,7 +179,7 @@ async def update_recipe(
     """
     
     updated_recipe = await db.fetch_one(query, *update_values)
-    return {"recipe": UserRecipe(**parse_recipe_metadata(updated_recipe))}
+    return {"recipe": UserRecipe(**parse_recipe_data(updated_recipe))}
 
 @content_router.delete("/users/{user_id}/recipes/{recipe_id}")
 async def delete_recipe(
