@@ -47,6 +47,12 @@ class Database:
         async with self.pool.acquire() as conn:
             return await conn.execute(query, *args)
     
+    async def execute_schema(self, query: str, *args) -> str:
+        """Execute a schema/DDL query with extended timeout"""
+        async with self.pool.acquire() as conn:
+            # Use 5 minute timeout for schema operations
+            return await conn.execute(query, *args, timeout=300)
+    
     async def execute_many(self, query: str, args_list: List[tuple]) -> None:
         """Execute a query multiple times with different arguments"""
         async with self.pool.acquire() as conn:
@@ -104,10 +110,14 @@ async def get_db() -> Database:
 
 async def create_tables():
     """Create database tables if they don't exist"""
+    import logging
+    logger = logging.getLogger(__name__)
+    
     db = await get_db()
+    logger.info("Starting database schema creation/update...")
     
     # Users table
-    await db.execute('''
+    await db.execute_schema('''
         CREATE TABLE IF NOT EXISTS users (
             id UUID PRIMARY KEY,
             fairyname VARCHAR(50) UNIQUE NOT NULL,
@@ -135,7 +145,7 @@ async def create_tables():
     ''')
     
     # Add new profile columns to existing users table
-    await db.execute('''
+    await db.execute_schema('''
         ALTER TABLE users ADD COLUMN IF NOT EXISTS first_name VARCHAR(100);
         ALTER TABLE users ADD COLUMN IF NOT EXISTS age_range VARCHAR(20);
         ALTER TABLE users ADD COLUMN IF NOT EXISTS city VARCHAR(100);
@@ -147,7 +157,7 @@ async def create_tables():
     ''')
     
     # User auth providers table (for OAuth)
-    await db.execute('''
+    await db.execute_schema('''
         CREATE TABLE IF NOT EXISTS user_auth_providers (
             user_id UUID REFERENCES users(id) ON DELETE CASCADE,
             provider VARCHAR(50) NOT NULL,
@@ -161,7 +171,7 @@ async def create_tables():
     ''')
     
     # DUST transactions table
-    await db.execute('''
+    await db.execute_schema('''
         CREATE TABLE IF NOT EXISTS dust_transactions (
             id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
             user_id UUID REFERENCES users(id) ON DELETE CASCADE,
@@ -183,7 +193,7 @@ async def create_tables():
     ''')
     
     # Apps table
-    await db.execute('''
+    await db.execute_schema('''
         CREATE TABLE IF NOT EXISTS apps (
             id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
             builder_id UUID REFERENCES users(id) ON DELETE CASCADE,
@@ -210,7 +220,7 @@ async def create_tables():
     ''')
 
     # Hourly analytics aggregation table
-    await db.execute('''
+    await db.execute_schema('''
         CREATE TABLE IF NOT EXISTS hourly_app_stats (
             app_id UUID REFERENCES apps(id) ON DELETE CASCADE,
             hour TIMESTAMP WITH TIME ZONE NOT NULL,
@@ -226,7 +236,7 @@ async def create_tables():
     ''')
 
     # Progressive Profiling Tables
-    await db.execute('''
+    await db.execute_schema('''
         CREATE TABLE IF NOT EXISTS user_profile_data (
             id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
             user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
@@ -249,7 +259,7 @@ async def create_tables():
         CREATE INDEX IF NOT EXISTS idx_user_profile_data_updated_at ON user_profile_data(updated_at);
     ''')
     
-    await db.execute('''
+    await db.execute_schema('''
         CREATE TABLE IF NOT EXISTS profiling_questions (
             id VARCHAR(100) PRIMARY KEY,
             category VARCHAR(50) NOT NULL,
@@ -268,7 +278,7 @@ async def create_tables():
         CREATE INDEX IF NOT EXISTS idx_profiling_questions_priority ON profiling_questions(priority);
     ''')
     
-    await db.execute('''
+    await db.execute_schema('''
         CREATE TABLE IF NOT EXISTS user_question_responses (
             id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
             user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
@@ -299,7 +309,7 @@ async def create_tables():
     
     # Insert questions individually to avoid timeout
     for question in questions:
-        await db.execute('''
+        await db.execute_schema('''
             INSERT INTO profiling_questions (id, category, question_text, question_type, profile_field, priority, app_context, options, is_active)
             VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb, $8::jsonb, $9)
             ON CONFLICT (id) DO UPDATE SET
@@ -312,7 +322,7 @@ async def create_tables():
                 is_active = EXCLUDED.is_active
         ''', *question)
     
-    await db.execute('''
+    await db.execute_schema('''
         CREATE TABLE IF NOT EXISTS people_in_my_life (
             id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
             user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
@@ -326,7 +336,7 @@ async def create_tables():
         CREATE INDEX IF NOT EXISTS idx_people_in_my_life_user_id ON people_in_my_life(user_id);
     ''')
     
-    await db.execute('''
+    await db.execute_schema('''
         CREATE TABLE IF NOT EXISTS person_profile_data (
             id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
             person_id UUID NOT NULL REFERENCES people_in_my_life(id) ON DELETE CASCADE,
@@ -346,7 +356,7 @@ async def create_tables():
     ''')
 
     # Performance indexes
-    await db.execute('''
+    await db.execute_schema('''
         CREATE INDEX IF NOT EXISTS idx_dust_tx_user_type_created 
         ON dust_transactions(user_id, type, created_at DESC);
         
@@ -360,7 +370,7 @@ async def create_tables():
     ''')
 
     # LLM Architecture Tables
-    await db.execute('''
+    await db.execute_schema('''
         CREATE TABLE IF NOT EXISTS app_model_configs (
             id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
             app_id UUID NOT NULL REFERENCES apps(id) ON DELETE CASCADE,
@@ -388,7 +398,7 @@ async def create_tables():
         CREATE INDEX IF NOT EXISTS idx_app_model_configs_app_id ON app_model_configs(app_id);
     ''')
     
-    await db.execute('''
+    await db.execute_schema('''
         CREATE TABLE IF NOT EXISTS llm_usage_logs (
             id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
             user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
@@ -426,7 +436,7 @@ async def create_tables():
         CREATE INDEX IF NOT EXISTS idx_llm_usage_logs_provider_model ON llm_usage_logs(provider, model_id);
     ''')
     
-    await db.execute('''
+    await db.execute_schema('''
         CREATE TABLE IF NOT EXISTS llm_cost_tracking (
             id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
             user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
@@ -457,7 +467,7 @@ async def create_tables():
     
     # Insert default model configurations for existing apps
     # First, try to insert configurations for apps that exist
-    await db.execute('''
+    await db.execute_schema('''
         INSERT INTO app_model_configs (
             app_id, primary_provider, primary_model_id, primary_parameters, 
             fallback_models, cost_limits, feature_flags
@@ -523,7 +533,7 @@ async def create_tables():
     ''')
     
     # User Recipes table for app-specific content storage
-    await db.execute('''
+    await db.execute_schema('''
         CREATE TABLE IF NOT EXISTS user_recipes (
             id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
             user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
@@ -543,3 +553,5 @@ async def create_tables():
         CREATE INDEX IF NOT EXISTS idx_user_recipes_favorited ON user_recipes(user_id, is_favorited) WHERE is_favorited = TRUE;
         CREATE INDEX IF NOT EXISTS idx_user_recipes_user_app ON user_recipes(user_id, app_id);
     ''')
+    
+    logger.info("Database schema creation/update completed successfully")
