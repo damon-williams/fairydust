@@ -29,7 +29,7 @@ async def lifespan(app: FastAPI):
 
 # Create FastAPI app
 app = FastAPI(
-    title="Fairydust Ledger Service",
+    title="fairydust Ledger Service",
     version="1.0.0",
     description="DUST balance and transaction management for fairydust platform",
     lifespan=lifespan

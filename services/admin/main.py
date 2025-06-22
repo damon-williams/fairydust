@@ -42,7 +42,7 @@ async def lifespan(app: FastAPI):
         logger.info("Admin service shutdown completed")
 
 app = FastAPI(
-    title="Fairydust Admin Portal", 
+    title="fairydust Admin Portal", 
     version="1.0.0",
     description="Admin portal for fairydust platform",
     lifespan=lifespan

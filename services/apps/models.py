@@ -124,7 +124,7 @@ class LLMUsageLogCreate(BaseModel):
     prompt_tokens: int = Field(..., ge=0)
     completion_tokens: int = Field(..., ge=0)
     total_tokens: int = Field(..., ge=0)
-    cost_usd: float = Field(..., ge=0)
+    # cost_usd: REMOVED - calculated server-side only for security
     latency_ms: int = Field(..., ge=0)
     prompt_hash: Optional[str] = Field(None, max_length=64)
     finish_reason: Optional[str] = Field(None, max_length=50)
