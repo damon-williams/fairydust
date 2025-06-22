@@ -23,6 +23,7 @@ from shared.redis_client import get_redis
 from shared.email_service import send_otp_email
 from shared.sms_service import send_otp_sms
 from shared.streak_utils import calculate_daily_streak
+from shared.json_utils import parse_profile_data, parse_people_profile_data
 
 from fastapi.security import HTTPBearer
 
@@ -807,14 +808,8 @@ async def get_ai_context(
         field_name = profile['field_name']
         field_value = profile['field_value']
         
-        # Parse JSON field_value if it's a string representation of JSON
-        if isinstance(field_value, str):
-            try:
-                # Try to parse as JSON (for arrays and objects)
-                field_value = json.loads(field_value)
-            except (json.JSONDecodeError, ValueError):
-                # If not valid JSON, keep as string
-                pass
+        # Parse profile field value using centralized utility
+        field_value = parse_profile_data(field_value, field_name)
         
         if category not in user_traits:
             user_traits[category] = {}
@@ -883,16 +878,8 @@ async def get_ai_context(
         person_context_parts = []
         profile_data = person['profile_data']
         
-        # Parse profile_data if it's a JSON string
-        if isinstance(profile_data, str):
-            try:
-                profile_data = json.loads(profile_data)
-            except (json.JSONDecodeError, TypeError):
-                profile_data = []
-        
-        # Ensure profile_data is a list
-        if not isinstance(profile_data, list):
-            profile_data = []
+        # Parse people profile data using centralized utility
+        profile_data = parse_people_profile_data(profile_data)
         
         # Parse person's profile data
         person_traits = {}
