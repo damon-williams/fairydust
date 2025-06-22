@@ -867,10 +867,21 @@ async def get_ai_context(
         person_context_parts = []
         profile_data = person['profile_data']
         
+        # Parse profile_data if it's a JSON string
+        if isinstance(profile_data, str):
+            try:
+                profile_data = json.loads(profile_data)
+            except (json.JSONDecodeError, TypeError):
+                profile_data = []
+        
+        # Ensure profile_data is a list
+        if not isinstance(profile_data, list):
+            profile_data = []
+        
         # Parse person's profile data
         person_traits = {}
         for data in profile_data:
-            if data['field_name'] and data['field_value']:
+            if isinstance(data, dict) and data.get('field_name') and data.get('field_value'):
                 person_traits[data['field_name']] = data['field_value']
         
         # Build person context
