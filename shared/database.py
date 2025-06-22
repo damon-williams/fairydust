@@ -132,15 +132,14 @@ async def create_tables():
     import asyncio
     logger = logging.getLogger(__name__)
     
-    try:
-        # Use a longer timeout for schema operations but with progress logging
-        db = await get_db()
-        logger.info("Starting database schema creation/update...")
-        
-        # Test connection first
-        await db.execute("SELECT 1")
-        logger.info("Database connection verified")
+    # Use a longer timeout for schema operations but with progress logging
+    db = await get_db()
+    logger.info("Starting database schema creation/update...")
     
+    # Test connection first
+    await db.execute("SELECT 1")
+    logger.info("Database connection verified")
+
     # Users table
     await db.execute_schema('''
         CREATE TABLE IF NOT EXISTS users (
