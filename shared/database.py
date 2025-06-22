@@ -67,33 +67,51 @@ class Database:
 
 async def init_db():
     """Initialize database connection pool"""
+    import logging
+    logger = logging.getLogger(__name__)
     global _pool
     
-    # Configure SSL for production environments
-    ssl_context = None
-    environment = os.getenv("ENVIRONMENT", "development")
-    
-    if environment in ["production", "staging"]:
-        # Create SSL context for production/staging (Railway requires this)
-        ssl_context = ssl.create_default_context()
-        ssl_context.check_hostname = False
-        ssl_context.verify_mode = ssl.CERT_NONE
-    
-    _pool = await asyncpg.create_pool(
-        DATABASE_URL,
-        ssl=ssl_context,
-        min_size=5,   # Reduced for multiple services sharing database
-        max_size=15,  # Reduced to stay within PostgreSQL connection limits
-        max_queries=50000,
-        max_cached_statement_lifetime=300,
-        command_timeout=30,  # Reduced default timeout to fail faster
-        max_inactive_connection_lifetime=300,  # Close inactive connections
-    )
-    
-    # Create tables if they don't exist (skip in production if SKIP_SCHEMA_INIT is set)
-    skip_schema_init = os.getenv("SKIP_SCHEMA_INIT", "false").lower() == "true"
-    if not skip_schema_init:
-        await create_tables()
+    try:
+        logger.info("Starting database initialization...")
+        
+        # Configure SSL for production environments
+        ssl_context = None
+        environment = os.getenv("ENVIRONMENT", "development")
+        
+        if environment in ["production", "staging"]:
+            # Create SSL context for production/staging (Railway requires this)
+            ssl_context = ssl.create_default_context()
+            ssl_context.check_hostname = False
+            ssl_context.verify_mode = ssl.CERT_NONE
+        
+        logger.info("Creating database connection pool...")
+        _pool = await asyncpg.create_pool(
+            DATABASE_URL,
+            ssl=ssl_context,
+            min_size=3,   # Further reduced for admin service
+            max_size=8,   # Further reduced to minimize connection usage
+            max_queries=50000,
+            max_cached_statement_lifetime=300,
+            command_timeout=30,  # Reduced default timeout to fail faster
+            max_inactive_connection_lifetime=300,  # Close inactive connections
+        )
+        logger.info("Database connection pool created successfully")
+        
+        # Create tables if they don't exist (skip in production if SKIP_SCHEMA_INIT is set)
+        skip_schema_init = os.getenv("SKIP_SCHEMA_INIT", "false").lower() == "true"
+        if not skip_schema_init:
+            logger.info("Starting schema creation/update...")
+            await create_tables()
+            logger.info("Schema creation/update completed")
+        else:
+            logger.info("Skipping schema initialization (SKIP_SCHEMA_INIT=true)")
+            
+    except Exception as e:
+        logger.error(f"Database initialization failed: {e}")
+        if _pool:
+            await _pool.close()
+            _pool = None
+        raise
 
 async def close_db():
     """Close database connection pool"""
@@ -111,11 +129,17 @@ async def get_db() -> Database:
 async def create_tables():
     """Create database tables if they don't exist"""
     import logging
+    import asyncio
     logger = logging.getLogger(__name__)
     
+    # Use a longer timeout for schema operations but with progress logging
     db = await get_db()
     logger.info("Starting database schema creation/update...")
     
+    # Test connection first
+    await db.execute("SELECT 1")
+    logger.info("Database connection verified")
+
     # Users table
     await db.execute_schema('''
         CREATE TABLE IF NOT EXISTS users (

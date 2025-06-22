@@ -101,6 +101,8 @@ class StoryGenerationRequest(BaseModel):
     target_audience: Optional[TargetAudience] = TargetAudience.FAMILY
 
 class StoryGenerationMetadata(BaseModel):
+    model_config = {"protected_namespaces": ()}
+    
     model_used: str
     tokens_used: int
     generation_time_ms: int
