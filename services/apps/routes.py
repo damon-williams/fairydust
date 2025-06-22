@@ -39,8 +39,8 @@ async def create_app(
     """, 
         app_id, UUID(current_user.user_id), app_data.name, app_data.slug,
         app_data.description, app_data.icon_url,
-        AppStatus.PENDING, app_data.category, app_data.website_url,
-        app_data.demo_url, app_data.callback_url, False
+        AppStatus.APPROVED, app_data.category, app_data.website_url,
+        app_data.demo_url, app_data.callback_url, True
     )
     
     # Fetch the created app
