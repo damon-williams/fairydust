@@ -78,6 +78,27 @@ git push origin develop      # Deploy to staging via develop branch
 - Develop branch auto-deploys to: `*-staging.up.railway.app`
 - Main branch auto-deploys to: `*-production.up.railway.app`
 
+### Environment Variables Configuration
+
+**Where to set variables:**
+1. **Railway Dashboard** → Select Service → Variables tab
+2. **Local Development** → `.env` files in service directories
+3. **Docker** → `docker-compose.yml` environment section
+
+**Required Variables Per Service:**
+```bash
+# All Services
+DATABASE_URL=postgresql://...
+SERVICE_NAME=identity|content|apps|ledger|admin|builder
+
+# Optional Pool Overrides (use defaults if not set)
+DB_POOL_MIN_SIZE=5
+DB_POOL_MAX_SIZE=15
+
+# Production Only
+SKIP_SCHEMA_INIT=true  # Set to true for admin/builder services
+```
+
 ### Service URLs (Production)
 - Identity: `https://fairydust-identity-production.up.railway.app`
 - Ledger: `https://fairydust-ledger-production.up.railway.app`
@@ -362,10 +383,19 @@ Benefits:
 4. **Connection Pool Tuning**: Reduced pool sizes to prevent "too many connections" errors
 
 ### Database Connection Pooling
-```python
-# Reduced pool sizes for admin service
-min_size=3   # Further reduced for admin service
-max_size=8   # Further reduced to minimize connection usage
+
+**Service-Specific Pool Sizes:**
+- **Identity Service**: min=5, max=15 (high frequency auth requests)
+- **Content Service**: min=3, max=10 (fewer but longer story generation operations)  
+- **Apps Service**: min=2, max=8 (moderate usage)
+- **Ledger Service**: min=4, max=12 (frequent small transactions)
+- **Admin/Builder**: min=1, max=3 (low usage, occasional access)
+
+**Environment Variables:**
+```bash
+SERVICE_NAME=identity          # Determines default pool sizes
+DB_POOL_MIN_SIZE=5            # Override minimum connections
+DB_POOL_MAX_SIZE=15           # Override maximum connections
 ```
 
 ### Best Practices
