@@ -554,4 +554,48 @@ async def create_tables():
         CREATE INDEX IF NOT EXISTS idx_user_recipes_user_app ON user_recipes(user_id, app_id);
     ''')
     
+    # User Stories table for story app
+    await db.execute_schema('''
+        CREATE TABLE IF NOT EXISTS user_stories (
+            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            title VARCHAR(255) NOT NULL,
+            content TEXT NOT NULL,
+            genre VARCHAR(50) NOT NULL,
+            story_length VARCHAR(20) NOT NULL,
+            characters_involved JSONB DEFAULT '[]',
+            metadata JSONB DEFAULT '{}',
+            is_favorited BOOLEAN DEFAULT FALSE,
+            dust_cost INTEGER NOT NULL,
+            word_count INTEGER,
+            created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+        );
+        
+        CREATE INDEX IF NOT EXISTS idx_user_stories_user_id ON user_stories(user_id);
+        CREATE INDEX IF NOT EXISTS idx_user_stories_created_at ON user_stories(created_at DESC);
+        CREATE INDEX IF NOT EXISTS idx_user_stories_genre ON user_stories(genre);
+        CREATE INDEX IF NOT EXISTS idx_user_stories_favorited ON user_stories(user_id, is_favorited) WHERE is_favorited = TRUE;
+    ''')
+    
+    # Story generation logs table for analytics and debugging
+    await db.execute_schema('''
+        CREATE TABLE IF NOT EXISTS story_generation_logs (
+            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            story_id UUID REFERENCES user_stories(id) ON DELETE SET NULL,
+            generation_prompt TEXT NOT NULL,
+            llm_model VARCHAR(100),
+            tokens_used INTEGER,
+            generation_time_ms INTEGER,
+            success BOOLEAN NOT NULL,
+            error_message TEXT,
+            created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+        );
+        
+        CREATE INDEX IF NOT EXISTS idx_story_logs_user_id ON story_generation_logs(user_id);
+        CREATE INDEX IF NOT EXISTS idx_story_logs_created_at ON story_generation_logs(created_at DESC);
+        CREATE INDEX IF NOT EXISTS idx_story_logs_success ON story_generation_logs(success, created_at DESC);
+    ''')
+    
     logger.info("Database schema creation/update completed successfully")
