@@ -16,6 +16,7 @@ from models import (
 )
 from shared.database import get_db, Database
 from shared.auth_middleware import get_current_user, TokenData
+from shared.json_utils import parse_story_data, safe_json_dumps
 from rate_limiting import check_story_generation_rate_limit, check_api_rate_limit_only
 from content_safety import content_safety_filter
 
@@ -258,25 +259,7 @@ async def log_story_generation(
         success, error_message
     )
 
-def parse_story_data(story_data: dict) -> dict:
-    """Parse JSONB fields from database result"""
-    story_dict = dict(story_data)
-    
-    # Parse characters_involved JSONB field
-    if isinstance(story_dict.get('characters_involved'), str):
-        try:
-            story_dict['characters_involved'] = json.loads(story_dict['characters_involved'])
-        except (json.JSONDecodeError, TypeError):
-            story_dict['characters_involved'] = []
-    
-    # Parse metadata JSONB field
-    if isinstance(story_dict.get('metadata'), str):
-        try:
-            story_dict['metadata'] = json.loads(story_dict['metadata'])
-        except (json.JSONDecodeError, TypeError):
-            story_dict['metadata'] = {}
-    
-    return story_dict
+# Note: parse_story_data now imported from shared.json_utils
 
 # API Endpoints
 
@@ -364,8 +347,8 @@ async def generate_story(
             ) VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb, $8::jsonb, $9, $10)
         """,
             story_id, user_id, title, content, request.genre.value, request.story_length.value,
-            json.dumps([char.dict() for char in request.characters]),
-            json.dumps({
+            safe_json_dumps([char.dict() for char in request.characters]),
+            safe_json_dumps({
                 "setting": request.setting,
                 "theme": request.theme,
                 "custom_prompt": request.custom_prompt,

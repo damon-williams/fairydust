@@ -23,6 +23,7 @@ from shared.redis_client import get_redis
 from shared.email_service import send_otp_email
 from shared.sms_service import send_otp_sms
 from shared.streak_utils import calculate_daily_streak
+from shared.json_utils import parse_profile_data, parse_people_profile_data
 
 from fastapi.security import HTTPBearer
 
@@ -88,7 +89,11 @@ async def verify_otp(
     # Check if user exists
     identifier_type = "email" if "@" in otp_verify.identifier else "phone"
     user = await db.fetch_one(
-        f"SELECT * FROM users WHERE {identifier_type} = $1",
+        f"""SELECT id, fairyname, email, phone, avatar_url, is_builder, is_admin, is_active,
+                  first_name, age_range, city, country, dust_balance, auth_provider,
+                  last_profiling_session, total_profiling_sessions, streak_days, last_login_date,
+                  created_at, updated_at 
+           FROM users WHERE {identifier_type} = $1""",
         otp_verify.identifier
     )
     
@@ -141,7 +146,11 @@ async def verify_otp(
     
     # Update user record with new streak info
     user = await db.fetch_one(
-        "SELECT * FROM users WHERE id = $1",
+        """SELECT id, fairyname, email, phone, avatar_url, is_builder, is_admin, is_active,
+                  first_name, age_range, city, country, dust_balance, auth_provider,
+                  last_profiling_session, total_profiling_sessions, streak_days, last_login_date,
+                  created_at, updated_at 
+           FROM users WHERE id = $1""",
         user["id"]
     )
     
@@ -256,7 +265,11 @@ async def oauth_login(
     
     # Update user record with new streak info
     user = await db.fetch_one(
-        "SELECT * FROM users WHERE id = $1",
+        """SELECT id, fairyname, email, phone, avatar_url, is_builder, is_admin, is_active,
+                  first_name, age_range, city, country, dust_balance, auth_provider,
+                  last_profiling_session, total_profiling_sessions, streak_days, last_login_date,
+                  created_at, updated_at 
+           FROM users WHERE id = $1""",
         user["id"]
     )
     
@@ -340,7 +353,11 @@ async def get_current_user_profile(
 ):
     """Get current user profile"""
     user = await db.fetch_one(
-        "SELECT * FROM users WHERE id = $1",
+        """SELECT id, fairyname, email, phone, avatar_url, is_builder, is_admin, is_active,
+                  first_name, age_range, city, country, dust_balance, auth_provider,
+                  last_profiling_session, total_profiling_sessions, streak_days, last_login_date,
+                  created_at, updated_at 
+           FROM users WHERE id = $1""",
         current_user.user_id
     )
     
@@ -791,14 +808,8 @@ async def get_ai_context(
         field_name = profile['field_name']
         field_value = profile['field_value']
         
-        # Parse JSON field_value if it's a string representation of JSON
-        if isinstance(field_value, str):
-            try:
-                # Try to parse as JSON (for arrays and objects)
-                field_value = json.loads(field_value)
-            except (json.JSONDecodeError, ValueError):
-                # If not valid JSON, keep as string
-                pass
+        # Parse profile field value using centralized utility
+        field_value = parse_profile_data(field_value, field_name)
         
         if category not in user_traits:
             user_traits[category] = {}
@@ -867,16 +878,8 @@ async def get_ai_context(
         person_context_parts = []
         profile_data = person['profile_data']
         
-        # Parse profile_data if it's a JSON string
-        if isinstance(profile_data, str):
-            try:
-                profile_data = json.loads(profile_data)
-            except (json.JSONDecodeError, TypeError):
-                profile_data = []
-        
-        # Ensure profile_data is a list
-        if not isinstance(profile_data, list):
-            profile_data = []
+        # Parse people profile data using centralized utility
+        profile_data = parse_people_profile_data(profile_data)
         
         # Parse person's profile data
         person_traits = {}

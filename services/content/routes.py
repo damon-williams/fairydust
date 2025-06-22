@@ -2,7 +2,6 @@
 from datetime import datetime
 from typing import Optional
 from uuid import UUID, uuid4
-import json
 from fastapi import APIRouter, HTTPException, Depends, Query, status
 
 from models import (
@@ -11,21 +10,12 @@ from models import (
 )
 from shared.database import get_db, Database
 from shared.auth_middleware import get_current_user, TokenData
+from shared.json_utils import parse_recipe_metadata as parse_recipe_data, safe_json_dumps
 
 # Create router
 content_router = APIRouter()
 
-def parse_recipe_metadata(recipe_data):
-    """Parse JSONB metadata field from database result"""
-    recipe_dict = dict(recipe_data)
-    if isinstance(recipe_dict.get('metadata'), str):
-        try:
-            recipe_dict['metadata'] = json.loads(recipe_dict['metadata'])
-        except (json.JSONDecodeError, TypeError):
-            recipe_dict['metadata'] = {}
-    elif recipe_dict.get('metadata') is None:
-        recipe_dict['metadata'] = {}
-    return recipe_dict
+# Note: parse_recipe_metadata now imported from shared.json_utils as parse_recipe_data
 
 # ============================================================================
 # RECIPE STORAGE ROUTES
@@ -81,7 +71,7 @@ async def get_user_recipes(
     has_more = (offset + limit) < total_count
     
     return RecipesResponse(
-        recipes=[UserRecipe(**parse_recipe_metadata(recipe)) for recipe in recipes],
+        recipes=[UserRecipe(**parse_recipe_data(recipe)) for recipe in recipes],
         total_count=total_count,
         has_more=has_more
     )
@@ -117,7 +107,7 @@ async def save_recipe(
     recipe_id = uuid4()
     
     # Convert metadata to JSON
-    metadata_json = json.dumps(recipe_data.metadata.dict() if recipe_data.metadata else {})
+    metadata_json = safe_json_dumps(recipe_data.metadata.dict() if recipe_data.metadata else {})
     
     # Insert recipe
     recipe = await db.fetch_one("""
@@ -130,7 +120,7 @@ async def save_recipe(
         recipe_data.category, metadata_json, False
     )
     
-    return {"recipe": UserRecipe(**parse_recipe_metadata(recipe))}
+    return {"recipe": UserRecipe(**parse_recipe_data(recipe))}
 
 @content_router.put("/users/{user_id}/recipes/{recipe_id}", response_model=dict)
 async def update_recipe(
@@ -171,7 +161,7 @@ async def update_recipe(
     
     if not update_fields:
         # Return current recipe if no updates
-        return {"recipe": UserRecipe(**parse_recipe_metadata(recipe))}
+        return {"recipe": UserRecipe(**parse_recipe_data(recipe))}
     
     # Add updated_at field
     update_fields.append(f"updated_at = ${param_count}")
@@ -272,7 +262,7 @@ async def sync_recipes(
         # Real conflict resolution would be more complex
         
         recipe_id = uuid4()
-        metadata_json = json.dumps(local_recipe.metadata or {})
+        metadata_json = safe_json_dumps(local_recipe.metadata or {})
         
         try:
             await db.execute("""
@@ -290,7 +280,7 @@ async def sync_recipes(
             continue
     
     return RecipeSyncResponse(
-        server_recipes=[UserRecipe(**parse_recipe_metadata(recipe)) for recipe in server_recipes],
+        server_recipes=[UserRecipe(**parse_recipe_data(recipe)) for recipe in server_recipes],
         sync_conflicts=sync_conflicts,
         sync_timestamp=sync_timestamp
     )
