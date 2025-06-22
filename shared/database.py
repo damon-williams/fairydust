@@ -76,11 +76,12 @@ async def init_db():
     _pool = await asyncpg.create_pool(
         DATABASE_URL,
         ssl=ssl_context,
-        min_size=10,
-        max_size=20,
+        min_size=15,  # Increased minimum connections
+        max_size=40,  # Increased maximum connections
         max_queries=50000,
         max_cached_statement_lifetime=300,
-        command_timeout=60,
+        command_timeout=30,  # Reduced default timeout to fail faster
+        max_inactive_connection_lifetime=300,  # Close inactive connections
     )
     
     # Create tables if they don't exist (skip in production if SKIP_SCHEMA_INIT is set)
@@ -130,6 +131,7 @@ async def create_tables():
         CREATE INDEX IF NOT EXISTS idx_users_fairyname ON users(fairyname);
         CREATE INDEX IF NOT EXISTS idx_users_email ON users(email);
         CREATE INDEX IF NOT EXISTS idx_users_phone ON users(phone);
+        CREATE INDEX IF NOT EXISTS idx_users_streak_login ON users(id, last_login_date, streak_days);
     ''')
     
     # Add new profile columns to existing users table
