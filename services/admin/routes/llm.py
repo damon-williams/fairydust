@@ -334,9 +334,26 @@ async def llm_app_config(
             '{"streaming_enabled": true, "cache_responses": true, "log_prompts": false}'
         )
         
-        config = await db.fetch_one("""
-            SELECT * FROM app_model_configs WHERE app_id = $1
-        """, app['id'])
+        # Try to get config from cache first
+        from shared.app_config_cache import get_app_config_cache
+        cache = await get_app_config_cache()
+        cached_config = await cache.get_model_config(str(app['id']))
+        
+        if cached_config:
+            # Convert cached config back to database format for existing code compatibility
+            config = {
+                'primary_provider': cached_config.get('primary_provider'),
+                'primary_model_id': cached_config.get('primary_model_id'),
+                'primary_parameters': cached_config.get('primary_parameters'),
+                'fallback_models': cached_config.get('fallback_models'),
+                'cost_limits': cached_config.get('cost_limits'),
+                'feature_flags': cached_config.get('feature_flags')
+            }
+        else:
+            # Cache miss - fetch from database
+            config = await db.fetch_one("""
+                SELECT * FROM app_model_configs WHERE app_id = $1
+            """, app['id'])
     
     # Available models by provider
     available_models = {
@@ -823,6 +840,11 @@ async def update_llm_app_config(
             feature_flags_json,
             app['id']
         )
+        
+        # Invalidate cache after successful update
+        from shared.app_config_cache import get_app_config_cache
+        cache = await get_app_config_cache()
+        await cache.invalidate_model_config(str(app['id']))
         
         return RedirectResponse(
             url=f"/admin/llm/apps/{app_id}?updated=1",

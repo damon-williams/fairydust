@@ -73,10 +73,28 @@ async def consume_dust(user_id: UUID, amount: int, description: str, story_metad
         return False
 
 async def get_llm_model_config() -> dict:
-    """Get LLM configuration for story generation"""
-    # TODO: Replace with actual Apps Service call
-    # This would normally fetch from: GET /llm/fairydust-story/model-config
-    return {
+    """Get LLM configuration for story generation (with caching)"""
+    from shared.app_config_cache import get_app_config_cache
+    
+    app_id = "fairydust-story"
+    
+    # Try to get from cache first
+    cache = await get_app_config_cache()
+    cached_config = await cache.get_model_config(app_id)
+    
+    if cached_config:
+        return {
+            "primary_provider": cached_config.get("primary_provider", "anthropic"),
+            "primary_model_id": cached_config.get("primary_model_id", "claude-3-5-sonnet-20241022"),
+            "primary_parameters": cached_config.get("primary_parameters", {
+                "temperature": 0.8,
+                "max_tokens": 2000,
+                "top_p": 0.9
+            })
+        }
+    
+    # Cache miss - use default config and cache it
+    default_config = {
         "primary_provider": "anthropic",
         "primary_model_id": "claude-3-5-sonnet-20241022",
         "primary_parameters": {
@@ -85,6 +103,11 @@ async def get_llm_model_config() -> dict:
             "top_p": 0.9
         }
     }
+    
+    # Cache the default config for future requests
+    await cache.set_model_config(app_id, default_config)
+    
+    return default_config
 
 async def log_llm_usage(user_id: UUID, model_info: dict, tokens_used: int, cost: float, latency_ms: int):
     """Log LLM usage to Apps Service"""
