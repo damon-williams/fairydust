@@ -82,8 +82,8 @@ async def init_db():
     _pool = await asyncpg.create_pool(
         DATABASE_URL,
         ssl=ssl_context,
-        min_size=15,  # Increased minimum connections
-        max_size=40,  # Increased maximum connections
+        min_size=5,   # Reduced for multiple services sharing database
+        max_size=15,  # Reduced to stay within PostgreSQL connection limits
         max_queries=50000,
         max_cached_statement_lifetime=300,
         command_timeout=30,  # Reduced default timeout to fail faster
