@@ -84,12 +84,39 @@ async def init_db():
             ssl_context.check_hostname = False
             ssl_context.verify_mode = ssl.CERT_NONE
         
-        logger.info("Creating database connection pool...")
+        # Service-specific connection pool configuration
+        # These can be overridden via environment variables
+        default_min_size = 3
+        default_max_size = 8
+        
+        # Service-specific defaults based on usage patterns
+        service_name = os.getenv("SERVICE_NAME", "unknown")
+        if service_name == "identity":
+            default_min_size = 5   # High frequency auth requests
+            default_max_size = 15
+        elif service_name == "content":
+            default_min_size = 3   # Fewer but longer operations (story generation)
+            default_max_size = 10
+        elif service_name == "apps":
+            default_min_size = 2   # Moderate usage
+            default_max_size = 8
+        elif service_name == "ledger":
+            default_min_size = 4   # Frequent small transactions
+            default_max_size = 12
+        elif service_name in ["admin", "builder"]:
+            default_min_size = 1   # Low usage, occasional access
+            default_max_size = 3
+        
+        # Allow environment variable overrides
+        min_size = int(os.getenv("DB_POOL_MIN_SIZE", default_min_size))
+        max_size = int(os.getenv("DB_POOL_MAX_SIZE", default_max_size))
+        
+        logger.info(f"Creating database connection pool for {service_name} service (min: {min_size}, max: {max_size})...")
         _pool = await asyncpg.create_pool(
             DATABASE_URL,
             ssl=ssl_context,
-            min_size=3,   # Further reduced for admin service
-            max_size=8,   # Further reduced to minimize connection usage
+            min_size=min_size,
+            max_size=max_size,
             max_queries=50000,
             max_cached_statement_lifetime=300,
             command_timeout=30,  # Reduced default timeout to fail faster

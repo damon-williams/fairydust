@@ -120,7 +120,19 @@ async def get_app_model_config(
     app_id: str,
     db: Database = Depends(get_db)
 ):
-    """Get LLM model configuration for an app"""
+    """Get LLM model configuration for an app (with Redis caching)"""
+    from shared.app_config_cache import get_app_config_cache
+    from shared.json_utils import parse_model_config_field
+    
+    # Try to get from cache first
+    cache = await get_app_config_cache()
+    cached_config = await cache.get_model_config(app_id)
+    
+    if cached_config:
+        # Parse cached config fields and return
+        return AppModelConfig(**cached_config)
+    
+    # Cache miss - fetch from database
     config = await db.fetch_one("""
         SELECT * FROM app_model_configs WHERE app_id = $1
     """, app_id)
@@ -130,6 +142,25 @@ async def get_app_model_config(
             status_code=404, 
             detail=f"Model configuration not found for app {app_id}"
         )
+    
+    # Parse JSONB fields for caching
+    config_dict = dict(config)
+    parsed_config = {
+        "id": str(config_dict["id"]),
+        "app_id": config_dict["app_id"],
+        "primary_provider": config_dict["primary_provider"],
+        "primary_model_id": config_dict["primary_model_id"],
+        "primary_parameters": parse_model_config_field(config_dict, "primary_parameters"),
+        "fallback_models": parse_model_config_field(config_dict, "fallback_models"),
+        "cost_limits": parse_model_config_field(config_dict, "cost_limits"),
+        "feature_flags": parse_model_config_field(config_dict, "feature_flags"),
+        "is_enabled": config_dict["is_enabled"],
+        "created_at": config_dict["created_at"].isoformat() if config_dict["created_at"] else None,
+        "updated_at": config_dict["updated_at"].isoformat() if config_dict["updated_at"] else None
+    }
+    
+    # Cache the parsed config
+    await cache.set_model_config(app_id, parsed_config)
     
     return AppModelConfig(**config)
 
@@ -214,6 +245,12 @@ async def update_app_model_config(
     """
     
     updated_config = await db.fetch_one(query, *update_values)
+    
+    # Invalidate cache after successful update
+    from shared.app_config_cache import get_app_config_cache
+    cache = await get_app_config_cache()
+    await cache.invalidate_model_config(app_id)
+    
     return AppModelConfig(**updated_config)
 
 @llm_router.post("/usage", status_code=status.HTTP_201_CREATED)
