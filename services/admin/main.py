@@ -12,12 +12,34 @@ from shared.redis_client import init_redis, close_redis
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # Startup
-    await init_db()
-    await init_redis()
-    yield
-    # Shutdown
-    await close_db()
-    await close_redis()
+    import logging
+    logger = logging.getLogger(__name__)
+    
+    try:
+        logger.info("Starting admin service initialization...")
+        
+        # Set environment variable to skip schema init for admin service
+        # since other services will create the tables
+        os.environ.setdefault("SKIP_SCHEMA_INIT", "true")
+        
+        await init_db()
+        logger.info("Database initialized successfully")
+        
+        await init_redis()
+        logger.info("Redis initialized successfully")
+        
+        logger.info("Admin service startup completed")
+        yield
+        
+    except Exception as e:
+        logger.error(f"Admin service startup failed: {e}")
+        raise
+    finally:
+        # Shutdown
+        logger.info("Shutting down admin service...")
+        await close_db()
+        await close_redis()
+        logger.info("Admin service shutdown completed")
 
 app = FastAPI(
     title="Fairydust Admin Portal", 
