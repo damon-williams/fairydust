@@ -18,6 +18,7 @@ from shared.database import get_db, Database
 from shared.auth_middleware import get_current_user, TokenData
 from shared.json_utils import safe_json_dumps, parse_jsonb_field
 from rate_limiting import check_api_rate_limit_only
+from google_places_service import get_google_places_service
 
 security = HTTPBearer()
 router = APIRouter()
@@ -158,29 +159,201 @@ def calculate_distance(lat1: float, lon1: float, lat2: float, lon2: float) -> fl
     # Simple approximation for mock data
     return round(random.uniform(0.5, 5.0), 1)
 
-def generate_opentable_info(restaurant_name: str, city: str, time_preference: str = None) -> OpenTableInfo:
+def generate_opentable_info(restaurant_name: str, city: str, time_preference: str = None, party_size: int = 2) -> OpenTableInfo:
     """Generate OpenTable information for a restaurant"""
-    # Most upscale restaurants accept reservations
-    has_reservations = random.choice([True, True, True, False])  # 75% chance
+    # Most upscale restaurants accept reservations, fast food typically doesn't
+    restaurant_name_lower = restaurant_name.lower()
+    
+    # Determine if restaurant likely takes reservations based on name/type
+    fast_food_indicators = ["mcdonald", "burger king", "taco bell", "subway", "kfc", "pizza hut", "domino"]
+    casual_indicators = ["cafe", "diner", "counter", "bar", "pub"]
+    
+    if any(indicator in restaurant_name_lower for indicator in fast_food_indicators):
+        has_reservations = False
+    elif any(indicator in restaurant_name_lower for indicator in casual_indicators):
+        has_reservations = random.choice([True, False])  # 50% chance
+    else:
+        has_reservations = random.choice([True, True, True, False])  # 75% chance for sit-down restaurants
     
     available_times = []
     if has_reservations and time_preference != "now":
-        # Generate realistic available times
+        # Generate realistic available times based on time preference
         if time_preference == "tonight":
             times = ["6:00 PM", "6:30 PM", "7:30 PM", "8:00 PM", "8:30 PM"]
+        elif time_preference == "weekend":
+            times = ["11:30 AM", "12:00 PM", "12:30 PM", "5:30 PM", "6:00 PM", "6:30 PM", "7:00 PM", "7:30 PM", "8:00 PM"]
         else:
             times = ["5:30 PM", "6:00 PM", "6:30 PM", "7:00 PM", "7:30 PM", "8:00 PM", "8:30 PM", "9:00 PM"]
         available_times = random.sample(times, random.randint(2, 4))
     
-    # Generate OpenTable deep link
+    # Generate enhanced OpenTable deep links
     city_clean = city.replace("_", " ").title()
-    booking_url = f"https://www.opentable.com/s?query={restaurant_name.replace(' ', '%20')}&location={city_clean.replace(' ', '%20')}"
+    restaurant_query = restaurant_name.replace(' ', '%20').replace('&', '%26')
+    location_query = city_clean.replace(' ', '%20')
+    
+    # Multiple booking URL formats for better compatibility
+    booking_url = f"https://www.opentable.com/s?query={restaurant_query}&location={location_query}&covers={party_size}"
     
     return OpenTableInfo(
         has_reservations=has_reservations,
         available_times=available_times,
         booking_url=booking_url
     )
+
+async def get_restaurants_from_google_places(
+    location: dict, 
+    preferences: dict, 
+    people_data: List[dict],
+    excluded_ids: List[str] = None
+) -> List[Restaurant]:
+    """Get restaurants from Google Places API with fallback to mock data"""
+    try:
+        places_service = get_google_places_service()
+        
+        # Convert radius from miles (if provided) or use default
+        radius_str = preferences.get("default_radius", "10mi") 
+        radius_miles = int(radius_str.replace("mi", "")) if "mi" in radius_str else 10
+        
+        # Use provided coordinates or try to geocode address
+        latitude = location.get("latitude")
+        longitude = location.get("longitude") 
+        
+        if not latitude or not longitude:
+            # If no coordinates, try geocoding the address
+            # For now, fall back to mock data if no coordinates
+            print("No coordinates provided, falling back to mock data")
+            return await get_mock_restaurants(location, preferences, people_data, excluded_ids)
+        
+        # Get restaurants from Google Places
+        google_restaurants = places_service.search_restaurants(
+            latitude=latitude,
+            longitude=longitude,
+            radius_miles=radius_miles,
+            cuisine_types=preferences.get("cuisine_types", []),
+            open_now=preferences.get("time_preference") == "now",
+            min_rating=3.5,
+            max_results=20
+        )
+        
+        if not google_restaurants:
+            print("No restaurants found via Google Places, falling back to mock data")
+            return await get_mock_restaurants(location, preferences, people_data, excluded_ids)
+        
+        # Filter out excluded restaurants
+        if excluded_ids:
+            google_restaurants = [r for r in google_restaurants if r["id"] not in excluded_ids]
+        
+        # Convert to Restaurant objects with highlights
+        restaurants = []
+        for restaurant_data in google_restaurants[:3]:  # Return top 3
+            # Generate OpenTable info
+            opentable_info = generate_opentable_info(
+                restaurant_data["name"],
+                get_city_key(location.get("address", "")),
+                preferences.get("time_preference"),
+                preferences.get("party_size", 2)
+            )
+            
+            # Generate AI highlights
+            highlights = await generate_ai_highlights(
+                restaurant_data,
+                preferences,
+                people_data
+            )
+            
+            restaurant = Restaurant(
+                id=restaurant_data["id"],
+                name=restaurant_data["name"],
+                cuisine=restaurant_data["cuisine"],
+                address=restaurant_data["address"],
+                distance_miles=restaurant_data["distance_miles"],
+                price_level=restaurant_data["price_level"],
+                rating=restaurant_data["rating"],
+                phone=restaurant_data.get("phone"),
+                google_place_id=restaurant_data["google_place_id"],
+                opentable=opentable_info,
+                highlights=highlights
+            )
+            restaurants.append(restaurant)
+        
+        return restaurants
+        
+    except Exception as e:
+        print(f"Error fetching from Google Places: {e}")
+        return await get_mock_restaurants(location, preferences, people_data, excluded_ids)
+
+async def get_mock_restaurants(
+    location: dict, 
+    preferences: dict, 
+    people_data: List[dict],
+    excluded_ids: List[str] = None
+) -> List[Restaurant]:
+    """Get mock restaurants as fallback"""
+    # Get mock restaurants based on location
+    city_key = get_city_key(location.get("address", ""))
+    available_restaurants = MOCK_RESTAURANTS.get(city_key, MOCK_RESTAURANTS["san_francisco"])
+    
+    # Filter based on preferences
+    filtered_restaurants = available_restaurants.copy()
+    
+    if preferences.get("cuisine_types"):
+        cuisine_types_lower = [c.lower() for c in preferences["cuisine_types"]]
+        filtered_restaurants = [
+            r for r in filtered_restaurants 
+            if any(cuisine.lower() in r["cuisine"].lower() for cuisine in cuisine_types_lower)
+        ]
+    
+    # Filter out excluded restaurants
+    if excluded_ids:
+        filtered_restaurants = [r for r in filtered_restaurants if r["id"] not in excluded_ids]
+    
+    # Select 3 diverse restaurants
+    selected_restaurants = random.sample(
+        filtered_restaurants if len(filtered_restaurants) >= 3 else available_restaurants,
+        min(3, len(filtered_restaurants) if filtered_restaurants else len(available_restaurants))
+    )
+    
+    # Build restaurant response objects
+    restaurants = []
+    for restaurant_data in selected_restaurants:
+        # Calculate distance (mock calculation)
+        distance = calculate_distance(
+            location.get("latitude", 37.7749), 
+            location.get("longitude", -122.4194),
+            0, 0  # Mock coordinates
+        )
+        
+        # Generate OpenTable info
+        opentable_info = generate_opentable_info(
+            restaurant_data["name"], 
+            city_key,
+            preferences.get("time_preference"),
+            preferences.get("party_size", 2)
+        )
+        
+        # Generate AI highlights
+        highlights = await generate_ai_highlights(
+            restaurant_data,
+            preferences,
+            people_data
+        )
+        
+        restaurant = Restaurant(
+            id=restaurant_data["id"],
+            name=restaurant_data["name"],
+            cuisine=restaurant_data["cuisine"],
+            address=restaurant_data["address"],
+            distance_miles=distance,
+            price_level=restaurant_data["price_level"],
+            rating=restaurant_data["rating"],
+            phone=restaurant_data["phone"],
+            google_place_id=restaurant_data["google_place_id"],
+            opentable=opentable_info,
+            highlights=highlights
+        )
+        restaurants.append(restaurant)
+    
+    return restaurants
 
 async def generate_ai_highlights(restaurant: dict, preferences: dict, people_data: List[dict]) -> List[str]:
     """Generate AI-powered restaurant highlights based on preferences and people data"""
@@ -333,63 +506,13 @@ async def generate_restaurants(
         safe_json_dumps({"location": request.location.dict(), "preferences": request.preferences.dict()}),
         [], session_expires)
     
-    # Get mock restaurants based on location
-    city_key = get_city_key(request.location.address)
-    available_restaurants = MOCK_RESTAURANTS.get(city_key, MOCK_RESTAURANTS["san_francisco"])
-    
-    # Filter based on preferences
-    filtered_restaurants = available_restaurants.copy()
-    
-    if request.preferences.cuisine_types:
-        cuisine_types_lower = [c.lower() for c in request.preferences.cuisine_types]
-        filtered_restaurants = [
-            r for r in filtered_restaurants 
-            if any(cuisine.lower() in r["cuisine"].lower() for cuisine in cuisine_types_lower)
-        ]
-    
-    # Select 3 diverse restaurants
-    selected_restaurants = random.sample(
-        filtered_restaurants if len(filtered_restaurants) >= 3 else available_restaurants,
-        min(3, len(filtered_restaurants) if filtered_restaurants else len(available_restaurants))
+    # Get restaurants using Google Places API with fallback to mock data
+    restaurants = await get_restaurants_from_google_places(
+        request.location.dict(),
+        request.preferences.dict(),
+        people_data,
+        excluded_ids=[]
     )
-    
-    # Build restaurant response objects
-    restaurants = []
-    for restaurant_data in selected_restaurants:
-        # Calculate distance
-        distance = calculate_distance(
-            request.location.latitude, request.location.longitude,
-            0, 0  # Mock coordinates
-        )
-        
-        # Generate OpenTable info
-        opentable_info = generate_opentable_info(
-            restaurant_data["name"], 
-            city_key,
-            request.preferences.time_preference
-        )
-        
-        # Generate AI highlights
-        highlights = await generate_ai_highlights(
-            restaurant_data,
-            request.preferences.dict(),
-            people_data
-        )
-        
-        restaurant = Restaurant(
-            id=restaurant_data["id"],
-            name=restaurant_data["name"],
-            cuisine=restaurant_data["cuisine"],
-            address=restaurant_data["address"],
-            distance_miles=distance,
-            price_level=restaurant_data["price_level"],
-            rating=restaurant_data["rating"],
-            phone=restaurant_data["phone"],
-            google_place_id=restaurant_data["google_place_id"],
-            opentable=opentable_info,
-            highlights=highlights
-        )
-        restaurants.append(restaurant)
     
     return RestaurantResponse(
         restaurants=restaurants,
@@ -432,74 +555,16 @@ async def regenerate_restaurants(
         WHERE id = $2
     """, updated_excluded, request.session_id)
     
-    # Get mock restaurants based on original location
-    city_key = get_city_key(location_data["address"])
-    available_restaurants = MOCK_RESTAURANTS.get(city_key, MOCK_RESTAURANTS["san_francisco"])
+    # Get people data for highlights (for now, use empty array - could be stored in session)
+    people_data = await get_people_data(current_user.user_id, [])
     
-    # Filter out excluded restaurants
-    filtered_restaurants = [
-        r for r in available_restaurants 
-        if r["id"] not in updated_excluded
-    ]
-    
-    if len(filtered_restaurants) < 3:
-        # If we've excluded too many, reset and show different ones
-        filtered_restaurants = available_restaurants
-    
-    # Apply cuisine preferences if they exist
-    if preferences_data.get("cuisine_types"):
-        cuisine_types_lower = [c.lower() for c in preferences_data["cuisine_types"]]
-        cuisine_filtered = [
-            r for r in filtered_restaurants 
-            if any(cuisine.lower() in r["cuisine"].lower() for cuisine in cuisine_types_lower)
-        ]
-        if cuisine_filtered:
-            filtered_restaurants = cuisine_filtered
-    
-    # Select 3 different restaurants
-    selected_restaurants = random.sample(
-        filtered_restaurants,
-        min(3, len(filtered_restaurants))
+    # Get restaurants using Google Places API with exclusions
+    restaurants = await get_restaurants_from_google_places(
+        location_data,
+        preferences_data,
+        people_data,
+        excluded_ids=updated_excluded
     )
-    
-    # Get people data for highlights
-    selected_people = []  # Would need to store this in session for full implementation
-    people_data = await get_people_data(current_user.user_id, selected_people)
-    
-    # Build restaurant response objects
-    restaurants = []
-    for restaurant_data in selected_restaurants:
-        distance = calculate_distance(
-            location_data["latitude"], location_data["longitude"],
-            0, 0  # Mock coordinates
-        )
-        
-        opentable_info = generate_opentable_info(
-            restaurant_data["name"], 
-            city_key,
-            preferences_data.get("time_preference")
-        )
-        
-        highlights = await generate_ai_highlights(
-            restaurant_data,
-            preferences_data,
-            people_data
-        )
-        
-        restaurant = Restaurant(
-            id=restaurant_data["id"],
-            name=restaurant_data["name"],
-            cuisine=restaurant_data["cuisine"],
-            address=restaurant_data["address"],
-            distance_miles=distance,
-            price_level=restaurant_data["price_level"],
-            rating=restaurant_data["rating"],
-            phone=restaurant_data["phone"],
-            google_place_id=restaurant_data["google_place_id"],
-            opentable=opentable_info,
-            highlights=highlights
-        )
-        restaurants.append(restaurant)
     
     return RestaurantResponse(
         restaurants=restaurants,
