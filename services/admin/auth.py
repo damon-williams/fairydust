@@ -87,10 +87,16 @@ async def get_current_admin_user(
         raise HTTPException(status_code=401, detail="Invalid or expired session")
     
     # Verify user is still admin
-    user = await db.fetch_one(
-        "SELECT * FROM users WHERE id = $1 AND is_admin = true AND is_active = true",
-        session_data["user_id"]
-    )
+    from uuid import UUID
+    try:
+        user_id = UUID(session_data["user_id"]) if isinstance(session_data["user_id"], str) else session_data["user_id"]
+        user = await db.fetch_one(
+            "SELECT id, fairyname, email, is_admin, is_active FROM users WHERE id = $1 AND is_admin = true AND is_active = true",
+            user_id
+        )
+    except Exception as e:
+        print(f"Database error in admin auth: {e}")
+        raise HTTPException(status_code=500, detail="Database connection error")
     
     if not user:
         raise HTTPException(status_code=403, detail="Admin access revoked")
@@ -109,5 +115,6 @@ async def optional_admin_user(
     """Get current admin user if authenticated, otherwise None"""
     try:
         return await get_current_admin_user(request, admin_session, db)
-    except HTTPException:
+    except Exception:
+        # Catch all exceptions (HTTPException, database errors, etc.)
         return None
