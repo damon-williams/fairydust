@@ -65,7 +65,7 @@ app.include_router(restaurant_router, prefix="/restaurant", tags=["restaurants"]
 
 @app.get("/")
 async def root():
-    return {"message": "fairydust Content Service is running"}
+    return {"message": "fairydust Content Service is running", "version": "1.1.0"}
 
 @app.get("/health")
 async def health():

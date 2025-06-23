@@ -664,7 +664,7 @@ async def create_tables():
         ON restaurant_sessions(user_id, expires_at);
         
         CREATE INDEX IF NOT EXISTS idx_restaurant_sessions_expires 
-        ON restaurant_sessions(expires_at) WHERE expires_at > CURRENT_TIMESTAMP;
+        ON restaurant_sessions(expires_at);
     ''')
     
     await db.execute_schema('''
