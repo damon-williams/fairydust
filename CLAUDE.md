@@ -7,7 +7,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ### Required API Keys
 - `GOOGLE_PLACES_API_KEY`: Google Places API key for restaurant discovery
   - Used by content service for real restaurant data (Phase 2)
-  - Set in .env file locally: `AIzaSyBd8rw5TMpwbEF8aj8iJIwQjlCRg7wOyQA`
+  - Set in .env file locally (see .env.example for template)
   - Should be configured in Railway environment variables for production
 
 ## Commands
