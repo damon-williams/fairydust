@@ -108,9 +108,16 @@ async def verify_otp(
         user_id = uuid4()
         fairyname = generate_fairyname()
         
-        # Check fairyname uniqueness
-        while await db.fetch_one("SELECT id FROM users WHERE fairyname = $1", fairyname):
+        # Check fairyname uniqueness with limited retries to prevent infinite loops
+        max_retries = 10
+        for _ in range(max_retries):
+            if not await db.fetch_one("SELECT id FROM users WHERE fairyname = $1", fairyname):
+                break
             fairyname = generate_fairyname()
+        else:
+            # If we couldn't find unique name after 10 tries, add timestamp
+            import time
+            fairyname = f"{fairyname}{int(time.time() % 10000)}"
         
         # Create user
         user = await db.fetch_one(
@@ -144,15 +151,11 @@ async def verify_otp(
         user.get("last_login_date")
     )
     
-    # Update user record with new streak info
-    user = await db.fetch_one(
-        """SELECT id, fairyname, email, phone, avatar_url, is_builder, is_admin, is_active,
-                  first_name, age_range, city, country, dust_balance, auth_provider,
-                  last_profiling_session, total_profiling_sessions, streak_days, last_login_date,
-                  created_at, updated_at 
-           FROM users WHERE id = $1""",
-        user["id"]
-    )
+    # Update user dict with new streak info (avoid redundant DB query)
+    user_dict = dict(user)
+    user_dict["streak_days"] = streak_days
+    user_dict["last_login_date"] = last_login_date
+    user = user_dict
     
     # Create tokens
     token_data = {
@@ -218,9 +221,16 @@ async def oauth_login(
         user_id = uuid4()
         fairyname = generate_fairyname()
         
-        # Check fairyname uniqueness
-        while await db.fetch_one("SELECT id FROM users WHERE fairyname = $1", fairyname):
+        # Check fairyname uniqueness with limited retries to prevent infinite loops
+        max_retries = 10
+        for _ in range(max_retries):
+            if not await db.fetch_one("SELECT id FROM users WHERE fairyname = $1", fairyname):
+                break
             fairyname = generate_fairyname()
+        else:
+            # If we couldn't find unique name after 10 tries, add timestamp
+            import time
+            fairyname = f"{fairyname}{int(time.time() % 10000)}"
         
         # Create user
         user = await db.fetch_one(
@@ -263,15 +273,11 @@ async def oauth_login(
         user.get("last_login_date")
     )
     
-    # Update user record with new streak info
-    user = await db.fetch_one(
-        """SELECT id, fairyname, email, phone, avatar_url, is_builder, is_admin, is_active,
-                  first_name, age_range, city, country, dust_balance, auth_provider,
-                  last_profiling_session, total_profiling_sessions, streak_days, last_login_date,
-                  created_at, updated_at 
-           FROM users WHERE id = $1""",
-        user["id"]
-    )
+    # Update user dict with new streak info (avoid redundant DB query)
+    user_dict = dict(user)
+    user_dict["streak_days"] = streak_days
+    user_dict["last_login_date"] = last_login_date
+    user = user_dict
     
     # Create tokens
     token_data = {

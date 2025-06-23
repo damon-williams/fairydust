@@ -70,6 +70,8 @@ class ModelParameters(BaseModel):
     presence_penalty: Optional[float] = Field(None, ge=-2.0, le=2.0)
 
 class FallbackModel(BaseModel):
+    model_config = {"protected_namespaces": ()}
+    
     provider: LLMProvider
     model_id: str = Field(..., max_length=100)
     trigger: str = Field(..., max_length=50)  # "provider_error", "cost_threshold_exceeded", etc.
@@ -86,6 +88,8 @@ class FeatureFlags(BaseModel):
     log_prompts: bool = False
 
 class AppModelConfig(BaseModel):
+    model_config = {"protected_namespaces": (), "from_attributes": True}
+    
     id: UUID
     app_id: str
     primary_provider: LLMProvider
@@ -96,11 +100,10 @@ class AppModelConfig(BaseModel):
     feature_flags: FeatureFlags = Field(default_factory=FeatureFlags)
     created_at: datetime
     updated_at: datetime
-    
-    class Config:
-        from_attributes = True
 
 class AppModelConfigCreate(BaseModel):
+    model_config = {"protected_namespaces": ()}
+    
     primary_provider: LLMProvider
     primary_model_id: str = Field(..., max_length=100)
     primary_parameters: ModelParameters = Field(default_factory=ModelParameters)
@@ -109,6 +112,8 @@ class AppModelConfigCreate(BaseModel):
     feature_flags: FeatureFlags = Field(default_factory=FeatureFlags)
 
 class AppModelConfigUpdate(BaseModel):
+    model_config = {"protected_namespaces": ()}
+    
     primary_provider: Optional[LLMProvider] = None
     primary_model_id: Optional[str] = Field(None, max_length=100)
     primary_parameters: Optional[ModelParameters] = None
@@ -117,6 +122,8 @@ class AppModelConfigUpdate(BaseModel):
     feature_flags: Optional[FeatureFlags] = None
 
 class LLMUsageLogCreate(BaseModel):
+    model_config = {"protected_namespaces": ()}
+    
     user_id: UUID
     app_id: str = Field(..., max_length=255)
     provider: LLMProvider
@@ -133,6 +140,8 @@ class LLMUsageLogCreate(BaseModel):
     request_metadata: dict = Field(default_factory=dict)
 
 class LLMUsageLog(BaseModel):
+    model_config = {"protected_namespaces": (), "from_attributes": True}
+    
     id: UUID
     user_id: UUID
     app_id: str
@@ -149,11 +158,10 @@ class LLMUsageLog(BaseModel):
     fallback_reason: Optional[str]
     request_metadata: dict
     created_at: datetime
-    
-    class Config:
-        from_attributes = True
 
 class LLMUsageStats(BaseModel):
+    model_config = {"protected_namespaces": ()}
+    
     total_requests: int
     total_tokens: int
     total_cost_usd: float
