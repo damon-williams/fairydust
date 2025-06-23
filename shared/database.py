@@ -649,4 +649,68 @@ async def create_tables():
         CREATE INDEX IF NOT EXISTS idx_story_logs_success ON story_generation_logs(success, created_at DESC);
     ''')
     
+    # Restaurant App Tables
+    await db.execute_schema('''
+        CREATE TABLE IF NOT EXISTS restaurant_sessions (
+            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            session_data JSONB DEFAULT '{}',
+            excluded_restaurants TEXT[] DEFAULT '{}',
+            created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+            expires_at TIMESTAMP WITH TIME ZONE NOT NULL
+        );
+        
+        CREATE INDEX IF NOT EXISTS idx_restaurant_sessions_user_expires 
+        ON restaurant_sessions(user_id, expires_at);
+        
+        CREATE INDEX IF NOT EXISTS idx_restaurant_sessions_expires 
+        ON restaurant_sessions(expires_at) WHERE expires_at > CURRENT_TIMESTAMP;
+    ''')
+    
+    await db.execute_schema('''
+        CREATE TABLE IF NOT EXISTS restaurant_cache (
+            place_id VARCHAR(255) PRIMARY KEY,
+            restaurant_data JSONB NOT NULL,
+            location_hash VARCHAR(64) NOT NULL,
+            search_params_hash VARCHAR(64),
+            cached_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+            expires_at TIMESTAMP WITH TIME ZONE NOT NULL
+        );
+        
+        CREATE INDEX IF NOT EXISTS idx_restaurant_cache_location 
+        ON restaurant_cache(location_hash, expires_at);
+        
+        CREATE INDEX IF NOT EXISTS idx_restaurant_cache_expires 
+        ON restaurant_cache(expires_at) WHERE expires_at > CURRENT_TIMESTAMP;
+    ''')
+    
+    # Insert restaurant app if it doesn't exist
+    await db.execute_schema('''
+        INSERT INTO apps (
+            id, builder_id, name, slug, description, icon_url, dust_per_use,
+            status, category, website_url, demo_url, callback_url,
+            is_active, admin_notes, created_at, updated_at
+        )
+        SELECT 
+            gen_random_uuid(),
+            (SELECT id FROM users WHERE is_builder = true LIMIT 1),
+            'Restaurant',
+            'fairydust-restaurant',
+            'Find restaurants based on your group''s preferences',
+            NULL,
+            3,
+            'approved',
+            'lifestyle',
+            NULL,
+            NULL,
+            NULL,
+            true,
+            'Auto-created for mobile app implementation',
+            CURRENT_TIMESTAMP,
+            CURRENT_TIMESTAMP
+        WHERE NOT EXISTS (
+            SELECT 1 FROM apps WHERE slug = 'fairydust-restaurant'
+        );
+    ''')
+    
     logger.info("Database schema creation/update completed successfully")
