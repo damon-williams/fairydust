@@ -392,7 +392,7 @@ async def get_supported_models():
 @llm_router.get("/users/{user_id}/usage", response_model=LLMUsageStats)
 async def get_user_llm_usage(
     user_id: UUID,
-    period: str = Query("daily", regex="^(daily|monthly)$"),
+    period: str = Query("daily", pattern="^(daily|monthly)$"),
     app_id: Optional[str] = Query(None),
     days: int = Query(30, ge=1, le=365),
     current_user: TokenData = Depends(get_current_user),

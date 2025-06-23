@@ -171,7 +171,7 @@ class RestaurantPreferences(BaseModel):
     party_size: int = Field(2, ge=1, le=20)
     cuisine_types: Optional[List[str]] = Field(default_factory=list)
     opentable_only: bool = Field(False)
-    time_preference: Optional[str] = Field(None, regex="^(now|tonight|weekend)$")
+    time_preference: Optional[str] = Field(None, pattern="^(now|tonight|weekend)$")
     special_occasion: Optional[str] = Field(None, max_length=200)
 
 class RestaurantGenerateRequest(BaseModel):
@@ -192,7 +192,7 @@ class Restaurant(BaseModel):
     cuisine: str
     address: str
     distance_miles: float
-    price_level: str = Field(..., regex="^(\$|\$\$|\$\$\$)$")
+    price_level: str = Field(..., pattern="^(\$|\$\$|\$\$\$)$")
     rating: float = Field(..., ge=0, le=5)
     phone: Optional[str] = None
     google_place_id: Optional[str] = None
