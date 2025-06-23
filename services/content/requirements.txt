@@ -6,3 +6,5 @@ redis==5.0.1
 python-multipart==0.0.6
 python-jose[cryptography]==3.3.0
 python-dotenv==1.0.0
+googlemaps==4.10.0
+httpx==0.25.2
