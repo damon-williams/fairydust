@@ -27,7 +27,7 @@ class GooglePlacesService:
         """Convert miles to meters for Google Places API"""
         return int(miles * 1609.34)
     
-    async def search_restaurants(
+    def search_restaurants(
         self,
         latitude: float,
         longitude: float,
