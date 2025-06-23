@@ -46,6 +46,46 @@ async def llm_dashboard(
         LIMIT 10
     """)
     
+    # Get per-app usage analytics
+    app_usage_stats = await db.fetch_all("""
+        SELECT 
+            a.name as app_name,
+            a.slug as app_slug,
+            COUNT(l.id) as total_requests,
+            AVG(l.prompt_tokens) as avg_prompt_tokens,
+            AVG(l.completion_tokens) as avg_completion_tokens,
+            AVG(l.total_tokens) as avg_total_tokens,
+            AVG(l.cost_usd) as avg_cost_per_request,
+            SUM(l.cost_usd) as total_cost,
+            AVG(l.latency_ms) as avg_latency_ms
+        FROM apps a
+        LEFT JOIN llm_usage_logs l ON a.id = l.app_id 
+            AND l.created_at >= NOW() - INTERVAL '30 days'
+        WHERE l.id IS NOT NULL
+        GROUP BY a.id, a.name, a.slug
+        ORDER BY total_cost DESC
+    """)
+    
+    # Get per-action analytics (based on request_metadata)
+    action_usage_stats = await db.fetch_all("""
+        SELECT 
+            a.name as app_name,
+            COALESCE(l.request_metadata->>'action', 'unknown') as action_type,
+            COUNT(l.id) as total_requests,
+            AVG(l.prompt_tokens) as avg_prompt_tokens,
+            AVG(l.completion_tokens) as avg_completion_tokens,
+            AVG(l.total_tokens) as avg_total_tokens,
+            AVG(l.cost_usd) as avg_cost_per_request,
+            SUM(l.cost_usd) as total_cost
+        FROM apps a
+        LEFT JOIN llm_usage_logs l ON a.id = l.app_id 
+            AND l.created_at >= NOW() - INTERVAL '30 days'
+        WHERE l.id IS NOT NULL
+        GROUP BY a.id, a.name, COALESCE(l.request_metadata->>'action', 'unknown')
+        HAVING COUNT(l.id) > 0
+        ORDER BY a.name, total_cost DESC
+    """)
+    
     # Get app configurations (show all apps, even without configs)
     app_configs = await db.fetch_all("""
         SELECT 
@@ -71,6 +111,51 @@ async def llm_dashboard(
             <td>{stat['requests']:,}</td>
             <td>${stat['cost']:.4f}</td>
             <td>{stat['avg_latency']:.0f}ms</td>
+        </tr>
+        """
+    
+    # Build per-app usage analytics HTML
+    app_usage_html = ""
+    for stat in app_usage_stats:
+        app_usage_html += f"""
+        <tr>
+            <td><strong>{stat['app_name']}</strong><br><small class="text-muted">{stat['app_slug']}</small></td>
+            <td>{stat['total_requests']:,}</td>
+            <td>{stat['avg_prompt_tokens']:.0f}</td>
+            <td>{stat['avg_completion_tokens']:.0f}</td>
+            <td>{stat['avg_total_tokens']:.0f}</td>
+            <td>${stat['avg_cost_per_request']:.6f}</td>
+            <td>${stat['total_cost']:.4f}</td>
+            <td>{stat['avg_latency_ms']:.0f}ms</td>
+        </tr>
+        """
+    
+    # Build per-action usage analytics HTML  
+    action_usage_html = ""
+    current_app = None
+    for stat in action_usage_stats:
+        # Add app header if it's a new app
+        if current_app != stat['app_name']:
+            if current_app is not None:
+                action_usage_html += """
+                <tr><td colspan="7" style="border-top: 2px solid #dee2e6;"></td></tr>
+                """
+            current_app = stat['app_name']
+            action_usage_html += f"""
+            <tr class="table-secondary">
+                <td colspan="7"><strong><i class="fas fa-mobile-alt me-2"></i>{stat['app_name']}</strong></td>
+            </tr>
+            """
+        
+        action_usage_html += f"""
+        <tr>
+            <td style="padding-left: 2rem;"><i class="fas fa-cog me-2"></i>{stat['action_type']}</td>
+            <td>{stat['total_requests']:,}</td>
+            <td>{stat['avg_prompt_tokens']:.0f}</td>
+            <td>{stat['avg_completion_tokens']:.0f}</td>
+            <td>{stat['avg_total_tokens']:.0f}</td>
+            <td>${stat['avg_cost_per_request']:.6f}</td>
+            <td>${stat['total_cost']:.4f}</td>
         </tr>
         """
     
@@ -252,6 +337,69 @@ async def llm_dashboard(
                                     </thead>
                                     <tbody>
                                         {app_configs_html}
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Per-App Token Usage Analytics -->
+            <div class="row mt-4">
+                <div class="col-12">
+                    <div class="card">
+                        <div class="card-header">
+                            <h6 class="mb-0"><i class="fas fa-mobile-alt me-2"></i>Token Usage by App (30 days)</h6>
+                        </div>
+                        <div class="card-body">
+                            <div class="table-responsive">
+                                <table class="table table-sm">
+                                    <thead>
+                                        <tr>
+                                            <th>App</th>
+                                            <th>Total Requests</th>
+                                            <th>Avg Prompt Tokens</th>
+                                            <th>Avg Completion Tokens</th>
+                                            <th>Avg Total Tokens</th>
+                                            <th>Avg Cost/Request</th>
+                                            <th>Total Cost</th>
+                                            <th>Avg Latency</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {app_usage_html if app_usage_html else '<tr><td colspan="8" class="text-center text-muted"><i class="fas fa-info-circle me-2"></i>No app usage data available for the last 30 days</td></tr>'}
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Per-Action Token Usage Analytics -->
+            <div class="row mt-4">
+                <div class="col-12">
+                    <div class="card">
+                        <div class="card-header">
+                            <h6 class="mb-0"><i class="fas fa-cog me-2"></i>Token Usage by Action (30 days)</h6>
+                        </div>
+                        <div class="card-body">
+                            <div class="table-responsive">
+                                <table class="table table-sm">
+                                    <thead>
+                                        <tr>
+                                            <th>App / Action</th>
+                                            <th>Total Requests</th>
+                                            <th>Avg Prompt Tokens</th>
+                                            <th>Avg Completion Tokens</th>
+                                            <th>Avg Total Tokens</th>
+                                            <th>Avg Cost/Request</th>
+                                            <th>Total Cost</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {action_usage_html if action_usage_html else '<tr><td colspan="7" class="text-center text-muted"><i class="fas fa-info-circle me-2"></i>No action usage data available for the last 30 days</td></tr>'}
                                     </tbody>
                                 </table>
                             </div>
