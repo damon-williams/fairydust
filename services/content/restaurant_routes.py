@@ -207,24 +207,37 @@ async def get_restaurants_from_google_places(
     excluded_ids: List[str] = None
 ) -> List[Restaurant]:
     """Get restaurants from Google Places API with fallback to mock data"""
+    print(f"🔍 RESTAURANT_DEBUG: Starting Google Places search")
+    print(f"🔍 RESTAURANT_DEBUG: Location data: {location}")
+    print(f"🔍 RESTAURANT_DEBUG: Preferences: {preferences}")
+    print(f"🔍 RESTAURANT_DEBUG: Excluded IDs: {excluded_ids}")
+    
     try:
+        print(f"🔍 RESTAURANT_DEBUG: Attempting to get Google Places service...")
         places_service = get_google_places_service()
+        print(f"🔍 RESTAURANT_DEBUG: ✅ Google Places service initialized successfully")
         
         # Convert radius from miles (if provided) or use default
         radius_str = preferences.get("default_radius", "10mi") 
         radius_miles = int(radius_str.replace("mi", "")) if "mi" in radius_str else 10
+        print(f"🔍 RESTAURANT_DEBUG: Search radius: {radius_miles} miles")
         
         # Use provided coordinates or try to geocode address
         latitude = location.get("latitude")
         longitude = location.get("longitude") 
+        print(f"🔍 RESTAURANT_DEBUG: Coordinates - Lat: {latitude}, Lng: {longitude}")
         
         if not latitude or not longitude:
             # If no coordinates, try geocoding the address
             # For now, fall back to mock data if no coordinates
-            print("No coordinates provided, falling back to mock data")
+            print("🔍 RESTAURANT_DEBUG: ❌ No coordinates provided, falling back to mock data")
+            print(f"🔍 RESTAURANT_DEBUG: Location address field: {location.get('address', 'NO ADDRESS PROVIDED')}")
             return await get_mock_restaurants(location, preferences, people_data, excluded_ids)
         
         # Get restaurants from Google Places
+        print(f"🔍 RESTAURANT_DEBUG: Calling Google Places API...")
+        print(f"🔍 RESTAURANT_DEBUG: API Parameters - cuisine_types: {preferences.get('cuisine_types', [])}, open_now: {preferences.get('time_preference') == 'now'}")
+        
         google_restaurants = places_service.search_restaurants(
             latitude=latitude,
             longitude=longitude,
@@ -235,9 +248,13 @@ async def get_restaurants_from_google_places(
             max_results=20
         )
         
+        print(f"🔍 RESTAURANT_DEBUG: Google Places returned {len(google_restaurants) if google_restaurants else 0} restaurants")
+        
         if not google_restaurants:
-            print("No restaurants found via Google Places, falling back to mock data")
+            print("🔍 RESTAURANT_DEBUG: ❌ No restaurants found via Google Places, falling back to mock data")
             return await get_mock_restaurants(location, preferences, people_data, excluded_ids)
+        
+        print(f"🔍 RESTAURANT_DEBUG: ✅ Using Google Places data for {len(google_restaurants)} restaurants")
         
         # Filter out excluded restaurants
         if excluded_ids:
@@ -276,10 +293,13 @@ async def get_restaurants_from_google_places(
             )
             restaurants.append(restaurant)
         
+        print(f"🔍 RESTAURANT_DEBUG: ✅ Successfully processed {len(restaurants)} restaurants from Google Places")
         return restaurants
         
     except Exception as e:
-        print(f"Error fetching from Google Places: {e}")
+        print(f"🔍 RESTAURANT_DEBUG: ❌ Exception occurred: {type(e).__name__}: {e}")
+        import traceback
+        print(f"🔍 RESTAURANT_DEBUG: Full traceback: {traceback.format_exc()}")
         return await get_mock_restaurants(location, preferences, people_data, excluded_ids)
 
 async def get_mock_restaurants(
@@ -289,9 +309,14 @@ async def get_mock_restaurants(
     excluded_ids: List[str] = None
 ) -> List[Restaurant]:
     """Get mock restaurants as fallback"""
+    print(f"🔍 RESTAURANT_DEBUG: 🎭 Using MOCK restaurant data")
+    print(f"🔍 RESTAURANT_DEBUG: Mock location: {location}")
+    
     # Get mock restaurants based on location
     city_key = get_city_key(location.get("address", ""))
+    print(f"🔍 RESTAURANT_DEBUG: Detected city: {city_key}")
     available_restaurants = MOCK_RESTAURANTS.get(city_key, MOCK_RESTAURANTS["san_francisco"])
+    print(f"🔍 RESTAURANT_DEBUG: Available mock restaurants: {len(available_restaurants)}")
     
     # Filter based on preferences
     filtered_restaurants = available_restaurants.copy()

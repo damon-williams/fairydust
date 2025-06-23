@@ -7,22 +7,29 @@ from datetime import datetime, timedelta
 try:
     import googlemaps
     GOOGLEMAPS_AVAILABLE = True
-except ImportError:
+    print("🔍 GOOGLE_PLACES_DEBUG: ✅ googlemaps package imported successfully")
+except ImportError as e:
     GOOGLEMAPS_AVAILABLE = False
     googlemaps = None
+    print(f"🔍 GOOGLE_PLACES_DEBUG: ❌ googlemaps package not available: {e}")
 
 class GooglePlacesService:
     """Service for interacting with Google Places API"""
     
     def __init__(self):
+        print("🔍 GOOGLE_PLACES_DEBUG: Initializing GooglePlacesService...")
         if not GOOGLEMAPS_AVAILABLE:
+            print("🔍 GOOGLE_PLACES_DEBUG: ❌ googlemaps package not available")
             raise ImportError("googlemaps package is not installed. Please install it with: pip install googlemaps")
         
         self.api_key = os.getenv("GOOGLE_PLACES_API_KEY")
+        print(f"🔍 GOOGLE_PLACES_DEBUG: API key {'✅ found' if self.api_key else '❌ missing'}")
         if not self.api_key:
             raise ValueError("GOOGLE_PLACES_API_KEY environment variable is required")
         
+        print("🔍 GOOGLE_PLACES_DEBUG: Creating googlemaps client...")
         self.client = googlemaps.Client(key=self.api_key)
+        print("🔍 GOOGLE_PLACES_DEBUG: ✅ GooglePlacesService initialized successfully")
         
     def generate_location_hash(self, latitude: float, longitude: float, radius_miles: int) -> str:
         """Generate a hash for location-based caching"""
@@ -197,9 +204,15 @@ _places_service = None
 
 def get_google_places_service() -> GooglePlacesService:
     """Get singleton Google Places service instance"""
+    print("🔍 GOOGLE_PLACES_DEBUG: get_google_places_service() called")
     global _places_service
     if _places_service is None:
+        print("🔍 GOOGLE_PLACES_DEBUG: Creating new GooglePlacesService instance...")
         if not GOOGLEMAPS_AVAILABLE:
+            print("🔍 GOOGLE_PLACES_DEBUG: ❌ googlemaps package not available, raising ImportError")
             raise ImportError("googlemaps package is not available. Falling back to mock data.")
         _places_service = GooglePlacesService()
+        print("🔍 GOOGLE_PLACES_DEBUG: ✅ Singleton instance created")
+    else:
+        print("🔍 GOOGLE_PLACES_DEBUG: ✅ Returning existing singleton instance")
     return _places_service
