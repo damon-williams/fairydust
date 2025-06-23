@@ -1,14 +1,23 @@
 # services/content/google_places_service.py
 import os
-import googlemaps
 import hashlib
 from typing import List, Dict, Any, Optional
 from datetime import datetime, timedelta
+
+try:
+    import googlemaps
+    GOOGLEMAPS_AVAILABLE = True
+except ImportError:
+    GOOGLEMAPS_AVAILABLE = False
+    googlemaps = None
 
 class GooglePlacesService:
     """Service for interacting with Google Places API"""
     
     def __init__(self):
+        if not GOOGLEMAPS_AVAILABLE:
+            raise ImportError("googlemaps package is not installed. Please install it with: pip install googlemaps")
+        
         self.api_key = os.getenv("GOOGLE_PLACES_API_KEY")
         if not self.api_key:
             raise ValueError("GOOGLE_PLACES_API_KEY environment variable is required")
@@ -190,5 +199,7 @@ def get_google_places_service() -> GooglePlacesService:
     """Get singleton Google Places service instance"""
     global _places_service
     if _places_service is None:
+        if not GOOGLEMAPS_AVAILABLE:
+            raise ImportError("googlemaps package is not available. Falling back to mock data.")
         _places_service = GooglePlacesService()
     return _places_service
