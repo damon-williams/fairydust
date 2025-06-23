@@ -115,5 +115,6 @@ async def optional_admin_user(
     """Get current admin user if authenticated, otherwise None"""
     try:
         return await get_current_admin_user(request, admin_session, db)
-    except HTTPException:
+    except Exception:
+        # Catch all exceptions (HTTPException, database errors, etc.)
         return None
