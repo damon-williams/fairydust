@@ -6,7 +6,7 @@ import logging
 
 logger = logging.getLogger(__name__)
 
-async def _execute_with_retry(db, query: str, *args, max_retries: int = 3, timeout: float = 10.0):
+async def _execute_with_retry(db, query: str, *args, max_retries: int = 2, timeout: float = 3.0):
     """Execute database query with retry logic and timeout"""
     for attempt in range(max_retries):
         try:
