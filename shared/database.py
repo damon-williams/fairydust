@@ -681,7 +681,7 @@ async def create_tables():
         ON restaurant_cache(location_hash, expires_at);
         
         CREATE INDEX IF NOT EXISTS idx_restaurant_cache_expires 
-        ON restaurant_cache(expires_at) WHERE expires_at > CURRENT_TIMESTAMP;
+        ON restaurant_cache(expires_at);
     ''')
     
     # Insert restaurant app if it doesn't exist
