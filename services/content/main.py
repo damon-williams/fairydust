@@ -8,6 +8,7 @@ from shared.database import init_db, close_db
 from shared.redis_client import init_redis, close_redis
 from routes import content_router
 from story_routes import router as story_router
+from restaurant_routes import router as restaurant_router
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -46,6 +47,7 @@ endpoint_limits = {
     "/recipes": 10 * 1024 * 1024,  # 10MB for recipe content
     "/content/stories/generate": 50 * 1024,  # 50KB for story generation requests
     "/content/stories": 1 * 1024 * 1024,  # 1MB for story content
+    "/restaurant": 100 * 1024,  # 100KB for restaurant requests
 }
 
 add_middleware_to_app(
@@ -59,10 +61,11 @@ add_middleware_to_app(
 # Include routers
 app.include_router(content_router, prefix="/recipes", tags=["recipes"])
 app.include_router(story_router, prefix="/content", tags=["stories"])
+app.include_router(restaurant_router, prefix="/restaurant", tags=["restaurants"])
 
 @app.get("/")
 async def root():
-    return {"message": "fairydust Content Service is running"}
+    return {"message": "fairydust Content Service is running", "version": "1.1.0"}
 
 @app.get("/health")
 async def health():

@@ -161,6 +161,69 @@ class StoryGenerationLog(BaseModel):
     class Config:
         from_attributes = True
 
+# Restaurant App Models
+class RestaurantLocation(BaseModel):
+    latitude: float = Field(..., ge=-90, le=90)
+    longitude: float = Field(..., ge=-180, le=180)
+    address: str = Field(..., min_length=1, max_length=500)
+
+class RestaurantPreferences(BaseModel):
+    party_size: int = Field(2, ge=1, le=20)
+    cuisine_types: Optional[List[str]] = Field(default_factory=list)
+    opentable_only: bool = Field(False)
+    time_preference: Optional[str] = Field(None, pattern="^(now|tonight|weekend)$")
+    special_occasion: Optional[str] = Field(None, max_length=200)
+
+class RestaurantGenerateRequest(BaseModel):
+    user_id: UUID
+    location: RestaurantLocation
+    preferences: RestaurantPreferences
+    selected_people: List[UUID] = Field(default_factory=list)
+    session_id: Optional[UUID] = None
+
+class OpenTableInfo(BaseModel):
+    has_reservations: bool
+    available_times: List[str] = Field(default_factory=list)
+    booking_url: str
+
+class Restaurant(BaseModel):
+    id: str
+    name: str
+    cuisine: str
+    address: str
+    distance_miles: float
+    price_level: str = Field(..., pattern="^(\$|\$\$|\$\$\$)$")
+    rating: float = Field(..., ge=0, le=5)
+    phone: Optional[str] = None
+    google_place_id: Optional[str] = None
+    opentable: OpenTableInfo
+    highlights: List[str] = Field(default_factory=list)
+
+class RestaurantResponse(BaseModel):
+    restaurants: List[Restaurant]
+    session_id: UUID
+    generated_at: datetime
+
+class RestaurantRegenerateRequest(BaseModel):
+    session_id: UUID
+    exclude_restaurants: List[str] = Field(default_factory=list)
+
+class PersonRestaurantPreferences(BaseModel):
+    person_id: UUID
+    favorite_restaurants: List[str] = Field(default_factory=list)
+    notes: Optional[str] = None
+
+class UserRestaurantPreferences(BaseModel):
+    personal_preferences: dict = Field(default_factory=lambda: {
+        "default_radius": "10mi",
+        "preferred_cuisines": []
+    })
+    people_preferences: List[PersonRestaurantPreferences] = Field(default_factory=list)
+
+class UserRestaurantPreferencesUpdate(BaseModel):
+    personal_preferences: Optional[dict] = None
+    people_preferences: Optional[List[PersonRestaurantPreferences]] = None
+
 # Error Response Model
 class ErrorResponse(BaseModel):
     error: dict

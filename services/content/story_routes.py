@@ -422,7 +422,7 @@ async def get_user_stories(
     offset: int = Query(0, ge=0),
     genre: Optional[StoryGenre] = Query(None),
     favorited_only: bool = Query(False),
-    sort: str = Query("created_at_desc", regex="^(created_at_desc|created_at_asc|title_asc)$"),
+    sort: str = Query("created_at_desc", pattern="^(created_at_desc|created_at_asc|title_asc)$"),
     current_user: TokenData = Depends(get_current_user),
     db: Database = Depends(get_db)
 ):
