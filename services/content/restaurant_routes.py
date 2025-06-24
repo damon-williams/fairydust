@@ -349,6 +349,18 @@ async def get_restaurants_from_google_places(
                 continue
             restaurants.append(restaurant)
         
+        # Apply opentable_only filter if requested
+        if preferences.get("opentable_only", False):
+            print(f"🔍 RESTAURANT_DEBUG: Applying opentable_only filter")
+            opentable_restaurants = []
+            for restaurant in restaurants:
+                if restaurant.opentable and restaurant.opentable.has_reservations:
+                    opentable_restaurants.append(restaurant)
+                else:
+                    print(f"🔍 RESTAURANT_DEBUG: Filtering out {restaurant.name} - no OpenTable reservations")
+            restaurants = opentable_restaurants
+            print(f"🔍 RESTAURANT_DEBUG: After opentable_only filter: {len(restaurants)} restaurants remain")
+        
         print(f"🔍 RESTAURANT_DEBUG: ✅ Successfully processed {len(restaurants)} restaurants from Google Places")
         return restaurants
         
@@ -463,6 +475,18 @@ async def get_mock_restaurants(
             import traceback
             print(f"🔍 RESTAURANT_DEBUG: Traceback: {traceback.format_exc()}")
             continue
+    
+    # Apply opentable_only filter if requested  
+    if preferences.get("opentable_only", False):
+        print(f"🔍 RESTAURANT_DEBUG: Applying opentable_only filter to mock restaurants")
+        opentable_restaurants = []
+        for restaurant in restaurants:
+            if restaurant.opentable and restaurant.opentable.has_reservations:
+                opentable_restaurants.append(restaurant)
+            else:
+                print(f"🔍 RESTAURANT_DEBUG: Filtering out {restaurant.name} - no OpenTable reservations")
+        restaurants = opentable_restaurants
+        print(f"🔍 RESTAURANT_DEBUG: After opentable_only filter: {len(restaurants)} mock restaurants remain")
     
     return restaurants
 
@@ -622,7 +646,13 @@ async def generate_restaurants(
     print(f"🚨 RESTAURANT_ENDPOINT: Request user_id: {request.user_id}")
     print(f"🚨 RESTAURANT_ENDPOINT: Current user: {current_user.user_id}")
     print(f"🚨 RESTAURANT_ENDPOINT: Location: {request.location}")
-    print(f"🚨 RESTAURANT_ENDPOINT: Preferences: {request.preferences}")
+    print(f"🚨 RESTAURANT_ENDPOINT: Preferences: {request.preferences}", flush=True)
+    print(f"🔍 RESTAURANT_ENDPOINT: Parameter implementation status:", flush=True)
+    print(f"  • cuisine_types: ✅ Google Places keyword + client-side filtering", flush=True)
+    print(f"  • opentable_only: ✅ Post-processing filter by has_reservations", flush=True) 
+    print(f"  • time_preference: ✅ Google Places open_now + OpenTable times", flush=True)
+    print(f"  • party_size: ✅ OpenTable booking URL + group size highlights", flush=True)
+    print(f"  • special_occasion: ✅ AI highlights generation", flush=True)
     
     # Verify user matches the request
     if str(current_user.user_id) != str(request.user_id):
