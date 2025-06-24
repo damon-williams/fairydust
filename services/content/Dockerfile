@@ -2,6 +2,9 @@ FROM python:3.11-slim
 
 WORKDIR /app
 
+# Force Python to run in unbuffered mode so logs appear immediately
+ENV PYTHONUNBUFFERED=1
+
 # Copy requirements first for better caching  
 COPY services/content/requirements.txt services/content/requirements.txt
 
@@ -20,6 +23,7 @@ COPY services/content/ services/content/
 
 # Set environment variables
 ENV PYTHONPATH=/app
+ENV PYTHONUNBUFFERED=1
 ENV PORT=8006
 
 # Expose port
