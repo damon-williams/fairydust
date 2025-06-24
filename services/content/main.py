@@ -1,15 +1,51 @@
 # services/content/main.py
+print("🚨 STARTUP: Starting content service import phase...")
+
 import os
 import time
+print("🚨 STARTUP: Basic imports successful")
+
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+print("🚨 STARTUP: FastAPI imports successful")
 
-from shared.database import init_db, close_db
-from shared.redis_client import init_redis, close_redis
-from routes import content_router
-from story_routes import router as story_router
-from restaurant_routes import router as restaurant_router
+try:
+    from shared.database import init_db, close_db
+    print("🚨 STARTUP: Database imports successful")
+except Exception as e:
+    print(f"🚨 STARTUP: ❌ Database import failed: {e}")
+    raise
+
+try:
+    from shared.redis_client import init_redis, close_redis
+    print("🚨 STARTUP: Redis imports successful")
+except Exception as e:
+    print(f"🚨 STARTUP: ❌ Redis import failed: {e}")
+    raise
+
+try:
+    from routes import content_router
+    print("🚨 STARTUP: Content routes imported successfully")
+except Exception as e:
+    print(f"🚨 STARTUP: ❌ Content routes import failed: {e}")
+    raise
+
+try:
+    from story_routes import router as story_router
+    print("🚨 STARTUP: Story routes imported successfully")
+except Exception as e:
+    print(f"🚨 STARTUP: ❌ Story routes import failed: {e}")
+    raise
+
+try:
+    from restaurant_routes import router as restaurant_router
+    print("🚨 STARTUP: Restaurant routes imported successfully")
+except Exception as e:
+    print(f"🚨 STARTUP: ❌ Restaurant routes import failed: {e}")
+    raise
+
+print("🚨 STARTUP: All imports completed successfully")
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):

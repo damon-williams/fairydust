@@ -34,6 +34,9 @@ class OTPVerify(BaseModel):
         if not v.isdigit():
             raise ValueError("OTP code must contain only digits")
         return v
+
+class RefreshTokenRequest(BaseModel):
+    refresh_token: str
 class OAuthCallback(BaseModel):
     provider: Literal["google", "apple", "facebook"]
     code: str

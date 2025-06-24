@@ -8,7 +8,7 @@ import httpx
 import os
 
 from models import (
-    OTPRequest, OTPVerify, OAuthCallback, 
+    OTPRequest, OTPVerify, OAuthCallback, RefreshTokenRequest,
     User, UserCreate, UserUpdate, UserPublic,
     Token, AuthResponse,
     UserProfileData, UserProfileDataCreate, UserProfileDataUpdate,
@@ -303,19 +303,19 @@ async def oauth_login(
 
 @auth_router.post("/refresh", response_model=Token)
 async def refresh_token(
-    refresh_token: str,
+    request: RefreshTokenRequest,
     auth_service: AuthService = Depends(lambda r=Depends(get_redis): AuthService(r))
 ):
     """Refresh access token using refresh token"""
     # Decode refresh token
-    token_data = await auth_service.decode_token(refresh_token)
+    token_data = await auth_service.decode_token(request.refresh_token)
     
     if token_data.type != "refresh":
         raise HTTPException(status_code=400, detail="Invalid token type")
     
     # Check if refresh token is still valid in Redis
     stored_token = await auth_service.redis.get(f"refresh_token:{token_data.user_id}")
-    if not stored_token or stored_token.decode() != refresh_token:
+    if not stored_token or stored_token.decode() != request.refresh_token:
         raise HTTPException(status_code=401, detail="Invalid refresh token")
     
     # Create new access token
