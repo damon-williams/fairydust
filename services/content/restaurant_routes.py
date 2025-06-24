@@ -19,6 +19,7 @@ from shared.auth_middleware import get_current_user, TokenData
 from shared.json_utils import safe_json_dumps, parse_jsonb_field
 from rate_limiting import check_api_rate_limit_only
 from google_places_service import get_google_places_service
+from google_places_http import get_google_places_http_service
 
 security = HTTPBearer()
 router = APIRouter()
@@ -227,8 +228,17 @@ async def get_restaurants_from_google_places(
     
     try:
         print(f"🔍 RESTAURANT_DEBUG: Attempting to get Google Places service...")
-        places_service = get_google_places_service()
-        print(f"🔍 RESTAURANT_DEBUG: ✅ Google Places service initialized successfully")
+        
+        # Try the googlemaps package first
+        try:
+            places_service = get_google_places_service()
+            print(f"🔍 RESTAURANT_DEBUG: ✅ Google Places service (googlemaps package) initialized successfully")
+            use_http_service = False
+        except ImportError as e:
+            print(f"🔍 RESTAURANT_DEBUG: googlemaps package not available, trying HTTP service...")
+            places_service = get_google_places_http_service()
+            print(f"🔍 RESTAURANT_DEBUG: ✅ Google Places HTTP service initialized successfully")
+            use_http_service = True
         
         # Convert radius from miles (if provided) or use default
         radius_str = preferences.get("default_radius", "10mi") 
@@ -251,15 +261,26 @@ async def get_restaurants_from_google_places(
         print(f"🔍 RESTAURANT_DEBUG: Calling Google Places API...")
         print(f"🔍 RESTAURANT_DEBUG: API Parameters - cuisine_types: {preferences.get('cuisine_types', [])}, open_now: {preferences.get('time_preference') == 'now'}")
         
-        google_restaurants = places_service.search_restaurants(
-            latitude=latitude,
-            longitude=longitude,
-            radius_miles=radius_miles,
-            cuisine_types=preferences.get("cuisine_types", []),
-            open_now=preferences.get("time_preference") == "now",
-            min_rating=3.5,
-            max_results=20
-        )
+        if use_http_service:
+            google_restaurants = await places_service.search_restaurants(
+                latitude=latitude,
+                longitude=longitude,
+                radius_miles=radius_miles,
+                cuisine_types=preferences.get("cuisine_types", []),
+                open_now=preferences.get("time_preference") == "now",
+                min_rating=3.5,
+                max_results=20
+            )
+        else:
+            google_restaurants = places_service.search_restaurants(
+                latitude=latitude,
+                longitude=longitude,
+                radius_miles=radius_miles,
+                cuisine_types=preferences.get("cuisine_types", []),
+                open_now=preferences.get("time_preference") == "now",
+                min_rating=3.5,
+                max_results=20
+            )
         
         print(f"🔍 RESTAURANT_DEBUG: Google Places returned {len(google_restaurants) if google_restaurants else 0} restaurants")
         
