@@ -1,5 +1,6 @@
 # services/content/main.py
 import os
+import time
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -13,11 +14,15 @@ from restaurant_routes import router as restaurant_router
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # Initialize database and Redis
+    print("🚨 CONTENT_SERVICE: Starting content service initialization...")
     await init_db()
+    print("🚨 CONTENT_SERVICE: Database initialized")
     await init_redis()
-    print("Content service started successfully")
+    print("🚨 CONTENT_SERVICE: Redis initialized")
+    print("🚨 CONTENT_SERVICE: Content service started successfully")
     yield
     # Cleanup
+    print("🚨 CONTENT_SERVICE: Shutting down content service...")
     await close_db()
     await close_redis()
 
@@ -59,17 +64,26 @@ add_middleware_to_app(
 )
 
 # Include routers
+print("🚨 CONTENT_SERVICE: Including routers...")
 app.include_router(content_router, prefix="/recipes", tags=["recipes"])
 app.include_router(story_router, prefix="/content", tags=["stories"])
 app.include_router(restaurant_router, prefix="/restaurant", tags=["restaurants"])
+print("🚨 CONTENT_SERVICE: All routers included successfully")
 
 @app.get("/")
 async def root():
+    print("🚨 CONTENT_SERVICE: Root endpoint hit")
     return {"message": "fairydust Content Service is running", "version": "1.1.0"}
 
 @app.get("/health")
 async def health():
+    print("🚨 CONTENT_SERVICE: Health endpoint hit")
     return {"status": "healthy", "service": "content"}
+
+@app.get("/test-restaurant")
+async def test_restaurant():
+    print("🚨 CONTENT_SERVICE: Test restaurant endpoint hit")
+    return {"message": "Restaurant router is working", "timestamp": time.time()}
 
 if __name__ == "__main__":
     import uvicorn

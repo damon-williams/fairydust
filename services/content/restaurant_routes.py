@@ -546,8 +546,15 @@ async def generate_restaurants(
 ):
     """Generate restaurant recommendations based on location and preferences"""
     
+    print(f"🚨 RESTAURANT_ENDPOINT: /restaurant/generate endpoint reached!")
+    print(f"🚨 RESTAURANT_ENDPOINT: Request user_id: {request.user_id}")
+    print(f"🚨 RESTAURANT_ENDPOINT: Current user: {current_user.user_id}")
+    print(f"🚨 RESTAURANT_ENDPOINT: Location: {request.location}")
+    print(f"🚨 RESTAURANT_ENDPOINT: Preferences: {request.preferences}")
+    
     # Verify user matches the request
     if str(current_user.user_id) != str(request.user_id):
+        print(f"🚨 RESTAURANT_ENDPOINT: ❌ User mismatch!")
         raise HTTPException(status_code=403, detail="Cannot generate restaurants for other users")
     
     # Rate limiting check
