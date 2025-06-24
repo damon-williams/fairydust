@@ -86,10 +86,18 @@ async def test_restaurant():
     return {"message": "Restaurant router is working", "timestamp": time.time()}
 
 if __name__ == "__main__":
-    import uvicorn
-    uvicorn.run(
-        "main:app",
-        host="0.0.0.0",
-        port=int(os.getenv("PORT", 8006)),
-        reload=os.getenv("ENVIRONMENT", "development") == "development"
-    )
+    print("🚨 CONTENT_SERVICE: Starting uvicorn server...")
+    try:
+        import uvicorn
+        print("🚨 CONTENT_SERVICE: ✅ uvicorn imported successfully")
+        uvicorn.run(
+            "main:app",
+            host="0.0.0.0",
+            port=int(os.getenv("PORT", 8006)),
+            reload=os.getenv("ENVIRONMENT", "development") == "development"
+        )
+    except Exception as e:
+        print(f"🚨 CONTENT_SERVICE: ❌ Failed to start uvicorn: {e}")
+        import traceback
+        traceback.print_exc()
+        raise

@@ -568,7 +568,7 @@ async def generate_restaurants(
         raise HTTPException(status_code=403, detail="Cannot generate restaurants for other users")
     
     # Rate limiting check
-    await check_api_rate_limit_only(current_user.user_id, "restaurant_generate", db)
+    await check_api_rate_limit_only(current_user.user_id)
     
     # Consume DUST for the search
     dust_consumed = await consume_dust_for_restaurant_search(request.user_id)
@@ -628,7 +628,7 @@ async def regenerate_restaurants(
         raise HTTPException(status_code=404, detail="Session not found or expired")
     
     # Rate limiting check
-    await check_api_rate_limit_only(current_user.user_id, "restaurant_regenerate", db)
+    await check_api_rate_limit_only(current_user.user_id)
     
     # Parse session data
     session_data = session["session_data"]
