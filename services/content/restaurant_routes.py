@@ -212,6 +212,19 @@ async def get_restaurants_from_google_places(
     print(f"🔍 RESTAURANT_DEBUG: Preferences: {preferences}")
     print(f"🔍 RESTAURANT_DEBUG: Excluded IDs: {excluded_ids}")
     
+    # Defensive programming - ensure we have valid dictionaries
+    if not isinstance(location, dict):
+        print(f"🔍 RESTAURANT_DEBUG: ❌ Invalid location type: {type(location)}, falling back to mock data")
+        location = {}
+    
+    if not isinstance(preferences, dict):
+        print(f"🔍 RESTAURANT_DEBUG: ❌ Invalid preferences type: {type(preferences)}, using defaults")
+        preferences = {}
+    
+    if not isinstance(people_data, list):
+        print(f"🔍 RESTAURANT_DEBUG: ❌ Invalid people_data type: {type(people_data)}, using empty list")
+        people_data = []
+    
     try:
         print(f"🔍 RESTAURANT_DEBUG: Attempting to get Google Places service...")
         places_service = get_google_places_service()
@@ -256,41 +269,63 @@ async def get_restaurants_from_google_places(
         
         print(f"🔍 RESTAURANT_DEBUG: ✅ Using Google Places data for {len(google_restaurants)} restaurants")
         
-        # Filter out excluded restaurants
-        if excluded_ids:
-            google_restaurants = [r for r in google_restaurants if r["id"] not in excluded_ids]
+        # Filter out excluded restaurants  
+        if excluded_ids and google_restaurants:
+            print(f"🔍 RESTAURANT_DEBUG: Filtering out {len(excluded_ids)} excluded restaurants")
+            google_restaurants = [r for r in google_restaurants if r and r.get("id") not in excluded_ids]
         
         # Convert to Restaurant objects with highlights
         restaurants = []
         for restaurant_data in google_restaurants[:3]:  # Return top 3
+            if not restaurant_data or not isinstance(restaurant_data, dict):
+                print(f"🔍 RESTAURANT_DEBUG: ⚠️ Skipping invalid restaurant data: {restaurant_data}")
+                continue
+                
             # Generate OpenTable info
+            restaurant_name = restaurant_data.get("name", "Unknown Restaurant")
+            city_address = location.get("address", "") if location else ""
+            time_pref = preferences.get("time_preference") if preferences else None
+            party_size = preferences.get("party_size", 2) if preferences else 2
+            
+            print(f"🔍 RESTAURANT_DEBUG: Processing restaurant: {restaurant_name}")
+            
             opentable_info = generate_opentable_info(
-                restaurant_data["name"],
-                get_city_key(location.get("address", "")),
-                preferences.get("time_preference"),
-                preferences.get("party_size", 2)
+                restaurant_name,
+                get_city_key(city_address),
+                time_pref,
+                party_size
             )
             
             # Generate AI highlights
-            highlights = await generate_ai_highlights(
-                restaurant_data,
-                preferences,
-                people_data
-            )
+            try:
+                highlights = await generate_ai_highlights(
+                    restaurant_data,
+                    preferences or {},
+                    people_data or []
+                )
+            except Exception as e:
+                print(f"🔍 RESTAURANT_DEBUG: ⚠️ Error generating highlights: {e}")
+                highlights = []
             
-            restaurant = Restaurant(
-                id=restaurant_data["id"],
-                name=restaurant_data["name"],
-                cuisine=restaurant_data["cuisine"],
-                address=restaurant_data["address"],
-                distance_miles=restaurant_data["distance_miles"],
-                price_level=restaurant_data["price_level"],
-                rating=restaurant_data["rating"],
-                phone=restaurant_data.get("phone"),
-                google_place_id=restaurant_data["google_place_id"],
-                opentable=opentable_info,
-                highlights=highlights
-            )
+            # Create restaurant object with safe defaults
+            try:
+                restaurant = Restaurant(
+                    id=restaurant_data.get("id", f"unknown_{len(restaurants)}"),
+                    name=restaurant_data.get("name", "Unknown Restaurant"),
+                    cuisine=restaurant_data.get("cuisine", "Restaurant"),
+                    address=restaurant_data.get("address", "Address not available"),
+                    distance_miles=restaurant_data.get("distance_miles", 0.0),
+                    price_level=restaurant_data.get("price_level", "$$"),
+                    rating=restaurant_data.get("rating", 4.0),
+                    phone=restaurant_data.get("phone"),
+                    google_place_id=restaurant_data.get("google_place_id"),
+                    opentable=opentable_info,
+                    highlights=highlights
+                )
+                print(f"🔍 RESTAURANT_DEBUG: ✅ Successfully created restaurant object for {restaurant_name}")
+            except Exception as e:
+                print(f"🔍 RESTAURANT_DEBUG: ❌ Error creating restaurant object: {e}")
+                continue
             restaurants.append(restaurant)
         
         print(f"🔍 RESTAURANT_DEBUG: ✅ Successfully processed {len(restaurants)} restaurants from Google Places")
@@ -312,8 +347,21 @@ async def get_mock_restaurants(
     print(f"🔍 RESTAURANT_DEBUG: 🎭 Using MOCK restaurant data")
     print(f"🔍 RESTAURANT_DEBUG: Mock location: {location}")
     
+    # Defensive programming - ensure we have valid inputs
+    if not isinstance(location, dict):
+        print(f"🔍 RESTAURANT_DEBUG: ❌ Invalid location type for mock: {type(location)}")
+        location = {}
+    
+    if not isinstance(preferences, dict):
+        print(f"🔍 RESTAURANT_DEBUG: ❌ Invalid preferences type for mock: {type(preferences)}")
+        preferences = {}
+    
+    if not isinstance(people_data, list):
+        print(f"🔍 RESTAURANT_DEBUG: ❌ Invalid people_data type for mock: {type(people_data)}")
+        people_data = []
+    
     # Get mock restaurants based on location
-    city_key = get_city_key(location.get("address", ""))
+    city_key = get_city_key(location.get("address", "") if location else "")
     print(f"🔍 RESTAURANT_DEBUG: Detected city: {city_key}")
     available_restaurants = MOCK_RESTAURANTS.get(city_key, MOCK_RESTAURANTS["san_francisco"])
     print(f"🔍 RESTAURANT_DEBUG: Available mock restaurants: {len(available_restaurants)}")
