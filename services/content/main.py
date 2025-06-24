@@ -116,12 +116,24 @@ add_middleware_to_app(
     log_requests=True
 )
 
+# Add custom middleware to log ALL requests
+@app.middleware("http")
+async def log_all_requests(request, call_next):
+    print(f"🔍 REQUEST_DEBUG: {request.method} {request.url.path} - Headers: {dict(request.headers)}", flush=True)
+    print(f"🔍 REQUEST_DEBUG: Query params: {dict(request.query_params)}", flush=True)
+    response = await call_next(request)
+    print(f"🔍 REQUEST_DEBUG: Response status: {response.status_code}", flush=True)
+    return response
+
 # Include routers
 print("🚨 CONTENT_SERVICE: Including routers...", flush=True)
 app.include_router(content_router, prefix="/recipes", tags=["recipes"])
 app.include_router(story_router, prefix="/content", tags=["stories"])
 app.include_router(restaurant_router, prefix="/restaurant", tags=["restaurants"])
 print("🚨 CONTENT_SERVICE: All routers included successfully", flush=True)
+print("🚨 CONTENT_SERVICE: Router prefixes - recipes: /recipes, stories: /content, restaurants: /restaurant", flush=True)
+print("🚨 CONTENT_SERVICE: Expected story URL: /content/users/{user_id}/stories/generate", flush=True)
+print("🚨 CONTENT_SERVICE: Expected restaurant URL: /restaurant/generate", flush=True)
 
 @app.get("/")
 async def root():
