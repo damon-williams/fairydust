@@ -3,11 +3,14 @@ import json
 import time
 import httpx
 import re
+import logging
 from datetime import datetime, timedelta
 from typing import Optional, List
 from uuid import UUID, uuid4
 from fastapi import APIRouter, HTTPException, Depends, Query, status, BackgroundTasks
 from fastapi.security import HTTPBearer
+
+logger = logging.getLogger(__name__)
 
 from models import (
     StoryGenerationRequest, StoryGenerationResponse, UserStory, StoriesResponse,
@@ -295,30 +298,41 @@ async def generate_story(
     db: Database = Depends(get_db)
 ):
     """Generate a new personalized story"""
+    print(f"🚀 STORY_GENERATE: Starting story generation for user {user_id}, genre={request.genre.value}, length={request.story_length.value}", flush=True)
+    
     # Verify user can only generate stories for themselves
     if current_user.user_id != str(user_id):
+        print(f"🚨 STORY_GENERATE: User {current_user.user_id} attempted to generate story for different user {user_id}", flush=True)
         raise HTTPException(status_code=403, detail="Can only generate stories for yourself")
     
     # Check rate limits
+    print(f"🔍 STORY_GENERATE: Checking rate limits for user {user_id}", flush=True)
     await check_story_generation_rate_limit(user_id)
+    print(f"✅ STORY_GENERATE: Rate limit check passed for user {user_id}", flush=True)
     
     # Validate content safety
+    print(f"🔍 STORY_GENERATE: Validating content safety for user {user_id}", flush=True)
     is_safe, safety_issues = content_safety_filter.validate_request(request)
     if not is_safe:
+        print(f"🚨 STORY_GENERATE: Content safety failed for user {user_id}: {safety_issues}", flush=True)
         raise HTTPException(
             status_code=400,
             detail=f"Content safety validation failed: {'; '.join(safety_issues)}"
         )
+    print(f"✅ STORY_GENERATE: Content safety validation passed for user {user_id}", flush=True)
     
     # Check DUST cost and balance
     dust_cost = DUST_COSTS[request.story_length]
+    print(f"🔍 STORY_GENERATE: Checking DUST balance for user {user_id}, cost={dust_cost}", flush=True)
     user_balance = await get_user_dust_balance(user_id)
     
     if user_balance < dust_cost:
+        print(f"💰 STORY_GENERATE: Insufficient DUST for user {user_id}: need {dust_cost}, have {user_balance}", flush=True)
         raise HTTPException(
             status_code=402,
             detail=f"Insufficient DUST balance. Need {dust_cost}, have {user_balance}"
         )
+    print(f"💰 STORY_GENERATE: DUST balance check passed for user {user_id}: {user_balance} >= {dust_cost}", flush=True)
     
     # Get LLM configuration
     model_config = await get_llm_model_config()
@@ -328,8 +342,10 @@ async def generate_story(
     
     # Generate story
     try:
+        print(f"🤖 STORY_GENERATE: Calling LLM service for user {user_id}", flush=True)
         generated_text, generation_metadata = await call_llm_service(prompt, model_config)
         title, content = extract_title_and_content(generated_text)
+        print(f"✅ STORY_GENERATE: LLM generation completed for user {user_id}, tokens={generation_metadata.get('tokens_used')}", flush=True)
         
         # Filter generated content for safety
         filtered_content, content_warnings = content_safety_filter.filter_generated_content(
@@ -342,7 +358,7 @@ async def generate_story(
         
         # Log content warnings if any
         if content_warnings:
-            print(f"Content warnings for story generation: {content_warnings}")
+            print(f"⚠️ STORY_GENERATE: Content warnings for user {user_id}: {content_warnings}", flush=True)
         
         # Consume DUST
         dust_consumed = await consume_dust(
@@ -363,6 +379,7 @@ async def generate_story(
         
         # Save story to database
         story_id = uuid4()
+        print(f"💾 STORY_GENERATE: Saving story to database for user {user_id}, story_id={story_id}", flush=True)
         await db.execute("""
             INSERT INTO user_stories (
                 id, user_id, title, content, genre, story_length,
@@ -379,6 +396,7 @@ async def generate_story(
             }),
             dust_cost, word_count
         )
+        print(f"✅ STORY_GENERATE: Story saved successfully for user {user_id}, story_id={story_id}, word_count={word_count}", flush=True)
         
         # Log generation success
         await log_story_generation(
@@ -398,6 +416,7 @@ async def generate_story(
         
         story = UserStory(**story_dict)
         
+        print(f"🎉 STORY_GENERATE: Story generation completed successfully for user {user_id}, story_id={story_id}", flush=True)
         return StoryGenerationResponse(
             story=story,
             generation_metadata=StoryGenerationMetadata(**generation_metadata)
@@ -406,6 +425,9 @@ async def generate_story(
     except HTTPException:
         raise
     except Exception as e:
+        print(f"❌ STORY_GENERATE: Story generation failed for user {user_id}: {str(e)}", flush=True)
+        import traceback
+        print(f"❌ STORY_GENERATE: Traceback: {traceback.format_exc()}", flush=True)
         # Log generation failure
         await log_story_generation(
             db, user_id, None, prompt, model_config, False, str(e)
