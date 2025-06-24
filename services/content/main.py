@@ -85,6 +85,24 @@ async def test_restaurant():
     print("🚨 CONTENT_SERVICE: Test restaurant endpoint hit")
     return {"message": "Restaurant router is working", "timestamp": time.time()}
 
+@app.get("/test-googlemaps")
+async def test_googlemaps():
+    print("🚨 CONTENT_SERVICE: Test googlemaps endpoint hit")
+    try:
+        import googlemaps
+        return {
+            "status": "success", 
+            "message": "googlemaps package available",
+            "version": getattr(googlemaps, '__version__', 'unknown'),
+            "timestamp": time.time()
+        }
+    except ImportError as e:
+        return {
+            "status": "error",
+            "message": f"googlemaps package not available: {e}",
+            "timestamp": time.time()
+        }
+
 if __name__ == "__main__":
     print("🚨 CONTENT_SERVICE: Starting uvicorn server...")
     try:

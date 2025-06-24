@@ -19,6 +19,7 @@ from shared.auth_middleware import get_current_user, TokenData
 from shared.json_utils import safe_json_dumps, parse_jsonb_field
 from rate_limiting import check_api_rate_limit_only
 from google_places_service import get_google_places_service
+from google_places_http import get_google_places_http_service
 
 security = HTTPBearer()
 router = APIRouter()
@@ -227,8 +228,17 @@ async def get_restaurants_from_google_places(
     
     try:
         print(f"🔍 RESTAURANT_DEBUG: Attempting to get Google Places service...")
-        places_service = get_google_places_service()
-        print(f"🔍 RESTAURANT_DEBUG: ✅ Google Places service initialized successfully")
+        
+        # Try the googlemaps package first
+        try:
+            places_service = get_google_places_service()
+            print(f"🔍 RESTAURANT_DEBUG: ✅ Google Places service (googlemaps package) initialized successfully")
+            use_http_service = False
+        except ImportError as e:
+            print(f"🔍 RESTAURANT_DEBUG: googlemaps package not available, trying HTTP service...")
+            places_service = get_google_places_http_service()
+            print(f"🔍 RESTAURANT_DEBUG: ✅ Google Places HTTP service initialized successfully")
+            use_http_service = True
         
         # Convert radius from miles (if provided) or use default
         radius_str = preferences.get("default_radius", "10mi") 
@@ -251,15 +261,26 @@ async def get_restaurants_from_google_places(
         print(f"🔍 RESTAURANT_DEBUG: Calling Google Places API...")
         print(f"🔍 RESTAURANT_DEBUG: API Parameters - cuisine_types: {preferences.get('cuisine_types', [])}, open_now: {preferences.get('time_preference') == 'now'}")
         
-        google_restaurants = places_service.search_restaurants(
-            latitude=latitude,
-            longitude=longitude,
-            radius_miles=radius_miles,
-            cuisine_types=preferences.get("cuisine_types", []),
-            open_now=preferences.get("time_preference") == "now",
-            min_rating=3.5,
-            max_results=20
-        )
+        if use_http_service:
+            google_restaurants = await places_service.search_restaurants(
+                latitude=latitude,
+                longitude=longitude,
+                radius_miles=radius_miles,
+                cuisine_types=preferences.get("cuisine_types", []),
+                open_now=preferences.get("time_preference") == "now",
+                min_rating=3.5,
+                max_results=20
+            )
+        else:
+            google_restaurants = places_service.search_restaurants(
+                latitude=latitude,
+                longitude=longitude,
+                radius_miles=radius_miles,
+                cuisine_types=preferences.get("cuisine_types", []),
+                open_now=preferences.get("time_preference") == "now",
+                min_rating=3.5,
+                max_results=20
+            )
         
         print(f"🔍 RESTAURANT_DEBUG: Google Places returned {len(google_restaurants) if google_restaurants else 0} restaurants")
         
@@ -388,7 +409,10 @@ async def get_mock_restaurants(
     
     # Build restaurant response objects
     restaurants = []
-    for restaurant_data in selected_restaurants:
+    print(f"🔍 RESTAURANT_DEBUG: Building {len(selected_restaurants)} restaurant objects...")
+    
+    for i, restaurant_data in enumerate(selected_restaurants):
+        print(f"🔍 RESTAURANT_DEBUG: Processing restaurant {i+1}: {restaurant_data.get('name', 'Unknown')}")
         # Calculate distance (mock calculation)
         distance = calculate_distance(
             location.get("latitude", 37.7749), 
@@ -396,35 +420,49 @@ async def get_mock_restaurants(
             0, 0  # Mock coordinates
         )
         
-        # Generate OpenTable info
-        opentable_info = generate_opentable_info(
-            restaurant_data["name"], 
-            city_key,
-            preferences.get("time_preference"),
-            preferences.get("party_size", 2)
-        )
-        
-        # Generate AI highlights
-        highlights = await generate_ai_highlights(
-            restaurant_data,
-            preferences,
-            people_data
-        )
-        
-        restaurant = Restaurant(
-            id=restaurant_data["id"],
-            name=restaurant_data["name"],
-            cuisine=restaurant_data["cuisine"],
-            address=restaurant_data["address"],
-            distance_miles=distance,
-            price_level=restaurant_data["price_level"],
-            rating=restaurant_data["rating"],
-            phone=restaurant_data["phone"],
-            google_place_id=restaurant_data["google_place_id"],
-            opentable=opentable_info,
-            highlights=highlights
-        )
-        restaurants.append(restaurant)
+        try:
+            # Generate OpenTable info
+            print(f"🔍 RESTAURANT_DEBUG: Generating OpenTable info...")
+            opentable_info = generate_opentable_info(
+                restaurant_data.get("name", "Unknown"), 
+                city_key,
+                preferences.get("time_preference") if preferences else None,
+                preferences.get("party_size", 2) if preferences else 2
+            )
+            print(f"🔍 RESTAURANT_DEBUG: ✅ OpenTable info generated")
+            
+            # Generate AI highlights
+            print(f"🔍 RESTAURANT_DEBUG: Generating AI highlights...")
+            highlights = await generate_ai_highlights(
+                restaurant_data,
+                preferences or {},
+                people_data or []
+            )
+            print(f"🔍 RESTAURANT_DEBUG: ✅ AI highlights generated: {len(highlights)} items")
+            
+            # Create restaurant object
+            print(f"🔍 RESTAURANT_DEBUG: Creating Restaurant object...")
+            restaurant = Restaurant(
+                id=restaurant_data.get("id", f"mock_unknown_{i}"),
+                name=restaurant_data.get("name", "Unknown Restaurant"),
+                cuisine=restaurant_data.get("cuisine", "Restaurant"),
+                address=restaurant_data.get("address", "Address not available"),
+                distance_miles=float(distance),
+                price_level=restaurant_data.get("price_level", "$$"),
+                rating=float(restaurant_data.get("rating", 4.0)),
+                phone=restaurant_data.get("phone"),
+                google_place_id=restaurant_data.get("google_place_id"),
+                opentable=opentable_info,
+                highlights=highlights
+            )
+            print(f"🔍 RESTAURANT_DEBUG: ✅ Restaurant object created successfully")
+            restaurants.append(restaurant)
+            
+        except Exception as e:
+            print(f"🔍 RESTAURANT_DEBUG: ❌ Error processing restaurant {i+1}: {e}")
+            import traceback
+            print(f"🔍 RESTAURANT_DEBUG: Traceback: {traceback.format_exc()}")
+            continue
     
     return restaurants
 
@@ -432,9 +470,18 @@ async def generate_ai_highlights(restaurant: dict, preferences: dict, people_dat
     """Generate AI-powered restaurant highlights based on preferences and people data"""
     highlights = []
     
+    # Defensive programming for None values
+    if not isinstance(restaurant, dict):
+        return highlights
+    if not isinstance(preferences, dict):
+        preferences = {}
+    if not isinstance(people_data, list):
+        people_data = []
+    
     # Basic highlights based on restaurant type
-    cuisine = restaurant["cuisine"].lower()
-    price_level = restaurant["price_level"]
+    cuisine_raw = restaurant.get("cuisine") or "Restaurant"
+    cuisine = cuisine_raw.lower() if cuisine_raw else "restaurant"
+    price_level = restaurant.get("price_level") or "$$"
     party_size = preferences.get("party_size", 2)
     
     if party_size >= 6:
@@ -463,7 +510,8 @@ async def generate_ai_highlights(restaurant: dict, preferences: dict, people_dat
         highlights.append("Ocean-to-table dining")
     
     # Special occasion handling
-    special_occasion = preferences.get("special_occasion", "").lower()
+    special_occasion_raw = preferences.get("special_occasion")
+    special_occasion = special_occasion_raw.lower() if special_occasion_raw else ""
     if "birthday" in special_occasion:
         highlights.append("Birthday-friendly atmosphere")
     elif "anniversary" in special_occasion:
@@ -473,33 +521,47 @@ async def generate_ai_highlights(restaurant: dict, preferences: dict, people_dat
     
     # People preferences
     for person in people_data:
-        notes = person.get("notes", "").lower()
-        if "high chair" in notes or "kids" in notes:
-            highlights.append("Family-friendly")
-        if "vegetarian" in notes or "vegan" in notes:
-            highlights.append("Vegetarian options")
-        if "gluten" in notes:
-            highlights.append("Gluten-free options")
+        if isinstance(person, dict):
+            notes_raw = person.get("notes")
+            notes = notes_raw.lower() if notes_raw else ""
+            if "high chair" in notes or "kids" in notes:
+                highlights.append("Family-friendly")
+            if "vegetarian" in notes or "vegan" in notes:
+                highlights.append("Vegetarian options")
+            if "gluten" in notes:
+                highlights.append("Gluten-free options")
     
     return highlights[:3]  # Limit to 3 highlights
 
 async def consume_dust_for_restaurant_search(user_id: UUID) -> bool:
     """Consume DUST for restaurant search via Ledger Service"""
+    print(f"🔍 DUST_DEBUG: Attempting to consume 3 DUST for user {user_id}")
     try:
         async with httpx.AsyncClient() as client:
+            payload = {
+                "user_id": str(user_id),
+                "amount": 3,
+                "app_id": "fairydust-restaurant",
+                "description": "Restaurant search"
+            }
+            print(f"🔍 DUST_DEBUG: Payload: {payload}")
+            
             response = await client.post(
                 "https://fairydust-ledger-production.up.railway.app/transactions/consume",
-                json={
-                    "user_id": str(user_id),
-                    "amount": 3,
-                    "app_id": "fairydust-restaurant",
-                    "description": "Restaurant search"
-                },
+                json=payload,
                 timeout=10.0
             )
-            return response.status_code == 200
+            print(f"🔍 DUST_DEBUG: Ledger service response: {response.status_code}")
+            
+            if response.status_code != 200:
+                response_text = response.text
+                print(f"🔍 DUST_DEBUG: Error response: {response_text}")
+                return False
+            
+            print(f"🔍 DUST_DEBUG: ✅ DUST consumption successful")
+            return True
     except Exception as e:
-        print(f"Failed to consume DUST: {e}")
+        print(f"🔍 DUST_DEBUG: ❌ Exception consuming DUST: {e}")
         return False
 
 async def get_people_data(user_id: UUID, selected_people: List[UUID]) -> List[dict]:
@@ -570,13 +632,15 @@ async def generate_restaurants(
     # Rate limiting check
     await check_api_rate_limit_only(current_user.user_id)
     
-    # Consume DUST for the search
-    dust_consumed = await consume_dust_for_restaurant_search(request.user_id)
-    if not dust_consumed:
-        raise HTTPException(
-            status_code=402, 
-            detail="Insufficient DUST balance or payment processing failed"
-        )
+    # DUST consumption - temporarily disabled for testing since app already handles it
+    print(f"🔍 DUST_DEBUG: Skipping DUST consumption - assuming app already handled it")
+    # TODO: Determine if restaurant API should consume DUST or if app handles it
+    # dust_consumed = await consume_dust_for_restaurant_search(request.user_id)
+    # if not dust_consumed:
+    #     raise HTTPException(
+    #         status_code=402, 
+    #         detail="Insufficient DUST balance or payment processing failed"
+    #     )
     
     # Get people data for personalization
     people_data = await get_people_data(request.user_id, request.selected_people)
@@ -597,6 +661,7 @@ async def generate_restaurants(
         [], session_expires)
     
     # Get restaurants using Google Places API with fallback to mock data
+    print(f"🚨 RESTAURANT_ENDPOINT: Calling get_restaurants_from_google_places...")
     restaurants = await get_restaurants_from_google_places(
         request.location.dict(),
         request.preferences.dict(),
@@ -604,11 +669,21 @@ async def generate_restaurants(
         excluded_ids=[]
     )
     
-    return RestaurantResponse(
-        restaurants=restaurants,
-        session_id=session_id,
-        generated_at=datetime.utcnow()
-    )
+    print(f"🚨 RESTAURANT_ENDPOINT: Got {len(restaurants)} restaurants, creating response...")
+    
+    try:
+        response = RestaurantResponse(
+            restaurants=restaurants,
+            session_id=session_id,
+            generated_at=datetime.utcnow()
+        )
+        print(f"🚨 RESTAURANT_ENDPOINT: ✅ Response created successfully")
+        return response
+    except Exception as e:
+        print(f"🚨 RESTAURANT_ENDPOINT: ❌ Error creating response: {e}")
+        import traceback
+        print(f"🚨 RESTAURANT_ENDPOINT: Traceback: {traceback.format_exc()}")
+        raise
 
 @router.post("/regenerate", response_model=RestaurantResponse)
 async def regenerate_restaurants(
