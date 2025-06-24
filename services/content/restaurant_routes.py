@@ -449,9 +449,18 @@ async def generate_ai_highlights(restaurant: dict, preferences: dict, people_dat
     """Generate AI-powered restaurant highlights based on preferences and people data"""
     highlights = []
     
+    # Defensive programming for None values
+    if not isinstance(restaurant, dict):
+        return highlights
+    if not isinstance(preferences, dict):
+        preferences = {}
+    if not isinstance(people_data, list):
+        people_data = []
+    
     # Basic highlights based on restaurant type
-    cuisine = restaurant["cuisine"].lower()
-    price_level = restaurant["price_level"]
+    cuisine_raw = restaurant.get("cuisine") or "Restaurant"
+    cuisine = cuisine_raw.lower() if cuisine_raw else "restaurant"
+    price_level = restaurant.get("price_level") or "$$"
     party_size = preferences.get("party_size", 2)
     
     if party_size >= 6:
@@ -480,7 +489,8 @@ async def generate_ai_highlights(restaurant: dict, preferences: dict, people_dat
         highlights.append("Ocean-to-table dining")
     
     # Special occasion handling
-    special_occasion = preferences.get("special_occasion", "").lower()
+    special_occasion_raw = preferences.get("special_occasion")
+    special_occasion = special_occasion_raw.lower() if special_occasion_raw else ""
     if "birthday" in special_occasion:
         highlights.append("Birthday-friendly atmosphere")
     elif "anniversary" in special_occasion:
@@ -490,13 +500,15 @@ async def generate_ai_highlights(restaurant: dict, preferences: dict, people_dat
     
     # People preferences
     for person in people_data:
-        notes = person.get("notes", "").lower()
-        if "high chair" in notes or "kids" in notes:
-            highlights.append("Family-friendly")
-        if "vegetarian" in notes or "vegan" in notes:
-            highlights.append("Vegetarian options")
-        if "gluten" in notes:
-            highlights.append("Gluten-free options")
+        if isinstance(person, dict):
+            notes_raw = person.get("notes")
+            notes = notes_raw.lower() if notes_raw else ""
+            if "high chair" in notes or "kids" in notes:
+                highlights.append("Family-friendly")
+            if "vegetarian" in notes or "vegan" in notes:
+                highlights.append("Vegetarian options")
+            if "gluten" in notes:
+                highlights.append("Gluten-free options")
     
     return highlights[:3]  # Limit to 3 highlights
 
