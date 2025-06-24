@@ -2,9 +2,15 @@ FROM python:3.11-slim
 
 WORKDIR /app
 
-# Copy requirements first for better caching
+# Copy requirements first for better caching  
 COPY services/content/requirements.txt services/content/requirements.txt
+
+# Force fresh package installation
+RUN pip install --upgrade pip
 RUN pip install --no-cache-dir -r services/content/requirements.txt
+
+# Verify googlemaps installation
+RUN python -c "import googlemaps; print('✅ googlemaps package installed successfully')" || echo "❌ googlemaps package failed to install"
 
 # Copy shared modules
 COPY shared/ shared/
