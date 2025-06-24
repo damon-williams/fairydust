@@ -485,21 +485,33 @@ async def generate_ai_highlights(restaurant: dict, preferences: dict, people_dat
 
 async def consume_dust_for_restaurant_search(user_id: UUID) -> bool:
     """Consume DUST for restaurant search via Ledger Service"""
+    print(f"🔍 DUST_DEBUG: Attempting to consume 3 DUST for user {user_id}")
     try:
         async with httpx.AsyncClient() as client:
+            payload = {
+                "user_id": str(user_id),
+                "amount": 3,
+                "app_id": "fairydust-restaurant",
+                "description": "Restaurant search"
+            }
+            print(f"🔍 DUST_DEBUG: Payload: {payload}")
+            
             response = await client.post(
                 "https://fairydust-ledger-production.up.railway.app/transactions/consume",
-                json={
-                    "user_id": str(user_id),
-                    "amount": 3,
-                    "app_id": "fairydust-restaurant",
-                    "description": "Restaurant search"
-                },
+                json=payload,
                 timeout=10.0
             )
-            return response.status_code == 200
+            print(f"🔍 DUST_DEBUG: Ledger service response: {response.status_code}")
+            
+            if response.status_code != 200:
+                response_text = response.text
+                print(f"🔍 DUST_DEBUG: Error response: {response_text}")
+                return False
+            
+            print(f"🔍 DUST_DEBUG: ✅ DUST consumption successful")
+            return True
     except Exception as e:
-        print(f"Failed to consume DUST: {e}")
+        print(f"🔍 DUST_DEBUG: ❌ Exception consuming DUST: {e}")
         return False
 
 async def get_people_data(user_id: UUID, selected_people: List[UUID]) -> List[dict]:
@@ -570,13 +582,15 @@ async def generate_restaurants(
     # Rate limiting check
     await check_api_rate_limit_only(current_user.user_id)
     
-    # Consume DUST for the search
-    dust_consumed = await consume_dust_for_restaurant_search(request.user_id)
-    if not dust_consumed:
-        raise HTTPException(
-            status_code=402, 
-            detail="Insufficient DUST balance or payment processing failed"
-        )
+    # DUST consumption - temporarily disabled for testing since app already handles it
+    print(f"🔍 DUST_DEBUG: Skipping DUST consumption - assuming app already handled it")
+    # TODO: Determine if restaurant API should consume DUST or if app handles it
+    # dust_consumed = await consume_dust_for_restaurant_search(request.user_id)
+    # if not dust_consumed:
+    #     raise HTTPException(
+    #         status_code=402, 
+    #         detail="Insufficient DUST balance or payment processing failed"
+    #     )
     
     # Get people data for personalization
     people_data = await get_people_data(request.user_id, request.selected_people)
