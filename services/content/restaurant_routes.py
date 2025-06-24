@@ -692,6 +692,7 @@ async def regenerate_restaurants(
     db: Database = Depends(get_db)
 ):
     """Regenerate restaurants within an existing session (free)"""
+    print(f"🍽️ RESTAURANT_REGENERATE: Starting regeneration for session {request.session_id}, excluding {len(request.exclude_restaurants)} restaurants", flush=True)
     
     # Get existing session
     session = await db.fetch_one("""
@@ -700,6 +701,7 @@ async def regenerate_restaurants(
     """, request.session_id, current_user.user_id)
     
     if not session:
+        print(f"🚨 RESTAURANT_REGENERATE: Session {request.session_id} not found or expired for user {current_user.user_id}", flush=True)
         raise HTTPException(status_code=404, detail="Session not found or expired")
     
     # Rate limiting check
@@ -724,6 +726,7 @@ async def regenerate_restaurants(
     people_data = await get_people_data(current_user.user_id, [])
     
     # Get restaurants using Google Places API with exclusions
+    print(f"🔍 RESTAURANT_REGENERATE: Calling Google Places API with {len(updated_excluded)} exclusions", flush=True)
     restaurants = await get_restaurants_from_google_places(
         location_data,
         preferences_data,
@@ -731,6 +734,7 @@ async def regenerate_restaurants(
         excluded_ids=updated_excluded
     )
     
+    print(f"✅ RESTAURANT_REGENERATE: Successfully regenerated {len(restaurants)} restaurants for session {request.session_id}", flush=True)
     return RestaurantResponse(
         restaurants=restaurants,
         session_id=request.session_id,
@@ -744,12 +748,15 @@ async def get_restaurant_preferences(
     db: Database = Depends(get_db)
 ):
     """Get user's restaurant preferences"""
+    print(f"🍽️ RESTAURANT_PREFS_GET: Getting preferences for user {user_id}", flush=True)
     
     # Verify user access
     if str(current_user.user_id) != str(user_id):
+        print(f"🚨 RESTAURANT_PREFS_GET: Access denied for user {current_user.user_id} trying to access {user_id}'s preferences", flush=True)
         raise HTTPException(status_code=403, detail="Cannot access other users' preferences")
     
     # Get people data from Identity Service
+    print(f"🔍 RESTAURANT_PREFS_GET: Fetching people data from Identity Service for user {user_id}", flush=True)
     try:
         async with httpx.AsyncClient() as client:
             response = await client.get(
@@ -757,8 +764,9 @@ async def get_restaurant_preferences(
                 timeout=10.0
             )
             people_data = response.json().get("people", []) if response.status_code == 200 else []
+            print(f"✅ RESTAURANT_PREFS_GET: Successfully fetched {len(people_data)} people from Identity Service", flush=True)
     except Exception as e:
-        print(f"Failed to fetch people data: {e}")
+        print(f"🚨 RESTAURANT_PREFS_GET: Failed to fetch people data: {e}", flush=True)
         people_data = []
     
     # Build people preferences from profile data
@@ -787,6 +795,7 @@ async def get_restaurant_preferences(
         "preferred_cuisines": []
     }
     
+    print(f"✅ RESTAURANT_PREFS_GET: Successfully built preferences for user {user_id}, people_count={len(people_preferences)}", flush=True)
     return UserRestaurantPreferences(
         personal_preferences=personal_preferences,
         people_preferences=people_preferences
@@ -800,13 +809,16 @@ async def update_restaurant_preferences(
     db: Database = Depends(get_db)
 ):
     """Update user's restaurant preferences"""
+    print(f"🍽️ RESTAURANT_PREFS_UPDATE: Updating preferences for user {user_id}, people_updates={len(preferences.people_preferences) if preferences.people_preferences else 0}", flush=True)
     
     # Verify user access
     if str(current_user.user_id) != str(user_id):
+        print(f"🚨 RESTAURANT_PREFS_UPDATE: Access denied for user {current_user.user_id} trying to update {user_id}'s preferences", flush=True)
         raise HTTPException(status_code=403, detail="Cannot update other users' preferences")
     
     # Update people preferences via Identity Service
     if preferences.people_preferences:
+        print(f"🔄 RESTAURANT_PREFS_UPDATE: Updating {len(preferences.people_preferences)} people preferences via Identity Service", flush=True)
         for person_pref in preferences.people_preferences:
             try:
                 async with httpx.AsyncClient() as client:
@@ -834,7 +846,8 @@ async def update_restaurant_preferences(
                             timeout=10.0
                         )
             except Exception as e:
-                print(f"Failed to update people preferences: {e}")
+                print(f"🚨 RESTAURANT_PREFS_UPDATE: Failed to update people preferences for person {person_pref.person_id}: {e}", flush=True)
     
     # Return updated preferences
+    print(f"✅ RESTAURANT_PREFS_UPDATE: Successfully updated preferences for user {user_id}", flush=True)
     return await get_restaurant_preferences(user_id, current_user, db)

@@ -32,8 +32,11 @@ async def get_user_recipes(
     db: Database = Depends(get_db)
 ):
     """Get user recipes with pagination and filtering"""
+    print(f"🍳 RECIPE_GET: Getting recipes for user {user_id}, limit={limit}, offset={offset}, app_id={app_id}, favorited_only={favorited_only}", flush=True)
+    
     # Users can only access their own recipes unless admin
     if current_user.user_id != str(user_id) and not current_user.is_admin:
+        print(f"🚨 RECIPE_GET: Access denied for user {current_user.user_id} trying to access {user_id}", flush=True)
         raise HTTPException(status_code=403, detail="Access denied")
     
     # Build query conditions
@@ -70,6 +73,7 @@ async def get_user_recipes(
     
     has_more = (offset + limit) < total_count
     
+    print(f"✅ RECIPE_GET: Successfully retrieved {len(recipes)} recipes for user {user_id}, total_count={total_count}", flush=True)
     return RecipesResponse(
         recipes=[UserRecipe(**parse_recipe_data(recipe)) for recipe in recipes],
         total_count=total_count,
@@ -84,12 +88,18 @@ async def save_recipe(
     db: Database = Depends(get_db)
 ):
     """Save a new recipe for the user"""
+    print(f"🍳 RECIPE_SAVE: Saving recipe for user {user_id}, app_id={recipe_data.app_id}, category={recipe_data.category}", flush=True)
+    
     # Users can only save to their own account unless admin
     if current_user.user_id != str(user_id) and not current_user.is_admin:
+        print(f"🚨 RECIPE_SAVE: Access denied for user {current_user.user_id} trying to save for {user_id}", flush=True)
         raise HTTPException(status_code=403, detail="Access denied")
     
     # Validate content size (10MB limit as per spec)
-    if len(recipe_data.content.encode('utf-8')) > 10 * 1024 * 1024:
+    content_size = len(recipe_data.content.encode('utf-8'))
+    print(f"🔍 RECIPE_SAVE: Content size validation - {content_size} bytes", flush=True)
+    if content_size > 10 * 1024 * 1024:
+        print(f"🚨 RECIPE_SAVE: Content too large - {content_size} bytes > 10MB limit", flush=True)
         raise HTTPException(status_code=413, detail="Recipe content too large (>10MB)")
     
     # Extract title from content if not provided
@@ -120,6 +130,7 @@ async def save_recipe(
         recipe_data.category, metadata_json, False
     )
     
+    print(f"✅ RECIPE_SAVE: Successfully saved recipe {recipe_id} for user {user_id}, title='{title}'", flush=True)
     return {"recipe": UserRecipe(**parse_recipe_data(recipe))}
 
 @content_router.put("/users/{user_id}/recipes/{recipe_id}", response_model=dict)
@@ -131,8 +142,11 @@ async def update_recipe(
     db: Database = Depends(get_db)
 ):
     """Update recipe (favorite status or title)"""
+    print(f"🍳 RECIPE_UPDATE: Updating recipe {recipe_id} for user {user_id}, title={recipe_update.title}, favorited={recipe_update.is_favorited}", flush=True)
+    
     # Users can only update their own recipes unless admin
     if current_user.user_id != str(user_id) and not current_user.is_admin:
+        print(f"🚨 RECIPE_UPDATE: Access denied for user {current_user.user_id} trying to update {user_id}'s recipe", flush=True)
         raise HTTPException(status_code=403, detail="Access denied")
     
     # Check if recipe exists and belongs to user
@@ -142,6 +156,7 @@ async def update_recipe(
     )
     
     if not recipe:
+        print(f"🚨 RECIPE_UPDATE: Recipe {recipe_id} not found for user {user_id}", flush=True)
         raise HTTPException(status_code=404, detail="Recipe not found")
     
     # Build update query dynamically
@@ -161,6 +176,7 @@ async def update_recipe(
     
     if not update_fields:
         # Return current recipe if no updates
+        print(f"📝 RECIPE_UPDATE: No updates provided for recipe {recipe_id}, returning current data", flush=True)
         return {"recipe": UserRecipe(**parse_recipe_data(recipe))}
     
     # Add updated_at field
@@ -179,6 +195,7 @@ async def update_recipe(
     """
     
     updated_recipe = await db.fetch_one(query, *update_values)
+    print(f"✅ RECIPE_UPDATE: Successfully updated recipe {recipe_id} for user {user_id}", flush=True)
     return {"recipe": UserRecipe(**parse_recipe_data(updated_recipe))}
 
 @content_router.delete("/users/{user_id}/recipes/{recipe_id}")
@@ -189,8 +206,11 @@ async def delete_recipe(
     db: Database = Depends(get_db)
 ):
     """Delete a recipe"""
+    print(f"🍳 RECIPE_DELETE: Deleting recipe {recipe_id} for user {user_id}", flush=True)
+    
     # Users can only delete their own recipes unless admin
     if current_user.user_id != str(user_id) and not current_user.is_admin:
+        print(f"🚨 RECIPE_DELETE: Access denied for user {current_user.user_id} trying to delete {user_id}'s recipe", flush=True)
         raise HTTPException(status_code=403, detail="Access denied")
     
     # Check if recipe exists and belongs to user
@@ -200,6 +220,7 @@ async def delete_recipe(
     )
     
     if not recipe:
+        print(f"🚨 RECIPE_DELETE: Recipe {recipe_id} not found for user {user_id}", flush=True)
         raise HTTPException(status_code=404, detail="Recipe not found")
     
     # Delete recipe
@@ -208,6 +229,7 @@ async def delete_recipe(
         recipe_id, user_id
     )
     
+    print(f"✅ RECIPE_DELETE: Successfully deleted recipe {recipe_id} for user {user_id}", flush=True)
     return {"success": True, "message": "Recipe deleted successfully"}
 
 @content_router.post("/users/{user_id}/recipes/sync", response_model=RecipeSyncResponse)
@@ -218,8 +240,11 @@ async def sync_recipes(
     db: Database = Depends(get_db)
 ):
     """Bulk sync recipes for mobile app"""
+    print(f"🍳 RECIPE_SYNC: Starting sync for user {user_id}, local_recipes={len(sync_request.local_recipes)}, last_sync={sync_request.last_sync_timestamp}", flush=True)
+    
     # Users can only sync their own recipes unless admin
     if current_user.user_id != str(user_id) and not current_user.is_admin:
+        print(f"🚨 RECIPE_SYNC: Access denied for user {current_user.user_id} trying to sync {user_id}'s recipes", flush=True)
         raise HTTPException(status_code=403, detail="Access denied")
     
     sync_timestamp = datetime.utcnow()
@@ -276,9 +301,10 @@ async def sync_recipes(
             )
         except Exception as e:
             # Log the error but continue with sync
-            print(f"Error syncing recipe {local_recipe.local_id}: {e}")
+            print(f"🚨 RECIPE_SYNC: Error syncing recipe {local_recipe.local_id}: {e}", flush=True)
             continue
     
+    print(f"✅ RECIPE_SYNC: Sync completed for user {user_id}, server_recipes={len(server_recipes)}, conflicts={len(sync_conflicts)}", flush=True)
     return RecipeSyncResponse(
         server_recipes=[UserRecipe(**parse_recipe_data(recipe)) for recipe in server_recipes],
         sync_conflicts=sync_conflicts,
