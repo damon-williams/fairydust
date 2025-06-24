@@ -504,21 +504,27 @@ async def consume_dust_for_restaurant_search(user_id: UUID) -> bool:
 
 async def get_people_data(user_id: UUID, selected_people: List[UUID]) -> List[dict]:
     """Fetch people data from Identity Service"""
+    print(f"🔍 PEOPLE_DEBUG: Getting people data for user {user_id}, selected: {selected_people}")
+    
     if not selected_people:
+        print(f"🔍 PEOPLE_DEBUG: No selected people, returning empty list")
         return []
     
     try:
+        print(f"🔍 PEOPLE_DEBUG: Making request to Identity Service...")
         async with httpx.AsyncClient() as client:
             response = await client.get(
                 f"https://fairydust-identity-production.up.railway.app/users/{user_id}/people",
                 timeout=10.0
             )
+            print(f"🔍 PEOPLE_DEBUG: Identity Service response: {response.status_code}")
             if response.status_code == 200:
                 all_people = response.json().get("people", [])
+                print(f"🔍 PEOPLE_DEBUG: Got {len(all_people)} people from Identity Service")
                 # Filter to selected people and include relevant preference data
                 selected_people_data = []
                 for person in all_people:
-                    if person["id"] in [str(pid) for pid in selected_people]:
+                    if person and person.get("id") in [str(pid) for pid in selected_people]:
                         # Get dining preferences from profile data
                         dining_prefs = {}
                         for profile_item in person.get("profile_data", []):
@@ -526,15 +532,19 @@ async def get_people_data(user_id: UUID, selected_people: List[UUID]) -> List[di
                                 dining_prefs[profile_item["category"]] = profile_item.get("field_value", {})
                         
                         selected_people_data.append({
-                            "id": person["id"],
-                            "name": person["name"],
-                            "relationship": person["relationship"],
+                            "id": person.get("id", ""),
+                            "name": person.get("name", ""),
+                            "relationship": person.get("relationship", ""),
                             "notes": dining_prefs.get("dining_preferences", {}).get("notes", ""),
                             "favorite_restaurants": dining_prefs.get("favorite_restaurants", {}).get("restaurants", [])
                         })
+                print(f"🔍 PEOPLE_DEBUG: Filtered to {len(selected_people_data)} selected people")
                 return selected_people_data
+            else:
+                print(f"🔍 PEOPLE_DEBUG: Identity Service returned {response.status_code}, returning empty list")
+                return []
     except Exception as e:
-        print(f"Failed to fetch people data: {e}")
+        print(f"🔍 PEOPLE_DEBUG: Exception fetching people data: {e}")
     
     return []
 
