@@ -388,7 +388,10 @@ async def get_mock_restaurants(
     
     # Build restaurant response objects
     restaurants = []
-    for restaurant_data in selected_restaurants:
+    print(f"🔍 RESTAURANT_DEBUG: Building {len(selected_restaurants)} restaurant objects...")
+    
+    for i, restaurant_data in enumerate(selected_restaurants):
+        print(f"🔍 RESTAURANT_DEBUG: Processing restaurant {i+1}: {restaurant_data.get('name', 'Unknown')}")
         # Calculate distance (mock calculation)
         distance = calculate_distance(
             location.get("latitude", 37.7749), 
@@ -396,35 +399,49 @@ async def get_mock_restaurants(
             0, 0  # Mock coordinates
         )
         
-        # Generate OpenTable info
-        opentable_info = generate_opentable_info(
-            restaurant_data["name"], 
-            city_key,
-            preferences.get("time_preference"),
-            preferences.get("party_size", 2)
-        )
-        
-        # Generate AI highlights
-        highlights = await generate_ai_highlights(
-            restaurant_data,
-            preferences,
-            people_data
-        )
-        
-        restaurant = Restaurant(
-            id=restaurant_data["id"],
-            name=restaurant_data["name"],
-            cuisine=restaurant_data["cuisine"],
-            address=restaurant_data["address"],
-            distance_miles=distance,
-            price_level=restaurant_data["price_level"],
-            rating=restaurant_data["rating"],
-            phone=restaurant_data["phone"],
-            google_place_id=restaurant_data["google_place_id"],
-            opentable=opentable_info,
-            highlights=highlights
-        )
-        restaurants.append(restaurant)
+        try:
+            # Generate OpenTable info
+            print(f"🔍 RESTAURANT_DEBUG: Generating OpenTable info...")
+            opentable_info = generate_opentable_info(
+                restaurant_data.get("name", "Unknown"), 
+                city_key,
+                preferences.get("time_preference") if preferences else None,
+                preferences.get("party_size", 2) if preferences else 2
+            )
+            print(f"🔍 RESTAURANT_DEBUG: ✅ OpenTable info generated")
+            
+            # Generate AI highlights
+            print(f"🔍 RESTAURANT_DEBUG: Generating AI highlights...")
+            highlights = await generate_ai_highlights(
+                restaurant_data,
+                preferences or {},
+                people_data or []
+            )
+            print(f"🔍 RESTAURANT_DEBUG: ✅ AI highlights generated: {len(highlights)} items")
+            
+            # Create restaurant object
+            print(f"🔍 RESTAURANT_DEBUG: Creating Restaurant object...")
+            restaurant = Restaurant(
+                id=restaurant_data.get("id", f"mock_unknown_{i}"),
+                name=restaurant_data.get("name", "Unknown Restaurant"),
+                cuisine=restaurant_data.get("cuisine", "Restaurant"),
+                address=restaurant_data.get("address", "Address not available"),
+                distance_miles=float(distance),
+                price_level=restaurant_data.get("price_level", "$$"),
+                rating=float(restaurant_data.get("rating", 4.0)),
+                phone=restaurant_data.get("phone"),
+                google_place_id=restaurant_data.get("google_place_id"),
+                opentable=opentable_info,
+                highlights=highlights
+            )
+            print(f"🔍 RESTAURANT_DEBUG: ✅ Restaurant object created successfully")
+            restaurants.append(restaurant)
+            
+        except Exception as e:
+            print(f"🔍 RESTAURANT_DEBUG: ❌ Error processing restaurant {i+1}: {e}")
+            import traceback
+            print(f"🔍 RESTAURANT_DEBUG: Traceback: {traceback.format_exc()}")
+            continue
     
     return restaurants
 
@@ -611,6 +628,7 @@ async def generate_restaurants(
         [], session_expires)
     
     # Get restaurants using Google Places API with fallback to mock data
+    print(f"🚨 RESTAURANT_ENDPOINT: Calling get_restaurants_from_google_places...")
     restaurants = await get_restaurants_from_google_places(
         request.location.dict(),
         request.preferences.dict(),
@@ -618,11 +636,21 @@ async def generate_restaurants(
         excluded_ids=[]
     )
     
-    return RestaurantResponse(
-        restaurants=restaurants,
-        session_id=session_id,
-        generated_at=datetime.utcnow()
-    )
+    print(f"🚨 RESTAURANT_ENDPOINT: Got {len(restaurants)} restaurants, creating response...")
+    
+    try:
+        response = RestaurantResponse(
+            restaurants=restaurants,
+            session_id=session_id,
+            generated_at=datetime.utcnow()
+        )
+        print(f"🚨 RESTAURANT_ENDPOINT: ✅ Response created successfully")
+        return response
+    except Exception as e:
+        print(f"🚨 RESTAURANT_ENDPOINT: ❌ Error creating response: {e}")
+        import traceback
+        print(f"🚨 RESTAURANT_ENDPOINT: Traceback: {traceback.format_exc()}")
+        raise
 
 @router.post("/regenerate", response_model=RestaurantResponse)
 async def regenerate_restaurants(
