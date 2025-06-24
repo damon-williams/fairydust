@@ -54,6 +54,13 @@ class GooglePlacesHTTPService:
             "key": self.api_key
         }
         
+        # Add cuisine filtering via keyword search
+        if cuisine_types:
+            # Google Places API doesn't have direct cuisine filters, so we use keyword search
+            cuisine_keywords = " OR ".join(cuisine_types)
+            params["keyword"] = cuisine_keywords
+            print(f"🔍 GOOGLE_PLACES_HTTP: Adding cuisine filter: {cuisine_keywords}")
+        
         if open_now:
             params["opennow"] = "true"
         
@@ -84,6 +91,25 @@ class GooglePlacesHTTPService:
                     
                     # Convert to our restaurant format
                     restaurant = self._convert_place_to_restaurant(place, latitude, longitude)
+                    
+                    # Additional cuisine filtering as fallback
+                    if cuisine_types:
+                        restaurant_cuisine = restaurant['cuisine'].lower()
+                        place_name = restaurant['name'].lower()
+                        place_types = [t.lower() for t in place.get("types", [])]
+                        
+                        # Check if any requested cuisine matches restaurant cuisine, name, or types
+                        cuisine_match = any(
+                            cuisine.lower() in restaurant_cuisine or
+                            cuisine.lower() in place_name or
+                            any(cuisine.lower() in place_type for place_type in place_types)
+                            for cuisine in cuisine_types
+                        )
+                        
+                        if not cuisine_match:
+                            print(f"🔍 GOOGLE_PLACES_HTTP: Filtering out {restaurant['name']} - cuisine '{restaurant['cuisine']}' doesn't match {cuisine_types}")
+                            continue
+                    
                     restaurants.append(restaurant)
                     
                     if len(restaurants) >= max_results:
