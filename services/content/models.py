@@ -173,6 +173,7 @@ class RestaurantPreferences(BaseModel):
     opentable_only: bool = Field(False)
     time_preference: Optional[str] = Field(None, pattern="^(now|tonight|weekend)$")
     special_occasion: Optional[str] = Field(None, max_length=200)
+    max_results: int = Field(10, ge=1, le=20)
 
 class RestaurantGenerateRequest(BaseModel):
     user_id: UUID
