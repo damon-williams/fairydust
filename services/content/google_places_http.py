@@ -92,7 +92,7 @@ class GooglePlacesHTTPService:
                     # Convert to our restaurant format
                     restaurant = self._convert_place_to_restaurant(place, latitude, longitude)
                     
-                    # Additional cuisine filtering as fallback
+                    # Additional cuisine filtering as fallback - but trust Google Places API results
                     if cuisine_types:
                         restaurant_cuisine = restaurant['cuisine'].lower()
                         place_name = restaurant['name'].lower()
@@ -106,9 +106,16 @@ class GooglePlacesHTTPService:
                             for cuisine in cuisine_types
                         )
                         
-                        if not cuisine_match:
-                            print(f"🔍 GOOGLE_PLACES_HTTP: Filtering out {restaurant['name']} - cuisine '{restaurant['cuisine']}' doesn't match {cuisine_types}")
+                        # Only filter out if we're very confident it's wrong cuisine AND it's a common mismatch
+                        if not cuisine_match and restaurant_cuisine != 'restaurant':
+                            # Only filter if we detected a different specific cuisine type
+                            print(f"🔍 GOOGLE_PLACES_HTTP: Filtering out {restaurant['name']} - detected cuisine '{restaurant['cuisine']}' doesn't match requested {cuisine_types}")
                             continue
+                        elif not cuisine_match and restaurant_cuisine == 'restaurant':
+                            # If we couldn't detect cuisine but Google returned it, trust Google
+                            print(f"🔍 GOOGLE_PLACES_HTTP: Keeping {restaurant['name']} - trusting Google Places API result (cuisine detection failed)")
+                            # Update cuisine to match what was requested since Google found it
+                            restaurant['cuisine'] = cuisine_types[0] if cuisine_types else 'Restaurant'
                     
                     restaurants.append(restaurant)
                     
@@ -210,7 +217,7 @@ class GooglePlacesHTTPService:
             return 'Thai'
             
         # Vietnamese cuisine indicators  
-        if any(keyword in name_lower for keyword in ['pho', 'vietnamese', 'viet', 'saigon', 'banh']):
+        if any(keyword in name_lower for keyword in ['pho', 'vietnamese', 'viet', 'saigon', 'banh', 'rolls', 'spring', 'urban', 'nam', 'bun', 'com']):
             return 'Vietnamese'
             
         # American/Steakhouse indicators
