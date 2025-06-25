@@ -137,10 +137,14 @@ class GooglePlacesHTTPService:
         price_level = price_level_map.get(place.get("price_level", 1), "$$")
         
         # Extract cuisine type from place types and name
-        restaurant_name = place.get('name', '')
-        place_types = place.get("types", [])
-        cuisine = self._extract_cuisine_type(place_types, restaurant_name)
-        print(f"🔍 GOOGLE_PLACES_HTTP: Restaurant '{restaurant_name}' → types: {place_types} → cuisine: '{cuisine}'")
+        try:
+            restaurant_name = place.get('name', '')
+            place_types = place.get("types", [])
+            cuisine = self._extract_cuisine_type(place_types, restaurant_name)
+            print(f"🔍 GOOGLE_PLACES_HTTP: Restaurant '{restaurant_name}' → types: {place_types} → cuisine: '{cuisine}'")
+        except Exception as e:
+            print(f"🔍 GOOGLE_PLACES_HTTP: ❌ Error extracting cuisine: {e}")
+            cuisine = 'Restaurant'
         
         return {
             'id': f"gp_{place['place_id']}",
@@ -186,7 +190,7 @@ class GooglePlacesHTTPService:
             return 'Chinese'
             
         # Italian cuisine indicators  
-        if any(keyword in name_lower for keyword in ['pizza', 'italiano', 'pasta', 'luigi', 'mario', 'tony', 'bella', 'roma', 'milano']):
+        if any(keyword in name_lower for keyword in ['pizza', 'italiano', 'pasta', 'luigi', 'mario', 'tony', 'bella', 'roma', 'milano', 'italian', 'tuscany', 'tuscan', 'ristorante', 'bistro', 'buca', 'fornaio', 'caffe', 'via', 'fabian', 'rubino']):
             return 'Italian'
             
         # Mexican cuisine indicators
