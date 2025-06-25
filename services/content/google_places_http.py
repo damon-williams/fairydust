@@ -136,8 +136,11 @@ class GooglePlacesHTTPService:
         price_level_map = {0: "$", 1: "$", 2: "$$", 3: "$$$", 4: "$$$"}
         price_level = price_level_map.get(place.get("price_level", 1), "$$")
         
-        # Extract cuisine type from place types
-        cuisine = self._extract_cuisine_type(place.get("types", []))
+        # Extract cuisine type from place types and name
+        restaurant_name = place.get('name', '')
+        place_types = place.get("types", [])
+        cuisine = self._extract_cuisine_type(place_types, restaurant_name)
+        print(f"🔍 GOOGLE_PLACES_HTTP: Restaurant '{restaurant_name}' → types: {place_types} → cuisine: '{cuisine}'")
         
         return {
             'id': f"gp_{place['place_id']}",
@@ -152,8 +155,9 @@ class GooglePlacesHTTPService:
             'google_place_data': place
         }
     
-    def _extract_cuisine_type(self, place_types: List[str]) -> str:
-        """Extract cuisine type from Google Places types"""
+    def _extract_cuisine_type(self, place_types: List[str], restaurant_name: str = '') -> str:
+        """Extract cuisine type from Google Places types and restaurant name"""
+        # First try Google Places types
         cuisine_map = {
             'italian_restaurant': 'Italian',
             'chinese_restaurant': 'Chinese', 
@@ -173,6 +177,45 @@ class GooglePlacesHTTPService:
         for place_type in place_types:
             if place_type in cuisine_map:
                 return cuisine_map[place_type]
+        
+        # If Google Places types don't work, analyze restaurant name
+        name_lower = restaurant_name.lower()
+        
+        # Chinese cuisine indicators
+        if any(keyword in name_lower for keyword in ['china', 'chinese', 'chopstick', 'wok', 'panda', 'dragon', 'golden', 'garden', 'express', 'house', 'bao', 'szechuan', 'hunan', 'canton']):
+            return 'Chinese'
+            
+        # Italian cuisine indicators  
+        if any(keyword in name_lower for keyword in ['pizza', 'italiano', 'pasta', 'luigi', 'mario', 'tony', 'bella', 'roma', 'milano']):
+            return 'Italian'
+            
+        # Mexican cuisine indicators
+        if any(keyword in name_lower for keyword in ['taco', 'mexican', 'burrito', 'cantina', 'maria', 'jose', 'salsa', 'amigo', 'fiesta']):
+            return 'Mexican'
+            
+        # Japanese cuisine indicators
+        if any(keyword in name_lower for keyword in ['sushi', 'japanese', 'ramen', 'tokyo', 'sakura', 'zen', 'ninja', 'samurai', 'bento']):
+            return 'Japanese'
+            
+        # Indian cuisine indicators
+        if any(keyword in name_lower for keyword in ['indian', 'curry', 'tandoor', 'maharaja', 'taj', 'spice', 'bombay', 'delhi']):
+            return 'Indian'
+            
+        # Thai cuisine indicators
+        if any(keyword in name_lower for keyword in ['thai', 'pad', 'bangkok', 'lemongrass', 'basil', 'coconut']):
+            return 'Thai'
+            
+        # Vietnamese cuisine indicators  
+        if any(keyword in name_lower for keyword in ['pho', 'vietnamese', 'viet', 'saigon', 'banh']):
+            return 'Vietnamese'
+            
+        # American/Steakhouse indicators
+        if any(keyword in name_lower for keyword in ['steak', 'grill', 'burger', 'bbq', 'american', 'diner']):
+            return 'American'
+            
+        # Seafood indicators
+        if any(keyword in name_lower for keyword in ['seafood', 'fish', 'crab', 'lobster', 'oyster', 'shrimp']):
+            return 'Seafood'
         
         # Default based on common types
         if 'restaurant' in place_types:
