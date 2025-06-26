@@ -35,7 +35,8 @@ class GooglePlacesHTTPService:
         cuisine_types: List[str] = None,
         open_now: bool = False,
         min_rating: float = 3.5,
-        max_results: int = 20
+        max_results: int = 20,
+        special_occasion: str = None
     ) -> List[Dict[str, Any]]:
         """
         Search for restaurants using Google Places Nearby Search API via HTTP
@@ -54,12 +55,39 @@ class GooglePlacesHTTPService:
             "key": self.api_key
         }
         
-        # Add cuisine filtering via keyword search
+        # Build keyword search from cuisine types and special occasion
+        keywords = []
+        
         if cuisine_types:
-            # Google Places API doesn't have direct cuisine filters, so we use keyword search
-            cuisine_keywords = " OR ".join(cuisine_types)
-            params["keyword"] = cuisine_keywords
-            print(f"🔍 GOOGLE_PLACES_HTTP: Adding cuisine filter: {cuisine_keywords}")
+            keywords.extend(cuisine_types)
+            
+        # Add special occasion keywords to influence search results
+        if special_occasion:
+            occasion_lower = special_occasion.lower()
+            if "anniversary" in occasion_lower or "romantic" in occasion_lower:
+                keywords.extend(["romantic", "intimate", "fine dining"])
+            elif "birthday" in occasion_lower or "celebration" in occasion_lower:
+                keywords.extend(["celebration", "party", "festive"])
+            elif "date" in occasion_lower:
+                keywords.extend(["romantic", "intimate", "cozy"])
+            elif "business" in occasion_lower or "meeting" in occasion_lower:
+                keywords.extend(["quiet", "business friendly", "professional"])
+            elif "family" in occasion_lower:
+                keywords.extend(["family friendly", "kids", "casual"])
+        
+        if keywords:
+            # Use OR for cuisine types, AND for occasion keywords  
+            cuisine_part = " OR ".join(cuisine_types) if cuisine_types else ""
+            occasion_part = " ".join([k for k in keywords if k not in (cuisine_types or [])])
+            
+            if cuisine_part and occasion_part:
+                keyword_string = f"({cuisine_part}) {occasion_part}"
+            else:
+                keyword_string = cuisine_part or occasion_part
+                
+            params["keyword"] = keyword_string
+            print(f"🔍 GOOGLE_PLACES_HTTP: Adding keyword filter: {keyword_string}")
+            print(f"🔍 GOOGLE_PLACES_HTTP: Special occasion '{special_occasion}' influencing search")
         
         if open_now:
             params["opennow"] = "true"

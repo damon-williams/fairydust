@@ -270,7 +270,8 @@ async def get_restaurants_from_google_places(
                 cuisine_types=preferences.get("cuisine_types", []),
                 open_now=preferences.get("time_preference") == "now",
                 min_rating=3.5,
-                max_results=20
+                max_results=20,
+                special_occasion=preferences.get("special_occasion")
             )
         else:
             google_restaurants = places_service.search_restaurants(
@@ -280,7 +281,8 @@ async def get_restaurants_from_google_places(
                 cuisine_types=preferences.get("cuisine_types", []),
                 open_now=preferences.get("time_preference") == "now",
                 min_rating=3.5,
-                max_results=20
+                max_results=20,
+                special_occasion=preferences.get("special_occasion")
             )
         
         print(f"🔍 RESTAURANT_DEBUG: Google Places returned {len(google_restaurants) if google_restaurants else 0} restaurants")
@@ -657,7 +659,7 @@ async def generate_restaurants(
     print(f"  • opentable_only: ✅ Post-processing filter by has_reservations", flush=True) 
     print(f"  • time_preference: ✅ Google Places open_now + OpenTable times", flush=True)
     print(f"  • party_size: ✅ OpenTable booking URL + group size highlights", flush=True)
-    print(f"  • special_occasion: ✅ AI highlights generation", flush=True)
+    print(f"  • special_occasion: ✅ Google Places keyword search + AI highlights", flush=True)
     print(f"  • max_results: ✅ Client-configurable result limit (1-20, default: 10)", flush=True)
     
     # Verify user matches the request
