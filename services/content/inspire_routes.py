@@ -23,7 +23,7 @@ from models import (
 
 from shared.auth_middleware import TokenData, get_current_user
 from shared.database import Database, get_db
-from shared.llm_pricing import calculate_anthropic_cost
+from shared.llm_pricing import calculate_llm_cost
 
 router = APIRouter()
 
@@ -636,7 +636,7 @@ async def _generate_inspiration_llm(
                         "total": total_tokens,
                     }
 
-                    cost = calculate_anthropic_cost(model_id, prompt_tokens, completion_tokens)
+                    cost = calculate_llm_cost("anthropic", model_id, prompt_tokens, completion_tokens)
 
                     print(f"✅ INSPIRE_LLM: Generated inspiration successfully", flush=True)
                     return content, model_id, tokens_used, cost
@@ -680,9 +680,8 @@ async def _generate_inspiration_llm(
                         "total": total_tokens,
                     }
 
-                    # Import OpenAI cost calculation
-                    from shared.llm_pricing import calculate_openai_cost
-                    cost = calculate_openai_cost(model_id, prompt_tokens, completion_tokens)
+                    # Calculate cost using shared pricing module
+                    cost = calculate_llm_cost("openai", model_id, prompt_tokens, completion_tokens)
 
                     print(f"✅ INSPIRE_LLM: Generated inspiration successfully", flush=True)
                     return content, model_id, tokens_used, cost

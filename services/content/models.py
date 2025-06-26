@@ -375,6 +375,9 @@ class InspirationGenerateResponse(BaseModel):
     cost: float
     new_dust_balance: int
 
+    class Config:
+        protected_namespaces = ()
+
 
 class InspirationsListResponse(BaseModel):
     success: bool = True
