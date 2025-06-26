@@ -42,19 +42,52 @@ pytest tests/test_auth.py::test_request_otp_email
 ```
 
 ### Code Quality Checks
+
+**🔧 Automated Code Formatting (Recommended)**
 ```bash
-# Run linting (if configured)
-npm run lint
+# Install development tools (one-time setup)
+pip install -r requirements-dev.txt
 
-# Run type checking (if configured)
-npm run typecheck
+# Format all code automatically (black + ruff auto-fixes)
+./scripts/format.sh
 
+# Check code quality without making changes
+./scripts/lint.sh
+```
+
+**🔍 Manual Code Quality Commands**
+```bash
 # Python linting
 ruff check .
 
 # Format Python code
 black .
+
+# Check formatting without changes
+black --check --diff .
+
+# Fix import sorting and auto-fixable issues
+ruff check --fix .
+
+# Type checking (optional)
+mypy .
 ```
+
+**📋 Development Workflow Best Practices**
+```bash
+# Before committing code:
+1. ./scripts/format.sh          # Auto-format code
+2. ./scripts/lint.sh            # Check for issues  
+3. pytest tests/               # Run tests
+4. git add . && git commit     # Commit formatted code
+```
+
+**⚙️ Code Formatting Configuration**
+- **pyproject.toml**: Contains all formatting rules and tool configuration
+- **Line length**: 100 characters (industry standard)
+- **Import sorting**: Automatic with ruff
+- **Code style**: Black formatter (opinionated, consistent)
+- **Linting**: Ruff (fast, comprehensive Python linter)
 
 ### Deployment - CRITICAL GIT WORKFLOW
 
