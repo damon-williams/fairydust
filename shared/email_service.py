@@ -1,9 +1,10 @@
 # email_service.py
 import os
-import aiosmtplib
-from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
+from email.mime.text import MIMEText
 from typing import Optional
+
+import aiosmtplib
 
 # Email configuration
 SMTP_HOST = os.getenv("SMTP_HOST", "smtp.gmail.com")
@@ -12,20 +13,21 @@ SMTP_USERNAME = os.getenv("SMTP_USERNAME")
 SMTP_PASSWORD = os.getenv("SMTP_PASSWORD")
 FROM_EMAIL = os.getenv("FROM_EMAIL", "noreply@fairydust.fun")
 
+
 async def send_email(to_email: str, subject: str, body: str, html_body: Optional[str] = None):
     """Send email using SMTP"""
     message = MIMEMultipart("alternative")
     message["From"] = FROM_EMAIL
     message["To"] = to_email
     message["Subject"] = subject
-    
+
     # Add plain text part
     message.attach(MIMEText(body, "plain"))
-    
+
     # Add HTML part if provided
     if html_body:
         message.attach(MIMEText(html_body, "html"))
-    
+
     # Send email
     await aiosmtplib.send(
         message,
@@ -36,20 +38,21 @@ async def send_email(to_email: str, subject: str, body: str, html_body: Optional
         start_tls=True,
     )
 
+
 async def send_otp_email(email: str, otp: str):
     """Send OTP verification email"""
     subject = "Your fairydust verification code"
-    
+
     body = f"""
     Your verification code is: {otp}
-    
+
     This code will expire in 10 minutes.
-    
+
     If you didn't request this code, please ignore this email.
-    
+
     - The fairydust team
     """
-    
+
     html_body = f"""
     <html>
         <body style="font-family: Arial, sans-serif; line-height: 1.6; color: #333;">
@@ -66,5 +69,5 @@ async def send_otp_email(email: str, otp: str):
         </body>
     </html>
     """
-    
+
     await send_email(email, subject, body, html_body)

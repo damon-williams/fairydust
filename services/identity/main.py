@@ -1,17 +1,20 @@
-from fastapi import FastAPI, HTTPException, Depends
-from fastapi.middleware.cors import CORSMiddleware
-from contextlib import asynccontextmanager
-import uvicorn
 import os
+from contextlib import asynccontextmanager
+
+import uvicorn
 from dotenv import load_dotenv
+from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 
 # Load environment variables
 load_dotenv()
 
 # Import our routes and dependencies
 from routes import auth_router, user_router
-from shared.database import init_db, close_db
-from shared.redis_client import init_redis, close_redis
+
+from shared.database import close_db, init_db
+from shared.redis_client import close_redis, init_redis
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -23,12 +26,13 @@ async def lifespan(app: FastAPI):
     await close_db()
     await close_redis()
 
+
 # Create FastAPI app
 app = FastAPI(
     title="fairydust Identity Service",
     version="1.0.0",
     description="Authentication and identity management for fairydust platform",
-    lifespan=lifespan
+    lifespan=lifespan,
 )
 
 # Configure CORS
@@ -47,9 +51,9 @@ from shared.middleware import add_middleware_to_app
 # Identity service specific endpoint limits
 endpoint_limits = {
     "/auth/otp/request": 1024,  # 1KB limit for OTP requests
-    "/auth/otp/verify": 1024,   # 1KB limit for OTP verification
+    "/auth/otp/verify": 1024,  # 1KB limit for OTP verification
     "/users/profile": 50 * 1024,  # 50KB for profile data
-    "/users/people": 10 * 1024   # 10KB for people data
+    "/users/people": 10 * 1024,  # 10KB for people data
 }
 
 add_middleware_to_app(
@@ -57,17 +61,15 @@ add_middleware_to_app(
     service_name="identity",
     max_request_size=1 * 1024 * 1024,  # 1MB default for identity service
     endpoint_limits=endpoint_limits,
-    log_requests=True
+    log_requests=True,
 )
+
 
 # Health check endpoint
 @app.get("/health")
 async def health_check():
-    return {
-        "status": "healthy",
-        "service": "identity",
-        "version": "1.0.0"
-    }
+    return {"status": "healthy", "service": "identity", "version": "1.0.0"}
+
 
 # Include routers
 app.include_router(auth_router, prefix="/auth", tags=["authentication"])
@@ -79,5 +81,5 @@ if __name__ == "__main__":
         "main:app",
         host="0.0.0.0",
         port=port,
-        reload=os.getenv("ENVIRONMENT", "development") == "development"
+        reload=os.getenv("ENVIRONMENT", "development") == "development",
     )

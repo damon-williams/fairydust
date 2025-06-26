@@ -2,7 +2,7 @@
 from typing import Optional
 
 import httpx
-from geopy.distance import geodesic
+import math
 from models import ActivityHours
 
 
@@ -103,13 +103,10 @@ class TripAdvisorService:
             details = await self._get_location_details(location_id)
             photos = await self._get_location_photos(location_id)
 
-            # Calculate distance
-            location_coords = (
-                float(location.get("latitude", 0)),
-                float(location.get("longitude", 0)),
-            )
-            search_coords = (search_lat, search_lng)
-            distance_miles = geodesic(search_coords, location_coords).miles
+            # Calculate distance using simple haversine formula
+            lat1, lon1 = search_lat, search_lng
+            lat2, lon2 = float(location.get("latitude", 0)), float(location.get("longitude", 0))
+            distance_miles = self._calculate_distance_miles(lat1, lon1, lat2, lon2)
 
             # Determine activity type
             activity_type = self._determine_activity_type(location, details)
@@ -306,6 +303,22 @@ class TripAdvisorService:
 
         except Exception:
             return None
+
+    def _calculate_distance_miles(self, lat1: float, lon1: float, lat2: float, lon2: float) -> float:
+        """Calculate distance between two coordinates using haversine formula"""
+        # Convert latitude and longitude from degrees to radians
+        lat1, lon1, lat2, lon2 = map(math.radians, [lat1, lon1, lat2, lon2])
+        
+        # Haversine formula
+        dlat = lat2 - lat1
+        dlon = lon2 - lon1
+        a = math.sin(dlat/2)**2 + math.cos(lat1) * math.cos(lat2) * math.sin(dlon/2)**2
+        c = 2 * math.asin(math.sqrt(a))
+        
+        # Radius of earth in miles
+        r = 3956
+        
+        return round(c * r, 1)
 
     def get_location_address(self, latitude: float, longitude: float) -> str:
         """Get human-readable address from coordinates (simplified)"""
