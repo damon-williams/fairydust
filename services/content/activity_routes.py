@@ -118,7 +118,7 @@ async def search_activities(
         )
 
         # Consume DUST after successful search
-        dust_consumed = await _consume_dust(request.user_id, ACTIVITY_DUST_COST, auth_token)
+        dust_consumed = await _consume_dust(request.user_id, ACTIVITY_DUST_COST, auth_token, db)
         if not dust_consumed:
             print(f"❌ ACTIVITY_SEARCH: Failed to consume DUST for user {request.user_id}", flush=True)
             raise HTTPException(
@@ -200,16 +200,42 @@ async def _get_user_balance(user_id: uuid.UUID, auth_token: str) -> int:
         return 0
 
 
-async def _consume_dust(user_id: uuid.UUID, amount: int, auth_token: str) -> bool:
+async def _get_app_id(db: Database) -> str:
+    """Get the UUID for the fairydust-activity app"""
+    result = await db.fetch_one(
+        "SELECT id FROM apps WHERE slug = $1", 
+        "fairydust-activity"
+    )
+    if not result:
+        raise HTTPException(
+            status_code=500, 
+            detail="fairydust-activity app not found in database. Please create the app first."
+        )
+    return str(result["id"])
+
+
+async def _consume_dust(user_id: uuid.UUID, amount: int, auth_token: str, db: Database) -> bool:
     """Consume DUST for activity search via Ledger Service"""
     print(f"🔍 ACTIVITY_DUST: Attempting to consume {amount} DUST for user {user_id}", flush=True)
     try:
+        # Get the proper app UUID
+        app_id = await _get_app_id(db)
+        
+        # Generate idempotency key to prevent double-charging
+        import time
+        idempotency_key = f"activity_search_{str(user_id).replace('-', '')[:16]}_{int(time.time())}"
+        
         async with httpx.AsyncClient() as client:
             payload = {
                 "user_id": str(user_id),
                 "amount": amount,
-                "app_id": "fairydust-activity",
-                "description": "Activity search",
+                "app_id": app_id,  # Now using proper UUID
+                "action": "activity_search",  # Required field
+                "idempotency_key": idempotency_key,  # Required field
+                "metadata": {
+                    "service": "content",
+                    "feature": "activity_search"
+                }
             }
             print(f"🔍 ACTIVITY_DUST: Payload: {payload}", flush=True)
 
@@ -401,7 +427,7 @@ Respond with exactly {len(activities)} entries in this JSON format:
                     "https://api.anthropic.com/v1/messages",
                     headers={
                         "Content-Type": "application/json",
-                        "X-API-KEY": os.getenv("ANTHROPIC_API_KEY", ""),
+                        "x-api-key": os.getenv("ANTHROPIC_API_KEY", ""),
                         "anthropic-version": "2023-06-01",
                     },
                     json={
@@ -422,7 +448,7 @@ Respond with exactly {len(activities)} entries in this JSON format:
                     "https://api.anthropic.com/v1/messages",
                     headers={
                         "Content-Type": "application/json",
-                        "X-API-KEY": os.getenv("ANTHROPIC_API_KEY", ""),
+                        "x-api-key": os.getenv("ANTHROPIC_API_KEY", ""),
                         "anthropic-version": "2023-06-01",
                     },
                     json={
