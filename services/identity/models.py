@@ -1,33 +1,36 @@
-from pydantic import BaseModel, EmailStr, Field, field_validator
-from typing import Optional, List, Literal
-from datetime import datetime
 import re
+from datetime import datetime
+from typing import Literal, Optional
 from uuid import UUID
+
+from pydantic import BaseModel, EmailStr, Field, field_validator
+
 
 # Auth models
 # Auth models
 class OTPRequest(BaseModel):
     identifier: str  # Email or phone number
     identifier_type: Literal["email", "phone"]
-    
+
     @field_validator("identifier")
     @classmethod
     def validate_identifier(cls, v, info):
         # Get identifier_type from the data being validated
-        if hasattr(info, 'data') and info.data.get("identifier_type") == "email":
+        if hasattr(info, "data") and info.data.get("identifier_type") == "email":
             # Basic email validation
             if not re.match(r"^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$", v):
                 raise ValueError("Invalid email format")
-        elif hasattr(info, 'data') and info.data.get("identifier_type") == "phone":
+        elif hasattr(info, "data") and info.data.get("identifier_type") == "phone":
             # Basic phone validation (E.164 format)
             if not re.match(r"^\+[1-9]\d{1,14}$", v):
                 raise ValueError("Phone must be in E.164 format (e.g., +1234567890)")
         return v
 
+
 class OTPVerify(BaseModel):
     identifier: str
     code: str = Field(..., min_length=6, max_length=6)
-    
+
     @field_validator("code")
     @classmethod
     def validate_code(cls, v):
@@ -35,12 +38,16 @@ class OTPVerify(BaseModel):
             raise ValueError("OTP code must contain only digits")
         return v
 
+
 class RefreshTokenRequest(BaseModel):
     refresh_token: str
+
+
 class OAuthCallback(BaseModel):
     provider: Literal["google", "apple", "facebook"]
     code: str
     state: Optional[str] = None
+
 
 # User models
 class UserCreate(BaseModel):
@@ -49,6 +56,7 @@ class UserCreate(BaseModel):
     fairyname: Optional[str] = None
     auth_provider: str
     provider_id: str
+
 
 class UserUpdate(BaseModel):
     fairyname: Optional[str] = None
@@ -59,6 +67,7 @@ class UserUpdate(BaseModel):
     age_range: Optional[str] = Field(None, max_length=20)
     city: Optional[str] = Field(None, max_length=100)
     country: Optional[str] = Field(None, max_length=100)
+
 
 class User(BaseModel):
     id: UUID
@@ -78,9 +87,10 @@ class User(BaseModel):
     created_at: datetime
     updated_at: datetime
     dust_balance: int = 0  # Denormalized for performance
-    
+
     class Config:
         from_attributes = True
+
 
 class UserPublic(BaseModel):
     id: UUID
@@ -89,6 +99,7 @@ class UserPublic(BaseModel):
     is_builder: bool
     created_at: datetime
 
+
 # Token models
 class Token(BaseModel):
     access_token: str
@@ -96,12 +107,14 @@ class Token(BaseModel):
     expires_in: int = 3600
     refresh_token: Optional[str] = None
 
+
 class TokenData(BaseModel):
     user_id: str
     fairyname: str
     is_builder: bool = False
     is_admin: bool = False
     exp: Optional[datetime] = None
+
 
 # Progressive Profiling models
 class UserProfileDataCreate(BaseModel):
@@ -112,11 +125,13 @@ class UserProfileDataCreate(BaseModel):
     source: str = Field("user_input", max_length=50)
     app_context: Optional[str] = Field(None, max_length=50)
 
+
 class UserProfileDataUpdate(BaseModel):
     field_value: Optional[dict | list | str | int | float | bool] = None
     confidence_score: Optional[float] = Field(None, ge=0.0, le=1.0)
     source: Optional[str] = Field(None, max_length=50)
     app_context: Optional[str] = Field(None, max_length=50)
+
 
 class UserProfileData(BaseModel):
     id: UUID
@@ -129,19 +144,22 @@ class UserProfileData(BaseModel):
     app_context: Optional[str] = None
     created_at: datetime
     updated_at: datetime
-    
+
     class Config:
         from_attributes = True
+
 
 class PersonInMyLifeCreate(BaseModel):
     name: str = Field(..., max_length=100)
     age_range: Optional[str] = Field(None, max_length=50)
     relationship: Optional[str] = Field(None, max_length=100)
 
+
 class PersonInMyLifeUpdate(BaseModel):
     name: Optional[str] = Field(None, max_length=100)
     age_range: Optional[str] = Field(None, max_length=50)
     relationship: Optional[str] = Field(None, max_length=100)
+
 
 class PersonInMyLife(BaseModel):
     id: UUID
@@ -151,9 +169,10 @@ class PersonInMyLife(BaseModel):
     relationship: Optional[str] = None
     created_at: datetime
     updated_at: datetime
-    
+
     class Config:
         from_attributes = True
+
 
 class PersonProfileDataCreate(BaseModel):
     category: str = Field(..., max_length=50)
@@ -161,6 +180,7 @@ class PersonProfileDataCreate(BaseModel):
     field_value: dict | list | str | int | float | bool
     confidence_score: float = Field(1.0, ge=0.0, le=1.0)
     source: str = Field("user_input", max_length=50)
+
 
 class PersonProfileData(BaseModel):
     id: UUID
@@ -173,18 +193,21 @@ class PersonProfileData(BaseModel):
     source: str
     created_at: datetime
     updated_at: datetime
-    
+
     class Config:
         from_attributes = True
+
 
 class QuestionResponse(BaseModel):
     question_id: str
     response_value: dict | list | str | int | float | bool
     session_id: Optional[str] = None
 
+
 class QuestionResponseSubmission(BaseModel):
-    responses: List[QuestionResponse]
+    responses: list[QuestionResponse]
     session_id: Optional[str] = None
+
 
 class UserQuestionResponse(BaseModel):
     id: UUID
@@ -194,30 +217,35 @@ class UserQuestionResponse(BaseModel):
     session_id: Optional[str] = None
     dust_reward: int = 0
     answered_at: datetime
-    
+
     class Config:
         from_attributes = True
+
 
 # Migration models
 class LocalProfileData(BaseModel):
     id: str
     profile: dict
-    people_in_my_life: List[dict]
+    people_in_my_life: list[dict]
+
 
 class AIContextResponse(BaseModel):
     user_context: str
-    relationship_context: List[dict]
+    relationship_context: list[dict]
     app_specific_context: dict
+
 
 class AIContextPerson(BaseModel):
     person: str
     relationship: str
     context: str
-    suggestions_for: List[str]
+    suggestions_for: list[str]
+
 
 # Batch operations
 class ProfileDataBatch(BaseModel):
-    profile_data: List[UserProfileDataCreate]
+    profile_data: list[UserProfileDataCreate]
+
 
 # Response models
 class AuthResponse(BaseModel):

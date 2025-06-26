@@ -1,18 +1,18 @@
 # Legacy routes.py file for backward compatibility
 # This file re-exports the modular routers from the routes/ package
 
-from .routes import (
-    auth_router,
-    dashboard_router,
-    users_router,
-    apps_router,
-    questions_router,
-    llm_router
-)
-
 # For backward compatibility, create a combined admin_router
 # Though this is no longer recommended - use individual routers instead
 from fastapi import APIRouter
+
+from .routes import (
+    apps_router,
+    auth_router,
+    dashboard_router,
+    llm_router,
+    questions_router,
+    users_router,
+)
 
 admin_router = APIRouter()
 
@@ -31,5 +31,5 @@ __all__ = [
     "users_router",
     "apps_router",
     "questions_router",
-    "llm_router"
+    "llm_router",
 ]

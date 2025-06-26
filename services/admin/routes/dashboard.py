@@ -1,16 +1,17 @@
-from fastapi import APIRouter, Request, Depends
+from auth import get_current_admin_user
+from fastapi import APIRouter, Depends, Request
 from fastapi.responses import HTMLResponse
 
-from shared.database import get_db, Database
-from auth import get_current_admin_user
+from shared.database import Database, get_db
 
 dashboard_router = APIRouter()
+
 
 @dashboard_router.get("/dashboard", response_class=HTMLResponse)
 async def dashboard(
     request: Request,
     admin_user: dict = Depends(get_current_admin_user),
-    db: Database = Depends(get_db)
+    db: Database = Depends(get_db),
 ):
     # Get dashboard stats
     total_users = await db.fetch_one("SELECT COUNT(*) as count FROM users WHERE is_active = true")
@@ -19,12 +20,12 @@ async def dashboard(
     total_dust_issued = await db.fetch_one(
         "SELECT COALESCE(SUM(amount), 0) as total FROM dust_transactions WHERE type = 'grant'"
     )
-    
+
     # Recent activity
     recent_users = await db.fetch_all(
         "SELECT fairyname, email, created_at FROM users WHERE is_active = true ORDER BY created_at DESC LIMIT 5"
     )
-    
+
     recent_apps = await db.fetch_all(
         """
         SELECT a.name, a.status, a.created_at, u.fairyname as builder_name
@@ -34,8 +35,9 @@ async def dashboard(
         LIMIT 5
         """
     )
-    
-    return HTMLResponse(f"""
+
+    return HTMLResponse(
+        f"""
     <!DOCTYPE html>
     <html>
     <head>
@@ -64,10 +66,10 @@ async def dashboard(
                 </div>
             </div>
         </nav>
-        
+
         <div class="container-fluid mt-4">
             <h1>Admin Dashboard</h1>
-            
+
             <!-- Stats Cards -->
             <div class="row mb-4">
                 <div class="col-xl-3 col-md-6 mb-4">
@@ -85,7 +87,7 @@ async def dashboard(
                         </div>
                     </div>
                 </div>
-                
+
                 <div class="col-xl-3 col-md-6 mb-4">
                     <div class="card stat-card stat-card-success h-100">
                         <div class="card-body">
@@ -101,7 +103,7 @@ async def dashboard(
                         </div>
                     </div>
                 </div>
-                
+
                 <div class="col-xl-3 col-md-6 mb-4">
                     <div class="card stat-card stat-card-warning h-100">
                         <div class="card-body">
@@ -117,7 +119,7 @@ async def dashboard(
                         </div>
                     </div>
                 </div>
-                
+
                 <div class="col-xl-3 col-md-6 mb-4">
                     <div class="card stat-card stat-card-info h-100">
                         <div class="card-body">
@@ -134,7 +136,7 @@ async def dashboard(
                     </div>
                 </div>
             </div>
-            
+
             <!-- Quick Actions -->
             <div class="row mb-4">
                 <div class="col-md-6">
@@ -148,7 +150,7 @@ async def dashboard(
                         </div>
                     </div>
                 </div>
-                
+
                 <div class="col-md-6">
                     <div class="card">
                         <div class="card-header">System Status</div>
@@ -158,11 +160,12 @@ async def dashboard(
                     </div>
                 </div>
             </div>
-            
+
             {f'<div class="alert alert-warning"><strong>Action Required:</strong> {pending_apps["count"]} apps pending approval. <a href="/admin/apps?status=pending">Review now</a></div>' if pending_apps["count"] > 0 else ''}
         </div>
-        
+
         <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
     </body>
     </html>
-    """)
+    """
+    )

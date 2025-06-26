@@ -1,15 +1,18 @@
 # services/apps/models.py
 from datetime import datetime
+from enum import Enum
 from typing import Optional
 from uuid import UUID
+
 from pydantic import BaseModel, Field
-from enum import Enum
+
 
 class AppStatus(str, Enum):
     PENDING = "pending"
     APPROVED = "approved"
     REJECTED = "rejected"
     SUSPENDED = "suspended"
+
 
 class AppCategory(str, Enum):
     PRODUCTIVITY = "productivity"
@@ -21,6 +24,7 @@ class AppCategory(str, Enum):
     GAMES = "games"
     OTHER = "other"
 
+
 # Basic Models for Testing
 class AppCreate(BaseModel):
     name: str = Field(..., min_length=1, max_length=255)
@@ -31,6 +35,7 @@ class AppCreate(BaseModel):
     website_url: Optional[str] = None
     demo_url: Optional[str] = None
     callback_url: Optional[str] = None
+
 
 class App(BaseModel):
     id: UUID
@@ -49,18 +54,22 @@ class App(BaseModel):
     created_at: datetime
     updated_at: datetime
 
+
 class AppValidation(BaseModel):
     """Response for ledger service validation"""
+
     app_id: UUID
     is_valid: bool
     is_active: bool
     name: str
     builder_id: UUID
 
+
 # LLM Architecture Models
 class LLMProvider(str, Enum):
     OPENAI = "openai"
     ANTHROPIC = "anthropic"
+
 
 class ModelParameters(BaseModel):
     temperature: Optional[float] = Field(None, ge=0.0, le=2.0)
@@ -69,27 +78,31 @@ class ModelParameters(BaseModel):
     frequency_penalty: Optional[float] = Field(None, ge=-2.0, le=2.0)
     presence_penalty: Optional[float] = Field(None, ge=-2.0, le=2.0)
 
+
 class FallbackModel(BaseModel):
     model_config = {"protected_namespaces": ()}
-    
+
     provider: LLMProvider
     model_id: str = Field(..., max_length=100)
     trigger: str = Field(..., max_length=50)  # "provider_error", "cost_threshold_exceeded", etc.
     parameters: ModelParameters = Field(default_factory=ModelParameters)
+
 
 class CostLimits(BaseModel):
     per_request_max: Optional[float] = Field(None, gt=0)
     daily_max: Optional[float] = Field(None, gt=0)
     monthly_max: Optional[float] = Field(None, gt=0)
 
+
 class FeatureFlags(BaseModel):
     streaming_enabled: bool = True
     cache_responses: bool = True
     log_prompts: bool = False
 
+
 class AppModelConfig(BaseModel):
     model_config = {"protected_namespaces": (), "from_attributes": True}
-    
+
     id: UUID
     app_id: str
     primary_provider: LLMProvider
@@ -101,9 +114,10 @@ class AppModelConfig(BaseModel):
     created_at: datetime
     updated_at: datetime
 
+
 class AppModelConfigCreate(BaseModel):
     model_config = {"protected_namespaces": ()}
-    
+
     primary_provider: LLMProvider
     primary_model_id: str = Field(..., max_length=100)
     primary_parameters: ModelParameters = Field(default_factory=ModelParameters)
@@ -111,9 +125,10 @@ class AppModelConfigCreate(BaseModel):
     cost_limits: CostLimits = Field(default_factory=CostLimits)
     feature_flags: FeatureFlags = Field(default_factory=FeatureFlags)
 
+
 class AppModelConfigUpdate(BaseModel):
     model_config = {"protected_namespaces": ()}
-    
+
     primary_provider: Optional[LLMProvider] = None
     primary_model_id: Optional[str] = Field(None, max_length=100)
     primary_parameters: Optional[ModelParameters] = None
@@ -121,9 +136,10 @@ class AppModelConfigUpdate(BaseModel):
     cost_limits: Optional[CostLimits] = None
     feature_flags: Optional[FeatureFlags] = None
 
+
 class LLMUsageLogCreate(BaseModel):
     model_config = {"protected_namespaces": ()}
-    
+
     user_id: UUID
     app_id: str = Field(..., max_length=255)
     provider: LLMProvider
@@ -139,9 +155,10 @@ class LLMUsageLogCreate(BaseModel):
     fallback_reason: Optional[str] = Field(None, max_length=100)
     request_metadata: dict = Field(default_factory=dict)
 
+
 class LLMUsageLog(BaseModel):
     model_config = {"protected_namespaces": (), "from_attributes": True}
-    
+
     id: UUID
     user_id: UUID
     app_id: str
@@ -159,9 +176,10 @@ class LLMUsageLog(BaseModel):
     request_metadata: dict
     created_at: datetime
 
+
 class LLMUsageStats(BaseModel):
     model_config = {"protected_namespaces": ()}
-    
+
     total_requests: int
     total_tokens: int
     total_cost_usd: float
