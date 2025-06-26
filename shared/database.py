@@ -874,4 +874,38 @@ async def create_tables():
     except Exception as e:
         logger.warning(f"Restaurant app creation failed (may already exist): {e}")
 
+    # Insert activity app if it doesn't exist
+    try:
+        await db.execute_schema(
+            """
+            INSERT INTO apps (
+                id, builder_id, name, slug, description, icon_url, dust_per_use,
+                status, category, website_url, demo_url, callback_url,
+                is_active, admin_notes, created_at, updated_at
+            )
+            SELECT
+                gen_random_uuid(),
+                (SELECT id FROM users WHERE is_builder = true LIMIT 1),
+                'Activity',
+                'fairydust-activity',
+                'Discover personalized activities and attractions based on your location and preferences',
+                NULL,
+                3,
+                'approved',
+                'lifestyle',
+                NULL,
+                NULL,
+                NULL,
+                true,
+                'Auto-created for mobile app implementation',
+                CURRENT_TIMESTAMP,
+                CURRENT_TIMESTAMP
+            WHERE NOT EXISTS (
+                SELECT 1 FROM apps WHERE slug = 'fairydust-activity'
+            );
+        """
+        )
+    except Exception as e:
+        logger.warning(f"Activity app creation failed (may already exist): {e}")
+
     logger.info("Database schema creation/update completed successfully")

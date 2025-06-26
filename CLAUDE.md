@@ -15,6 +15,11 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
   - Set in .env file locally (see .env.example for template)
   - Should be configured in Railway environment variables for production
 
+- `ANTHROPIC_API_KEY`: Anthropic API key for AI-powered content generation
+  - Used by content service for personalized activity recommendations and story generation
+  - Set in .env file locally (see .env.example for template)
+  - Should be configured in Railway environment variables for production
+
 ## Commands
 
 ### Local Development

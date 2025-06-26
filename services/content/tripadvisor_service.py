@@ -10,7 +10,10 @@ class TripAdvisorService:
     def __init__(self, api_key: str):
         self.api_key = api_key
         self.base_url = "https://api.content.tripadvisor.com/api/v1"
-        self.headers = {"X-API-KEY": api_key}
+        self.headers = {
+            "X-API-KEY": api_key,
+            "Referer": "https://fairydust-content-production.up.railway.app/"
+        }
 
     async def search_nearby_activities(
         self, latitude: float, longitude: float, radius_miles: int, location_type: str = "both"
