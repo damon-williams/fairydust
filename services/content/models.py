@@ -409,6 +409,123 @@ class InspirationErrorResponse(BaseModel):
     inspiration_id: Optional[UUID] = None
 
 
+# Recipe App Models
+class RecipeComplexity(str, Enum):
+    SIMPLE = "Simple"
+    MEDIUM = "Medium"
+    GOURMET = "Gourmet"
+
+
+class DietaryRestriction(str, Enum):
+    VEGETARIAN = "vegetarian"
+    VEGAN = "vegan"
+    GLUTEN_FREE = "gluten_free"
+    DAIRY_FREE = "dairy_free"
+    NUT_FREE = "nut_free"
+    SHELLFISH_FREE = "shellfish_free"
+    SOY_FREE = "soy_free"
+    EGG_FREE = "egg_free"
+    LOW_CARB = "low_carb"
+    KETO = "keto"
+    PALEO = "paleo"
+    WHOLE30 = "whole30"
+
+
+class RecipeGenerateRequest(BaseModel):
+    user_id: UUID
+    dish: Optional[str] = None
+    complexity: RecipeComplexity
+    include_ingredients: Optional[str] = None
+    exclude_ingredients: Optional[str] = None
+    selected_people: list[UUID] = Field(default_factory=list)
+    total_people: int = Field(..., ge=1, le=12)
+    session_id: Optional[UUID] = None
+
+
+class UserRecipeNew(BaseModel):
+    id: UUID
+    title: str
+    content: str
+    complexity: RecipeComplexity
+    servings: int
+    prep_time_minutes: Optional[int] = None
+    cook_time_minutes: Optional[int] = None
+    created_at: datetime
+    is_favorited: bool = False
+    metadata: dict = Field(default_factory=dict)
+
+    class Config:
+        from_attributes = True
+
+
+class RecipeGenerateResponse(BaseModel):
+    success: bool = True
+    recipe: UserRecipeNew
+    model_used: str
+    tokens_used: TokenUsage
+    cost: float
+    new_dust_balance: int
+
+    class Config:
+        protected_namespaces = ()
+
+
+class RecipesListResponse(BaseModel):
+    success: bool = True
+    recipes: list[UserRecipeNew]
+    total_count: int
+    favorites_count: int
+
+
+class RecipeFavoriteRequest(BaseModel):
+    is_favorited: bool
+
+
+class RecipeFavoriteResponse(BaseModel):
+    success: bool = True
+    recipe: UserRecipeNew
+
+
+class RecipeDeleteResponse(BaseModel):
+    success: bool = True
+    message: str = "Recipe deleted successfully"
+
+
+class PersonPreference(BaseModel):
+    person_id: UUID
+    person_name: Optional[str] = None
+    selected_restrictions: list[DietaryRestriction] = Field(default_factory=list)
+    foods_to_avoid: Optional[str] = None
+
+
+class RecipePreferences(BaseModel):
+    personal_restrictions: list[DietaryRestriction] = Field(default_factory=list)
+    custom_restrictions: Optional[str] = None
+    people_preferences: list[PersonPreference] = Field(default_factory=list)
+
+
+class RecipePreferencesResponse(BaseModel):
+    success: bool = True
+    preferences: RecipePreferences
+
+
+class RecipePreferencesUpdateRequest(BaseModel):
+    personal_restrictions: list[DietaryRestriction] = Field(default_factory=list)
+    custom_restrictions: Optional[str] = None
+    people_preferences: list[PersonPreference] = Field(default_factory=list)
+
+
+class RecipeErrorResponse(BaseModel):
+    success: bool = False
+    error: str
+    current_balance: Optional[int] = None
+    required_amount: Optional[int] = None
+    valid_levels: Optional[list[str]] = None
+    min_servings: Optional[int] = None
+    max_servings: Optional[int] = None
+    recipe_id: Optional[UUID] = None
+
+
 # Error Response Model
 class ErrorResponse(BaseModel):
     error: dict
