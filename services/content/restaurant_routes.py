@@ -231,11 +231,12 @@ async def get_restaurants_from_google_places(
         
         # Try the googlemaps package first
         try:
+            print(f"🔍 RESTAURANT_DEBUG: Attempting googlemaps package initialization...")
             places_service = get_google_places_service()
             print(f"🔍 RESTAURANT_DEBUG: ✅ Google Places service (googlemaps package) initialized successfully")
             use_http_service = False
-        except ImportError as e:
-            print(f"🔍 RESTAURANT_DEBUG: googlemaps package not available, trying HTTP service...")
+        except Exception as e:
+            print(f"🔍 RESTAURANT_DEBUG: googlemaps package failed ({type(e).__name__}: {e}), trying HTTP service...")
             places_service = get_google_places_http_service()
             print(f"🔍 RESTAURANT_DEBUG: ✅ Google Places HTTP service initialized successfully")
             use_http_service = True
@@ -297,7 +298,9 @@ async def get_restaurants_from_google_places(
         
         # Convert to Restaurant objects with highlights
         restaurants = []
-        for restaurant_data in google_restaurants[:3]:  # Return top 3
+        max_restaurants_to_return = preferences.get("max_results", 10)
+        print(f"🔍 RESTAURANT_DEBUG: Client requested max_results={max_restaurants_to_return}")
+        for restaurant_data in google_restaurants[:max_restaurants_to_return]:
             if not restaurant_data or not isinstance(restaurant_data, dict):
                 print(f"🔍 RESTAURANT_DEBUG: ⚠️ Skipping invalid restaurant data: {restaurant_data}")
                 continue
@@ -413,10 +416,12 @@ async def get_mock_restaurants(
     if excluded_ids:
         filtered_restaurants = [r for r in filtered_restaurants if r["id"] not in excluded_ids]
     
-    # Select 3 diverse restaurants
+    # Select diverse restaurants based on client preference
+    max_mock_restaurants = preferences.get("max_results", 10)
+    print(f"🔍 RESTAURANT_DEBUG: Mock restaurants - client requested max_results={max_mock_restaurants}")
     selected_restaurants = random.sample(
-        filtered_restaurants if len(filtered_restaurants) >= 3 else available_restaurants,
-        min(3, len(filtered_restaurants) if filtered_restaurants else len(available_restaurants))
+        filtered_restaurants if len(filtered_restaurants) >= max_mock_restaurants else available_restaurants,
+        min(max_mock_restaurants, len(filtered_restaurants) if filtered_restaurants else len(available_restaurants))
     )
     
     # Build restaurant response objects
@@ -653,6 +658,7 @@ async def generate_restaurants(
     print(f"  • time_preference: ✅ Google Places open_now + OpenTable times", flush=True)
     print(f"  • party_size: ✅ OpenTable booking URL + group size highlights", flush=True)
     print(f"  • special_occasion: ✅ AI highlights generation", flush=True)
+    print(f"  • max_results: ✅ Client-configurable result limit (1-20, default: 10)", flush=True)
     
     # Verify user matches the request
     if str(current_user.user_id) != str(request.user_id):
