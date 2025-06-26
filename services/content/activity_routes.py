@@ -57,14 +57,14 @@ async def search_activities(
 
     try:
         # Verify user has enough DUST
-        user_balance = await _get_user_balance(db, request.user_id)
+        user_balance = await _get_user_balance(request.user_id)
         if user_balance < ACTIVITY_DUST_COST:
             print(
                 f"💰 ACTIVITY_SEARCH: Insufficient DUST balance: {user_balance} < {ACTIVITY_DUST_COST}",
                 flush=True,
             )
             raise HTTPException(
-                status_code=403,
+                status_code=402,
                 detail=f"Insufficient DUST balance. Need {ACTIVITY_DUST_COST} DUST, have {user_balance}",
             )
 
@@ -112,7 +112,13 @@ async def search_activities(
         )
 
         # Consume DUST after successful search
-        await _consume_dust(db, request.user_id, ACTIVITY_DUST_COST)
+        dust_consumed = await _consume_dust(request.user_id, ACTIVITY_DUST_COST)
+        if not dust_consumed:
+            print(f"❌ ACTIVITY_SEARCH: Failed to consume DUST for user {request.user_id}", flush=True)
+            raise HTTPException(
+                status_code=402,
+                detail="Payment processing failed"
+            )
         print(
             f"💰 ACTIVITY_SEARCH: Consumed {ACTIVITY_DUST_COST} DUST from user {request.user_id}",
             flush=True,
@@ -162,42 +168,60 @@ async def search_activities(
         raise HTTPException(status_code=500, detail="Internal server error during activity search")
 
 
-async def _get_user_balance(db: Database, user_id: uuid.UUID) -> int:
-    """Get user's current DUST balance"""
+async def _get_user_balance(user_id: uuid.UUID) -> int:
+    """Get user's current DUST balance via Ledger Service"""
+    print(f"🔍 ACTIVITY_BALANCE: Checking DUST balance for user {user_id}", flush=True)
     try:
-        query = "SELECT balance FROM users WHERE id = $1"
-        result = await db.fetch_one(query, user_id)
-        if result and result.get("balance") is not None:
-            return int(result["balance"])
-        return 0
+        async with httpx.AsyncClient() as client:
+            response = await client.get(
+                f"https://fairydust-ledger-production.up.railway.app/balance/{user_id}",
+                timeout=10.0,
+            )
+            print(f"🔍 ACTIVITY_BALANCE: Ledger service response: {response.status_code}", flush=True)
+
+            if response.status_code == 200:
+                balance_data = response.json()
+                balance = balance_data.get("current_balance", 0)
+                print(f"✅ ACTIVITY_BALANCE: User {user_id} has {balance} DUST", flush=True)
+                return balance
+            else:
+                print(f"❌ ACTIVITY_BALANCE: Ledger service error: {response.text}", flush=True)
+                return 0
     except Exception as e:
-        print(f"❌ ACTIVITY_BALANCE: Error getting user balance: {str(e)}", flush=True)
+        print(f"❌ ACTIVITY_BALANCE: Exception getting balance: {str(e)}", flush=True)
         return 0
 
 
-async def _consume_dust(db: Database, user_id: uuid.UUID, amount: int):
-    """Consume DUST from user's balance and log transaction"""
+async def _consume_dust(user_id: uuid.UUID, amount: int) -> bool:
+    """Consume DUST for activity search via Ledger Service"""
+    print(f"🔍 ACTIVITY_DUST: Attempting to consume {amount} DUST for user {user_id}", flush=True)
     try:
-        # Update user balance
-        await db.execute("UPDATE users SET balance = balance - $1 WHERE id = $2", amount, user_id)
+        async with httpx.AsyncClient() as client:
+            payload = {
+                "user_id": str(user_id),
+                "amount": amount,
+                "app_id": "fairydust-activity",
+                "description": "Activity search",
+            }
+            print(f"🔍 ACTIVITY_DUST: Payload: {payload}", flush=True)
 
-        # Log transaction
-        await db.execute(
-            """
-            INSERT INTO dust_transactions (id, user_id, amount, transaction_type, description, created_at)
-            VALUES ($1, $2, $3, $4, $5, $6)
-        """,
-            uuid.uuid4(),
-            user_id,
-            -amount,
-            "consumption",
-            "Activity search",
-            datetime.utcnow(),
-        )
+            response = await client.post(
+                "https://fairydust-ledger-production.up.railway.app/transactions/consume",
+                json=payload,
+                timeout=10.0,
+            )
+            print(f"🔍 ACTIVITY_DUST: Ledger service response: {response.status_code}", flush=True)
 
+            if response.status_code != 200:
+                response_text = response.text
+                print(f"❌ ACTIVITY_DUST: Error response: {response_text}", flush=True)
+                return False
+
+            print("✅ ACTIVITY_DUST: DUST consumption successful", flush=True)
+            return True
     except Exception as e:
-        print(f"❌ ACTIVITY_DUST: Error consuming DUST: {str(e)}", flush=True)
-        raise
+        print(f"❌ ACTIVITY_DUST: Exception consuming DUST: {str(e)}", flush=True)
+        return False
 
 
 async def _get_people_info(
