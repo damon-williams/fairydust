@@ -536,6 +536,38 @@ async def _get_user_context(db: Database, user_id: uuid.UUID) -> str:
         return "general user"
 
 
+async def _get_llm_model_config() -> dict:
+    """Get LLM configuration for inspire app (with caching)"""
+    from shared.app_config_cache import get_app_config_cache
+
+    app_id = "fairydust-inspire"
+
+    # Try to get from cache first
+    cache = await get_app_config_cache()
+    cached_config = await cache.get_model_config(app_id)
+
+    if cached_config:
+        return {
+            "primary_provider": cached_config.get("primary_provider", "anthropic"),
+            "primary_model_id": cached_config.get("primary_model_id", "claude-3-haiku-20240307"),
+            "primary_parameters": cached_config.get(
+                "primary_parameters", {"temperature": 0.8, "max_tokens": 150, "top_p": 0.9}
+            ),
+        }
+
+    # Cache miss - use default config and cache it
+    default_config = {
+        "primary_provider": "anthropic",
+        "primary_model_id": "claude-3-haiku-20240307",
+        "primary_parameters": {"temperature": 0.8, "max_tokens": 150, "top_p": 0.9},
+    }
+
+    # Cache the default config for future requests
+    await cache.set_model_config(app_id, default_config)
+
+    return default_config
+
+
 async def _generate_inspiration_llm(
     category: InspirationCategory,
     used_suggestions: list[str],
@@ -543,11 +575,16 @@ async def _generate_inspiration_llm(
 ) -> tuple[Optional[str], str, dict, float]:
     """Generate inspiration using LLM"""
     try:
-        # Get LLM model configuration (using Claude 3 Haiku as specified)
-        model_id = "claude-3-haiku-20240307"
-        temperature = 0.8
-        max_tokens = 150
-        top_p = 0.9
+        # Get LLM model configuration from database/cache
+        model_config = await _get_llm_model_config()
+        
+        provider = model_config.get("primary_provider", "anthropic")
+        model_id = model_config.get("primary_model_id", "claude-3-haiku-20240307")
+        parameters = model_config.get("primary_parameters", {})
+        
+        temperature = parameters.get("temperature", 0.8)
+        max_tokens = parameters.get("max_tokens", 150)
+        top_p = parameters.get("top_p", 0.9)
 
         # Build prompt
         base_prompt = CATEGORY_PROMPTS[category]
@@ -562,53 +599,108 @@ async def _generate_inspiration_llm(
 
         full_prompt = f"{context_prompt}{base_prompt}{anti_dup_prompt}Respond with just the inspiration text, nothing else."
 
-        print(f"🤖 INSPIRE_LLM: Generating with Claude 3 Haiku", flush=True)
+        print(f"🤖 INSPIRE_LLM: Generating with {provider} model {model_id}", flush=True)
 
-        # Make API call to Anthropic
+        # Make API call based on provider
         async with httpx.AsyncClient(timeout=30.0) as client:
-            response = await client.post(
-                "https://api.anthropic.com/v1/messages",
-                headers={
-                    "Content-Type": "application/json",
-                    "x-api-key": os.getenv("ANTHROPIC_API_KEY", ""),
-                    "anthropic-version": "2023-06-01",
-                },
-                json={
-                    "model": model_id,
-                    "max_tokens": max_tokens,
-                    "temperature": temperature,
-                    "top_p": top_p,
-                    "messages": [{"role": "user", "content": full_prompt}],
-                },
-            )
+            if provider == "anthropic":
+                response = await client.post(
+                    "https://api.anthropic.com/v1/messages",
+                    headers={
+                        "Content-Type": "application/json",
+                        "x-api-key": os.getenv("ANTHROPIC_API_KEY", ""),
+                        "anthropic-version": "2023-06-01",
+                    },
+                    json={
+                        "model": model_id,
+                        "max_tokens": max_tokens,
+                        "temperature": temperature,
+                        "top_p": top_p,
+                        "messages": [{"role": "user", "content": full_prompt}],
+                    },
+                )
 
-            if response.status_code == 200:
-                result = response.json()
-                content = result["content"][0]["text"].strip()
+                if response.status_code == 200:
+                    result = response.json()
+                    content = result["content"][0]["text"].strip()
 
-                # Calculate tokens and cost
-                usage = result.get("usage", {})
-                prompt_tokens = usage.get("input_tokens", 0)
-                completion_tokens = usage.get("output_tokens", 0)
-                total_tokens = prompt_tokens + completion_tokens
+                    # Calculate tokens and cost
+                    usage = result.get("usage", {})
+                    prompt_tokens = usage.get("input_tokens", 0)
+                    completion_tokens = usage.get("output_tokens", 0)
+                    total_tokens = prompt_tokens + completion_tokens
 
-                tokens_used = {
-                    "prompt": prompt_tokens,
-                    "completion": completion_tokens,
-                    "total": total_tokens,
-                }
+                    tokens_used = {
+                        "prompt": prompt_tokens,
+                        "completion": completion_tokens,
+                        "total": total_tokens,
+                    }
 
-                cost = calculate_anthropic_cost(model_id, prompt_tokens, completion_tokens)
+                    cost = calculate_anthropic_cost(model_id, prompt_tokens, completion_tokens)
 
-                print(f"✅ INSPIRE_LLM: Generated inspiration successfully", flush=True)
-                return content, model_id, tokens_used, cost
+                    print(f"✅ INSPIRE_LLM: Generated inspiration successfully", flush=True)
+                    return content, model_id, tokens_used, cost
+
+                else:
+                    print(
+                        f"❌ INSPIRE_LLM: Anthropic API error {response.status_code}: {response.text}",
+                        flush=True,
+                    )
+                    return None, model_id, {}, 0.0
+
+            elif provider == "openai":
+                response = await client.post(
+                    "https://api.openai.com/v1/chat/completions",
+                    headers={
+                        "Content-Type": "application/json",
+                        "Authorization": f"Bearer {os.getenv('OPENAI_API_KEY', '')}",
+                    },
+                    json={
+                        "model": model_id,
+                        "max_tokens": max_tokens,
+                        "temperature": temperature,
+                        "top_p": top_p,
+                        "messages": [{"role": "user", "content": full_prompt}],
+                    },
+                )
+
+                if response.status_code == 200:
+                    result = response.json()
+                    content = result["choices"][0]["message"]["content"].strip()
+
+                    # Calculate tokens and cost
+                    usage = result.get("usage", {})
+                    prompt_tokens = usage.get("prompt_tokens", 0)
+                    completion_tokens = usage.get("completion_tokens", 0)
+                    total_tokens = usage.get("total_tokens", prompt_tokens + completion_tokens)
+
+                    tokens_used = {
+                        "prompt": prompt_tokens,
+                        "completion": completion_tokens,
+                        "total": total_tokens,
+                    }
+
+                    # Import OpenAI cost calculation
+                    from shared.llm_pricing import calculate_openai_cost
+                    cost = calculate_openai_cost(model_id, prompt_tokens, completion_tokens)
+
+                    print(f"✅ INSPIRE_LLM: Generated inspiration successfully", flush=True)
+                    return content, model_id, tokens_used, cost
+
+                else:
+                    print(
+                        f"❌ INSPIRE_LLM: OpenAI API error {response.status_code}: {response.text}",
+                        flush=True,
+                    )
+                    return None, model_id, {}, 0.0
 
             else:
                 print(
-                    f"❌ INSPIRE_LLM: API error {response.status_code}: {response.text}",
+                    f"⚠️ INSPIRE_LLM: Unsupported provider {provider}, falling back to Anthropic",
                     flush=True,
                 )
-                return None, model_id, {}, 0.0
+                # Fallback to Anthropic with default model
+                return await _generate_inspiration_llm(category, used_suggestions, user_context)
 
     except Exception as e:
         print(f"❌ INSPIRE_LLM: Error generating inspiration: {str(e)}", flush=True)
