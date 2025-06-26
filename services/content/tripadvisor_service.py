@@ -78,6 +78,13 @@ class TripAdvisorService:
                             f"❌ ACTIVITY_SEARCH: TripAdvisor API error {response.status_code}: {response.text}",
                             flush=True,
                         )
+                        
+                        # Temporary fallback while waiting for TripAdvisor API access
+                        if response.status_code == 401:
+                            print("🔄 ACTIVITY_SEARCH: Using fallback mock data due to API authentication issue", flush=True)
+                            mock_activities = self._get_mock_activities(latitude, longitude, category)
+                            all_activities.extend(mock_activities)
+                            total_found += len(mock_activities)
 
         except Exception as e:
             print(f"❌ ACTIVITY_SEARCH: Error searching TripAdvisor: {str(e)}", flush=True)
@@ -330,3 +337,88 @@ class TripAdvisorService:
         # In a real implementation, you'd use reverse geocoding
         # For now, return a basic coordinate string
         return f"{latitude:.4f}, {longitude:.4f}"
+    
+    def _get_mock_activities(self, latitude: float, longitude: float, category: str) -> list[dict]:
+        """Temporary mock data while waiting for TripAdvisor API access"""
+        base_activities = []
+        
+        if category == "attractions":
+            base_activities = [
+                {
+                    "tripadvisor_id": "mock_museum_1",
+                    "name": "Local History Museum",
+                    "type": "attraction",
+                    "address": "123 Main Street",
+                    "latitude": latitude + 0.01,
+                    "longitude": longitude + 0.01,
+                    "distance_miles": 1.2,
+                    "rating": 4.3,
+                    "num_reviews": 156,
+                    "price_level": "$",
+                    "photos": ["https://example.com/museum1.jpg"],
+                    "hours": None,
+                    "current_status": None,
+                    "phone": "(555) 123-4567",
+                    "website": "https://example.com",
+                    "raw_details": {}
+                },
+                {
+                    "tripadvisor_id": "mock_theater_1",
+                    "name": "Community Theater",
+                    "type": "attraction", 
+                    "address": "456 Arts Avenue",
+                    "latitude": latitude - 0.02,
+                    "longitude": longitude + 0.02,
+                    "distance_miles": 2.8,
+                    "rating": 4.7,
+                    "num_reviews": 89,
+                    "price_level": "$$",
+                    "photos": ["https://example.com/theater1.jpg"],
+                    "hours": None,
+                    "current_status": None,
+                    "phone": "(555) 234-5678",
+                    "website": "https://example.com",
+                    "raw_details": {}
+                }
+            ]
+        elif category == "geos":
+            base_activities = [
+                {
+                    "tripadvisor_id": "mock_park_1",
+                    "name": "Riverside Park",
+                    "type": "destination",
+                    "address": "789 River Road",
+                    "latitude": latitude + 0.03,
+                    "longitude": longitude - 0.01,
+                    "distance_miles": 3.5,
+                    "rating": 4.1,
+                    "num_reviews": 203,
+                    "price_level": None,
+                    "photos": ["https://example.com/park1.jpg"],
+                    "hours": None,
+                    "current_status": None,
+                    "phone": None,
+                    "website": None,
+                    "raw_details": {}
+                },
+                {
+                    "tripadvisor_id": "mock_trail_1", 
+                    "name": "Nature Walking Trail",
+                    "type": "destination",
+                    "address": "Mountain View Drive",
+                    "latitude": latitude - 0.01,
+                    "longitude": longitude - 0.03,
+                    "distance_miles": 4.2,
+                    "rating": 4.5,
+                    "num_reviews": 67,
+                    "price_level": None,
+                    "photos": ["https://example.com/trail1.jpg"],
+                    "hours": None,
+                    "current_status": None,
+                    "phone": None,
+                    "website": None,
+                    "raw_details": {}
+                }
+            ]
+        
+        return base_activities
