@@ -188,8 +188,9 @@ async def _get_user_balance(user_id: uuid.UUID, auth_token: str) -> int:
 
             if response.status_code == 200:
                 balance_data = response.json()
-                balance = balance_data.get("current_balance", 0)
+                balance = balance_data.get("balance", 0)
                 print(f"✅ ACTIVITY_BALANCE: User {user_id} has {balance} DUST", flush=True)
+                print(f"🔍 ACTIVITY_BALANCE: Full response: {balance_data}", flush=True)
                 return balance
             else:
                 print(f"❌ ACTIVITY_BALANCE: Ledger service error: {response.text}", flush=True)
