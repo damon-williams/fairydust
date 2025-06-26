@@ -13,3 +13,6 @@ googlemaps==4.10.0
 
 # HTTP client for API calls
 httpx==0.25.2
+
+# Geographic calculations
+geopy==2.4.1

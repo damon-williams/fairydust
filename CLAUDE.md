@@ -10,6 +10,11 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
   - Set in .env file locally (see .env.example for template)
   - Should be configured in Railway environment variables for production
 
+- `TRIPADVISOR_API_KEY`: TripAdvisor Content API key for activity discovery
+  - Used by content service for activity search functionality
+  - Set in .env file locally (see .env.example for template)
+  - Should be configured in Railway environment variables for production
+
 ## Commands
 
 ### Local Development
@@ -177,7 +182,7 @@ fairydust is a microservices-based payment and identity platform for AI-powered 
 - **Apps Service** (port 8003): App marketplace, LLM management, consumption tracking
 - **Admin Portal** (port 8004): Admin dashboard for user/app/question/LLM management
 - **Builder Portal** (port 8005): Builder dashboard for app submission/management
-- **Content Service** (port 8006): User-generated content storage (recipes, stories)
+- **Content Service** (port 8006): User-generated content storage (recipes, stories, activities)
 
 ### Shared Infrastructure
 - **PostgreSQL**: Primary database with UUID keys, timestamps, and JSONB metadata
@@ -334,10 +339,41 @@ CREATE TABLE user_stories (
 - Content safety filtering based on target audience
 - LLM-powered generation with cost tracking
 
+### Activity Search Feature
+
+**Endpoint**: `POST /activity/search`
+
+The Activity app provides AI-powered activity recommendations using TripAdvisor integration:
+
+**Features**:
+- TripAdvisor API integration for nearby attractions and destinations
+- Personalized AI context generation based on "People in My Life"
+- Configurable LLM models via Admin Portal (app_id: `fairydust-activity`)
+- Smart activity prioritization by rating, reviews, distance, and variety
+- DUST economy: 3 DUST per search
+
+**LLM Configuration**:
+- **App ID**: `fairydust-activity`
+- **Default Model**: `claude-3-haiku-20240307` (cost-effective for recommendations)
+- **Default Parameters**: `{"temperature": 0.7, "max_tokens": 1000, "top_p": 0.9}`
+- **Provider**: Anthropic (with OpenAI fallback support)
+
+**Required Environment Variables**:
+- `TRIPADVISOR_API_KEY`: TripAdvisor Content API key
+- `ANTHROPIC_API_KEY`: For AI context generation
+
+**Response Format**:
+- Up to 12 activities with TripAdvisor data (rating, reviews, photos, hours)
+- Personalized AI context (2-3 sentences per activity)
+- Suitability tags based on group composition
+- Distance calculation and smart sorting
+
+**Admin Configuration**:
+Admins can configure the LLM model, parameters, and provider via the Admin Portal under Apps → fairydust-activity → LLM Configuration.
+
 ### Future Extensions
 
 This service can be extended for other apps:
-- `fairydust-inspire`: Activity suggestions and user collections
 - `smart-study-assistant`: Study materials and notes  
 - Content sharing and collaboration features
 - Advanced search and recommendation systems
