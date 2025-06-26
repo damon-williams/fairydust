@@ -73,6 +73,14 @@ except Exception as e:
     print(f"🚨 STARTUP: ❌ Activity routes import failed: {e}", flush=True)
     raise
 
+try:
+    from inspire_routes import router as inspire_router
+
+    print("🚨 STARTUP: Inspire routes imported successfully", flush=True)
+except Exception as e:
+    print(f"🚨 STARTUP: ❌ Inspire routes import failed: {e}", flush=True)
+    raise
+
 print("🚨 STARTUP: All imports completed successfully", flush=True)
 
 
@@ -122,6 +130,7 @@ endpoint_limits = {
     "/content/stories": 1 * 1024 * 1024,  # 1MB for story content
     "/restaurant": 100 * 1024,  # 100KB for restaurant requests
     "/activity/search": 50 * 1024,  # 50KB for activity search requests
+    "/apps/inspire/generate": 50 * 1024,  # 50KB for inspire generation requests
 }
 
 add_middleware_to_app(
@@ -152,9 +161,10 @@ app.include_router(content_router, prefix="/recipes", tags=["recipes"])
 app.include_router(story_router, prefix="/content", tags=["stories"])
 app.include_router(restaurant_router, prefix="/restaurant", tags=["restaurants"])
 app.include_router(activity_router, tags=["activities"])
+app.include_router(inspire_router, tags=["inspire"])
 print("🚨 CONTENT_SERVICE: All routers included successfully", flush=True)
 print(
-    "🚨 CONTENT_SERVICE: Router prefixes - recipes: /recipes, stories: /content, restaurants: /restaurant, activities: /",
+    "🚨 CONTENT_SERVICE: Router prefixes - recipes: /recipes, stories: /content, restaurants: /restaurant, activities: /, inspire: /",
     flush=True,
 )
 print(

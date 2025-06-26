@@ -908,4 +908,64 @@ async def create_tables():
     except Exception as e:
         logger.warning(f"Activity app creation failed (may already exist): {e}")
 
+    # User Inspirations table for Inspire app
+    await db.execute_schema(
+        """
+        CREATE TABLE IF NOT EXISTS user_inspirations (
+            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            content TEXT NOT NULL,
+            category VARCHAR(50) NOT NULL,
+            is_favorited BOOLEAN DEFAULT FALSE,
+            session_id UUID,
+            model_used VARCHAR(100),
+            tokens_used INTEGER,
+            cost_usd DECIMAL(10, 6),
+            deleted_at TIMESTAMP WITH TIME ZONE,
+            created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_user_inspirations_user_id ON user_inspirations(user_id);
+        CREATE INDEX IF NOT EXISTS idx_user_inspirations_created_at ON user_inspirations(created_at DESC);
+        CREATE INDEX IF NOT EXISTS idx_user_inspirations_category ON user_inspirations(category);
+        CREATE INDEX IF NOT EXISTS idx_user_inspirations_favorited ON user_inspirations(user_id, is_favorited) WHERE is_favorited = TRUE;
+        CREATE INDEX IF NOT EXISTS idx_user_inspirations_active ON user_inspirations(user_id, created_at DESC) WHERE deleted_at IS NULL;
+    """
+    )
+
+    # Insert inspire app if it doesn't exist
+    try:
+        await db.execute_schema(
+            """
+            INSERT INTO apps (
+                id, builder_id, name, slug, description, icon_url, dust_per_use,
+                status, category, website_url, demo_url, callback_url,
+                is_active, admin_notes, created_at, updated_at
+            )
+            SELECT
+                gen_random_uuid(),
+                (SELECT id FROM users WHERE is_builder = true LIMIT 1),
+                'Inspire',
+                'fairydust-inspire',
+                'Get personalized inspirations and challenges for daily motivation',
+                NULL,
+                2,
+                'approved',
+                'lifestyle',
+                NULL,
+                NULL,
+                NULL,
+                true,
+                'Auto-created for mobile app implementation',
+                CURRENT_TIMESTAMP,
+                CURRENT_TIMESTAMP
+            WHERE NOT EXISTS (
+                SELECT 1 FROM apps WHERE slug = 'fairydust-inspire'
+            );
+        """
+        )
+    except Exception as e:
+        logger.warning(f"Inspire app creation failed (may already exist): {e}")
+
     logger.info("Database schema creation/update completed successfully")

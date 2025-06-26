@@ -335,6 +335,77 @@ class ActivitySearchResponse(BaseModel):
     search_metadata: ActivitySearchMetadata
 
 
+# Inspire App Models
+class InspirationCategory(str, Enum):
+    CHALLENGE = "A challenge to try"
+    CREATIVE = "A creative spark"
+    SELF_CARE = "Something good for me"
+    KIND_GESTURE = "Something nice for another"
+
+
+class InspirationGenerateRequest(BaseModel):
+    user_id: UUID
+    category: InspirationCategory
+    used_suggestions: list[str] = Field(default_factory=list, max_items=20)
+    session_id: Optional[UUID] = None
+
+
+class TokenUsage(BaseModel):
+    prompt: int
+    completion: int
+    total: int
+
+
+class UserInspiration(BaseModel):
+    id: UUID
+    content: str
+    category: InspirationCategory
+    created_at: datetime
+    is_favorited: bool = False
+
+    class Config:
+        from_attributes = True
+
+
+class InspirationGenerateResponse(BaseModel):
+    success: bool = True
+    inspiration: UserInspiration
+    model_used: str
+    tokens_used: TokenUsage
+    cost: float
+    new_dust_balance: int
+
+
+class InspirationsListResponse(BaseModel):
+    success: bool = True
+    inspirations: list[UserInspiration]
+    total_count: int
+    favorites_count: int
+
+
+class InspirationFavoriteRequest(BaseModel):
+    is_favorited: bool
+
+
+class InspirationFavoriteResponse(BaseModel):
+    success: bool = True
+    inspiration: UserInspiration
+
+
+class InspirationDeleteResponse(BaseModel):
+    success: bool = True
+    message: str = "Inspiration deleted successfully"
+
+
+class InspirationErrorResponse(BaseModel):
+    success: bool = False
+    error: str
+    current_balance: Optional[int] = None
+    required_amount: Optional[int] = None
+    valid_categories: Optional[list[str]] = None
+    inspiration_id: Optional[UUID] = None
+
+
 # Error Response Model
 class ErrorResponse(BaseModel):
     error: dict
