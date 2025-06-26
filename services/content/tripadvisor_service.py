@@ -46,6 +46,11 @@ class TripAdvisorService:
                         "limit": 30,  # Get more results to filter and prioritize
                     }
 
+                    print(f"🔍 TRIPADVISOR_DEBUG: API Key: {self.api_key[:10]}...", flush=True)
+                    print(f"🔍 TRIPADVISOR_DEBUG: Headers: {self.headers}", flush=True)
+                    print(f"🔍 TRIPADVISOR_DEBUG: URL: {self.base_url}/location/nearby_search", flush=True)
+                    print(f"🔍 TRIPADVISOR_DEBUG: Params: {params}", flush=True)
+
                     response = await client.get(
                         f"{self.base_url}/location/nearby_search",
                         headers=self.headers,
