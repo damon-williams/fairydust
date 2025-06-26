@@ -14,7 +14,7 @@ from passlib.context import CryptContext
 # Configuration
 SECRET_KEY = os.getenv("JWT_SECRET_KEY", secrets.token_urlsafe(32))
 ALGORITHM = "HS256"
-ACCESS_TOKEN_EXPIRE_MINUTES = 60
+ACCESS_TOKEN_EXPIRE_MINUTES = 525600
 REFRESH_TOKEN_EXPIRE_DAYS = 30
 OTP_EXPIRE_MINUTES = 10
 
