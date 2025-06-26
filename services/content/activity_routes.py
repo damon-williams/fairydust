@@ -5,7 +5,7 @@ import uuid
 from datetime import datetime
 
 import httpx
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from models import (
     Activity,
     ActivitySearchMetadata,
@@ -34,6 +34,7 @@ ACTIVITY_DUST_COST = 3
 @router.post("/activity/search", response_model=ActivitySearchResponse)
 async def search_activities(
     request: ActivitySearchRequest,
+    http_request: Request,
     current_user: TokenData = Depends(get_current_user),
     db: Database = Depends(get_db),
 ):
@@ -56,8 +57,13 @@ async def search_activities(
         raise HTTPException(status_code=403, detail="Can only search activities for yourself")
 
     try:
+        # Extract Authorization header for service-to-service calls
+        auth_token = http_request.headers.get("authorization", "")
+        if not auth_token:
+            raise HTTPException(status_code=401, detail="Authorization header required")
+        
         # Verify user has enough DUST
-        user_balance = await _get_user_balance(request.user_id)
+        user_balance = await _get_user_balance(request.user_id, auth_token)
         if user_balance < ACTIVITY_DUST_COST:
             print(
                 f"💰 ACTIVITY_SEARCH: Insufficient DUST balance: {user_balance} < {ACTIVITY_DUST_COST}",
@@ -112,7 +118,7 @@ async def search_activities(
         )
 
         # Consume DUST after successful search
-        dust_consumed = await _consume_dust(request.user_id, ACTIVITY_DUST_COST)
+        dust_consumed = await _consume_dust(request.user_id, ACTIVITY_DUST_COST, auth_token)
         if not dust_consumed:
             print(f"❌ ACTIVITY_SEARCH: Failed to consume DUST for user {request.user_id}", flush=True)
             raise HTTPException(
@@ -168,13 +174,14 @@ async def search_activities(
         raise HTTPException(status_code=500, detail="Internal server error during activity search")
 
 
-async def _get_user_balance(user_id: uuid.UUID) -> int:
+async def _get_user_balance(user_id: uuid.UUID, auth_token: str) -> int:
     """Get user's current DUST balance via Ledger Service"""
     print(f"🔍 ACTIVITY_BALANCE: Checking DUST balance for user {user_id}", flush=True)
     try:
         async with httpx.AsyncClient() as client:
             response = await client.get(
                 f"https://fairydust-ledger-production.up.railway.app/balance/{user_id}",
+                headers={"Authorization": auth_token},
                 timeout=10.0,
             )
             print(f"🔍 ACTIVITY_BALANCE: Ledger service response: {response.status_code}", flush=True)
@@ -192,7 +199,7 @@ async def _get_user_balance(user_id: uuid.UUID) -> int:
         return 0
 
 
-async def _consume_dust(user_id: uuid.UUID, amount: int) -> bool:
+async def _consume_dust(user_id: uuid.UUID, amount: int, auth_token: str) -> bool:
     """Consume DUST for activity search via Ledger Service"""
     print(f"🔍 ACTIVITY_DUST: Attempting to consume {amount} DUST for user {user_id}", flush=True)
     try:
@@ -208,6 +215,7 @@ async def _consume_dust(user_id: uuid.UUID, amount: int) -> bool:
             response = await client.post(
                 "https://fairydust-ledger-production.up.railway.app/transactions/consume",
                 json=payload,
+                headers={"Authorization": auth_token},
                 timeout=10.0,
             )
             print(f"🔍 ACTIVITY_DUST: Ledger service response: {response.status_code}", flush=True)
