@@ -4,7 +4,6 @@ import os
 import uuid
 from datetime import datetime
 
-import asyncpg
 import httpx
 from fastapi import APIRouter, Depends, HTTPException
 from models import (
@@ -16,8 +15,8 @@ from models import (
 )
 from tripadvisor_service import TripAdvisorService
 
-from shared.auth import get_current_user
-from shared.database import get_db_connection
+from shared.auth_middleware import TokenData, get_current_user
+from shared.database import Database, get_db
 
 router = APIRouter()
 
@@ -35,8 +34,8 @@ ACTIVITY_DUST_COST = 3
 @router.post("/activity/search", response_model=ActivitySearchResponse)
 async def search_activities(
     request: ActivitySearchRequest,
-    current_user: dict = Depends(get_current_user),
-    db: asyncpg.Connection = Depends(get_db_connection),
+    current_user: TokenData = Depends(get_current_user),
+    db: Database = Depends(get_db),
 ):
     """
     Search for activities near user's location with personalized AI context
@@ -47,6 +46,14 @@ async def search_activities(
         flush=True,
     )
     print(f"👥 ACTIVITY_SEARCH: Selected people: {request.selected_people}", flush=True)
+
+    # Verify user can only search activities for themselves
+    if current_user.user_id != str(request.user_id):
+        print(
+            f"🚨 ACTIVITY_SEARCH: User {current_user.user_id} attempted to search activities for different user {request.user_id}",
+            flush=True,
+        )
+        raise HTTPException(status_code=403, detail="Can only search activities for yourself")
 
     try:
         # Verify user has enough DUST
@@ -155,7 +162,7 @@ async def search_activities(
         raise HTTPException(status_code=500, detail="Internal server error during activity search")
 
 
-async def _get_user_balance(db: asyncpg.Connection, user_id: uuid.UUID) -> int:
+async def _get_user_balance(db: Database, user_id: uuid.UUID) -> int:
     """Get user's current DUST balance"""
     try:
         query = "SELECT balance FROM users WHERE id = $1"
@@ -166,7 +173,7 @@ async def _get_user_balance(db: asyncpg.Connection, user_id: uuid.UUID) -> int:
         return 0
 
 
-async def _consume_dust(db: asyncpg.Connection, user_id: uuid.UUID, amount: int):
+async def _consume_dust(db: Database, user_id: uuid.UUID, amount: int):
     """Consume DUST from user's balance and log transaction"""
     try:
         # Update user balance
@@ -192,7 +199,7 @@ async def _consume_dust(db: asyncpg.Connection, user_id: uuid.UUID, amount: int)
 
 
 async def _get_people_info(
-    db: asyncpg.Connection, user_id: uuid.UUID, selected_people: list[str]
+    db: Database, user_id: uuid.UUID, selected_people: list[str]
 ) -> list[dict]:
     """Get information about selected people for AI context"""
     if not selected_people:
