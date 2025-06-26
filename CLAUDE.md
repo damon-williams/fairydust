@@ -74,13 +74,32 @@ mypy .
 ```
 
 **📋 Development Workflow Best Practices**
+
+**🚨 MANDATORY BEFORE EVERY COMMIT:**
 ```bash
-# Before committing code:
+# ALWAYS run these commands before committing:
 1. ./scripts/format.sh          # Auto-format code
 2. ./scripts/lint.sh            # Check for issues  
-3. pytest tests/               # Run tests
+3. pytest tests/               # Run tests (if applicable)
 4. git add . && git commit     # Commit formatted code
 ```
+
+**⚡ Quick Commit Workflow:**
+```bash
+# EASIEST: Use the smart commit script (auto-formats + commits):
+./scripts/commit.sh "your commit message"
+
+# Manual workflow for more control:
+./scripts/format.sh && git add . && git commit -m "your message"
+
+# Full workflow for important commits:
+./scripts/format.sh && ./scripts/lint.sh && pytest tests/ && git add . && git commit -m "your message"
+```
+
+**🎯 Claude Code Reminder:**
+- **NEVER commit without formatting** - Always run `./scripts/format.sh` first
+- **Check for issues** - Run `./scripts/lint.sh` before committing
+- **Consistent codebase** - Formatting prevents style inconsistencies
 
 **⚙️ Code Formatting Configuration**
 - **pyproject.toml**: Contains all formatting rules and tool configuration
