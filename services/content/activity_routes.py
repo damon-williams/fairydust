@@ -166,8 +166,10 @@ async def _get_user_balance(db: Database, user_id: uuid.UUID) -> int:
     """Get user's current DUST balance"""
     try:
         query = "SELECT balance FROM users WHERE id = $1"
-        result = await db.fetchval(query, user_id)
-        return result if result is not None else 0
+        result = await db.fetch_one(query, user_id)
+        if result and result.get("balance") is not None:
+            return int(result["balance"])
+        return 0
     except Exception as e:
         print(f"❌ ACTIVITY_BALANCE: Error getting user balance: {str(e)}", flush=True)
         return 0
@@ -224,7 +226,7 @@ async def _get_people_info(
             WHERE user_id = $1 AND person_id = ANY($2)
         """
 
-        rows = await db.fetch(query, user_id, person_uuids)
+        rows = await db.fetch_all(query, user_id, person_uuids)
 
         people_info = []
         for row in rows:
