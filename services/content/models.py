@@ -99,20 +99,26 @@ class TargetAudience(str, Enum):
 class StoryCharacter(BaseModel):
     name: str = Field(..., min_length=1, max_length=100)
     relationship: str = Field(..., min_length=1, max_length=100)
-    age: Optional[int] = Field(None, ge=0, le=120)
+    age_range: Optional[str] = Field(None, pattern="^(child|teen|adult|senior)$")
     traits: list[str] = Field(default_factory=list, max_items=10)
-    role_in_story: Optional[str] = None
-    personality_description: Optional[str] = None
+
+
+class TokenUsage(BaseModel):
+    prompt: int
+    completion: int
+    total: int
 
 
 class StoryGenerationRequest(BaseModel):
+    user_id: UUID
     genre: StoryGenre
     story_length: StoryLength
-    characters: list[StoryCharacter] = Field(..., min_items=1, max_items=8)
+    characters: list[StoryCharacter] = Field(default_factory=list, max_items=8)
     setting: Optional[str] = Field(None, max_length=500)
     theme: Optional[str] = Field(None, max_length=500)
     custom_prompt: Optional[str] = Field(None, max_length=1000)
-    target_audience: Optional[TargetAudience] = TargetAudience.FAMILY
+    target_audience: TargetAudience = TargetAudience.FAMILY
+    session_id: Optional[UUID] = None
 
 
 class StoryGenerationMetadata(BaseModel):
@@ -181,6 +187,68 @@ class StoryGenerationLog(BaseModel):
 
     class Config:
         from_attributes = True
+
+
+# New Story App Models for Enhanced API
+class UserStoryNew(BaseModel):
+    id: UUID
+    title: str
+    content: str
+    genre: StoryGenre
+    story_length: StoryLength
+    target_audience: TargetAudience
+    word_count: int
+    estimated_reading_time: str
+    created_at: datetime
+    is_favorited: bool = False
+    metadata: dict = Field(default_factory=dict)
+
+    class Config:
+        from_attributes = True
+
+
+class StoryGenerationResponseNew(BaseModel):
+    success: bool = True
+    story: UserStoryNew
+    model_used: str
+    tokens_used: TokenUsage
+    cost: float
+    new_dust_balance: int
+
+    class Config:
+        protected_namespaces = ()
+
+
+class StoriesListResponse(BaseModel):
+    success: bool = True
+    stories: list[UserStoryNew]
+    total_count: int
+    favorites_count: int
+
+
+class StoryFavoriteResponse(BaseModel):
+    success: bool = True
+    story: UserStoryNew
+
+
+class StoryDeleteResponse(BaseModel):
+    success: bool = True
+    message: str = "Story deleted successfully"
+
+
+class StoryConfigResponse(BaseModel):
+    success: bool = True
+    config: dict
+
+
+class StoryErrorResponse(BaseModel):
+    success: bool = False
+    error: str
+    current_balance: Optional[int] = None
+    required_amount: Optional[int] = None
+    valid_genres: Optional[list[str]] = None
+    valid_lengths: Optional[list[dict]] = None
+    story_id: Optional[UUID] = None
 
 
 # Restaurant App Models
@@ -348,12 +416,6 @@ class InspirationGenerateRequest(BaseModel):
     category: InspirationCategory
     used_suggestions: list[str] = Field(default_factory=list, max_items=20)
     session_id: Optional[UUID] = None
-
-
-class TokenUsage(BaseModel):
-    prompt: int
-    completion: int
-    total: int
 
 
 class UserInspiration(BaseModel):

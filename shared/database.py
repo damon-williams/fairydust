@@ -754,7 +754,22 @@ async def create_tables():
         CREATE INDEX IF NOT EXISTS idx_user_stories_created_at ON user_stories(created_at DESC);
         CREATE INDEX IF NOT EXISTS idx_user_stories_genre ON user_stories(genre);
         CREATE INDEX IF NOT EXISTS idx_user_stories_favorited ON user_stories(user_id, is_favorited) WHERE is_favorited = TRUE;
+        CREATE INDEX IF NOT EXISTS idx_user_stories_story_length ON user_stories(story_length);
     """
+    )
+
+    # Add target_audience column to user_stories table
+    await db.execute_schema(
+        """
+        ALTER TABLE user_stories ADD COLUMN IF NOT EXISTS target_audience VARCHAR(20) DEFAULT 'family';
+        """
+    )
+
+    # Create index for target_audience after column is added
+    await db.execute_schema(
+        """
+        CREATE INDEX IF NOT EXISTS idx_user_stories_target_audience ON user_stories(target_audience);
+        """
     )
 
     # Story generation logs table for analytics and debugging

@@ -1,39 +1,42 @@
 # services/content/story_routes.py
-import logging
+import json
+import os
 import re
 import time
+import uuid
+from datetime import datetime
 from typing import Optional
-from uuid import UUID, uuid4
 
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
-from fastapi.security import HTTPBearer
-
-logger = logging.getLogger(__name__)
-
-from content_safety import content_safety_filter
+import httpx
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from models import (
-    StoriesResponse,
+    StoryConfigResponse,
+    StoryDeleteResponse,
+    StoryErrorResponse,
     StoryFavoriteRequest,
-    StoryGenerationMetadata,
+    StoryFavoriteResponse,
     StoryGenerationRequest,
-    StoryGenerationResponse,
+    StoryGenerationResponseNew,
     StoryGenre,
     StoryLength,
-    StoryStatistics,
+    StoriesListResponse,
     TargetAudience,
-    UserStory,
+    TokenUsage,
+    UserStoryNew,
 )
-from rate_limiting import check_api_rate_limit_only, check_story_generation_rate_limit
 
 from shared.auth_middleware import TokenData, get_current_user
 from shared.database import Database, get_db
-from shared.json_utils import parse_story_data, safe_json_dumps
+from shared.llm_pricing import calculate_llm_cost
 
-security = HTTPBearer()
 router = APIRouter()
 
 # Constants
-DUST_COSTS = {StoryLength.SHORT: 2, StoryLength.MEDIUM: 4, StoryLength.LONG: 6}
+STORY_DUST_COSTS = {
+    StoryLength.SHORT: 2,
+    StoryLength.MEDIUM: 4,
+    StoryLength.LONG: 6,
+}
 
 WORD_COUNT_TARGETS = {
     StoryLength.SHORT: (300, 500),
@@ -41,47 +44,640 @@ WORD_COUNT_TARGETS = {
     StoryLength.LONG: (1000, 1500),
 }
 
-GENRE_INSTRUCTIONS = {
-    StoryGenre.ADVENTURE: "Include exciting challenges, discovery, and brave journeys.",
-    StoryGenre.FANTASY: "Add magical elements, mythical creatures, and wonder.",
-    StoryGenre.ROMANCE: "Focus on relationships, emotional connection, and heartwarming moments.",
-    StoryGenre.COMEDY: "Include humor, funny situations, and lighthearted moments appropriate for the audience.",
-    StoryGenre.MYSTERY: "Create intrigue, problem-solving, and suspenseful discovery.",
-    StoryGenre.FAMILY: "Emphasize family bonds, togetherness, and meaningful relationships.",
-    StoryGenre.BEDTIME: "Use a gentle, calming tone with positive, peaceful endings.",
-}
+STORY_RATE_LIMIT = 10  # Max 10 stories per hour per user
 
 
-async def get_user_dust_balance(user_id: UUID) -> int:
-    """Check user's DUST balance via Ledger Service"""
-    # For now, return a mock balance - in production this would call the Ledger Service
-    # TODO: Implement actual Ledger Service integration
-    return 100  # Mock balance
+@router.post("/apps/story/generate")
+async def generate_story(
+    request: StoryGenerationRequest,
+    http_request: Request,
+    current_user: TokenData = Depends(get_current_user),
+    db: Database = Depends(get_db),
+):
+    """
+    Generate a new story using LLM and automatically save it to user's collection.
+    """
+    print(f"📖 STORY: Starting generation for user {request.user_id}", flush=True)
+    print(f"📂 STORY: Genre: {request.genre}, Length: {request.story_length}", flush=True)
 
+    # Verify user can only generate stories for themselves
+    if current_user.user_id != str(request.user_id):
+        print(
+            f"🚨 STORY: User {current_user.user_id} attempted to generate story for different user {request.user_id}",
+            flush=True,
+        )
+        return StoryErrorResponse(error="Can only generate stories for yourself")
 
-async def consume_dust(user_id: UUID, amount: int, description: str, story_metadata: dict) -> bool:
-    """Consume DUST via Ledger Service"""
     try:
-        # TODO: Replace with actual Ledger Service call
-        # async with httpx.AsyncClient() as client:
-        #     response = await client.post(
-        #         f"{LEDGER_SERVICE_URL}/transactions/consume",
-        #         json={
-        #             "user_id": str(user_id),
-        #             "app_id": "fairydust-story",
-        #             "amount": amount,
-        #             "description": description,
-        #             "metadata": story_metadata
-        #         }
-        #     )
-        #     return response.status_code == 200
-        return True  # Mock success
-    except Exception:
+        # Extract Authorization header for service-to-service calls
+        auth_token = http_request.headers.get("authorization", "")
+        if not auth_token:
+            return StoryErrorResponse(error="Authorization header required")
+
+        # Check rate limiting
+        rate_limit_exceeded = await _check_rate_limit(db, request.user_id)
+        if rate_limit_exceeded:
+            return StoryErrorResponse(
+                error=f"Rate limit exceeded. Maximum {STORY_RATE_LIMIT} stories per hour."
+            )
+
+        # Get DUST cost for story length
+        dust_cost = STORY_DUST_COSTS[request.story_length]
+
+        # Verify user has enough DUST
+        user_balance = await _get_user_balance(request.user_id, auth_token)
+        if user_balance < dust_cost:
+            print(
+                f"💰 STORY: Insufficient DUST balance: {user_balance} < {dust_cost}",
+                flush=True,
+            )
+            return StoryErrorResponse(
+                error="Insufficient DUST balance",
+                current_balance=user_balance,
+                required_amount=dust_cost,
+            )
+
+        # Get user context for personalization
+        user_context = await _get_user_context(db, request.user_id)
+        print(f"👤 STORY: Retrieved user context", flush=True)
+
+        # Generate story using LLM
+        (
+            story_content,
+            title,
+            word_count,
+            estimated_reading_time,
+            model_used,
+            tokens_used,
+            cost,
+        ) = await _generate_story_llm(
+            request=request,
+            user_context=user_context,
+        )
+
+        if not story_content:
+            return StoryErrorResponse(error="Failed to generate story. Please try again.")
+
+        print(f"🤖 STORY: Generated story: {title}", flush=True)
+
+        # Save story to database
+        story_id = await _save_story(
+            db=db,
+            user_id=request.user_id,
+            title=title,
+            content=story_content,
+            genre=request.genre,
+            story_length=request.story_length,
+            target_audience=request.target_audience,
+            word_count=word_count,
+            characters=request.characters,
+            session_id=request.session_id,
+            model_used=model_used,
+            tokens_used=tokens_used,
+            cost=cost,
+            dust_cost=dust_cost,
+            setting=request.setting,
+            theme=request.theme,
+            custom_prompt=request.custom_prompt,
+        )
+
+        # Consume DUST after successful generation and saving
+        dust_consumed = await _consume_dust(request.user_id, dust_cost, auth_token, db)
+        if not dust_consumed:
+            print(f"❌ STORY: Failed to consume DUST for user {request.user_id}", flush=True)
+            return StoryErrorResponse(error="Payment processing failed")
+
+        new_balance = user_balance - dust_cost
+        print(
+            f"💰 STORY: Consumed {dust_cost} DUST from user {request.user_id}",
+            flush=True,
+        )
+
+        # Build response
+        story = UserStoryNew(
+            id=story_id,
+            title=title,
+            content=story_content,
+            genre=request.genre,
+            story_length=request.story_length,
+            target_audience=request.target_audience,
+            word_count=word_count,
+            estimated_reading_time=estimated_reading_time,
+            created_at=datetime.utcnow(),
+            is_favorited=False,
+            metadata={
+                "characters": [char.dict() for char in request.characters],
+                "setting": request.setting,
+                "theme": request.theme,
+                "custom_prompt": request.custom_prompt,
+                "dust_cost": dust_cost,
+            },
+        )
+
+        return StoryGenerationResponseNew(
+            story=story,
+            model_used=model_used,
+            tokens_used=TokenUsage(
+                prompt=tokens_used.get("prompt", 0),
+                completion=tokens_used.get("completion", 0),
+                total=tokens_used.get("total", 0),
+            ),
+            cost=cost,
+            new_dust_balance=new_balance,
+        )
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"❌ STORY: Unexpected error: {str(e)}", flush=True)
+        print(f"❌ STORY: Error type: {type(e).__name__}", flush=True)
+        return StoryErrorResponse(error="Internal server error during story generation")
+
+
+@router.get("/users/{user_id}/stories")
+async def get_user_stories(
+    user_id: uuid.UUID,
+    current_user: TokenData = Depends(get_current_user),
+    db: Database = Depends(get_db),
+    limit: int = Query(50, ge=1, le=100, description="Number of results to return"),
+    offset: int = Query(0, ge=0, description="Pagination offset"),
+    genre: Optional[StoryGenre] = Query(None, description="Filter by genre"),
+    story_length: Optional[StoryLength] = Query(None, description="Filter by story length"),
+    target_audience: Optional[TargetAudience] = Query(
+        None, description="Filter by target audience"
+    ),
+    favorites_only: bool = Query(False, description="Return only favorited stories"),
+    search: Optional[str] = Query(None, description="Search in story title and content"),
+):
+    """
+    Retrieve all saved stories for a user, sorted by favorites first, then creation date descending.
+    """
+    print(f"📋 STORY: Getting stories for user {user_id}", flush=True)
+
+    # Verify user can only access their own stories
+    if current_user.user_id != str(user_id):
+        print(
+            f"🚨 STORY: User {current_user.user_id} attempted to access stories for different user {user_id}",
+            flush=True,
+        )
+        return StoryErrorResponse(error="Can only access your own stories")
+
+    try:
+        # Build query with filters
+        base_query = """
+            SELECT id, title, content, genre, story_length, target_audience, 
+                   word_count, is_favorited, created_at, metadata
+            FROM user_stories
+            WHERE user_id = $1
+        """
+        params = [user_id]
+        param_count = 1
+
+        if genre:
+            param_count += 1
+            base_query += f" AND genre = ${param_count}"
+            params.append(genre.value)
+
+        if story_length:
+            param_count += 1
+            base_query += f" AND story_length = ${param_count}"
+            params.append(story_length.value)
+
+        if target_audience:
+            param_count += 1
+            base_query += f" AND target_audience = ${param_count}"
+            params.append(target_audience.value)
+
+        if favorites_only:
+            base_query += " AND is_favorited = TRUE"
+
+        if search:
+            param_count += 1
+            base_query += f" AND (title ILIKE ${param_count} OR content ILIKE ${param_count})"
+            search_pattern = f"%{search}%"
+            params.append(search_pattern)
+
+        # Order by favorites first, then creation date descending
+        base_query += " ORDER BY is_favorited DESC, created_at DESC"
+
+        # Add pagination
+        param_count += 1
+        base_query += f" LIMIT ${param_count}"
+        params.append(limit)
+
+        param_count += 1
+        base_query += f" OFFSET ${param_count}"
+        params.append(offset)
+
+        # Execute query
+        rows = await db.fetch_all(base_query, *params)
+
+        # Get total counts
+        count_query = """
+            SELECT 
+                COUNT(*) as total_count,
+                COUNT(*) FILTER (WHERE is_favorited = TRUE) as favorites_count
+            FROM user_stories
+            WHERE user_id = $1
+        """
+        count_params = [user_id]
+
+        if genre:
+            count_query += " AND genre = $2"
+            count_params.append(genre.value)
+
+        if story_length:
+            param_idx = len(count_params) + 1
+            count_query += f" AND story_length = ${param_idx}"
+            count_params.append(story_length.value)
+
+        if target_audience:
+            param_idx = len(count_params) + 1
+            count_query += f" AND target_audience = ${param_idx}"
+            count_params.append(target_audience.value)
+
+        if search:
+            param_idx = len(count_params) + 1
+            count_query += f" AND (title ILIKE ${param_idx} OR content ILIKE ${param_idx})"
+            count_params.append(search_pattern)
+
+        count_result = await db.fetch_one(count_query, *count_params)
+        total_count = count_result["total_count"] if count_result else 0
+        favorites_count = count_result["favorites_count"] if count_result else 0
+
+        # Build response
+        stories = []
+        for row in rows:
+            estimated_reading_time = _calculate_reading_time(row["word_count"] or 0)
+            story = UserStoryNew(
+                id=row["id"],
+                title=row["title"],
+                content=row["content"],
+                genre=StoryGenre(row["genre"]),
+                story_length=StoryLength(row["story_length"]),
+                target_audience=TargetAudience(row["target_audience"] or "family"),
+                word_count=row["word_count"] or 0,
+                estimated_reading_time=estimated_reading_time,
+                created_at=row["created_at"],
+                is_favorited=row["is_favorited"],
+                metadata=row["metadata"] or {},
+            )
+            stories.append(story)
+
+        print(f"✅ STORY: Returning {len(stories)} stories", flush=True)
+
+        return StoriesListResponse(
+            stories=stories,
+            total_count=total_count,
+            favorites_count=favorites_count,
+        )
+
+    except Exception as e:
+        print(f"❌ STORY: Error getting stories: {str(e)}", flush=True)
+        return StoryErrorResponse(error="Failed to retrieve stories")
+
+
+@router.post("/users/{user_id}/stories/{story_id}/favorite")
+async def toggle_story_favorite(
+    user_id: uuid.UUID,
+    story_id: uuid.UUID,
+    request: StoryFavoriteRequest,
+    current_user: TokenData = Depends(get_current_user),
+    db: Database = Depends(get_db),
+):
+    """
+    Toggle the favorite status of a saved story.
+    """
+    print(
+        f"⭐ STORY: Toggling favorite for story {story_id} to {request.is_favorited}",
+        flush=True,
+    )
+
+    # Verify user can only modify their own stories
+    if current_user.user_id != str(user_id):
+        print(
+            f"🚨 STORY: User {current_user.user_id} attempted to modify story for different user {user_id}",
+            flush=True,
+        )
+        return StoryErrorResponse(error="Can only modify your own stories")
+
+    try:
+        # Update favorite status
+        update_query = """
+            UPDATE user_stories 
+            SET is_favorited = $1, updated_at = CURRENT_TIMESTAMP
+            WHERE id = $2 AND user_id = $3
+            RETURNING id, title, content, genre, story_length, target_audience, 
+                      word_count, is_favorited, created_at, metadata
+        """
+
+        result = await db.fetch_one(update_query, request.is_favorited, story_id, user_id)
+
+        if not result:
+            return StoryErrorResponse(error="Story not found", story_id=story_id)
+
+        estimated_reading_time = _calculate_reading_time(result["word_count"] or 0)
+        story = UserStoryNew(
+            id=result["id"],
+            title=result["title"],
+            content=result["content"],
+            genre=StoryGenre(result["genre"]),
+            story_length=StoryLength(result["story_length"]),
+            target_audience=TargetAudience(result["target_audience"] or "family"),
+            word_count=result["word_count"] or 0,
+            estimated_reading_time=estimated_reading_time,
+            created_at=result["created_at"],
+            is_favorited=result["is_favorited"],
+            metadata=result["metadata"] or {},
+        )
+
+        print(f"✅ STORY: Updated favorite status for story {story_id}", flush=True)
+
+        return StoryFavoriteResponse(story=story)
+
+    except Exception as e:
+        print(f"❌ STORY: Error updating favorite: {str(e)}", flush=True)
+        return StoryErrorResponse(error="Failed to update favorite status")
+
+
+@router.delete("/users/{user_id}/stories/{story_id}")
+async def delete_story(
+    user_id: uuid.UUID,
+    story_id: uuid.UUID,
+    current_user: TokenData = Depends(get_current_user),
+    db: Database = Depends(get_db),
+):
+    """
+    Remove a saved story from user's collection.
+    """
+    print(f"🗑️ STORY: Deleting story {story_id}", flush=True)
+
+    # Verify user can only delete their own stories
+    if current_user.user_id != str(user_id):
+        print(
+            f"🚨 STORY: User {current_user.user_id} attempted to delete story for different user {user_id}",
+            flush=True,
+        )
+        return StoryErrorResponse(error="Can only delete your own stories")
+
+    try:
+        # Delete story
+        delete_query = """
+            DELETE FROM user_stories 
+            WHERE id = $1 AND user_id = $2
+        """
+
+        result = await db.execute(delete_query, story_id, user_id)
+
+        # Check if any rows were affected
+        if "DELETE 0" in result:
+            return StoryErrorResponse(error="Story not found", story_id=story_id)
+
+        print(f"✅ STORY: Deleted story {story_id}", flush=True)
+
+        return StoryDeleteResponse()
+
+    except Exception as e:
+        print(f"❌ STORY: Error deleting story: {str(e)}", flush=True)
+        return StoryErrorResponse(error="Failed to delete story")
+
+
+@router.get("/apps/story/config")
+async def get_story_config():
+    """
+    Get available genres, story lengths, and DUST costs.
+    """
+    print(f"⚙️ STORY: Getting story configuration", flush=True)
+
+    try:
+        config = {
+            "genres": [genre.value for genre in StoryGenre],
+            "story_lengths": [
+                {
+                    "label": "Short",
+                    "value": "short",
+                    "words": "300-500",
+                    "dust": STORY_DUST_COSTS[StoryLength.SHORT],
+                },
+                {
+                    "label": "Medium",
+                    "value": "medium",
+                    "words": "600-1000",
+                    "dust": STORY_DUST_COSTS[StoryLength.MEDIUM],
+                },
+                {
+                    "label": "Long",
+                    "value": "long",
+                    "words": "1000-1500",
+                    "dust": STORY_DUST_COSTS[StoryLength.LONG],
+                },
+            ],
+            "target_audiences": [audience.value for audience in TargetAudience],
+            "character_relationships": [
+                "protagonist",
+                "daughter",
+                "son",
+                "spouse",
+                "parent",
+                "sibling",
+                "friend",
+                "pet",
+                "grandparent",
+                "cousin",
+                "teacher",
+                "neighbor",
+            ],
+            "age_ranges": ["child", "teen", "adult", "senior"],
+            "common_traits": [
+                "brave",
+                "curious",
+                "kind",
+                "funny",
+                "creative",
+                "smart",
+                "athletic",
+                "musical",
+                "artistic",
+                "adventurous",
+                "gentle",
+                "energetic",
+            ],
+        }
+
+        print(f"✅ STORY: Returning story configuration", flush=True)
+        return StoryConfigResponse(config=config)
+
+    except Exception as e:
+        print(f"❌ STORY: Error getting config: {str(e)}", flush=True)
+        return StoryErrorResponse(error="Failed to retrieve story configuration")
+
+
+# Helper functions
+async def _get_user_balance(user_id: uuid.UUID, auth_token: str) -> int:
+    """Get user's current DUST balance via Ledger Service"""
+    print(f"🔍 STORY_BALANCE: Checking DUST balance for user {user_id}", flush=True)
+    try:
+        async with httpx.AsyncClient() as client:
+            response = await client.get(
+                f"https://fairydust-ledger-production.up.railway.app/balance/{user_id}",
+                headers={"Authorization": auth_token},
+                timeout=10.0,
+            )
+
+            if response.status_code == 200:
+                balance_data = response.json()
+                balance = balance_data.get("balance", 0)
+                print(f"✅ STORY_BALANCE: User {user_id} has {balance} DUST", flush=True)
+                return balance
+            else:
+                print(f"❌ STORY_BALANCE: Ledger service error: {response.text}", flush=True)
+                return 0
+    except Exception as e:
+        print(f"❌ STORY_BALANCE: Exception getting balance: {str(e)}", flush=True)
+        return 0
+
+
+async def _get_app_id(db: Database) -> str:
+    """Get the UUID for the fairydust-story app"""
+    result = await db.fetch_one("SELECT id FROM apps WHERE slug = $1", "fairydust-story")
+    if not result:
+        raise HTTPException(
+            status_code=500,
+            detail="fairydust-story app not found in database. Please create the app first.",
+        )
+    return str(result["id"])
+
+
+async def _consume_dust(user_id: uuid.UUID, amount: int, auth_token: str, db: Database) -> bool:
+    """Consume DUST for story generation via Ledger Service"""
+    print(f"🔍 STORY_DUST: Attempting to consume {amount} DUST for user {user_id}", flush=True)
+    try:
+        # Get the proper app UUID
+        app_id = await _get_app_id(db)
+
+        # Generate idempotency key to prevent double-charging
+        idempotency_key = f"story_gen_{str(user_id).replace('-', '')[:16]}_{int(time.time())}"
+
+        async with httpx.AsyncClient() as client:
+            payload = {
+                "user_id": str(user_id),
+                "amount": amount,
+                "app_id": app_id,
+                "action": "story_generation",
+                "idempotency_key": idempotency_key,
+                "metadata": {"service": "content", "feature": "story_generation"},
+            }
+
+            response = await client.post(
+                "https://fairydust-ledger-production.up.railway.app/transactions/consume",
+                json=payload,
+                headers={"Authorization": auth_token},
+                timeout=10.0,
+            )
+
+            if response.status_code != 200:
+                response_text = response.text
+                print(f"❌ STORY_DUST: Error response: {response_text}", flush=True)
+                return False
+
+            print("✅ STORY_DUST: DUST consumption successful", flush=True)
+            return True
+    except Exception as e:
+        print(f"❌ STORY_DUST: Exception consuming DUST: {str(e)}", flush=True)
         return False
 
 
-async def get_llm_model_config() -> dict:
-    """Get LLM configuration for story generation (with caching)"""
+async def _check_rate_limit(db: Database, user_id: uuid.UUID) -> bool:
+    """Check if user has exceeded rate limit for story generation"""
+    try:
+        # Count generations in the last hour
+        query = """
+            SELECT COUNT(*) as generation_count
+            FROM user_stories
+            WHERE user_id = $1 
+            AND created_at > NOW() - INTERVAL '1 hour'
+        """
+
+        result = await db.fetch_one(query, user_id)
+        generation_count = result["generation_count"] if result else 0
+
+        if generation_count >= STORY_RATE_LIMIT:
+            print(
+                f"⚠️ STORY_RATE_LIMIT: User {user_id} exceeded rate limit: {generation_count}/{STORY_RATE_LIMIT}",
+                flush=True,
+            )
+            return True
+
+        print(
+            f"✅ STORY_RATE_LIMIT: User {user_id} within limit: {generation_count}/{STORY_RATE_LIMIT}",
+            flush=True,
+        )
+        return False
+
+    except Exception as e:
+        print(f"❌ STORY_RATE_LIMIT: Error checking rate limit: {str(e)}", flush=True)
+        # Default to allowing if we can't check (fail open)
+        return False
+
+
+async def _get_user_context(db: Database, user_id: uuid.UUID) -> str:
+    """Get user context for personalization"""
+    try:
+        # Get user profile data
+        profile_query = """
+            SELECT field_name, field_value 
+            FROM user_profile_data 
+            WHERE user_id = $1
+        """
+
+        profile_rows = await db.fetch_all(profile_query, user_id)
+
+        # Get people in my life
+        people_query = """
+            SELECT name, relationship, age_range
+            FROM people_in_my_life 
+            WHERE user_id = $1
+        """
+
+        people_rows = await db.fetch_all(people_query, user_id)
+
+        # Build context string
+        context_parts = []
+
+        if profile_rows:
+            interests = []
+            for row in profile_rows:
+                if row["field_name"] == "interests":
+                    field_value = row["field_value"]
+                    if isinstance(field_value, str):
+                        interests.extend(field_value.split(","))
+                    elif isinstance(field_value, list):
+                        interests.extend(field_value)
+
+            if interests:
+                context_parts.append(f"Interests: {', '.join(interests[:5])}")
+
+        if people_rows:
+            people_list = []
+            for row in people_rows:
+                person_desc = f"{row['name']} ({row['relationship']}"
+                if row["age_range"]:
+                    person_desc += f", {row['age_range']}"
+                person_desc += ")"
+                people_list.append(person_desc)
+
+            if people_list:
+                context_parts.append(f"People: {', '.join(people_list[:3])}")
+
+        return "; ".join(context_parts) if context_parts else "general user"
+
+    except Exception as e:
+        print(f"⚠️ STORY_CONTEXT: Error getting user context: {str(e)}", flush=True)
+        return "general user"
+
+
+async def _get_llm_model_config() -> dict:
+    """Get LLM configuration for story app (with caching)"""
     from shared.app_config_cache import get_app_config_cache
 
     app_id = "fairydust-story"
@@ -112,147 +708,84 @@ async def get_llm_model_config() -> dict:
     return default_config
 
 
-async def log_llm_usage(
-    user_id: UUID, model_info: dict, tokens_used: int, cost: float, latency_ms: int
-):
-    """Log LLM usage to Apps Service"""
-    # TODO: Replace with actual Apps Service call
-    # POST /llm/usage
-    pass
+def _calculate_reading_time(word_count: int) -> str:
+    """Calculate estimated reading time based on word count"""
+    # Average reading speed: 200 words per minute
+    minutes = max(1, round(word_count / 200))
+    if minutes == 1:
+        return "1 minute"
+    elif minutes <= 5:
+        return f"{minutes} minutes"
+    else:
+        return f"{minutes} minutes"
 
 
-def build_story_prompt(request: StoryGenerationRequest) -> str:
+def _build_story_prompt(request: StoryGenerationRequest, user_context: str) -> str:
     """Build the LLM prompt for story generation"""
     min_words, max_words = WORD_COUNT_TARGETS[request.story_length]
+    target_words = (min_words + max_words) // 2
 
     # Build character descriptions
     character_descriptions = []
-    for char in request.characters:
-        desc = f"- {char.name} ({char.relationship}"
-        if char.age:
-            desc += f", age {char.age}"
-        desc += ")"
-        if char.traits:
-            desc += f": {', '.join(char.traits)}"
-        character_descriptions.append(desc)
+    if request.characters:
+        for char in request.characters:
+            desc = f"- {char.name} ({char.relationship}"
+            if char.age_range:
+                desc += f", {char.age_range}"
+            desc += ")"
+            if char.traits:
+                desc += f", traits: {', '.join(char.traits)}"
+            character_descriptions.append(desc)
 
-    character_list = "\n".join(character_descriptions)
+    character_text = (
+        f"Characters to include:\n{chr(10).join(character_descriptions)}"
+        if character_descriptions
+        else "No specific characters required - create original characters as needed."
+    )
 
     # Build prompt
-    prompt = f"""Generate a {request.story_length.value} {request.genre.value} story featuring the following characters:
+    prompt = f"""Generate a {request.genre.value} story that is {request.story_length.value} length (target: {target_words} words) for {request.target_audience.value} audience.
 
-{character_list}
-
-Story Requirements:
-- Length: {min_words}-{max_words} words approximately
-- Audience: {request.target_audience.value if request.target_audience else 'family'}
-- Genre: {request.genre.value}"""
+{character_text}"""
 
     if request.setting:
-        prompt += f"\n- Setting: {request.setting}"
+        prompt += f"\nSetting: {request.setting}"
 
     if request.theme:
-        prompt += f"\n- Theme: {request.theme}"
+        prompt += f"\nTheme: {request.theme}"
 
     if request.custom_prompt:
-        prompt += f"\n- Include: {request.custom_prompt}"
+        prompt += f"\nSpecial request: {request.custom_prompt}"
+
+    if user_context != "general user":
+        prompt += f"\nPersonalization context: {user_context}"
 
     prompt += f"""
 
-Guidelines:
-- Keep content appropriate for {request.target_audience.value if request.target_audience else 'family'} audience
-- Showcase each character's unique traits and personality
-- Create engaging dialogue and vivid descriptions
-- Include a clear beginning, middle, and end with a satisfying resolution
-- Make the story personal and meaningful to the characters
-- {GENRE_INSTRUCTIONS.get(request.genre, 'Create an engaging and appropriate story.')}
+Story requirements:
+- Target word count: {target_words} words
+- Genre: {request.genre.value}
+- Audience: {request.target_audience.value}
+- Include a clear title at the beginning
+- Make it engaging and age-appropriate
+- If characters are provided, make them central to the story
+- Include dialogue and vivid descriptions
+- Ensure the story has a satisfying conclusion
 
-Return the story with a compelling title in this format:
+Format the story with:
 TITLE: [Story Title]
 
-[Story content starts here...]
-"""
+[Story content with paragraphs, dialogue, and descriptions]"""
 
     return prompt
 
 
-async def call_llm_service(prompt: str, model_config: dict) -> tuple[str, dict]:
-    """Call the LLM service to generate story content"""
-    from shared.llm_pricing import calculate_llm_cost
-
-    start_time = time.time()
-
-    try:
-        # TODO: Replace with actual LLM service call
-        # This would use the model_config to call Anthropic/OpenAI APIs
-
-        # Mock response for development
-        mock_response = """TITLE: The Magical Adventure of Sarah and Dad
-
-Sarah bounced excitedly as she followed her dad through the enchanted forest. The eight-year-old's eyes sparkled with curiosity as she spotted a shimmering dragon hiding behind a massive oak tree.
-
-"Dad, look!" Sarah whispered, tugging on her father's sleeve. "That dragon looks sad."
-
-Her father, wise and protective as always, approached carefully. "Let's see what's wrong, little explorer," he said with his trademark gentle smile.
-
-The dragon lifted its head, revealing tears that sparkled like diamonds. "I've lost my way home," the creature explained in a voice like tinkling bells. "The magical paths have shifted, and I can't find my family."
-
-Sarah's brave heart immediately wanted to help. "We'll help you!" she declared, her love for animals shining through. "Right, Dad?"
-
-Her father nodded, understanding that this was a perfect opportunity to teach his daughter about kindness and courage. Together, they embarked on a wonderful journey through the magical forest, using Sarah's keen observation skills and her dad's wisdom to help their new friend find the way home.
-
-As the sun set, painting the sky in brilliant colors, they had successfully reunited the dragon with its family. The dragon family thanked them with a special gift - a small crystal that would always guide them when they needed help.
-
-Walking home hand in hand, Sarah looked up at her dad. "That was the best adventure ever!" she said.
-
-"And the best part," her father replied, "was sharing it with my brave, kind daughter."
-
-As they reached home, both Sarah and her dad knew they would treasure this magical day forever, knowing that the greatest adventures are the ones we share with the people we love most."""
-
-        # Extract title and content
-        lines = mock_response.strip().split("\n")
-        title = (
-            lines[0].replace("TITLE: ", "") if lines[0].startswith("TITLE: ") else "Generated Story"
-        )
-        content = "\n".join(lines[1:]).strip() if len(lines) > 1 else mock_response
-
-        # Calculate realistic token usage
-        prompt_tokens = len(prompt.split())
-        completion_tokens = len(content.split())
-        total_tokens = prompt_tokens + completion_tokens
-        generation_time = int((time.time() - start_time) * 1000)
-
-        # Calculate real cost using centralized pricing
-        provider = model_config.get("primary_provider", "anthropic")
-        model_id = model_config.get("primary_model_id", "claude-3-5-sonnet-20241022")
-        calculated_cost = calculate_llm_cost(
-            provider=provider,
-            model_id=model_id,
-            input_tokens=prompt_tokens,
-            output_tokens=completion_tokens,
-        )
-
-        generation_metadata = {
-            "model_used": model_id,
-            "tokens_used": total_tokens,
-            "prompt_tokens": prompt_tokens,
-            "completion_tokens": completion_tokens,
-            "generation_time_ms": generation_time,
-            "cost_usd": calculated_cost,
-        }
-
-        return title + "\n\n" + content, generation_metadata
-
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Story generation failed: {str(e)}")
-
-
-def count_words(text: str) -> int:
+def _count_words(text: str) -> int:
     """Count words in text"""
     return len(re.findall(r"\b\w+\b", text))
 
 
-def extract_title_and_content(generated_text: str) -> tuple[str, str]:
+def _extract_title_and_content(generated_text: str) -> tuple[str, str]:
     """Extract title and content from generated text"""
     lines = generated_text.strip().split("\n")
 
@@ -268,482 +801,166 @@ def extract_title_and_content(generated_text: str) -> tuple[str, str]:
     return title, content
 
 
-async def log_story_generation(
-    db: Database,
-    user_id: UUID,
-    story_id: Optional[UUID],
-    prompt: str,
-    model_info: dict,
-    success: bool,
-    error_message: Optional[str] = None,
-):
-    """Log story generation attempt"""
-    log_id = uuid4()
-    await db.execute(
-        """
-        INSERT INTO story_generation_logs (
-            id, user_id, story_id, generation_prompt, llm_model,
-            tokens_used, generation_time_ms, success, error_message
-        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
-    """,
-        log_id,
-        user_id,
-        story_id,
-        prompt,
-        model_info.get("model_used"),
-        model_info.get("tokens_used"),
-        model_info.get("generation_time_ms"),
-        success,
-        error_message,
-    )
-
-
-# Note: parse_story_data now imported from shared.json_utils
-
-# API Endpoints
-
-
-@router.post("/users/{user_id}/stories/generate", response_model=StoryGenerationResponse)
-async def generate_story(
-    user_id: UUID,
+async def _generate_story_llm(
     request: StoryGenerationRequest,
-    background_tasks: BackgroundTasks,
-    current_user: TokenData = Depends(get_current_user),
-    db: Database = Depends(get_db),
-):
-    """Generate a new personalized story"""
-    print(
-        f"🚀 STORY_GENERATE: Starting story generation for user {user_id}, genre={request.genre.value}, length={request.story_length.value}",
-        flush=True,
-    )
-
-    # Verify user can only generate stories for themselves
-    if current_user.user_id != str(user_id):
-        print(
-            f"🚨 STORY_GENERATE: User {current_user.user_id} attempted to generate story for different user {user_id}",
-            flush=True,
-        )
-        raise HTTPException(status_code=403, detail="Can only generate stories for yourself")
-
-    # Check rate limits
-    print(f"🔍 STORY_GENERATE: Checking rate limits for user {user_id}", flush=True)
-    await check_story_generation_rate_limit(user_id)
-    print(f"✅ STORY_GENERATE: Rate limit check passed for user {user_id}", flush=True)
-
-    # Validate content safety
-    print(f"🔍 STORY_GENERATE: Validating content safety for user {user_id}", flush=True)
-    is_safe, safety_issues = content_safety_filter.validate_request(request)
-    if not is_safe:
-        print(
-            f"🚨 STORY_GENERATE: Content safety failed for user {user_id}: {safety_issues}",
-            flush=True,
-        )
-        raise HTTPException(
-            status_code=400, detail=f"Content safety validation failed: {'; '.join(safety_issues)}"
-        )
-    print(f"✅ STORY_GENERATE: Content safety validation passed for user {user_id}", flush=True)
-
-    # Check DUST cost and balance
-    dust_cost = DUST_COSTS[request.story_length]
-    print(
-        f"🔍 STORY_GENERATE: Checking DUST balance for user {user_id}, cost={dust_cost}", flush=True
-    )
-    user_balance = await get_user_dust_balance(user_id)
-
-    if user_balance < dust_cost:
-        print(
-            f"💰 STORY_GENERATE: Insufficient DUST for user {user_id}: need {dust_cost}, have {user_balance}",
-            flush=True,
-        )
-        raise HTTPException(
-            status_code=402,
-            detail=f"Insufficient DUST balance. Need {dust_cost}, have {user_balance}",
-        )
-    print(
-        f"💰 STORY_GENERATE: DUST balance check passed for user {user_id}: {user_balance} >= {dust_cost}",
-        flush=True,
-    )
-
-    # Get LLM configuration
-    model_config = await get_llm_model_config()
-
-    # Build prompt
-    prompt = build_story_prompt(request)
-
-    # Generate story
+    user_context: str,
+) -> tuple[Optional[str], str, int, str, str, dict, float]:
+    """Generate story using LLM"""
     try:
-        print(f"🤖 STORY_GENERATE: Calling LLM service for user {user_id}", flush=True)
-        generated_text, generation_metadata = await call_llm_service(prompt, model_config)
-        title, content = extract_title_and_content(generated_text)
-        print(
-            f"✅ STORY_GENERATE: LLM generation completed for user {user_id}, tokens={generation_metadata.get('tokens_used')}",
-            flush=True,
-        )
+        # Get LLM model configuration from database/cache
+        model_config = await _get_llm_model_config()
 
-        # Filter generated content for safety
-        filtered_content, content_warnings = content_safety_filter.filter_generated_content(
-            content, request.target_audience or TargetAudience.FAMILY
-        )
+        provider = model_config.get("primary_provider", "anthropic")
+        model_id = model_config.get("primary_model_id", "claude-3-5-sonnet-20241022")
+        parameters = model_config.get("primary_parameters", {})
 
-        # Use filtered content
-        content = filtered_content
-        word_count = count_words(content)
+        temperature = parameters.get("temperature", 0.8)
+        max_tokens = parameters.get("max_tokens", 2000)
+        top_p = parameters.get("top_p", 0.9)
 
-        # Log content warnings if any
-        if content_warnings:
-            print(
-                f"⚠️ STORY_GENERATE: Content warnings for user {user_id}: {content_warnings}",
-                flush=True,
-            )
+        # Build prompt
+        prompt = _build_story_prompt(request, user_context)
 
-        # Consume DUST
-        dust_consumed = await consume_dust(
-            user_id,
-            dust_cost,
-            f"Generated {request.story_length.value} {request.genre.value} story",
-            {
-                "story_genre": request.genre.value,
-                "story_length": request.story_length.value,
-                "characters_count": len(request.characters),
-            },
-        )
+        print(f"🤖 STORY_LLM: Generating with {provider} model {model_id}", flush=True)
 
-        if not dust_consumed:
-            raise HTTPException(status_code=500, detail="Failed to process DUST payment")
+        # Make API call based on provider
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            if provider == "anthropic":
+                response = await client.post(
+                    "https://api.anthropic.com/v1/messages",
+                    headers={
+                        "Content-Type": "application/json",
+                        "x-api-key": os.getenv("ANTHROPIC_API_KEY", ""),
+                        "anthropic-version": "2023-06-01",
+                    },
+                    json={
+                        "model": model_id,
+                        "max_tokens": max_tokens,
+                        "temperature": temperature,
+                        "top_p": top_p,
+                        "messages": [{"role": "user", "content": prompt}],
+                    },
+                )
 
-        # Save story to database
-        story_id = uuid4()
-        print(
-            f"💾 STORY_GENERATE: Saving story to database for user {user_id}, story_id={story_id}",
-            flush=True,
-        )
-        await db.execute(
-            """
+                if response.status_code == 200:
+                    result = response.json()
+                    generated_text = result["content"][0]["text"].strip()
+
+                    # Extract title and content
+                    title, content = _extract_title_and_content(generated_text)
+                    word_count = _count_words(content)
+                    estimated_reading_time = _calculate_reading_time(word_count)
+
+                    # Calculate tokens and cost
+                    usage = result.get("usage", {})
+                    prompt_tokens = usage.get("input_tokens", 0)
+                    completion_tokens = usage.get("output_tokens", 0)
+                    total_tokens = prompt_tokens + completion_tokens
+
+                    tokens_used = {
+                        "prompt": prompt_tokens,
+                        "completion": completion_tokens,
+                        "total": total_tokens,
+                    }
+
+                    cost = calculate_llm_cost(
+                        "anthropic", model_id, prompt_tokens, completion_tokens
+                    )
+
+                    print(f"✅ STORY_LLM: Generated story successfully", flush=True)
+                    return (
+                        content,
+                        title,
+                        word_count,
+                        estimated_reading_time,
+                        model_id,
+                        tokens_used,
+                        cost,
+                    )
+
+                else:
+                    print(
+                        f"❌ STORY_LLM: Anthropic API error {response.status_code}: {response.text}",
+                        flush=True,
+                    )
+                    return None, "", 0, "", model_id, {}, 0.0
+
+            else:
+                print(
+                    f"⚠️ STORY_LLM: Unsupported provider {provider}, falling back to Anthropic",
+                    flush=True,
+                )
+                # Fallback to Anthropic with default model
+                return await _generate_story_llm(request, user_context)
+
+    except Exception as e:
+        print(f"❌ STORY_LLM: Error generating story: {str(e)}", flush=True)
+        return None, "", 0, "", "claude-3-5-sonnet-20241022", {}, 0.0
+
+
+async def _save_story(
+    db: Database,
+    user_id: uuid.UUID,
+    title: str,
+    content: str,
+    genre: StoryGenre,
+    story_length: StoryLength,
+    target_audience: TargetAudience,
+    word_count: int,
+    characters: list,
+    session_id: Optional[uuid.UUID],
+    model_used: str,
+    tokens_used: dict,
+    cost: float,
+    dust_cost: int,
+    setting: Optional[str],
+    theme: Optional[str],
+    custom_prompt: Optional[str],
+) -> uuid.UUID:
+    """Save story to database"""
+    try:
+        story_id = uuid.uuid4()
+
+        metadata = {
+            "characters": [char.dict() for char in characters],
+            "setting": setting,
+            "theme": theme,
+            "custom_prompt": custom_prompt,
+            "session_id": str(session_id) if session_id else None,
+            "model_used": model_used,
+            "tokens_used": tokens_used.get("total", 0),
+            "cost_usd": cost,
+            "dust_cost": dust_cost,
+        }
+
+        insert_query = """
             INSERT INTO user_stories (
-                id, user_id, title, content, genre, story_length,
-                characters_involved, metadata, dust_cost, word_count
-            ) VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb, $8::jsonb, $9, $10)
-        """,
+                id, user_id, title, content, genre, story_length, target_audience,
+                characters_involved, metadata, dust_cost, word_count, 
+                created_at, updated_at
+            )
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8::jsonb, $9::jsonb, $10, $11, 
+                    CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+        """
+
+        await db.execute(
+            insert_query,
             story_id,
             user_id,
             title,
             content,
-            request.genre.value,
-            request.story_length.value,
-            safe_json_dumps([char.dict() for char in request.characters]),
-            safe_json_dumps(
-                {
-                    "setting": request.setting,
-                    "theme": request.theme,
-                    "custom_prompt": request.custom_prompt,
-                    "target_audience": request.target_audience.value
-                    if request.target_audience
-                    else "family",
-                }
-            ),
+            genre.value,
+            story_length.value,
+            target_audience.value,
+            json.dumps([char.dict() for char in characters]),
+            json.dumps(metadata),
             dust_cost,
             word_count,
         )
-        print(
-            f"✅ STORY_GENERATE: Story saved successfully for user {user_id}, story_id={story_id}, word_count={word_count}",
-            flush=True,
-        )
 
-        # Log generation success
-        await log_story_generation(db, user_id, story_id, prompt, generation_metadata, True)
+        print(f"✅ STORY_SAVE: Saved story {story_id}", flush=True)
+        return story_id
 
-        # Log LLM usage in background
-        background_tasks.add_task(
-            log_llm_usage,
-            user_id,
-            generation_metadata,
-            generation_metadata["tokens_used"],
-            generation_metadata.get("cost_usd", 0),
-            generation_metadata["generation_time_ms"],
-        )
-
-        # Fetch the created story
-        story_data = await db.fetch_one("SELECT * FROM user_stories WHERE id = $1", story_id)
-        story_dict = parse_story_data(story_data)
-
-        story = UserStory(**story_dict)
-
-        print(
-            f"🎉 STORY_GENERATE: Story generation completed successfully for user {user_id}, story_id={story_id}",
-            flush=True,
-        )
-        return StoryGenerationResponse(
-            story=story, generation_metadata=StoryGenerationMetadata(**generation_metadata)
-        )
-
-    except HTTPException:
-        raise
     except Exception as e:
-        print(f"❌ STORY_GENERATE: Story generation failed for user {user_id}: {str(e)}", flush=True)
-        import traceback
-
-        print(f"❌ STORY_GENERATE: Traceback: {traceback.format_exc()}", flush=True)
-        # Log generation failure
-        await log_story_generation(db, user_id, None, prompt, model_config, False, str(e))
-        raise HTTPException(status_code=500, detail=f"Story generation failed: {str(e)}")
-
-
-@router.get("/users/{user_id}/stories", response_model=StoriesResponse)
-async def get_user_stories(
-    user_id: UUID,
-    limit: int = Query(20, ge=1, le=100),
-    offset: int = Query(0, ge=0),
-    genre: Optional[StoryGenre] = Query(None),
-    favorited_only: bool = Query(False),
-    sort: str = Query("created_at_desc", pattern="^(created_at_desc|created_at_asc|title_asc)$"),
-    current_user: TokenData = Depends(get_current_user),
-    db: Database = Depends(get_db),
-):
-    """Get paginated list of user's stories"""
-    # Check rate limits
-    await check_api_rate_limit_only(user_id)
-
-    # Verify user can only access their own stories
-    if current_user.user_id != str(user_id):
-        raise HTTPException(status_code=403, detail="Can only access your own stories")
-
-    # Build query conditions
-    conditions = ["user_id = $1"]
-    params = [user_id]
-    param_count = 2
-
-    if genre:
-        conditions.append(f"genre = ${param_count}")
-        params.append(genre.value)
-        param_count += 1
-
-    if favorited_only:
-        conditions.append(f"is_favorited = ${param_count}")
-        params.append(True)
-        param_count += 1
-
-    where_clause = " AND ".join(conditions)
-
-    # Build sort clause
-    sort_mapping = {
-        "created_at_desc": "created_at DESC",
-        "created_at_asc": "created_at ASC",
-        "title_asc": "title ASC",
-    }
-    order_clause = sort_mapping[sort]
-
-    # Get total count
-    count_result = await db.fetch_one(
-        f"""
-        SELECT COUNT(*) as total FROM user_stories WHERE {where_clause}
-    """,
-        *params,
-    )
-    total_count = count_result["total"]
-
-    # Get stories
-    stories_data = await db.fetch_all(
-        f"""
-        SELECT * FROM user_stories
-        WHERE {where_clause}
-        ORDER BY {order_clause}
-        LIMIT ${param_count} OFFSET ${param_count + 1}
-    """,
-        *params,
-        limit,
-        offset,
-    )
-
-    stories = []
-    for story_data in stories_data:
-        story_dict = parse_story_data(story_data)
-        stories.append(UserStory(**story_dict))
-
-    has_more = (offset + limit) < total_count
-
-    return StoriesResponse(stories=stories, total_count=total_count, has_more=has_more)
-
-
-@router.get("/users/{user_id}/stories/{story_id}", response_model=UserStory)
-async def get_story(
-    user_id: UUID,
-    story_id: UUID,
-    current_user: TokenData = Depends(get_current_user),
-    db: Database = Depends(get_db),
-):
-    """Get a specific story"""
-    # Check rate limits
-    await check_api_rate_limit_only(user_id)
-
-    # Verify user can only access their own stories
-    if current_user.user_id != str(user_id):
-        raise HTTPException(status_code=403, detail="Can only access your own stories")
-
-    story_data = await db.fetch_one(
-        """
-        SELECT * FROM user_stories
-        WHERE id = $1 AND user_id = $2
-    """,
-        story_id,
-        user_id,
-    )
-
-    if not story_data:
-        raise HTTPException(status_code=404, detail="Story not found")
-
-    story_dict = parse_story_data(story_data)
-    return UserStory(**story_dict)
-
-
-@router.put("/users/{user_id}/stories/{story_id}/favorite")
-async def toggle_story_favorite(
-    user_id: UUID,
-    story_id: UUID,
-    request: StoryFavoriteRequest,
-    current_user: TokenData = Depends(get_current_user),
-    db: Database = Depends(get_db),
-):
-    """Toggle story favorite status"""
-    # Check rate limits
-    await check_api_rate_limit_only(user_id)
-
-    # Verify user can only modify their own stories
-    if current_user.user_id != str(user_id):
-        raise HTTPException(status_code=403, detail="Can only modify your own stories")
-
-    # Verify story exists and belongs to user
-    story = await db.fetch_one(
-        """
-        SELECT id FROM user_stories
-        WHERE id = $1 AND user_id = $2
-    """,
-        story_id,
-        user_id,
-    )
-
-    if not story:
-        raise HTTPException(status_code=404, detail="Story not found")
-
-    # Update favorite status
-    await db.execute(
-        """
-        UPDATE user_stories
-        SET is_favorited = $1, updated_at = CURRENT_TIMESTAMP
-        WHERE id = $2 AND user_id = $3
-    """,
-        request.is_favorited,
-        story_id,
-        user_id,
-    )
-
-    return {"success": True, "is_favorited": request.is_favorited}
-
-
-@router.delete("/users/{user_id}/stories/{story_id}")
-async def delete_story(
-    user_id: UUID,
-    story_id: UUID,
-    current_user: TokenData = Depends(get_current_user),
-    db: Database = Depends(get_db),
-):
-    """Delete a story"""
-    # Check rate limits
-    await check_api_rate_limit_only(user_id)
-
-    # Verify user can only delete their own stories
-    if current_user.user_id != str(user_id):
-        raise HTTPException(status_code=403, detail="Can only delete your own stories")
-
-    # Verify story exists and belongs to user
-    story = await db.fetch_one(
-        """
-        SELECT id FROM user_stories
-        WHERE id = $1 AND user_id = $2
-    """,
-        story_id,
-        user_id,
-    )
-
-    if not story:
-        raise HTTPException(status_code=404, detail="Story not found")
-
-    # Delete story (this will also delete related generation logs due to CASCADE)
-    await db.execute(
-        """
-        DELETE FROM user_stories
-        WHERE id = $1 AND user_id = $2
-    """,
-        story_id,
-        user_id,
-    )
-
-    return {"success": True, "message": "Story deleted successfully"}
-
-
-@router.get("/users/{user_id}/stories/stats", response_model=StoryStatistics)
-async def get_story_statistics(
-    user_id: UUID,
-    current_user: TokenData = Depends(get_current_user),
-    db: Database = Depends(get_db),
-):
-    """Get user's story statistics"""
-    # Check rate limits
-    await check_api_rate_limit_only(user_id)
-
-    # Verify user can only access their own stats
-    if current_user.user_id != str(user_id):
-        raise HTTPException(status_code=403, detail="Can only access your own statistics")
-
-    # Get basic stats
-    stats = await db.fetch_one(
-        """
-        SELECT
-            COUNT(*) as total_stories,
-            COUNT(*) FILTER (WHERE is_favorited = true) as favorite_stories,
-            COALESCE(SUM(word_count), 0) as total_words,
-            COALESCE(SUM(dust_cost), 0) as dust_spent
-        FROM user_stories
-        WHERE user_id = $1
-    """,
-        user_id,
-    )
-
-    # Get genre breakdown
-    genre_stats = await db.fetch_all(
-        """
-        SELECT genre, COUNT(*) as count
-        FROM user_stories
-        WHERE user_id = $1
-        GROUP BY genre
-        ORDER BY count DESC
-    """,
-        user_id,
-    )
-
-    genres_explored = [stat["genre"] for stat in genre_stats]
-    most_common_genre = genre_stats[0]["genre"] if genre_stats else None
-
-    # Get most common story length
-    length_stats = await db.fetch_one(
-        """
-        SELECT story_length, COUNT(*) as count
-        FROM user_stories
-        WHERE user_id = $1
-        GROUP BY story_length
-        ORDER BY count DESC
-        LIMIT 1
-    """,
-        user_id,
-    )
-
-    average_story_length = length_stats["story_length"] if length_stats else "medium"
-
-    return StoryStatistics(
-        total_stories=stats["total_stories"],
-        favorite_stories=stats["favorite_stories"],
-        total_words=stats["total_words"],
-        genres_explored=genres_explored,
-        most_common_genre=most_common_genre,
-        dust_spent=stats["dust_spent"],
-        average_story_length=average_story_length,
-    )
+        print(f"❌ STORY_SAVE: Error saving story: {str(e)}", flush=True)
+        raise HTTPException(status_code=500, detail="Failed to save story")
