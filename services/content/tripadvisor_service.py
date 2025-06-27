@@ -54,11 +54,33 @@ class TripAdvisorService:
                     print(f"🔍 TRIPADVISOR_DEBUG: URL: {self.base_url}/location/nearby_search", flush=True)
                     print(f"🔍 TRIPADVISOR_DEBUG: Params: {params}", flush=True)
 
+                    # Log the full request details
+                    full_url = f"{self.base_url}/location/nearby_search"
+                    print(f"🔍 TRIPADVISOR_FULL_REQUEST:", flush=True)
+                    print(f"  Method: GET", flush=True)
+                    print(f"  URL: {full_url}", flush=True)
+                    print(f"  Headers: {self.headers}", flush=True)
+                    print(f"  Query Params: {params}", flush=True)
+                    
+                    # Build query string manually to see exact URL
+                    query_parts = []
+                    for key, value in params.items():
+                        query_parts.append(f"{key}={value}")
+                    query_string = "&".join(query_parts)
+                    full_url_with_params = f"{full_url}?{query_string}"
+                    print(f"  Full URL with params: {full_url_with_params}", flush=True)
+
                     response = await client.get(
                         f"{self.base_url}/location/nearby_search",
                         headers=self.headers,
                         params=params,
                     )
+                    
+                    # Log response details
+                    print(f"🔍 TRIPADVISOR_RESPONSE:", flush=True)
+                    print(f"  Status Code: {response.status_code}", flush=True)
+                    print(f"  Response Headers: {dict(response.headers)}", flush=True)
+                    print(f"  Response Body: {response.text[:500]}..." if len(response.text) > 500 else f"  Response Body: {response.text}", flush=True)
 
                     if response.status_code == 200:
                         data = response.json()
@@ -158,9 +180,15 @@ class TripAdvisorService:
         """Get detailed information for a location"""
         try:
             async with httpx.AsyncClient(timeout=5.0) as client:
-                response = await client.get(
-                    f"{self.base_url}/location/{location_id}/details", headers=self.headers
-                )
+                details_url = f"{self.base_url}/location/{location_id}/details"
+                print(f"🔍 TRIPADVISOR_DETAILS_REQUEST: GET {details_url}", flush=True)
+                print(f"🔍 TRIPADVISOR_DETAILS_HEADERS: {self.headers}", flush=True)
+                
+                response = await client.get(details_url, headers=self.headers)
+                
+                print(f"🔍 TRIPADVISOR_DETAILS_RESPONSE: {response.status_code}", flush=True)
+                if response.status_code != 200:
+                    print(f"🔍 TRIPADVISOR_DETAILS_ERROR: {response.text}", flush=True)
 
                 if response.status_code == 200:
                     return response.json()
@@ -182,11 +210,16 @@ class TripAdvisorService:
         """Get photo URLs for a location"""
         try:
             async with httpx.AsyncClient(timeout=5.0) as client:
-                response = await client.get(
-                    f"{self.base_url}/location/{location_id}/photos",
-                    headers=self.headers,
-                    params={"limit": 5},
-                )
+                photos_url = f"{self.base_url}/location/{location_id}/photos"
+                params = {"limit": 5}
+                print(f"🔍 TRIPADVISOR_PHOTOS_REQUEST: GET {photos_url}?limit=5", flush=True)
+                print(f"🔍 TRIPADVISOR_PHOTOS_HEADERS: {self.headers}", flush=True)
+                
+                response = await client.get(photos_url, headers=self.headers, params=params)
+                
+                print(f"🔍 TRIPADVISOR_PHOTOS_RESPONSE: {response.status_code}", flush=True)
+                if response.status_code != 200:
+                    print(f"🔍 TRIPADVISOR_PHOTOS_ERROR: {response.text}", flush=True)
 
                 if response.status_code == 200:
                     data = response.json()

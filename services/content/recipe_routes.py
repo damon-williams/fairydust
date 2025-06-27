@@ -28,6 +28,7 @@ from models import (
 )
 
 from shared.auth_middleware import TokenData, get_current_user
+from shared.llm_usage_logger import log_llm_usage, calculate_prompt_hash, create_request_metadata
 from shared.database import Database, get_db
 from shared.llm_pricing import calculate_llm_cost
 
@@ -116,6 +117,58 @@ async def generate_recipe(
             )
 
         print(f"🤖 RECIPE: Generated recipe: {title}", flush=True)
+
+        # Log LLM usage for analytics (background task)
+        try:
+            # Calculate prompt hash for the recipe generation
+            full_prompt = _build_recipe_prompt(
+                dish=request.dish,
+                complexity=request.complexity,
+                include_ingredients=request.include_ingredients,
+                exclude_ingredients=request.exclude_ingredients,
+                total_people=request.total_people,
+                user_context=user_context,
+                dietary_preferences=dietary_preferences,
+            )
+            prompt_hash = calculate_prompt_hash(full_prompt)
+            
+            # Create request metadata
+            request_metadata = create_request_metadata(
+                action="recipe_generation",
+                parameters={
+                    "dish": request.dish,
+                    "complexity": request.complexity.value,
+                    "include_ingredients": request.include_ingredients,
+                    "exclude_ingredients": request.exclude_ingredients,
+                    "total_people": request.total_people,
+                    "has_selected_people": bool(request.selected_people),
+                    "selected_people_count": len(request.selected_people) if request.selected_people else 0,
+                },
+                user_context=user_context if user_context != "general user" else None,
+                session_id=str(request.session_id) if request.session_id else None,
+            )
+            
+            # Log usage asynchronously (don't block recipe generation on logging failures)
+            await log_llm_usage(
+                user_id=request.user_id,
+                app_id="fairydust-recipe",
+                provider="anthropic",
+                model_id=model_used,
+                prompt_tokens=tokens_used.get("prompt", 0),
+                completion_tokens=tokens_used.get("completion", 0),
+                total_tokens=tokens_used.get("total", 0),
+                cost_usd=cost,
+                latency_ms=0,  # Recipe routes don't track latency yet
+                prompt_hash=prompt_hash,
+                finish_reason="stop",
+                was_fallback=False,
+                fallback_reason=None,
+                request_metadata=request_metadata,
+                auth_token=auth_token,
+            )
+        except Exception as e:
+            print(f"⚠️ RECIPE: Failed to log LLM usage: {str(e)}", flush=True)
+            # Continue with recipe generation even if logging fails
 
         # Save recipe to database
         recipe_metadata = {

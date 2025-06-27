@@ -20,8 +20,11 @@ logger = logging.getLogger(__name__)
 
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.exceptions import RequestValidationError
+from fastapi.responses import JSONResponse
+from pydantic import ValidationError
 
 print("🚨 STARTUP: FastAPI imports successful", flush=True)
 
@@ -117,6 +120,29 @@ app = FastAPI(
     version="1.0.0",
     lifespan=lifespan,
 )
+
+
+# Custom exception handler for validation errors
+@app.exception_handler(RequestValidationError)
+async def validation_exception_handler(request: Request, exc: RequestValidationError):
+    """Handle validation errors and log request body for debugging"""
+    try:
+        request_body = await request.body()
+        print(f"❌ VALIDATION_ERROR: Request body: {request_body.decode('utf-8')}", flush=True)
+    except Exception as e:
+        print(f"❌ VALIDATION_ERROR: Could not read request body: {e}", flush=True)
+    
+    print(f"❌ VALIDATION_ERROR: {exc.errors()}", flush=True)
+    print(f"❌ VALIDATION_ERROR: URL: {request.url}", flush=True)
+    
+    return JSONResponse(
+        status_code=422,
+        content={
+            "error": "Validation failed", 
+            "details": exc.errors(),
+            "message": "Request body validation failed. Check required fields and data types."
+        }
+    )
 
 # CORS middleware
 allowed_origins = os.getenv("ALLOWED_ORIGINS", "*").split(",")
