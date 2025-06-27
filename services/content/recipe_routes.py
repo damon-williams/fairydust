@@ -881,7 +881,18 @@ async def _generate_recipe_llm(
         dietary_text = f" and follows these dietary requirements: {', '.join(dietary_preferences)}" if dietary_preferences else ""
         personalization_text = f"\nPersonalization context: {user_context}" if user_context != "general user" else ""
 
+        # Build complexity-specific guidance
+        complexity_guidance = {
+            RecipeComplexity.SIMPLE: "Focus on easy-to-find ingredients and basic cooking techniques. Instructions should be beginner-friendly with simple steps. Avoid specialized equipment or advanced techniques.",
+            RecipeComplexity.MEDIUM: "Use moderate cooking techniques and some specialty ingredients. Include techniques like sautéing, roasting, or braising. May require basic kitchen skills and equipment.",
+            RecipeComplexity.GOURMET: "Create an elevated, restaurant-quality dish with sophisticated flavors and advanced techniques. Use high-quality ingredients, complex flavor profiles, specialized equipment, and professional cooking methods. Include techniques like reduction sauces, proper knife work, temperature control, plating presentation, and culinary terminology. This should be a dish worthy of a fine dining establishment."
+        }
+
+        complexity_instruction = complexity_guidance[complexity]
+
         prompt = f"""Generate a {complexity.value} recipe{dish_text} that serves {total_people} {servings_text}{preferences_text}{dietary_text}{personalization_text}
+
+{complexity_instruction}
 
 Provide the recipe in this exact format:
 
@@ -906,7 +917,7 @@ Provide the recipe in this exact format:
 **Cooking Tip:**
 One helpful tip for success with this recipe.
 
-IMPORTANT: Always include the Nutritional Info section with estimated values. Keep the recipe appropriate for the {complexity.value} skill level."""
+IMPORTANT: Always include the Nutritional Info section with estimated values."""
 
         print(f"🤖 RECIPE_LLM: Generating with {provider} model {model_id}", flush=True)
 
