@@ -38,7 +38,7 @@ RECIPE_DUST_COST = 3
 RECIPE_RATE_LIMIT = 15  # Max 15 generations per hour per user
 
 
-@router.post("/apps/recipe/generate", response_model=RecipeGenerateResponse)
+@router.post("/apps/recipe/generate")
 async def generate_recipe(
     request: RecipeGenerateRequest,
     http_request: Request,
@@ -195,7 +195,7 @@ async def generate_recipe(
         )
 
 
-@router.get("/users/{user_id}/recipes", response_model=RecipesListResponse)
+@router.get("/users/{user_id}/recipes")
 async def get_user_recipes(
     user_id: uuid.UUID,
     current_user: TokenData = Depends(get_current_user),
@@ -314,7 +314,6 @@ async def get_user_recipes(
 
 @router.post(
     "/users/{user_id}/recipes/{recipe_id}/favorite",
-    response_model=RecipeFavoriteResponse,
 )
 async def toggle_recipe_favorite(
     user_id: uuid.UUID,
@@ -382,7 +381,6 @@ async def toggle_recipe_favorite(
 
 @router.delete(
     "/users/{user_id}/recipes/{recipe_id}",
-    response_model=RecipeDeleteResponse,
 )
 async def delete_recipe(
     user_id: uuid.UUID,
@@ -428,7 +426,7 @@ async def delete_recipe(
         return RecipeErrorResponse(error="Failed to delete recipe")
 
 
-@router.get("/users/{user_id}/recipe-preferences", response_model=RecipePreferencesResponse)
+@router.get("/users/{user_id}/recipe-preferences")
 async def get_user_recipe_preferences(
     user_id: uuid.UUID,
     current_user: TokenData = Depends(get_current_user),
@@ -494,7 +492,7 @@ async def get_user_recipe_preferences(
         return RecipeErrorResponse(error="Failed to retrieve preferences")
 
 
-@router.put("/users/{user_id}/recipe-preferences", response_model=RecipePreferencesResponse)
+@router.put("/users/{user_id}/recipe-preferences")
 async def update_user_recipe_preferences(
     user_id: uuid.UUID,
     request: RecipePreferencesUpdateRequest,
