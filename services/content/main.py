@@ -167,18 +167,18 @@ async def log_all_requests(request, call_next):
 # Include routers
 print("🚨 CONTENT_SERVICE: Including routers...", flush=True)
 app.include_router(content_router, prefix="/recipes", tags=["recipes"])
-app.include_router(story_router, prefix="/content", tags=["stories"])
+app.include_router(story_router, tags=["stories"])
 app.include_router(restaurant_router, prefix="/restaurant", tags=["restaurants"])
 app.include_router(activity_router, tags=["activities"])
 app.include_router(inspire_router, tags=["inspire"])
 app.include_router(recipe_router, tags=["recipes-new"])
 print("🚨 CONTENT_SERVICE: All routers included successfully", flush=True)
 print(
-    "🚨 CONTENT_SERVICE: Router prefixes - recipes: /recipes, stories: /content, restaurants: /restaurant, activities: /, inspire: /, recipe-new: /",
+    "🚨 CONTENT_SERVICE: Router prefixes - recipes: /recipes, stories: /, restaurants: /restaurant, activities: /, inspire: /, recipe-new: /",
     flush=True,
 )
 print(
-    "🚨 CONTENT_SERVICE: Expected story URL: /content/users/{user_id}/stories/generate", flush=True
+    "🚨 CONTENT_SERVICE: Expected story URL: /apps/story/generate", flush=True
 )
 print("🚨 CONTENT_SERVICE: Expected restaurant URL: /restaurant/generate", flush=True)
 print("🚨 CONTENT_SERVICE: Expected activity URL: /activity/search", flush=True)
