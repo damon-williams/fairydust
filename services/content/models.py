@@ -103,6 +103,12 @@ class StoryCharacter(BaseModel):
     traits: list[str] = Field(default_factory=list, max_items=10)
 
 
+class TokenUsage(BaseModel):
+    prompt: int
+    completion: int
+    total: int
+
+
 class StoryGenerationRequest(BaseModel):
     user_id: UUID
     genre: StoryGenre
@@ -410,12 +416,6 @@ class InspirationGenerateRequest(BaseModel):
     category: InspirationCategory
     used_suggestions: list[str] = Field(default_factory=list, max_items=20)
     session_id: Optional[UUID] = None
-
-
-class TokenUsage(BaseModel):
-    prompt: int
-    completion: int
-    total: int
 
 
 class UserInspiration(BaseModel):
