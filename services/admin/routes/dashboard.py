@@ -1,3 +1,5 @@
+import asyncio
+import httpx
 from auth import get_current_admin_user
 from fastapi import APIRouter, Depends, Request
 from fastapi.responses import HTMLResponse
@@ -7,13 +9,61 @@ from shared.database import Database, get_db
 dashboard_router = APIRouter()
 
 
+async def check_service_health() -> dict:
+    """Check health status of all fairydust services"""
+    services = {
+        "Identity": "https://fairydust-identity-production.up.railway.app/health",
+        "Ledger": "https://fairydust-ledger-production.up.railway.app/health", 
+        "Apps": "https://fairydust-apps-production.up.railway.app/health",
+        "Content": "https://fairydust-content-production.up.railway.app/health",
+        "Admin": "https://fairydust-admin-production.up.railway.app/health",
+        "Builder": "https://fairydust-builder-production.up.railway.app/health"
+    }
+    
+    async def check_single_service(name: str, url: str) -> tuple[str, bool, str]:
+        """Check health of a single service"""
+        try:
+            async with httpx.AsyncClient(timeout=5.0) as client:
+                response = await client.get(url)
+                if response.status_code == 200:
+                    return name, True, "OK"
+                else:
+                    return name, False, f"HTTP {response.status_code}"
+        except httpx.TimeoutException:
+            return name, False, "Timeout"
+        except httpx.ConnectError:
+            return name, False, "Connection Error"
+        except Exception as e:
+            return name, False, f"Error: {str(e)[:30]}"
+    
+    # Check all services concurrently
+    tasks = [check_single_service(name, url) for name, url in services.items()]
+    results = await asyncio.gather(*tasks)
+    
+    # Format results
+    service_status = {}
+    healthy_count = 0
+    
+    for name, is_healthy, status in results:
+        service_status[name] = {"healthy": is_healthy, "status": status}
+        if is_healthy:
+            healthy_count += 1
+    
+    return {
+        "services": service_status,
+        "healthy_count": healthy_count,
+        "total_count": len(services),
+        "all_healthy": healthy_count == len(services)
+    }
+
+
 @dashboard_router.get("/dashboard", response_class=HTMLResponse)
 async def dashboard(
     request: Request,
     admin_user: dict = Depends(get_current_admin_user),
     db: Database = Depends(get_db),
 ):
-    # Get dashboard stats
+    # Get dashboard stats and health status concurrently
     total_users = await db.fetch_one("SELECT COUNT(*) as count FROM users WHERE is_active = true")
     total_apps = await db.fetch_one("SELECT COUNT(*) as count FROM apps")
     pending_apps = await db.fetch_one("SELECT COUNT(*) as count FROM apps WHERE status = 'pending'")
@@ -36,6 +86,9 @@ async def dashboard(
         """
     )
 
+    # Check service health
+    health_status = await check_service_health()
+
     return HTMLResponse(
         f"""
     <!DOCTYPE html>
@@ -52,6 +105,8 @@ async def dashboard(
             .stat-card-success {{ border-left-color: #1cc88a; }}
             .stat-card-warning {{ border-left-color: #f6c23e; }}
             .stat-card-info {{ border-left-color: #36b9cc; }}
+            .badge-sm {{ font-size: 0.75em; }}
+            .service-status {{ font-size: 0.9em; }}
         </style>
     </head>
     <body>
@@ -154,7 +209,10 @@ async def dashboard(
                     <div class="card">
                         <div class="card-header">System Status</div>
                         <div class="card-body">
-                            <span class="badge bg-success">All Services Online</span>
+                            {"<span class='badge bg-success'><i class='fas fa-check-circle'></i> All Services Online</span>" if health_status["all_healthy"] else f"<span class='badge bg-{'warning' if health_status['healthy_count'] > 0 else 'danger'}'><i class='fas fa-{'exclamation-triangle' if health_status['healthy_count'] > 0 else 'times-circle'}'></i> {health_status['healthy_count']}/{health_status['total_count']} Services Online</span>"}
+                            <div class="mt-2 service-status">
+                                {"".join([f"<div class='d-flex justify-content-between align-items-center py-1'><small>{name}</small><span class='badge bg-{'success' if status['healthy'] else 'danger'} badge-sm'>{status['status']}</span></div>" for name, status in health_status["services"].items()])}
+                            </div>
                         </div>
                     </div>
                 </div>
