@@ -198,48 +198,11 @@ class PersonProfileData(BaseModel):
         from_attributes = True
 
 
-class QuestionResponse(BaseModel):
-    question_id: str
-    response_value: dict | list | str | int | float | bool
-    session_id: Optional[str] = None
-
-
-class QuestionResponseSubmission(BaseModel):
-    responses: list[QuestionResponse]
-    session_id: Optional[str] = None
-
-
-class UserQuestionResponse(BaseModel):
-    id: UUID
-    user_id: UUID
-    question_id: str
-    response_value: dict | list | str | int | float | bool
-    session_id: Optional[str] = None
-    dust_reward: int = 0
-    answered_at: datetime
-
-    class Config:
-        from_attributes = True
-
-
 # Migration models
 class LocalProfileData(BaseModel):
     id: str
     profile: dict
     people_in_my_life: list[dict]
-
-
-class AIContextResponse(BaseModel):
-    user_context: str
-    relationship_context: list[dict]
-    app_specific_context: dict
-
-
-class AIContextPerson(BaseModel):
-    person: str
-    relationship: str
-    context: str
-    suggestions_for: list[str]
 
 
 # Batch operations

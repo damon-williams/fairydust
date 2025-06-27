@@ -822,15 +822,23 @@ async def _generate_story_llm(
         prompt = _build_story_prompt(request, user_context)
 
         print(f"🤖 STORY_LLM: Generating with {provider} model {model_id}", flush=True)
+        
+        # Check API key
+        api_key = os.getenv("ANTHROPIC_API_KEY", "")
+        if not api_key:
+            print("❌ STORY_LLM: Missing ANTHROPIC_API_KEY environment variable", flush=True)
+            return None, "", 0, "", model_id, {}, 0.0
+        
+        print(f"🔑 STORY_LLM: API key configured (length: {len(api_key)})", flush=True)
 
         # Make API call based on provider
-        async with httpx.AsyncClient(timeout=30.0) as client:
+        async with httpx.AsyncClient(timeout=60.0) as client:
             if provider == "anthropic":
                 response = await client.post(
                     "https://api.anthropic.com/v1/messages",
                     headers={
                         "Content-Type": "application/json",
-                        "x-api-key": os.getenv("ANTHROPIC_API_KEY", ""),
+                        "x-api-key": api_key,
                         "anthropic-version": "2023-06-01",
                     },
                     json={
@@ -895,6 +903,10 @@ async def _generate_story_llm(
 
     except Exception as e:
         print(f"❌ STORY_LLM: Error generating story: {str(e)}", flush=True)
+        print(f"❌ STORY_LLM: Error type: {type(e).__name__}", flush=True)
+        print(f"❌ STORY_LLM: Error details: {repr(e)}", flush=True)
+        import traceback
+        print(f"❌ STORY_LLM: Traceback: {traceback.format_exc()}", flush=True)
         return None, "", 0, "", "claude-3-5-sonnet-20241022", {}, 0.0
 
 

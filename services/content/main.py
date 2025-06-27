@@ -140,6 +140,7 @@ endpoint_limits = {
     "/activity/search": 50 * 1024,  # 50KB for activity search requests
     "/apps/inspire/generate": 50 * 1024,  # 50KB for inspire generation requests
     "/apps/recipe/generate": 50 * 1024,  # 50KB for recipe generation requests
+    "/apps/story/generate": 50 * 1024,  # 50KB for story generation requests
 }
 
 add_middleware_to_app(
