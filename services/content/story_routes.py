@@ -832,7 +832,7 @@ async def _generate_story_llm(
         print(f"🔑 STORY_LLM: API key configured (length: {len(api_key)})", flush=True)
 
         # Make API call based on provider
-        async with httpx.AsyncClient(timeout=30.0) as client:
+        async with httpx.AsyncClient(timeout=60.0) as client:
             if provider == "anthropic":
                 response = await client.post(
                     "https://api.anthropic.com/v1/messages",
