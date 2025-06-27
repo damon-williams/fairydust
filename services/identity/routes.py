@@ -8,7 +8,6 @@ from auth import AuthService, TokenData, get_current_user
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Security
 from fastapi.security import HTTPBearer
 from models import (
-    AIContextResponse,
     AuthResponse,
     LocalProfileData,
     OAuthCallback,
@@ -20,13 +19,11 @@ from models import (
     PersonProfileData,
     PersonProfileDataCreate,
     ProfileDataBatch,
-    QuestionResponseSubmission,
     RefreshTokenRequest,
     Token,
     User,
     UserProfileData,
     UserPublic,
-    UserQuestionResponse,
     UserUpdate,
 )
 
@@ -793,305 +790,7 @@ async def get_person_profile_data(
     return [PersonProfileData(**data) for data in profile_data]
 
 
-@user_router.get("/{user_id}/ai-context", response_model=AIContextResponse)
-async def get_ai_context(
-    user_id: str,
-    current_user: TokenData = Depends(get_current_user),
-    db: Database = Depends(get_db),
-    redis_client=Depends(get_redis),
-    app_id: Optional[str] = None,
-):
-    """Get AI context for LLM personalization"""
-    import json
 
-    if current_user.user_id != user_id and not current_user.is_admin:
-        raise HTTPException(status_code=403, detail="Access denied")
-
-    # Check cache first
-    cache_key = f"ai_context:{user_id}"
-    if app_id:
-        cache_key += f":{app_id}"
-
-    cached_context = await redis_client.get(cache_key)
-    if cached_context:
-        return AIContextResponse(**json.loads(cached_context))
-
-    # Get user profile data
-    user_profile = await db.fetch_all("SELECT * FROM user_profile_data WHERE user_id = $1", user_id)
-
-    # Get people in user's life with their profile data
-    people = await db.fetch_all(
-        """
-        SELECT p.*,
-               COALESCE(
-                   json_agg(
-                       json_build_object(
-                           'field_name', ppd.field_name,
-                           'field_value', ppd.field_value,
-                           'category', ppd.category
-                       )
-                   ) FILTER (WHERE ppd.id IS NOT NULL),
-                   '[]'
-               ) as profile_data
-        FROM people_in_my_life p
-        LEFT JOIN person_profile_data ppd ON p.id = ppd.person_id
-        WHERE p.user_id = $1
-        GROUP BY p.id, p.name, p.age_range, p.relationship, p.created_at, p.updated_at
-        ORDER BY p.created_at ASC
-        """,
-        user_id,
-    )
-
-    # Build user context string
-    user_traits = {}
-    for profile in user_profile:
-        category = profile["category"]
-        field_name = profile["field_name"]
-        field_value = profile["field_value"]
-
-        # Parse profile field value using centralized utility
-        field_value = parse_profile_data(field_value, field_name)
-
-        if category not in user_traits:
-            user_traits[category] = {}
-        user_traits[category][field_name] = field_value
-
-    user_context_parts = []
-
-    # Add personality traits
-    if "personality" in user_traits:
-        personality = user_traits["personality"]
-        if "adventure_level" in personality:
-            level = personality["adventure_level"]
-            try:
-                level = int(level) if isinstance(level, str) else level
-                if level >= 4:
-                    user_context_parts.append("Adventure level: high")
-                elif level >= 3:
-                    user_context_parts.append("Adventure level: moderate")
-                else:
-                    user_context_parts.append("Adventure level: low")
-            except (ValueError, TypeError):
-                # Skip if level can't be converted to int
-                pass
-
-        if "creativity_level" in personality:
-            level = personality["creativity_level"]
-            try:
-                level = int(level) if isinstance(level, str) else level
-                if level >= 4:
-                    user_context_parts.append("Creativity level: very creative")
-                elif level >= 3:
-                    user_context_parts.append("Creativity level: creative")
-                else:
-                    user_context_parts.append("Creativity level: practical")
-            except (ValueError, TypeError):
-                # Skip if level can't be converted to int
-                pass
-
-    # Add interests
-    if "interests" in user_traits and "interests" in user_traits["interests"]:
-        interests = user_traits["interests"]["interests"]
-        if isinstance(interests, list):
-            user_context_parts.append(f"Interests: {', '.join(interests)}")
-
-    # Add goals
-    if "goals" in user_traits and "lifestyle_goals" in user_traits["goals"]:
-        goals = user_traits["goals"]["lifestyle_goals"]
-        if isinstance(goals, list):
-            user_context_parts.append(f"Goals: {', '.join(goals)}")
-
-    # Add dietary preferences
-    if "cooking" in user_traits and "dietary_preferences" in user_traits["cooking"]:
-        dietary = user_traits["cooking"]["dietary_preferences"]
-        if isinstance(dietary, list):
-            user_context_parts.append(f"Dietary: {', '.join(dietary)}")
-
-    user_context = (
-        ". ".join(user_context_parts) if user_context_parts else "No profile data available"
-    )
-
-    # Build relationship context
-    relationship_context = []
-    for person in people:
-        name = person["name"]
-        age_range = person["age_range"] or "unknown age"
-        relationship = person["relationship"] or "person"
-
-        person_context_parts = []
-        profile_data = person["profile_data"]
-
-        # Parse people profile data using centralized utility
-        profile_data = parse_people_profile_data(profile_data)
-
-        # Parse person's profile data
-        person_traits = {}
-        for data in profile_data:
-            if isinstance(data, dict) and data.get("field_name") and data.get("field_value"):
-                person_traits[data["field_name"]] = data["field_value"]
-
-        # Build person context
-        if "interests" in person_traits:
-            interests = person_traits["interests"]
-            if isinstance(interests, list):
-                person_context_parts.append(f"Interests: {', '.join(interests)}")
-
-        if "food_preferences" in person_traits:
-            food_prefs = person_traits["food_preferences"]
-            if isinstance(food_prefs, dict):
-                if "likes" in food_prefs:
-                    person_context_parts.append(f"Likes: {', '.join(food_prefs['likes'])}")
-                if "dislikes" in food_prefs:
-                    person_context_parts.append(f"Dislikes: {', '.join(food_prefs['dislikes'])}")
-
-        person_context = (
-            ". ".join(person_context_parts) if person_context_parts else "Limited profile data"
-        )
-
-        relationship_context.append(
-            {
-                "person": f"{name} ({relationship}, {age_range})",
-                "relationship": relationship,
-                "context": person_context,
-                "suggestions_for": ["quality_time", "gift_ideas", "activities"],
-            }
-        )
-
-    # Build app-specific context
-    app_specific_context = {}
-
-    if app_id == "fairydust-inspire" or not app_id:
-        inspire_context = "Focus on personalized activity suggestions"
-        if relationship_context:
-            inspire_context += " that work well for relationships"
-        if "personality" in user_traits:
-            adventure = user_traits["personality"].get("adventure_level", 3)
-            if adventure >= 4:
-                inspire_context += ". Suggest adventurous activities"
-            elif adventure <= 2:
-                inspire_context += ". Suggest calm, low-key activities"
-        app_specific_context["fairydust-inspire"] = inspire_context
-
-    if app_id == "fairydust-recipe" or not app_id:
-        recipe_context = "Provide personalized recipe suggestions"
-        if "cooking" in user_traits:
-            dietary = user_traits["cooking"].get("dietary_preferences", [])
-            if dietary:
-                # Ensure dietary is a list before joining
-                if isinstance(dietary, list):
-                    recipe_context += f". Must accommodate: {', '.join(dietary)}"
-                elif isinstance(dietary, str):
-                    # If it's still a string, try to parse it as JSON one more time
-                    try:
-                        dietary_list = json.loads(dietary)
-                        if isinstance(dietary_list, list):
-                            recipe_context += f". Must accommodate: {', '.join(dietary_list)}"
-                        else:
-                            recipe_context += f". Must accommodate: {dietary}"
-                    except (json.JSONDecodeError, ValueError):
-                        recipe_context += f". Must accommodate: {dietary}"
-                else:
-                    recipe_context += f". Must accommodate: {dietary}"
-            skill = user_traits["cooking"].get("cooking_skill_level")
-            if skill:
-                recipe_context += f". Cooking skill: {skill}"
-        app_specific_context["fairydust-recipe"] = recipe_context
-
-    # Build response
-    ai_context = AIContextResponse(
-        user_context=user_context,
-        relationship_context=relationship_context,
-        app_specific_context=app_specific_context,
-    )
-
-    # Cache for 15 minutes
-    await redis_client.setex(cache_key, 900, json.dumps(ai_context.dict()))  # 15 minutes
-
-    return ai_context
-
-
-@user_router.post("/{user_id}/question-responses")
-async def submit_question_responses(
-    user_id: str,
-    responses: QuestionResponseSubmission,
-    current_user: TokenData = Depends(get_current_user),
-    db: Database = Depends(get_db),
-):
-    """Submit question responses and award DUST"""
-    if current_user.user_id != user_id and not current_user.is_admin:
-        raise HTTPException(status_code=403, detail="Access denied")
-
-    total_dust_awarded = 0
-    saved_responses = []
-
-    for response in responses.responses:
-        # Debug logging
-        print(f"DEBUG: Received response_value type: {type(response.response_value)}")
-        print(f"DEBUG: Received response_value content: {response.response_value}")
-
-        # Check if question already answered
-        existing = await db.fetch_one(
-            "SELECT id FROM user_question_responses WHERE user_id = $1 AND question_id = $2",
-            user_id,
-            response.question_id,
-        )
-
-        if existing:
-            continue  # Skip already answered questions
-
-        # No DUST reward for profile questions
-        dust_reward = 0
-
-        # Ensure response_value is properly formatted for JSONB
-        # asyncpg requires JSON string for JSONB fields, not Python objects
-        if isinstance(response.response_value, (dict, list)):
-            response_value = json.dumps(response.response_value)
-        else:
-            response_value = json.dumps(response.response_value)
-
-        print(f"DEBUG: Storing response_value type: {type(response_value)}")
-        print(f"DEBUG: Storing response_value content: {response_value}")
-
-        # Save response
-        saved_response = await db.fetch_one(
-            """
-            INSERT INTO user_question_responses
-            (user_id, question_id, response_value, session_id, dust_reward)
-            VALUES ($1, $2, $3::jsonb, $4, $5)
-            RETURNING *
-            """,
-            user_id,
-            response.question_id,
-            response_value,
-            responses.session_id,
-            dust_reward,
-        )
-
-        saved_responses.append(UserQuestionResponse(**saved_response))
-
-    # Update user's profiling session count if any questions were answered
-    if len(saved_responses) > 0:
-        await db.execute(
-            """
-            UPDATE users
-            SET total_profiling_sessions = total_profiling_sessions + 1,
-                last_profiling_session = CURRENT_TIMESTAMP
-            WHERE id = $1
-            """,
-            user_id,
-        )
-
-    # Invalidate AI context cache
-    redis_client = await get_redis()
-    cache_pattern = f"ai_context:{user_id}*"
-    # In production, you'd want a more sophisticated cache invalidation
-    await redis_client.delete(f"ai_context:{user_id}")
-
-    return {
-        "responses_saved": len(saved_responses),
-        "dust_awarded": 0,
-        "responses": saved_responses,
-    }
 
 
 @user_router.post("/{user_id}/migrate-local-data")
@@ -1105,7 +804,7 @@ async def migrate_local_data(
     if current_user.user_id != user_id and not current_user.is_admin:
         raise HTTPException(status_code=403, detail="Access denied")
 
-    migrated_items = {"profile_fields": 0, "people": 0, "answered_questions": 0}
+    migrated_items = {"profile_fields": 0, "people": 0}
 
     profile = local_data.profile
 
@@ -1220,38 +919,7 @@ async def migrate_local_data(
             )
             migrated_items["people"] += 1
 
-    # Migrate answered questions
-    progressive_state = profile.get("progressive_profiling_state", {})
-    answered_questions = progressive_state.get("questions_answered", [])
 
-    for question_id in answered_questions:
-        # Check if already recorded
-        existing = await db.fetch_one(
-            "SELECT id FROM user_question_responses WHERE user_id = $1 AND question_id = $2",
-            user_id,
-            question_id,
-        )
-
-        if not existing:
-            # Create placeholder response (we don't have the actual response value)
-            await db.execute(
-                """
-                INSERT INTO user_question_responses
-                (user_id, question_id, response_value, session_id, dust_reward)
-                VALUES ($1, $2, $3, 'migration', 0)
-                """,
-                user_id,
-                question_id,
-                {"migrated": True},
-            )
-            migrated_items["answered_questions"] += 1
-
-    # Update profiling session stats
-    total_sessions = progressive_state.get("total_sessions", 0)
-    if total_sessions > 0:
-        await db.execute(
-            "UPDATE users SET total_profiling_sessions = $1 WHERE id = $2", total_sessions, user_id
-        )
 
     return {
         "success": True,
@@ -1260,58 +928,3 @@ async def migrate_local_data(
     }
 
 
-@user_router.get("/questions", response_model=dict)
-async def get_all_questions(db: Database = Depends(get_db)):
-    """Get all available profiling questions from the database"""
-    questions_data = await db.fetch_all(
-        """
-        SELECT id, category, question_text, question_type, profile_field,
-               priority, app_context, min_app_uses, options, is_active
-        FROM profiling_questions
-        WHERE is_active = true
-        ORDER BY priority DESC, category, id
-        """
-    )
-
-    questions = []
-    for q in questions_data:
-        question = {
-            "id": q["id"],
-            "category": q["category"],
-            "question": q["question_text"],
-            "type": q["question_type"],
-            "profile_field": q["profile_field"],
-            "priority": q["priority"],
-            "app_context": q["app_context"] or [],
-            "min_app_uses": q["min_app_uses"],
-            "options": q["options"] or [],
-        }
-        questions.append(question)
-
-    return {"questions": questions}
-
-
-@user_router.get("/{user_id}/question-responses", response_model=dict)
-async def get_user_question_responses(user_id: str, db: Database = Depends(get_db)):
-    """Get all question responses for a specific user"""
-    responses_data = await db.fetch_all(
-        """
-        SELECT question_id, response_value, session_id, answered_at as created_at
-        FROM user_question_responses
-        WHERE user_id = $1
-        ORDER BY answered_at DESC
-        """,
-        user_id,
-    )
-
-    responses = []
-    for r in responses_data:
-        response = {
-            "question_id": r["question_id"],
-            "response_value": r["response_value"],
-            "session_id": r["session_id"],
-            "created_at": r["created_at"],
-        }
-        responses.append(response)
-
-    return {"responses": responses}

@@ -145,7 +145,6 @@ async def dashboard(
                         <div class="card-body">
                             <a href="/admin/users" class="btn btn-primary me-2">Manage Users</a>
                             <a href="/admin/apps" class="btn btn-success me-2">Manage Apps</a>
-                            <a href="/admin/questions" class="btn btn-info me-2">Manage Questions</a>
                             <a href="/admin/llm" class="btn btn-warning">LLM Management</a>
                         </div>
                     </div>
