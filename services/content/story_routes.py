@@ -27,6 +27,7 @@ from models import (
 
 from shared.auth_middleware import TokenData, get_current_user
 from shared.database import Database, get_db
+from shared.json_utils import parse_jsonb_field
 from shared.llm_pricing import calculate_llm_cost
 
 router = APIRouter()
@@ -320,7 +321,7 @@ async def get_user_stories(
                 estimated_reading_time=estimated_reading_time,
                 created_at=row["created_at"],
                 is_favorited=row["is_favorited"],
-                metadata=row["metadata"] or {},
+                metadata=parse_jsonb_field(row["metadata"]) or {},
             )
             stories.append(story)
 
@@ -388,7 +389,7 @@ async def toggle_story_favorite(
             estimated_reading_time=estimated_reading_time,
             created_at=result["created_at"],
             is_favorited=result["is_favorited"],
-            metadata=result["metadata"] or {},
+            metadata=parse_jsonb_field(result["metadata"]) or {},
         )
 
         print(f"✅ STORY: Updated favorite status for story {story_id}", flush=True)
