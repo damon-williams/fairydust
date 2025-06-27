@@ -29,6 +29,7 @@ from shared.auth_middleware import TokenData, get_current_user
 from shared.database import Database, get_db
 from shared.json_utils import parse_jsonb_field
 from shared.llm_pricing import calculate_llm_cost
+from shared.llm_usage_logger import log_llm_usage, calculate_prompt_hash, create_request_metadata
 
 router = APIRouter()
 
@@ -111,6 +112,7 @@ async def generate_story(
             model_used,
             tokens_used,
             cost,
+            latency_ms,
         ) = await _generate_story_llm(
             request=request,
             user_context=user_context,
@@ -120,6 +122,50 @@ async def generate_story(
             return StoryErrorResponse(error="Failed to generate story. Please try again.")
 
         print(f"🤖 STORY: Generated story: {title}", flush=True)
+
+        # Log LLM usage for analytics (background task)
+        try:
+            # Calculate prompt hash for the story generation
+            full_prompt = _build_story_prompt(request, user_context)
+            prompt_hash = calculate_prompt_hash(full_prompt)
+            
+            # Create request metadata
+            request_metadata = create_request_metadata(
+                action="story_generation",
+                parameters={
+                    "genre": request.genre.value,
+                    "story_length": request.story_length.value,
+                    "target_audience": request.target_audience.value,
+                    "character_count": len(request.characters),
+                    "has_custom_prompt": bool(request.custom_prompt),
+                    "has_setting": bool(request.setting),
+                    "has_theme": bool(request.theme),
+                },
+                user_context=user_context if user_context != "general user" else None,
+                session_id=str(request.session_id) if request.session_id else None,
+            )
+            
+            # Log usage asynchronously (don't block story generation on logging failures)
+            await log_llm_usage(
+                user_id=request.user_id,
+                app_id="fairydust-story",
+                provider="anthropic",
+                model_id=model_used,
+                prompt_tokens=tokens_used.get("prompt", 0),
+                completion_tokens=tokens_used.get("completion", 0),
+                total_tokens=tokens_used.get("total", 0),
+                cost_usd=cost,
+                latency_ms=latency_ms,
+                prompt_hash=prompt_hash,
+                finish_reason="stop",
+                was_fallback=False,
+                fallback_reason=None,
+                request_metadata=request_metadata,
+                auth_token=auth_token,
+            )
+        except Exception as e:
+            print(f"⚠️ STORY: Failed to log LLM usage: {str(e)}", flush=True)
+            # Continue with story generation even if logging fails
 
         # Save story to database
         story_id = await _save_story(
@@ -805,7 +851,7 @@ def _extract_title_and_content(generated_text: str) -> tuple[str, str]:
 async def _generate_story_llm(
     request: StoryGenerationRequest,
     user_context: str,
-) -> tuple[Optional[str], str, int, str, str, dict, float]:
+) -> tuple[Optional[str], str, int, str, str, dict, float, int]:
     """Generate story using LLM"""
     try:
         # Get LLM model configuration from database/cache
@@ -828,9 +874,12 @@ async def _generate_story_llm(
         api_key = os.getenv("ANTHROPIC_API_KEY", "")
         if not api_key:
             print("❌ STORY_LLM: Missing ANTHROPIC_API_KEY environment variable", flush=True)
-            return None, "", 0, "", model_id, {}, 0.0
+            return None, "", 0, "", model_id, {}, 0.0, 0
         
         print(f"🔑 STORY_LLM: API key configured (length: {len(api_key)})", flush=True)
+
+        # Track request latency
+        start_time = time.time()
 
         # Make API call based on provider
         async with httpx.AsyncClient(timeout=60.0) as client:
@@ -876,7 +925,10 @@ async def _generate_story_llm(
                         "anthropic", model_id, prompt_tokens, completion_tokens
                     )
 
-                    print(f"✅ STORY_LLM: Generated story successfully", flush=True)
+                    # Calculate latency
+                    latency_ms = int((time.time() - start_time) * 1000)
+
+                    print(f"✅ STORY_LLM: Generated story successfully (latency: {latency_ms}ms)", flush=True)
                     return (
                         content,
                         title,
@@ -885,6 +937,7 @@ async def _generate_story_llm(
                         model_id,
                         tokens_used,
                         cost,
+                        latency_ms,
                     )
 
                 else:
@@ -892,7 +945,8 @@ async def _generate_story_llm(
                         f"❌ STORY_LLM: Anthropic API error {response.status_code}: {response.text}",
                         flush=True,
                     )
-                    return None, "", 0, "", model_id, {}, 0.0
+                    latency_ms = int((time.time() - start_time) * 1000)
+                    return None, "", 0, "", model_id, {}, 0.0, latency_ms
 
             else:
                 print(
@@ -908,7 +962,7 @@ async def _generate_story_llm(
         print(f"❌ STORY_LLM: Error details: {repr(e)}", flush=True)
         import traceback
         print(f"❌ STORY_LLM: Traceback: {traceback.format_exc()}", flush=True)
-        return None, "", 0, "", "claude-3-5-sonnet-20241022", {}, 0.0
+        return None, "", 0, "", "claude-3-5-sonnet-20241022", {}, 0.0, 0
 
 
 async def _save_story(

@@ -17,6 +17,8 @@ from tripadvisor_service import TripAdvisorService
 
 from shared.auth_middleware import TokenData, get_current_user
 from shared.database import Database, get_db
+from shared.llm_pricing import calculate_llm_cost
+from shared.llm_usage_logger import log_llm_usage, calculate_prompt_hash, create_request_metadata
 
 router = APIRouter()
 
@@ -105,7 +107,7 @@ async def search_activities(
 
         # Generate AI context for each activity
         activities_with_context = await _generate_ai_contexts(
-            activities_data, people_info, request.user_id
+            activities_data, people_info, request.user_id, auth_token
         )
 
         # Sort and limit results
@@ -308,7 +310,7 @@ async def _get_people_info(
 
 
 async def _generate_ai_contexts(
-    activities_data: list[dict], people_info: list[dict], user_id: uuid.UUID
+    activities_data: list[dict], people_info: list[dict], user_id: uuid.UUID, auth_token: str
 ) -> list[dict]:
     """Generate personalized AI context for each activity"""
     print(f"🤖 ACTIVITY_AI: Generating contexts for {len(activities_data)} activities", flush=True)
@@ -322,7 +324,7 @@ async def _generate_ai_contexts(
 
     for i in range(0, len(activities_data), batch_size):
         batch = activities_data[i : i + batch_size]
-        batch_contexts = await _generate_batch_contexts(batch, group_context)
+        batch_contexts = await _generate_batch_contexts(batch, group_context, user_id, auth_token)
 
         for j, activity in enumerate(batch):
             activity_copy = activity.copy()
@@ -384,7 +386,7 @@ async def _get_llm_model_config() -> dict:
     return default_config
 
 
-async def _generate_batch_contexts(activities: list[dict], group_context: str) -> list[dict]:
+async def _generate_batch_contexts(activities: list[dict], group_context: str, user_id: uuid.UUID, auth_token: str) -> list[dict]:
     """Generate AI contexts for a batch of activities"""
     try:
         # Get LLM configuration
@@ -461,6 +463,45 @@ Respond with exactly {len(activities)} entries in this JSON format:
             if response.status_code == 200:
                 result = response.json()
                 content = result["content"][0]["text"]
+
+                # Calculate tokens and cost for logging
+                usage = result.get("usage", {})
+                prompt_tokens = usage.get("input_tokens", 0)
+                completion_tokens = usage.get("output_tokens", 0)
+                total_tokens = prompt_tokens + completion_tokens
+
+                cost = calculate_llm_cost("anthropic", model_id, prompt_tokens, completion_tokens)
+
+                # Log LLM usage (don't block on logging failures)
+                try:
+                    prompt_hash = calculate_prompt_hash(prompt)
+                    request_metadata = create_request_metadata(
+                        action="activity_context_generation",
+                        parameters={
+                            "batch_size": len(activities),
+                            "group_context": group_context,
+                        },
+                    )
+                    
+                    await log_llm_usage(
+                        user_id=user_id,
+                        app_id="fairydust-activity",
+                        provider="anthropic",
+                        model_id=model_id,
+                        prompt_tokens=prompt_tokens,
+                        completion_tokens=completion_tokens,
+                        total_tokens=total_tokens,
+                        cost_usd=cost,
+                        latency_ms=0,  # Activity routes don't track latency yet
+                        prompt_hash=prompt_hash,
+                        finish_reason="stop",
+                        was_fallback=False,
+                        fallback_reason=None,
+                        request_metadata=request_metadata,
+                        auth_token=auth_token,
+                    )
+                except Exception as e:
+                    print(f"⚠️ ACTIVITY_AI: Failed to log LLM usage: {str(e)}", flush=True)
 
                 # Try to parse JSON response
                 try:
