@@ -968,4 +968,73 @@ async def create_tables():
     except Exception as e:
         logger.warning(f"Inspire app creation failed (may already exist): {e}")
 
+    # User Recipe Preferences table for Recipe app
+    await db.execute_schema(
+        """
+        CREATE TABLE IF NOT EXISTS user_recipe_preferences (
+            user_id UUID PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+            personal_restrictions JSONB DEFAULT '[]',
+            custom_restrictions TEXT,
+            people_preferences JSONB DEFAULT '[]',
+            created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_user_recipe_preferences_user_id ON user_recipe_preferences(user_id);
+    """
+    )
+
+    # Enhanced User Recipes table for new Recipe app (update existing table)
+    await db.execute_schema(
+        """
+        ALTER TABLE user_recipes ADD COLUMN IF NOT EXISTS complexity VARCHAR(20);
+        ALTER TABLE user_recipes ADD COLUMN IF NOT EXISTS servings INTEGER;
+        ALTER TABLE user_recipes ADD COLUMN IF NOT EXISTS prep_time_minutes INTEGER;
+        ALTER TABLE user_recipes ADD COLUMN IF NOT EXISTS cook_time_minutes INTEGER;
+        ALTER TABLE user_recipes ADD COLUMN IF NOT EXISTS session_id UUID;
+        ALTER TABLE user_recipes ADD COLUMN IF NOT EXISTS model_used VARCHAR(100);
+        ALTER TABLE user_recipes ADD COLUMN IF NOT EXISTS tokens_used INTEGER;
+        ALTER TABLE user_recipes ADD COLUMN IF NOT EXISTS cost_usd DECIMAL(10, 6);
+        ALTER TABLE user_recipes ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMP WITH TIME ZONE;
+
+        CREATE INDEX IF NOT EXISTS idx_user_recipes_complexity ON user_recipes(complexity);
+        CREATE INDEX IF NOT EXISTS idx_user_recipes_servings ON user_recipes(servings);
+        CREATE INDEX IF NOT EXISTS idx_user_recipes_active_new ON user_recipes(user_id, created_at DESC) WHERE deleted_at IS NULL;
+    """
+    )
+
+    # Insert recipe app if it doesn't exist
+    try:
+        await db.execute_schema(
+            """
+            INSERT INTO apps (
+                id, builder_id, name, slug, description, icon_url, dust_per_use,
+                status, category, website_url, demo_url, callback_url,
+                is_active, admin_notes, created_at, updated_at
+            )
+            SELECT
+                gen_random_uuid(),
+                (SELECT id FROM users WHERE is_builder = true LIMIT 1),
+                'Recipe',
+                'fairydust-recipe',
+                'Generate personalized recipes based on dietary preferences and group needs',
+                NULL,
+                3,
+                'approved',
+                'lifestyle',
+                NULL,
+                NULL,
+                NULL,
+                true,
+                'Auto-created for mobile app implementation',
+                CURRENT_TIMESTAMP,
+                CURRENT_TIMESTAMP
+            WHERE NOT EXISTS (
+                SELECT 1 FROM apps WHERE slug = 'fairydust-recipe'
+            );
+        """
+        )
+    except Exception as e:
+        logger.warning(f"Recipe app creation failed (may already exist): {e}")
+
     logger.info("Database schema creation/update completed successfully")
