@@ -3,7 +3,7 @@ import { Layout } from '@/components/layout/Layout';
 import { Dashboard } from '@/pages/Dashboard';
 import { Users } from '@/pages/Users';
 import { Apps } from '@/pages/Apps';
-import { LLMAnalytics } from '@/pages/LLMAnalytics';
+import { LLM } from '@/pages/LLM';
 import { SystemStatus } from '@/pages/SystemStatus';
 import { Toaster } from '@/components/ui/sonner';
 import { AuthProvider } from '@/contexts/AuthContext';
@@ -26,7 +26,7 @@ function App() {
                     <Route path="dashboard" element={<Dashboard />} />
                     <Route path="users" element={<Users />} />
                     <Route path="apps" element={<Apps />} />
-                    <Route path="llm" element={<LLMAnalytics />} />
+                    <Route path="llm" element={<LLM />} />
                     <Route path="system" element={<SystemStatus />} />
                     <Route path="settings" element={
                       <div className="flex items-center justify-center h-64">

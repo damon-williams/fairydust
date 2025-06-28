@@ -60,20 +60,30 @@ export interface SystemHealth {
 }
 
 export interface LLMUsageMetrics {
-  total_requests: number;
-  total_tokens: number;
-  total_cost: number;
-  top_models: Array<{
-    model: string;
+  timeframe: string;
+  total_stats: {
+    total_requests: number;
+    total_tokens: number;
+    total_cost_usd: number;
+    avg_latency_ms: number;
+  };
+  model_breakdown: Array<{
+    provider: string;
+    model_id: string;
     requests: number;
-    tokens: number;
     cost: number;
+    avg_latency: number;
   }>;
-  usage_by_app: Array<{
+  app_usage: Array<{
     app_name: string;
-    requests: number;
-    tokens: number;
-    cost: number;
+    app_slug: string;
+    total_requests: number;
+    avg_prompt_tokens: number;
+    avg_completion_tokens: number;
+    avg_total_tokens: number;
+    avg_cost_per_request: number;
+    total_cost: number;
+    avg_latency_ms: number;
   }>;
 }
 

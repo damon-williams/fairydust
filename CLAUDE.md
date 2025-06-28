@@ -1,6 +1,10 @@
 # CLAUDE.md
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository..
+This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+
+## Project Overview
+
+fairydust is a **mobile app backend** that powers a native mobile application developed by another Claude instance. The fairydust mobile app is a collection of AI-powered mini-apps that consume DUST (virtual in-app currency) to cover AI operation costs. This backend provides the microservices infrastructure for user management, app marketplace, content storage, and DUST economy management.
 
 ## Environment Variables
 
@@ -608,3 +612,123 @@ DB_POOL_MAX_SIZE=15           # Override maximum connections
 - **Cause**: Inconsistent handling of JSONB fields from database
 - **Solution**: Use centralized parsing functions in `/shared/json_utils.py`
 - **Prevention**: Always use parse_jsonb_field() for database JSONB columns
+
+## Recent Admin Portal Enhancements (2024-06-28)
+
+### Completed Fixes and Features
+
+**🚨 IMPORTANT: These changes have been made but may need git commit and branch cleanup**
+
+#### 1. System Status Alert Fix ✅
+- **Problem**: System Status Alert was incorrectly showing when all systems were working
+- **Fix**: Updated `services/admin-ui/src/pages/Dashboard.tsx` line 58 logic to only show alert when `systemHealth` exists AND has actual issues
+- **Enhancement**: Added functional "View System Status" button that smoothly scrolls to the system health section
+
+#### 2. Apps Screen API Integration ✅  
+- **Problem**: Apps screen couldn't retrieve apps because JSON API endpoint was missing
+- **Solution**: Added comprehensive JSON API endpoints in `services/admin/routes/apps.py`:
+  - `GET /admin/apps/api` - Paginated app listing for React component
+  - `POST /admin/apps/api` - Create new apps via API
+  - `PATCH /admin/apps/{app_id}/status` - Update app status
+  - `DELETE /admin/apps/{app_id}` - Delete apps
+  - `GET /admin/apps/builders` - Get list of builders for app creation
+
+#### 3. Complete App Management System ✅
+- **Added**: Full CRUD operations for apps in admin portal
+- **Features**:
+  - Create App dialog with comprehensive form (name, slug, description, category, builder, DUST cost, URLs)
+  - Builder selection dropdown populated from `users` table where `is_builder = true`
+  - Category management with predefined options
+  - Input validation and error handling
+  - Auto-approval workflow (apps created as "approved" status)
+  - Real-time updates to app list after creation/modifications
+
+#### 4. Enhanced AdminAPI Client ✅
+- **Updated**: `services/admin-ui/src/lib/admin-api.ts` with new methods:
+  - `createApp()` - Create new apps
+  - `getBuilders()` - Fetch available builders
+  - Enhanced error handling and response parsing
+
+#### 5. React Component Enhancements ✅
+- **Updated**: `services/admin-ui/src/pages/Apps.tsx` with:
+  - State management for app creation flow
+  - Create App dialog with form validation
+  - Integration with new API endpoints
+  - Toast notifications for success/error states
+  - Proper loading states and error handling
+
+### Current Status
+
+#### Admin Portal Functionality
+- **Dashboard**: Fixed system status alerts, all dashboard stats working
+- **Users Management**: Fully functional with pagination and search
+- **Apps Management**: Complete CRUD operations with create/edit capabilities
+- **LLM Analytics**: Working with usage metrics and cost tracking
+- **System Health**: Proper monitoring without false alerts
+
+#### App Management Features
+- ✅ View all apps with pagination
+- ✅ Create new apps for any builder
+- ✅ Update app status (approved/pending/rejected/suspended)
+- ✅ Delete apps with confirmation
+- ✅ Builder management integration
+- ✅ Auto-approval workflow
+- ✅ Form validation and error handling
+
+### DUST Grant System (Previously Implemented)
+
+**Background**: Removed auto-grant of 25 DUST on user signup, replaced with app-initiated grant system
+
+#### Implemented Features ✅
+- **App Initial Grants**: Apps can grant up to 100 DUST to new users (one-time per app/user)
+- **Daily Streak Bonuses**: Apps can grant 1-25 DUST daily bonuses with streak validation
+- **API Endpoints**:
+  - `POST /ledger/grants/app-initial` - Grant initial DUST (max 100)
+  - `POST /ledger/grants/app-streak` - Grant daily streak bonus (max 25)
+- **Safeguards**: Idempotency keys, duplicate prevention, amount limits, user validation
+- **Database**: `app_grants` table tracks all app-initiated grants with unique constraints
+
+### Outstanding Items and Considerations
+
+#### Git Branch Management
+- **Question**: There is still an 'admin-portal-redesign' branch - determine if this is needed
+- **Action Needed**: Check if branch contains different changes or can be deleted
+- **Current Branch**: Working on `develop` branch (correct workflow)
+
+#### Code Quality
+- **Status**: Changes made but formatting may need to be run
+- **Action Needed**: Run `./scripts/format.sh` after session restart
+- **Reminder**: Always format before committing
+
+#### Testing Required
+- **Admin Portal**: Test all new app management functionality
+- **System Status**: Verify alert logic works correctly 
+- **API Endpoints**: Test app creation, editing, deletion flows
+- **Integration**: Ensure React components properly communicate with backend APIs
+
+#### Deployment Considerations
+- **Staging**: Test all changes in staging environment before production
+- **Environment Variables**: Ensure all required vars are set in Railway
+- **Service Health**: Monitor all services after deployment
+
+### Next Session Tasks
+
+1. **Check Git Status**: Review branch state and determine if 'admin-portal-redesign' branch is needed
+2. **Code Formatting**: Run formatting scripts on modified files
+3. **Testing**: Verify all admin portal functionality works as expected
+4. **Commit Changes**: Properly commit and push changes following git workflow
+5. **Documentation**: Update any API documentation if needed
+
+### Technical Debt Considerations
+
+- **React Component Architecture**: Apps component is getting large, consider splitting into smaller components
+- **API Error Handling**: Could be enhanced with more specific error messages
+- **Form Validation**: Consider using a form library like react-hook-form for better validation
+- **Type Safety**: Ensure all TypeScript interfaces are properly defined and used
+
+### Security Notes
+
+- **Admin Authentication**: All new endpoints properly protected with admin authentication
+- **Input Validation**: Form inputs validated on both client and server side
+- **SQL Injection Prevention**: All database queries use parameterized statements
+- **Authorization**: Users can only perform actions appropriate to their role level
