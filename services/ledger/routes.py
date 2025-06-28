@@ -438,18 +438,18 @@ async def grant_initial_dust(
     ledger: LedgerService = Depends(get_ledger_service),
 ):
     """Grant initial DUST to user for app onboarding (app-initiated)"""
-    
+
     # Validate the app first
     app_validation = await validate_app(request.app_id)
-    
+
     if not app_validation["is_valid"]:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="App not found")
-    
+
     if not app_validation["is_active"]:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN, detail="App is not active or not approved"
         )
-    
+
     # Apps can only grant to any user, but we'll validate the user exists
     return await ledger.grant_initial_dust(
         user_id=request.user_id,
@@ -466,18 +466,18 @@ async def grant_streak_bonus(
     ledger: LedgerService = Depends(get_ledger_service),
 ):
     """Grant daily streak bonus to user (app-initiated)"""
-    
+
     # Validate the app first
     app_validation = await validate_app(request.app_id)
-    
+
     if not app_validation["is_valid"]:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="App not found")
-    
+
     if not app_validation["is_active"]:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN, detail="App is not active or not approved"
         )
-    
+
     # Apps can grant streak bonuses to any user
     return await ledger.grant_streak_bonus(
         user_id=request.user_id,

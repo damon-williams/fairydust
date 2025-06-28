@@ -20,7 +20,7 @@ async def get_apps_api(
     """Get apps list as JSON for React app"""
     # Calculate offset
     offset = (page - 1) * limit
-    
+
     # Build query with optional status filter
     base_query = """
         SELECT a.*, u.fairyname as builder_name, u.email as builder_email
@@ -28,33 +28,35 @@ async def get_apps_api(
         JOIN users u ON a.builder_id = u.id
     """
     count_query = "SELECT COUNT(*) as total FROM apps a"
-    
+
     params = []
     where_clause = ""
-    
+
     if status and status != "all":
         where_clause = " WHERE a.status = $1"
         params.append(status)
-    
+
     # Get total count
     total_result = await db.fetch_one(f"{count_query}{where_clause}", *params)
     total = total_result["total"]
-    
+
     # Get apps with pagination
     apps = await db.fetch_all(
         f"{base_query}{where_clause} ORDER BY a.created_at DESC LIMIT ${len(params) + 1} OFFSET ${len(params) + 2}",
-        *params, limit, offset
+        *params,
+        limit,
+        offset,
     )
-    
+
     # Calculate pages
     pages = (total + limit - 1) // limit
-    
+
     return {
         "apps": [dict(app) for app in apps],
         "total": total,
         "pages": pages,
         "current_page": page,
-        "limit": limit
+        "limit": limit,
     }
 
 
@@ -67,24 +69,24 @@ async def update_app_status_api(
 ):
     """Update app status via API for React app"""
     status = status_data.get("status")
-    
+
     if status not in ["approved", "pending", "rejected", "suspended"]:
         raise HTTPException(status_code=400, detail="Invalid status")
-    
+
     # Update the app status
     is_active = status in ["approved"]
     await db.execute(
         """
-        UPDATE apps 
-        SET status = $1, is_active = $2, admin_notes = $3, updated_at = CURRENT_TIMESTAMP 
+        UPDATE apps
+        SET status = $1, is_active = $2, admin_notes = $3, updated_at = CURRENT_TIMESTAMP
         WHERE id = $4
         """,
         status,
         is_active,
         f"Status changed to {status} by {admin_user['fairyname']}",
-        app_id
+        app_id,
     )
-    
+
     # Return updated app
     app = await db.fetch_one(
         """
@@ -93,12 +95,12 @@ async def update_app_status_api(
         JOIN users u ON a.builder_id = u.id
         WHERE a.id = $1
         """,
-        app_id
+        app_id,
     )
-    
+
     if not app:
         raise HTTPException(status_code=404, detail="App not found")
-    
+
     return dict(app)
 
 
@@ -113,10 +115,10 @@ async def delete_app_api(
     app = await db.fetch_one("SELECT id, name FROM apps WHERE id = $1", app_id)
     if not app:
         raise HTTPException(status_code=404, detail="App not found")
-    
+
     # Delete the app
     await db.execute("DELETE FROM apps WHERE id = $1", app_id)
-    
+
     return {"message": f"App '{app['name']}' deleted successfully"}
 
 
@@ -139,37 +141,37 @@ async def create_app_api(
         website_url = app_data.get("website_url", "")
         demo_url = app_data.get("demo_url", "")
         callback_url = app_data.get("callback_url", "")
-        
+
         # Validate required fields
         if not all([name, slug, description, category, builder_id]):
             raise HTTPException(status_code=400, detail="Missing required fields")
-        
+
         # Validate builder exists and is a builder
         builder = await db.fetch_one(
             "SELECT id, fairyname FROM users WHERE id = $1 AND is_builder = true", builder_id
         )
         if not builder:
             raise HTTPException(status_code=400, detail="Invalid builder selected")
-        
+
         # Check if slug already exists
         existing_app = await db.fetch_one("SELECT id FROM apps WHERE slug = $1", slug)
         if existing_app:
             raise HTTPException(status_code=400, detail="App slug already exists")
-        
+
         # Validate dust_per_use
         if dust_per_use < 1 or dust_per_use > 100:
             raise HTTPException(status_code=400, detail="DUST per use must be between 1 and 100")
-        
+
         # Create the app
         app_id = uuid.uuid4()
-        
+
         await db.execute(
             """
             INSERT INTO apps (
                 id, builder_id, name, slug, description, icon_url, dust_per_use,
                 status, category, website_url, demo_url, callback_url,
-                is_active, admin_notes, created_at, updated_at
-            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+                is_active, admin_notes
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
             """,
             app_id,
             uuid.UUID(builder_id),
@@ -186,7 +188,7 @@ async def create_app_api(
             True,  # is_active = true for approved apps
             f"Created by admin {admin_user['fairyname']}",
         )
-        
+
         # Return created app
         app = await db.fetch_one(
             """
@@ -195,15 +197,16 @@ async def create_app_api(
             JOIN users u ON a.builder_id = u.id
             WHERE a.id = $1
             """,
-            app_id
+            app_id,
         )
-        
+
         return dict(app)
-        
+
     except HTTPException:
         raise
     except Exception as e:
         import logging
+
         logger = logging.getLogger(__name__)
         logger.error(f"Error creating app via API: {e}")
         raise HTTPException(status_code=500, detail="Failed to create app")

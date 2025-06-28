@@ -411,35 +411,31 @@ class LedgerService:
         idempotency_key: str,
     ) -> TransactionResponse:
         """Grant initial DUST to user for app onboarding (max 100)"""
-        
+
         # Validate amount
         if amount > 100:
             raise HTTPException(status_code=400, detail="Initial grant cannot exceed 100 DUST")
-        
+
         # Check for existing initial grant for this user/app combination
         existing_grant = await self.db.fetch_one(
             "SELECT id FROM app_grants WHERE user_id = $1 AND app_id = $2 AND grant_type = 'initial'",
-            user_id, app_id
+            user_id,
+            app_id,
         )
-        
+
         if existing_grant:
             raise HTTPException(
-                status_code=400, 
-                detail="User has already received initial grant for this app"
+                status_code=400, detail="User has already received initial grant for this app"
             )
-        
+
         # Check idempotency
         existing_key = await self.db.fetch_one(
-            "SELECT id FROM app_grants WHERE idempotency_key = $1",
-            idempotency_key
+            "SELECT id FROM app_grants WHERE idempotency_key = $1", idempotency_key
         )
-        
+
         if existing_key:
-            raise HTTPException(
-                status_code=400,
-                detail="Duplicate request detected"
-            )
-        
+            raise HTTPException(status_code=400, detail="Duplicate request detected")
+
         # Acquire lock
         lock_acquired = await self._acquire_balance_lock(user_id)
         if not lock_acquired:
@@ -451,7 +447,7 @@ class LedgerService:
                 user = await conn.fetchrow(
                     "SELECT id, dust_balance FROM users WHERE id = $1 FOR UPDATE", user_id
                 )
-                
+
                 if not user:
                     raise HTTPException(status_code=404, detail="User not found")
 
@@ -481,7 +477,7 @@ class LedgerService:
                     TransactionStatus.COMPLETED.value,
                     "Initial app grant",
                     app_id,
-                    json.dumps({"grant_type": "initial", "app_id": str(app_id)})
+                    json.dumps({"grant_type": "initial", "app_id": str(app_id)}),
                 )
 
                 # Record grant in app_grants table
@@ -496,7 +492,7 @@ class LedgerService:
                     "initial",
                     amount,
                     idempotency_key,
-                    json.dumps({"transaction_id": str(transaction_id)})
+                    json.dumps({"transaction_id": str(transaction_id)}),
                 )
 
                 # Invalidate cache
@@ -522,42 +518,39 @@ class LedgerService:
         idempotency_key: str,
     ) -> TransactionResponse:
         """Grant daily streak bonus to user (max 25)"""
-        
+
         # Validate amount
         if amount > 25:
             raise HTTPException(status_code=400, detail="Streak bonus cannot exceed 25 DUST")
-        
+
         # Validate streak days
         if streak_days < 1 or streak_days > 5:
             raise HTTPException(status_code=400, detail="Streak days must be between 1 and 5")
-        
+
         # Check if user already claimed streak bonus today
         from datetime import date
+
         today = date.today()
-        
+
         existing_streak = await self.db.fetch_one(
             "SELECT id FROM app_grants WHERE user_id = $1 AND grant_type = 'streak' AND granted_date = $2",
-            user_id, today
+            user_id,
+            today,
         )
-        
+
         if existing_streak:
             raise HTTPException(
-                status_code=400,
-                detail="User has already claimed streak bonus today"
+                status_code=400, detail="User has already claimed streak bonus today"
             )
-        
+
         # Check idempotency
         existing_key = await self.db.fetch_one(
-            "SELECT id FROM app_grants WHERE idempotency_key = $1",
-            idempotency_key
+            "SELECT id FROM app_grants WHERE idempotency_key = $1", idempotency_key
         )
-        
+
         if existing_key:
-            raise HTTPException(
-                status_code=400,
-                detail="Duplicate request detected"
-            )
-        
+            raise HTTPException(status_code=400, detail="Duplicate request detected")
+
         # Acquire lock
         lock_acquired = await self._acquire_balance_lock(user_id)
         if not lock_acquired:
@@ -569,7 +562,7 @@ class LedgerService:
                 user = await conn.fetchrow(
                     "SELECT id, dust_balance FROM users WHERE id = $1 FOR UPDATE", user_id
                 )
-                
+
                 if not user:
                     raise HTTPException(status_code=404, detail="User not found")
 
@@ -599,11 +592,9 @@ class LedgerService:
                     TransactionStatus.COMPLETED.value,
                     f"Daily streak bonus (day {streak_days})",
                     app_id,
-                    json.dumps({
-                        "grant_type": "streak", 
-                        "streak_days": streak_days,
-                        "app_id": str(app_id)
-                    })
+                    json.dumps(
+                        {"grant_type": "streak", "streak_days": streak_days, "app_id": str(app_id)}
+                    ),
                 )
 
                 # Record grant in app_grants table
@@ -619,10 +610,7 @@ class LedgerService:
                     amount,
                     today,
                     idempotency_key,
-                    json.dumps({
-                        "transaction_id": str(transaction_id),
-                        "streak_days": streak_days
-                    })
+                    json.dumps({"transaction_id": str(transaction_id), "streak_days": streak_days}),
                 )
 
                 # Invalidate cache

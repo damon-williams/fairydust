@@ -91,17 +91,17 @@ async def serve_assets(filename: str):
     if asset_path.exists() and asset_path.is_file():
         # Determine content type based on file extension
         content_type = "application/octet-stream"
-        if filename.endswith('.css'):
+        if filename.endswith(".css"):
             content_type = "text/css; charset=utf-8"
-        elif filename.endswith('.js'):
+        elif filename.endswith(".js"):
             content_type = "application/javascript; charset=utf-8"
-        elif filename.endswith('.svg'):
+        elif filename.endswith(".svg"):
             content_type = "image/svg+xml"
-        elif filename.endswith('.png'):
+        elif filename.endswith(".png"):
             content_type = "image/png"
-        elif filename.endswith('.jpg') or filename.endswith('.jpeg'):
+        elif filename.endswith(".jpg") or filename.endswith(".jpeg"):
             content_type = "image/jpeg"
-            
+
         headers = {
             "Cache-Control": "no-cache, no-store, must-revalidate",
             "Pragma": "no-cache",
@@ -110,11 +110,12 @@ async def serve_assets(filename: str):
             "Access-Control-Allow-Methods": "GET",
             "Access-Control-Allow-Headers": "*",
             "Cross-Origin-Resource-Policy": "cross-origin",
-            "X-Content-Type-Options": "nosniff"
+            "X-Content-Type-Options": "nosniff",
         }
         return FileResponse(str(asset_path), media_type=content_type, headers=headers)
-    
+
     from fastapi import HTTPException
+
     raise HTTPException(status_code=404, detail="Asset not found")
 
 
@@ -125,7 +126,7 @@ async def root():
     headers = {
         "Content-Security-Policy": "default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; img-src 'self' data:; font-src 'self'",
         "X-Content-Type-Options": "nosniff",
-        "X-Frame-Options": "DENY"
+        "X-Frame-Options": "DENY",
     }
     return FileResponse(str(static_dir / "index.html"), headers=headers)
 
@@ -154,7 +155,7 @@ async def serve_react_app(path: str):
         headers = {
             "Content-Security-Policy": "default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; img-src 'self' data:; font-src 'self'",
             "X-Content-Type-Options": "nosniff",
-            "X-Frame-Options": "DENY"
+            "X-Frame-Options": "DENY",
         }
         return FileResponse(str(static_dir / "index.html"), headers=headers)
 

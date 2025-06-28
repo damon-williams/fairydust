@@ -48,34 +48,40 @@ async def get_users_json(
     # Format users for JSON response
     formatted_users = []
     for user in users:
-        formatted_users.append({
-            "id": str(user["id"]),
-            "fairyname": user["fairyname"],
-            "email": user["email"],
-            "phone": user["phone"],
-            "avatar_url": user["avatar_url"],
-            "is_builder": user["is_builder"],
-            "is_admin": user["is_admin"],
-            "is_active": user["is_active"],
-            "first_name": user["first_name"],
-            "age_range": user["age_range"],
-            "city": user["city"],
-            "country": user["country"],
-            "dust_balance": user["dust_balance"],
-            "auth_provider": user["auth_provider"] or "email",
-            "last_profiling_session": user["last_profiling_session"].isoformat() if user["last_profiling_session"] else None,
-            "total_profiling_sessions": user["total_profiling_sessions"] or 0,
-            "streak_days": user["streak_days"] or 0,
-            "last_login_date": user["last_login_date"].isoformat() if user["last_login_date"] else None,
-            "created_at": user["created_at"].isoformat() if user["created_at"] else None,
-            "updated_at": user["updated_at"].isoformat() if user["updated_at"] else None,
-        })
+        formatted_users.append(
+            {
+                "id": str(user["id"]),
+                "fairyname": user["fairyname"],
+                "email": user["email"],
+                "phone": user["phone"],
+                "avatar_url": user["avatar_url"],
+                "is_builder": user["is_builder"],
+                "is_admin": user["is_admin"],
+                "is_active": user["is_active"],
+                "first_name": user["first_name"],
+                "age_range": user["age_range"],
+                "city": user["city"],
+                "country": user["country"],
+                "dust_balance": user["dust_balance"],
+                "auth_provider": user["auth_provider"] or "email",
+                "last_profiling_session": user["last_profiling_session"].isoformat()
+                if user["last_profiling_session"]
+                else None,
+                "total_profiling_sessions": user["total_profiling_sessions"] or 0,
+                "streak_days": user["streak_days"] or 0,
+                "last_login_date": user["last_login_date"].isoformat()
+                if user["last_login_date"]
+                else None,
+                "created_at": user["created_at"].isoformat() if user["created_at"] else None,
+                "updated_at": user["updated_at"].isoformat() if user["updated_at"] else None,
+            }
+        )
 
     return {
         "users": formatted_users,
         "total": total_count["total"],
         "pages": total_pages,
-        "current_page": page
+        "current_page": page,
     }
 
 
@@ -109,15 +115,17 @@ async def update_user_json(
         raise HTTPException(status_code=400, detail="No valid fields to update")
 
     # Don't allow removing own admin status
-    if (user_id == admin_user["user_id"] and 
-        "is_admin" in update_data and 
-        not update_data["is_admin"]):
+    if (
+        user_id == admin_user["user_id"]
+        and "is_admin" in update_data
+        and not update_data["is_admin"]
+    ):
         raise HTTPException(status_code=400, detail="Cannot remove your own admin privileges")
 
     # Execute update
-    updates.append(f"updated_at = CURRENT_TIMESTAMP")
+    updates.append("updated_at = CURRENT_TIMESTAMP")
     params.append(user_id)
-    
+
     await db.execute(
         f"UPDATE users SET {', '.join(updates)} WHERE id = ${param_count}",
         *params,
@@ -158,7 +166,7 @@ async def grant_dust_api(
     """Grant DUST to user via JSON API"""
     amount = grant_data.get("amount")
     reason = grant_data.get("reason", "Admin grant")
-    
+
     if not amount or amount <= 0:
         raise HTTPException(status_code=400, detail="Amount must be positive")
 
@@ -190,9 +198,7 @@ async def grant_dust_api(
 
 @users_router.post("/{user_id}/toggle-builder")
 async def toggle_builder_api(
-    user_id: str,
-    admin_user: dict = Depends(get_current_admin_user),
-    db: Database = Depends(get_db)
+    user_id: str, admin_user: dict = Depends(get_current_admin_user), db: Database = Depends(get_db)
 ):
     """Toggle builder status via JSON API"""
     # Verify user exists
@@ -213,9 +219,7 @@ async def toggle_builder_api(
 
 @users_router.post("/{user_id}/toggle-admin")
 async def toggle_admin_api(
-    user_id: str,
-    admin_user: dict = Depends(get_current_admin_user),
-    db: Database = Depends(get_db)
+    user_id: str, admin_user: dict = Depends(get_current_admin_user), db: Database = Depends(get_db)
 ):
     """Toggle admin status via JSON API"""
     # Verify user exists
