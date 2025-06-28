@@ -86,10 +86,15 @@ async def serve_vite_svg():
 
 @app.get("/assets/index-DHqLy6ep.css")
 async def serve_css():
-    """Serve CSS file directly"""
+    """Serve CSS file directly with cache-busting headers"""
     css_path = static_dir / "assets" / "index-DHqLy6ep.css"
     if css_path.exists():
-        return FileResponse(str(css_path), media_type="text/css")
+        headers = {
+            "Cache-Control": "no-cache, no-store, must-revalidate",
+            "Pragma": "no-cache", 
+            "Expires": "0"
+        }
+        return FileResponse(str(css_path), media_type="text/css", headers=headers)
     from fastapi import HTTPException
 
     raise HTTPException(status_code=404, detail="CSS not found")
@@ -97,10 +102,15 @@ async def serve_css():
 
 @app.get("/assets/index-xKOFZooz.js")
 async def serve_js():
-    """Serve JS file directly"""
+    """Serve JS file directly with cache-busting headers"""
     js_path = static_dir / "assets" / "index-xKOFZooz.js"
     if js_path.exists():
-        return FileResponse(str(js_path), media_type="application/javascript")
+        headers = {
+            "Cache-Control": "no-cache, no-store, must-revalidate",
+            "Pragma": "no-cache",
+            "Expires": "0"
+        }
+        return FileResponse(str(js_path), media_type="application/javascript", headers=headers)
     from fastapi import HTTPException
 
     raise HTTPException(status_code=404, detail="JS not found")
