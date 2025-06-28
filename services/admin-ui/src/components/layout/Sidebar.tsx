@@ -29,7 +29,7 @@ export function Sidebar({ className }: SidebarProps) {
             <Sparkles className="h-8 w-8 text-yellow-400" />
             <div>
               <h1 className="text-xl font-bold text-white fairy-dust">
-                Fairydust
+                fairydust
               </h1>
               <p className="text-sm text-slate-400">Admin Portal</p>
             </div>

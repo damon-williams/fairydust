@@ -129,13 +129,6 @@ export function Dashboard() {
           gradient="from-blue-500 to-blue-600"
         />
         <StatsCard
-          title="Total Apps"
-          value={stats?.total_apps || 0}
-          change={{ value: 8, trend: 'up', period: 'last month' }}
-          icon={<Smartphone className="h-5 w-5" />}
-          gradient="from-green-500 to-green-600"
-        />
-        <StatsCard
           title="Pending Apps"
           value={stats?.pending_apps || 0}
           icon={<Clock className="h-5 w-5" />}
