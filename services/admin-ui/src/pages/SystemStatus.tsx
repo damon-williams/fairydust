@@ -159,22 +159,6 @@ export function SystemStatus() {
               </CardHeader>
               <CardContent>
                 <p className="text-sm text-slate-500">{service.description}</p>
-                <div className="mt-4 space-y-2">
-                  <div className="flex justify-between text-sm">
-                    <span className="text-slate-500">Response Time</span>
-                    <span className="font-medium">
-                      {status === 'online' ? '<100ms' : 
-                       status === 'degraded' ? '>500ms' : 'N/A'}
-                    </span>
-                  </div>
-                  <div className="flex justify-between text-sm">
-                    <span className="text-slate-500">Uptime</span>
-                    <span className="font-medium">
-                      {status === 'online' ? '99.9%' : 
-                       status === 'degraded' ? '95.5%' : '0%'}
-                    </span>
-                  </div>
-                </div>
               </CardContent>
             </Card>
           );

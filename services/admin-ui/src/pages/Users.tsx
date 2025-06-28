@@ -181,7 +181,6 @@ export function Users() {
                 <TableHead>Contact</TableHead>
                 <TableHead>Type</TableHead>
                 <TableHead>DUST Balance</TableHead>
-                <TableHead>Location</TableHead>
                 <TableHead>Last Active</TableHead>
                 <TableHead>Actions</TableHead>
               </TableRow>
@@ -226,13 +225,8 @@ export function Users() {
                     </div>
                   </TableCell>
                   <TableCell>
-                    <div className="font-medium fairy-dust">
+                    <div className="font-medium text-slate-900">
                       {user.dust_balance} DUST
-                    </div>
-                  </TableCell>
-                  <TableCell>
-                    <div className="text-sm">
-                      {user.city && user.country ? `${user.city}, ${user.country}` : 'Unknown'}
                     </div>
                   </TableCell>
                   <TableCell>
@@ -241,9 +235,14 @@ export function Users() {
                     </div>
                   </TableCell>
                   <TableCell>
-                    <Button variant="ghost" size="sm">
-                      <MoreHorizontal className="h-4 w-4" />
-                    </Button>
+                    <div className="flex space-x-2">
+                      <Button variant="outline" size="sm">
+                        Grant DUST
+                      </Button>
+                      <Button variant="ghost" size="sm">
+                        <MoreHorizontal className="h-4 w-4" />
+                      </Button>
+                    </div>
                   </TableCell>
                 </TableRow>
               ))}
