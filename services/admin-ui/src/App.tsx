@@ -4,6 +4,7 @@ import { Dashboard } from '@/pages/Dashboard';
 import { Users } from '@/pages/Users';
 import { Apps } from '@/pages/Apps';
 import { LLMAnalytics } from '@/pages/LLMAnalytics';
+import { SystemStatus } from '@/pages/SystemStatus';
 import { Toaster } from '@/components/ui/sonner';
 import { AuthProvider } from '@/contexts/AuthContext';
 import { ProtectedRoute } from '@/components/auth/ProtectedRoute';
@@ -26,11 +27,7 @@ function App() {
                     <Route path="users" element={<Users />} />
                     <Route path="apps" element={<Apps />} />
                     <Route path="llm" element={<LLMAnalytics />} />
-                    <Route path="system" element={
-                      <div className="flex items-center justify-center h-64">
-                        <p className="text-slate-500">System Status page coming soon...</p>
-                      </div>
-                    } />
+                    <Route path="system" element={<SystemStatus />} />
                     <Route path="settings" element={
                       <div className="flex items-center justify-center h-64">
                         <p className="text-slate-500">Settings page coming soon...</p>

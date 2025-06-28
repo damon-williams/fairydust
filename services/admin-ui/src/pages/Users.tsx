@@ -1,8 +1,9 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
+import { Alert, AlertDescription } from '@/components/ui/alert';
 import { 
   Table,
   TableBody,
@@ -19,65 +20,70 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { User } from '@/types/admin';
-import { Search, Filter, Download, MoreHorizontal } from 'lucide-react';
+import { Search, Filter, Download, MoreHorizontal, RefreshCw, AlertTriangle } from 'lucide-react';
 import { formatDistanceToNow } from 'date-fns';
-
-// Mock data
-const mockUsers: User[] = [
-  {
-    id: '1',
-    fairyname: 'cosmic_dreamer_1234',
-    email: 'user1@example.com',
-    is_builder: false,
-    is_admin: false,
-    is_active: true,
-    dust_balance: 25,
-    auth_provider: 'email',
-    total_profiling_sessions: 0,
-    streak_days: 1,
-    city: 'San Francisco',
-    country: 'USA',
-    created_at: '2024-01-15T10:30:00Z',
-    updated_at: '2024-01-15T10:30:00Z',
-  },
-  {
-    id: '2',
-    fairyname: 'stellar_spark_5678',
-    email: 'builder@example.com',
-    is_builder: true,
-    is_admin: false,
-    is_active: true,
-    dust_balance: 150,
-    auth_provider: 'google',
-    total_profiling_sessions: 3,
-    streak_days: 5,
-    city: 'New York',
-    country: 'USA',
-    created_at: '2024-01-10T14:20:00Z',
-    updated_at: '2024-01-15T09:15:00Z',
-  },
-  {
-    id: '3',
-    fairyname: 'mystic_moon_9012',
-    phone: '+1234567890',
-    is_builder: true,
-    is_admin: false,
-    is_active: true,
-    dust_balance: 89,
-    auth_provider: 'phone',
-    total_profiling_sessions: 1,
-    streak_days: 2,
-    city: 'Los Angeles',
-    country: 'USA',
-    created_at: '2024-01-12T16:45:00Z',
-    updated_at: '2024-01-14T11:30:00Z',
-  },
-];
+import { AdminAPI } from '@/lib/admin-api';
+import { toast } from 'sonner';
 
 export function Users() {
-  const [users, setUsers] = useState<User[]>(mockUsers);
+  const [users, setUsers] = useState<User[]>([]);
   const [searchTerm, setSearchTerm] = useState('');
   const [filterType, setFilterType] = useState('all');
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [currentPage, setCurrentPage] = useState(1);
+  const [totalPages, setTotalPages] = useState(1);
+  const [totalUsers, setTotalUsers] = useState(0);
+
+  const loadUsers = async (page: number = 1, search?: string) => {
+    try {
+      setLoading(true);
+      setError(null);
+      
+      const data = await AdminAPI.getUsers(page, 50, search);
+      setUsers(data.users);
+      setTotalPages(data.pages);
+      setTotalUsers(data.total);
+    } catch (err) {
+      console.error('Failed to load users:', err);
+      setError('Failed to load users. Please try again.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    loadUsers(currentPage, searchTerm || undefined);
+  }, [currentPage]);
+
+  const handleSearch = () => {
+    setCurrentPage(1);
+    loadUsers(1, searchTerm || undefined);
+  };
+
+  const handleToggleUserStatus = async (userId: string, isActive: boolean) => {
+    try {
+      await AdminAPI.updateUser(userId, { is_active: !isActive });
+      toast.success(`User ${!isActive ? 'activated' : 'deactivated'} successfully`);
+      loadUsers(currentPage, searchTerm || undefined);
+    } catch (err) {
+      toast.error('Failed to update user status');
+    }
+  };
+
+  const handleDeleteUser = async (userId: string) => {
+    if (!confirm('Are you sure you want to delete this user? This action cannot be undone.')) {
+      return;
+    }
+    
+    try {
+      await AdminAPI.deleteUser(userId);
+      toast.success('User deleted successfully');
+      loadUsers(currentPage, searchTerm || undefined);
+    } catch (err) {
+      toast.error('Failed to delete user');
+    }
+  };
 
   const filteredUsers = users.filter(user => {
     const matchesSearch = user.fairyname.toLowerCase().includes(searchTerm.toLowerCase()) ||

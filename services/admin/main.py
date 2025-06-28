@@ -81,6 +81,13 @@ app.include_router(apps_router, prefix="/admin/apps")
 app.include_router(llm_router, prefix="/admin/llm")
 
 
+@app.get("/vite.svg")
+async def serve_vite_svg():
+    """Serve vite.svg"""
+    static_dir = Path(__file__).parent / "static"
+    return FileResponse(str(static_dir / "vite.svg"))
+
+
 @app.get("/")
 async def root():
     """Serve React app"""
