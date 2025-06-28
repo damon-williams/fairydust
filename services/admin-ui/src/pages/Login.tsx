@@ -4,7 +4,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Alert, AlertDescription } from '@/components/ui/alert';
-import { Sparkles, Mail, Phone, Lock } from 'lucide-react';
+import { Sparkles, Mail, Lock } from 'lucide-react';
 import { toast } from 'sonner';
 
 export function Login() {
@@ -17,7 +17,7 @@ export function Login() {
   const handleRequestOTP = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!identifier.trim()) {
-      setError('Please enter your email or phone number');
+      setError('Please enter your email address');
       return;
     }
 
@@ -65,7 +65,7 @@ export function Login() {
           
           <div>
             <CardTitle className="text-2xl font-bold bg-gradient-to-r from-purple-600 to-blue-600 bg-clip-text text-transparent">
-              Fairydust
+              fairydust
             </CardTitle>
             <CardDescription className="text-base text-slate-600">
               Admin Portal
@@ -86,21 +86,17 @@ export function Login() {
             <form onSubmit={handleRequestOTP} className="space-y-4">
               <div className="space-y-2">
                 <label className="text-sm font-medium text-slate-700">
-                  Email or Phone Number
+                  Email Address
                 </label>
                 <div className="relative">
                   <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                    {isEmail ? (
-                      <Mail className="h-4 w-4 text-slate-400" />
-                    ) : (
-                      <Phone className="h-4 w-4 text-slate-400" />
-                    )}
+                    <Mail className="h-4 w-4 text-slate-400" />
                   </div>
                   <Input
                     type="text"
                     value={identifier}
                     onChange={(e) => setIdentifier(e.target.value)}
-                    placeholder="Enter your email or phone"
+                    placeholder="Enter your email address"
                     className="pl-10"
                     disabled={isLoading}
                     required
@@ -138,7 +134,7 @@ export function Login() {
                   />
                 </div>
                 <p className="text-xs text-slate-500">
-                  Check your {isEmail ? 'email' : 'phone'} for the verification code
+                  Check your email for the verification code
                 </p>
               </div>
 
