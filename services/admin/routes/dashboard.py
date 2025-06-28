@@ -76,6 +76,18 @@ async def get_dashboard_stats(
     active_users_week = await db.fetch_one(
         "SELECT COUNT(*) as count FROM users WHERE is_active = true AND last_login_date >= CURRENT_DATE - INTERVAL '7 days'"
     )
+    new_users_week = await db.fetch_one(
+        "SELECT COUNT(*) as count FROM users WHERE created_at >= CURRENT_DATE - INTERVAL '7 days'"
+    )
+    total_dust_consumed = await db.fetch_one(
+        "SELECT COALESCE(SUM(amount), 0) as total FROM dust_transactions WHERE type = 'consumption'"
+    )
+    dust_consumed_today = await db.fetch_one(
+        "SELECT COALESCE(SUM(amount), 0) as total FROM dust_transactions WHERE type = 'consumption' AND DATE(created_at) = CURRENT_DATE"
+    )
+    dust_consumed_week = await db.fetch_one(
+        "SELECT COALESCE(SUM(amount), 0) as total FROM dust_transactions WHERE type = 'consumption' AND created_at >= CURRENT_DATE - INTERVAL '7 days'"
+    )
     total_transactions = await db.fetch_one("SELECT COUNT(*) as count FROM dust_transactions")
     total_llm_usage = await db.fetch_one("SELECT COUNT(*) as count FROM llm_usage_logs")
 
@@ -86,6 +98,10 @@ async def get_dashboard_stats(
         "total_dust_issued": total_dust_issued["total"],
         "active_users_today": active_users_today["count"],
         "active_users_week": active_users_week["count"],
+        "new_users_week": new_users_week["count"],
+        "total_dust_consumed": total_dust_consumed["total"],
+        "dust_consumed_today": dust_consumed_today["total"],
+        "dust_consumed_week": dust_consumed_week["total"],
         "total_transactions": total_transactions["count"],
         "total_llm_usage": total_llm_usage["count"],
     }

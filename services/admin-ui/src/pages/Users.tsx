@@ -40,7 +40,9 @@ export function Users() {
       setLoading(true);
       setError(null);
       
+      console.log('Loading users with page:', page, 'search:', search);
       const data = await AdminAPI.getUsers(page, 50, search);
+      console.log('Users loaded:', data);
       setUsers(data.users);
       setTotalPages(data.pages);
       setTotalUsers(data.total);
@@ -153,6 +155,27 @@ export function Users() {
           <CardTitle>User Accounts ({filteredUsers.length})</CardTitle>
         </CardHeader>
         <CardContent>
+          {loading && (
+            <div className="flex items-center justify-center py-8">
+              <RefreshCw className="h-6 w-6 animate-spin mr-2" />
+              Loading users...
+            </div>
+          )}
+          
+          {error && (
+            <Alert variant="destructive" className="mb-4">
+              <AlertTriangle className="h-4 w-4" />
+              <AlertDescription>{error}</AlertDescription>
+            </Alert>
+          )}
+          
+          {!loading && !error && users.length === 0 && (
+            <div className="text-center py-8 text-slate-500">
+              No users found.
+            </div>
+          )}
+          
+          {!loading && !error && users.length > 0 && (
           <Table>
             <TableHeader>
               <TableRow>
@@ -228,6 +251,7 @@ export function Users() {
               ))}
             </TableBody>
           </Table>
+          )}
         </CardContent>
       </Card>
     </div>
