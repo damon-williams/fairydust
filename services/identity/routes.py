@@ -433,6 +433,8 @@ async def update_user_profile(
     """
 
     user = await db.fetch_one(query, *values)
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
     return User(**user)
 
 
