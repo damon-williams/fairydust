@@ -121,6 +121,12 @@ export function Sidebar({ className }: SidebarProps) {
               <LogOut className="h-4 w-4 mr-2" />
               Logout
             </Button>
+            {/* Version Info */}
+            <div className="text-center pt-2 border-t border-slate-700">
+              <p className="text-xs text-slate-500">
+                Admin Portal v2.1.0
+              </p>
+            </div>
           </div>
         ) : (
           <div className="space-y-2">
