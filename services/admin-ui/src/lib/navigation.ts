@@ -37,7 +37,6 @@ export const navigation: NavigationItem[] = [
     name: 'LLM Analytics',
     href: '/admin/llm',
     icon: Brain,
-    new: true,
   },
   {
     name: 'System Status',

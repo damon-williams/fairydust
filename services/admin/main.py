@@ -60,12 +60,6 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Mount static files for React app
-static_dir = Path(__file__).parent / "static"
-if static_dir.exists():
-    # Mount assets first (more specific route)
-    app.mount("/assets", StaticFiles(directory=str(static_dir / "assets")), name="assets")
-
 from routes import (
     apps_router,
     auth_router,
@@ -74,12 +68,17 @@ from routes import (
     users_router,
 )
 
-# Include all route modules BEFORE catch-all routes
+# Include all route modules FIRST
 app.include_router(auth_router, prefix="/admin")
 app.include_router(dashboard_router, prefix="/admin")
 app.include_router(users_router, prefix="/admin/users")
 app.include_router(apps_router, prefix="/admin/apps")
 app.include_router(llm_router, prefix="/admin/llm")
+
+# Mount static files AFTER routes but BEFORE catch-all
+static_dir = Path(__file__).parent / "static"
+if static_dir.exists():
+    app.mount("/assets", StaticFiles(directory=str(static_dir / "assets")), name="assets")
 
 
 @app.get("/vite.svg")
@@ -100,7 +99,13 @@ async def root():
 @app.get("/{path:path}")
 async def serve_react_app(path: str):
     """Serve React app for all unmatched routes"""
-    # Only serve React app for non-API routes
+    # Don't serve React app for assets or API routes
+    if path.startswith("assets/") or path.startswith("vite.svg"):
+        from fastapi import HTTPException
+
+        raise HTTPException(status_code=404, detail="Asset not found")
+
+    # Only serve React app for admin routes and root
     if (
         not path.startswith("admin/")
         or path.startswith("admin/dashboard")
@@ -112,6 +117,7 @@ async def serve_react_app(path: str):
     ):
         static_dir = Path(__file__).parent / "static"
         return FileResponse(str(static_dir / "index.html"))
+
     # Let FastAPI handle 404 for unknown API routes
     from fastapi import HTTPException
 
