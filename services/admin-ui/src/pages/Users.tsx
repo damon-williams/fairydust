@@ -40,9 +40,7 @@ export function Users() {
       setLoading(true);
       setError(null);
       
-      console.log('Loading users with page:', page, 'search:', search);
       const data = await AdminAPI.getUsers(page, 50, search);
-      console.log('Users loaded:', data);
       setUsers(data.users);
       setTotalPages(data.pages);
       setTotalUsers(data.total);
