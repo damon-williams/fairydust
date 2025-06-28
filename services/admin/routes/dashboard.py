@@ -1,4 +1,5 @@
 import asyncio
+
 import httpx
 from auth import get_current_admin_user
 from fastapi import APIRouter, Depends, Request
@@ -13,13 +14,13 @@ async def check_service_health() -> dict:
     """Check health status of all fairydust services"""
     services = {
         "Identity": "https://fairydust-identity-production.up.railway.app/health",
-        "Ledger": "https://fairydust-ledger-production.up.railway.app/health", 
+        "Ledger": "https://fairydust-ledger-production.up.railway.app/health",
         "Apps": "https://fairydust-apps-production.up.railway.app/health",
         "Content": "https://fairydust-content-production.up.railway.app/health",
         "Admin": "https://fairydust-admin-production.up.railway.app/health",
-        "Builder": "https://fairydust-builder-production.up.railway.app/health"
+        "Builder": "https://fairydust-builder-production.up.railway.app/health",
     }
-    
+
     async def check_single_service(name: str, url: str) -> tuple[str, bool, str]:
         """Check health of a single service"""
         try:
@@ -35,25 +36,25 @@ async def check_service_health() -> dict:
             return name, False, "Connection Error"
         except Exception as e:
             return name, False, f"Error: {str(e)[:30]}"
-    
+
     # Check all services concurrently
     tasks = [check_single_service(name, url) for name, url in services.items()]
     results = await asyncio.gather(*tasks)
-    
+
     # Format results
     service_status = {}
     healthy_count = 0
-    
+
     for name, is_healthy, status in results:
         service_status[name] = {"healthy": is_healthy, "status": status}
         if is_healthy:
             healthy_count += 1
-    
+
     return {
         "services": service_status,
         "healthy_count": healthy_count,
         "total_count": len(services),
-        "all_healthy": healthy_count == len(services)
+        "all_healthy": healthy_count == len(services),
     }
 
 

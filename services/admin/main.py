@@ -4,7 +4,7 @@ from pathlib import Path
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import RedirectResponse
+from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
 from shared.database import close_db, init_db
@@ -60,10 +60,10 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Mount static files if directory exists
+# Mount static files for React app
 static_dir = Path(__file__).parent / "static"
 if static_dir.exists():
-    app.mount("/static", StaticFiles(directory=str(static_dir)), name="static")
+    app.mount("/assets", StaticFiles(directory=str(static_dir / "assets")), name="assets")
 
 from routes import (
     apps_router,
@@ -73,7 +73,7 @@ from routes import (
     users_router,
 )
 
-# Include all route modules
+# Include all route modules BEFORE catch-all routes
 app.include_router(auth_router, prefix="/admin")
 app.include_router(dashboard_router, prefix="/admin")
 app.include_router(users_router, prefix="/admin/users")
@@ -83,7 +83,31 @@ app.include_router(llm_router, prefix="/admin/llm")
 
 @app.get("/")
 async def root():
-    return RedirectResponse(url="/admin/login")
+    """Serve React app"""
+    static_dir = Path(__file__).parent / "static"
+    return FileResponse(str(static_dir / "index.html"))
+
+
+# Catch-all route for React app - MUST BE LAST
+@app.get("/{path:path}")
+async def serve_react_app(path: str):
+    """Serve React app for all unmatched routes"""
+    # Only serve React app for non-API routes
+    if (
+        not path.startswith("admin/")
+        or path.startswith("admin/dashboard")
+        or path.startswith("admin/users")
+        or path.startswith("admin/apps")
+        or path.startswith("admin/llm")
+        or path.startswith("admin/system")
+        or path.startswith("admin/settings")
+    ):
+        static_dir = Path(__file__).parent / "static"
+        return FileResponse(str(static_dir / "index.html"))
+    # Let FastAPI handle 404 for unknown API routes
+    from fastapi import HTTPException
+
+    raise HTTPException(status_code=404, detail="Not found")
 
 
 @app.get("/health")

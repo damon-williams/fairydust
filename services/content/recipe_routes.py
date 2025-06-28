@@ -28,9 +28,9 @@ from models import (
 )
 
 from shared.auth_middleware import TokenData, get_current_user
-from shared.llm_usage_logger import log_llm_usage, calculate_prompt_hash, create_request_metadata
 from shared.database import Database, get_db
 from shared.llm_pricing import calculate_llm_cost
+from shared.llm_usage_logger import calculate_prompt_hash, create_request_metadata, log_llm_usage
 
 router = APIRouter()
 
@@ -88,20 +88,35 @@ async def generate_recipe(
 
         # Validate selected people exist in user's "People in My Life"
         if request.selected_people:
-            valid_people = await _validate_selected_people(db, request.user_id, request.selected_people)
+            valid_people = await _validate_selected_people(
+                db, request.user_id, request.selected_people
+            )
             if not valid_people:
-                return RecipeErrorResponse(error="One or more selected people not found in your contacts")
+                return RecipeErrorResponse(
+                    error="One or more selected people not found in your contacts"
+                )
 
         # Get user context for personalization
         user_context = await _get_user_context(db, request.user_id, request.selected_people)
-        print(f"👤 RECIPE: Retrieved user context", flush=True)
+        print("👤 RECIPE: Retrieved user context", flush=True)
 
         # Get dietary preferences
-        dietary_preferences = await _get_dietary_preferences(db, request.user_id, request.selected_people)
-        print(f"🥗 RECIPE: Retrieved dietary preferences", flush=True)
+        dietary_preferences = await _get_dietary_preferences(
+            db, request.user_id, request.selected_people
+        )
+        print("🥗 RECIPE: Retrieved dietary preferences", flush=True)
 
         # Generate recipe using LLM
-        recipe_content, title, servings, prep_time, cook_time, model_used, tokens_used, cost = await _generate_recipe_llm(
+        (
+            recipe_content,
+            title,
+            servings,
+            prep_time,
+            cook_time,
+            model_used,
+            tokens_used,
+            cost,
+        ) = await _generate_recipe_llm(
             dish=request.dish,
             complexity=request.complexity,
             include_ingredients=request.include_ingredients,
@@ -112,9 +127,7 @@ async def generate_recipe(
         )
 
         if not recipe_content:
-            return RecipeErrorResponse(
-                error="Failed to generate recipe. Please try again."
-            )
+            return RecipeErrorResponse(error="Failed to generate recipe. Please try again.")
 
         print(f"🤖 RECIPE: Generated recipe: {title}", flush=True)
 
@@ -131,7 +144,7 @@ async def generate_recipe(
                 dietary_preferences=dietary_preferences,
             )
             prompt_hash = calculate_prompt_hash(full_prompt)
-            
+
             # Create request metadata
             request_metadata = create_request_metadata(
                 action="recipe_generation",
@@ -142,12 +155,14 @@ async def generate_recipe(
                     "exclude_ingredients": request.exclude_ingredients,
                     "total_people": request.total_people,
                     "has_selected_people": bool(request.selected_people),
-                    "selected_people_count": len(request.selected_people) if request.selected_people else 0,
+                    "selected_people_count": len(request.selected_people)
+                    if request.selected_people
+                    else 0,
                 },
                 user_context=user_context if user_context != "general user" else None,
                 session_id=str(request.session_id) if request.session_id else None,
             )
-            
+
             # Log usage asynchronously (don't block recipe generation on logging failures)
             await log_llm_usage(
                 user_id=request.user_id,
@@ -181,7 +196,7 @@ async def generate_recipe(
                 "complexity": request.complexity.value,
                 "user_context": user_context,
                 "dietary_preferences": dietary_preferences,
-            }
+            },
         }
 
         recipe_id = await _save_recipe(
@@ -243,9 +258,7 @@ async def generate_recipe(
     except Exception as e:
         print(f"❌ RECIPE: Unexpected error: {str(e)}", flush=True)
         print(f"❌ RECIPE: Error type: {type(e).__name__}", flush=True)
-        return RecipeErrorResponse(
-            error="Internal server error during recipe generation"
-        )
+        return RecipeErrorResponse(error="Internal server error during recipe generation")
 
 
 @router.get("/users/{user_id}/recipes")
@@ -275,7 +288,7 @@ async def get_user_recipes(
     try:
         # Build query with filters
         base_query = """
-            SELECT id, title, content, complexity, servings, prep_time_minutes, 
+            SELECT id, title, content, complexity, servings, prep_time_minutes,
                    cook_time_minutes, is_favorited, created_at, metadata
             FROM user_recipes
             WHERE user_id = $1 AND deleted_at IS NULL AND app_id = 'fairydust-recipe'
@@ -314,7 +327,7 @@ async def get_user_recipes(
 
         # Get total counts
         count_query = """
-            SELECT 
+            SELECT
                 COUNT(*) as total_count,
                 COUNT(*) FILTER (WHERE is_favorited = TRUE) as favorites_count
             FROM user_recipes
@@ -342,7 +355,9 @@ async def get_user_recipes(
                 id=row["id"],
                 title=row["title"],
                 content=row["content"],
-                complexity=RecipeComplexity(row["complexity"]) if row["complexity"] else RecipeComplexity.MEDIUM,
+                complexity=RecipeComplexity(row["complexity"])
+                if row["complexity"]
+                else RecipeComplexity.MEDIUM,
                 servings=row["servings"] or 1,
                 prep_time_minutes=row["prep_time_minutes"],
                 cook_time_minutes=row["cook_time_minutes"],
@@ -394,27 +409,25 @@ async def toggle_recipe_favorite(
     try:
         # Update favorite status
         update_query = """
-            UPDATE user_recipes 
+            UPDATE user_recipes
             SET is_favorited = $1, updated_at = CURRENT_TIMESTAMP
             WHERE id = $2 AND user_id = $3 AND deleted_at IS NULL AND app_id = 'fairydust-recipe'
-            RETURNING id, title, content, complexity, servings, prep_time_minutes, 
+            RETURNING id, title, content, complexity, servings, prep_time_minutes,
                       cook_time_minutes, is_favorited, created_at, metadata
         """
 
-        result = await db.fetch_one(
-            update_query, request.is_favorited, recipe_id, user_id
-        )
+        result = await db.fetch_one(update_query, request.is_favorited, recipe_id, user_id)
 
         if not result:
-            return RecipeErrorResponse(
-                error="Recipe not found", recipe_id=recipe_id
-            )
+            return RecipeErrorResponse(error="Recipe not found", recipe_id=recipe_id)
 
         recipe = UserRecipeNew(
             id=result["id"],
             title=result["title"],
             content=result["content"],
-            complexity=RecipeComplexity(result["complexity"]) if result["complexity"] else RecipeComplexity.MEDIUM,
+            complexity=RecipeComplexity(result["complexity"])
+            if result["complexity"]
+            else RecipeComplexity.MEDIUM,
             servings=result["servings"] or 1,
             prep_time_minutes=result["prep_time_minutes"],
             cook_time_minutes=result["cook_time_minutes"],
@@ -457,7 +470,7 @@ async def delete_recipe(
     try:
         # Soft delete (set deleted_at timestamp)
         delete_query = """
-            UPDATE user_recipes 
+            UPDATE user_recipes
             SET deleted_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP
             WHERE id = $1 AND user_id = $2 AND deleted_at IS NULL AND app_id = 'fairydust-recipe'
         """
@@ -466,9 +479,7 @@ async def delete_recipe(
 
         # Check if any rows were affected
         if "UPDATE 0" in result:
-            return RecipeErrorResponse(
-                error="Recipe not found", recipe_id=recipe_id
-            )
+            return RecipeErrorResponse(error="Recipe not found", recipe_id=recipe_id)
 
         print(f"✅ RECIPE: Deleted recipe {recipe_id}", flush=True)
 
@@ -510,22 +521,28 @@ async def get_user_recipe_preferences(
 
         if result:
             # Parse stored preferences
-            personal_restrictions = [DietaryRestriction(r) for r in (result["personal_restrictions"] or [])]
+            personal_restrictions = [
+                DietaryRestriction(r) for r in (result["personal_restrictions"] or [])
+            ]
             custom_restrictions = result["custom_restrictions"]
-            
+
             people_prefs = []
-            for pref in (result["people_preferences"] or []):
+            for pref in result["people_preferences"] or []:
                 # Get person name from people_in_my_life
                 person_query = "SELECT name FROM people_in_my_life WHERE id = $1 AND user_id = $2"
                 person_result = await db.fetch_one(person_query, pref.get("person_id"), user_id)
                 person_name = person_result["name"] if person_result else None
-                
-                people_prefs.append(PersonPreference(
-                    person_id=pref.get("person_id"),
-                    person_name=person_name,
-                    selected_restrictions=[DietaryRestriction(r) for r in pref.get("selected_restrictions", [])],
-                    foods_to_avoid=pref.get("foods_to_avoid"),
-                ))
+
+                people_prefs.append(
+                    PersonPreference(
+                        person_id=pref.get("person_id"),
+                        person_name=person_name,
+                        selected_restrictions=[
+                            DietaryRestriction(r) for r in pref.get("selected_restrictions", [])
+                        ],
+                        foods_to_avoid=pref.get("foods_to_avoid"),
+                    )
+                )
 
             preferences = RecipePreferences(
                 personal_restrictions=personal_restrictions,
@@ -571,18 +588,22 @@ async def update_user_recipe_preferences(
             person_ids = [pref.person_id for pref in request.people_preferences]
             valid_people = await _validate_selected_people(db, user_id, person_ids)
             if not valid_people:
-                return RecipeErrorResponse(error="One or more selected people not found in your contacts")
+                return RecipeErrorResponse(
+                    error="One or more selected people not found in your contacts"
+                )
 
         # Prepare data for storage
         personal_restrictions = [r.value for r in request.personal_restrictions]
         people_prefs_data = []
-        
+
         for pref in request.people_preferences:
-            people_prefs_data.append({
-                "person_id": str(pref.person_id),
-                "selected_restrictions": [r.value for r in pref.selected_restrictions],
-                "foods_to_avoid": pref.foods_to_avoid,
-            })
+            people_prefs_data.append(
+                {
+                    "person_id": str(pref.person_id),
+                    "selected_restrictions": [r.value for r in pref.selected_restrictions],
+                    "foods_to_avoid": pref.foods_to_avoid,
+                }
+            )
 
         # Upsert preferences
         upsert_query = """
@@ -614,13 +635,15 @@ async def update_user_recipe_preferences(
             person_query = "SELECT name FROM people_in_my_life WHERE id = $1 AND user_id = $2"
             person_result = await db.fetch_one(person_query, pref.person_id, user_id)
             person_name = person_result["name"] if person_result else None
-            
-            people_prefs_response.append(PersonPreference(
-                person_id=pref.person_id,
-                person_name=person_name,
-                selected_restrictions=pref.selected_restrictions,
-                foods_to_avoid=pref.foods_to_avoid,
-            ))
+
+            people_prefs_response.append(
+                PersonPreference(
+                    person_id=pref.person_id,
+                    person_name=person_name,
+                    selected_restrictions=pref.selected_restrictions,
+                    foods_to_avoid=pref.foods_to_avoid,
+                )
+            )
 
         preferences = RecipePreferences(
             personal_restrictions=request.personal_restrictions,
@@ -719,7 +742,7 @@ async def _check_rate_limit(db: Database, user_id: uuid.UUID) -> bool:
         query = """
             SELECT COUNT(*) as generation_count
             FROM user_recipes
-            WHERE user_id = $1 
+            WHERE user_id = $1
             AND created_at > NOW() - INTERVAL '1 hour'
             AND deleted_at IS NULL
             AND app_id = 'fairydust-recipe'
@@ -747,7 +770,9 @@ async def _check_rate_limit(db: Database, user_id: uuid.UUID) -> bool:
         return False
 
 
-async def _validate_selected_people(db: Database, user_id: uuid.UUID, person_ids: list[uuid.UUID]) -> bool:
+async def _validate_selected_people(
+    db: Database, user_id: uuid.UUID, person_ids: list[uuid.UUID]
+) -> bool:
     """Validate that all person_ids exist in user's 'People in My Life'"""
     if not person_ids:
         return True
@@ -769,15 +794,17 @@ async def _validate_selected_people(db: Database, user_id: uuid.UUID, person_ids
         return False
 
 
-async def _get_user_context(db: Database, user_id: uuid.UUID, selected_people: list[uuid.UUID]) -> str:
+async def _get_user_context(
+    db: Database, user_id: uuid.UUID, selected_people: list[uuid.UUID]
+) -> str:
     """Get user context for personalization"""
     try:
         context_parts = []
 
         # Get user profile data
         profile_query = """
-            SELECT field_name, field_value 
-            FROM user_profile_data 
+            SELECT field_name, field_value
+            FROM user_profile_data
             WHERE user_id = $1
         """
 
@@ -800,7 +827,7 @@ async def _get_user_context(db: Database, user_id: uuid.UUID, selected_people: l
         if selected_people:
             people_query = """
                 SELECT name, relationship, age_range
-                FROM people_in_my_life 
+                FROM people_in_my_life
                 WHERE user_id = $1 AND id = ANY($2)
             """
 
@@ -824,7 +851,9 @@ async def _get_user_context(db: Database, user_id: uuid.UUID, selected_people: l
         return "general user"
 
 
-async def _get_dietary_preferences(db: Database, user_id: uuid.UUID, selected_people: list[uuid.UUID]) -> list[str]:
+async def _get_dietary_preferences(
+    db: Database, user_id: uuid.UUID, selected_people: list[uuid.UUID]
+) -> list[str]:
     """Get merged dietary preferences for user and selected people"""
     try:
         all_restrictions = set()
@@ -854,7 +883,7 @@ async def _get_dietary_preferences(db: Database, user_id: uuid.UUID, selected_pe
                 if pref.get("person_id") in [str(pid) for pid in selected_people]:
                     selected_restrictions = pref.get("selected_restrictions", [])
                     all_restrictions.update(selected_restrictions)
-                    
+
                     foods_to_avoid = pref.get("foods_to_avoid")
                     if foods_to_avoid:
                         all_restrictions.add(f"avoid {foods_to_avoid}")
@@ -911,11 +940,11 @@ async def _generate_recipe_llm(
     try:
         # Get LLM model configuration from database/cache
         model_config = await _get_llm_model_config()
-        
+
         provider = model_config.get("primary_provider", "anthropic")
         model_id = model_config.get("primary_model_id", "claude-3-5-sonnet-20241022")
         parameters = model_config.get("primary_parameters", {})
-        
+
         temperature = parameters.get("temperature", 0.7)
         max_tokens = parameters.get("max_tokens", 1000)
         top_p = parameters.get("top_p", 0.9)
@@ -923,22 +952,30 @@ async def _generate_recipe_llm(
         # Build prompt using template from specification
         servings_text = "person" if total_people == 1 else "people"
         dish_text = f" for {dish}" if dish else ""
-        
+
         preferences = []
         if include_ingredients:
             preferences.append(f"include {include_ingredients}")
         if exclude_ingredients:
             preferences.append(f"avoid {exclude_ingredients}")
-        
-        preferences_text = f" that incorporates these preferences: {', '.join(preferences)}" if preferences else ""
-        dietary_text = f" and follows these dietary requirements: {', '.join(dietary_preferences)}" if dietary_preferences else ""
-        personalization_text = f"\nPersonalization context: {user_context}" if user_context != "general user" else ""
+
+        preferences_text = (
+            f" that incorporates these preferences: {', '.join(preferences)}" if preferences else ""
+        )
+        dietary_text = (
+            f" and follows these dietary requirements: {', '.join(dietary_preferences)}"
+            if dietary_preferences
+            else ""
+        )
+        personalization_text = (
+            f"\nPersonalization context: {user_context}" if user_context != "general user" else ""
+        )
 
         # Build complexity-specific guidance
         complexity_guidance = {
             RecipeComplexity.SIMPLE: "Focus on easy-to-find ingredients and basic cooking techniques. Instructions should be beginner-friendly with simple steps. Avoid specialized equipment or advanced techniques.",
             RecipeComplexity.MEDIUM: "Use moderate cooking techniques and some specialty ingredients. Include techniques like sautéing, roasting, or braising. May require basic kitchen skills and equipment.",
-            RecipeComplexity.GOURMET: "Create an elevated, restaurant-quality dish with sophisticated flavors and advanced techniques. Use high-quality ingredients, complex flavor profiles, specialized equipment, and professional cooking methods. Include techniques like reduction sauces, proper knife work, temperature control, plating presentation, and culinary terminology. This should be a dish worthy of a fine dining establishment."
+            RecipeComplexity.GOURMET: "Create an elevated, restaurant-quality dish with sophisticated flavors and advanced techniques. Use high-quality ingredients, complex flavor profiles, specialized equipment, and professional cooking methods. Include techniques like reduction sauces, proper knife work, temperature control, plating presentation, and culinary terminology. This should be a dish worthy of a fine dining establishment.",
         }
 
         complexity_instruction = complexity_guidance[complexity]
@@ -1009,15 +1046,26 @@ IMPORTANT: Always include the Nutritional Info section with estimated values."""
                         "total": total_tokens,
                     }
 
-                    cost = calculate_llm_cost("anthropic", model_id, prompt_tokens, completion_tokens)
+                    cost = calculate_llm_cost(
+                        "anthropic", model_id, prompt_tokens, completion_tokens
+                    )
 
                     # Extract recipe information
                     title = _extract_recipe_title(content, dish)
                     prep_time = _extract_time(content, "Prep Time:")
                     cook_time = _extract_time(content, "Cook Time:")
 
-                    print(f"✅ RECIPE_LLM: Generated recipe successfully", flush=True)
-                    return content, title, total_people, prep_time, cook_time, model_id, tokens_used, cost
+                    print("✅ RECIPE_LLM: Generated recipe successfully", flush=True)
+                    return (
+                        content,
+                        title,
+                        total_people,
+                        prep_time,
+                        cook_time,
+                        model_id,
+                        tokens_used,
+                        cost,
+                    )
 
                 else:
                     print(
@@ -1065,8 +1113,17 @@ IMPORTANT: Always include the Nutritional Info section with estimated values."""
                     prep_time = _extract_time(content, "Prep Time:")
                     cook_time = _extract_time(content, "Cook Time:")
 
-                    print(f"✅ RECIPE_LLM: Generated recipe successfully", flush=True)
-                    return content, title, total_people, prep_time, cook_time, model_id, tokens_used, cost
+                    print("✅ RECIPE_LLM: Generated recipe successfully", flush=True)
+                    return (
+                        content,
+                        title,
+                        total_people,
+                        prep_time,
+                        cook_time,
+                        model_id,
+                        tokens_used,
+                        cost,
+                    )
 
                 else:
                     print(
@@ -1091,18 +1148,18 @@ def _extract_recipe_title(content: str, dish: Optional[str]) -> str:
     """Extract title from recipe content"""
     try:
         # Look for the pattern: 🍽️ **Title**
-        title_match = re.search(r'🍽️\s*\*\*([^*]+)\*\*', content)
+        title_match = re.search(r"🍽️\s*\*\*([^*]+)\*\*", content)
         if title_match:
             title = title_match.group(1).strip()
             return title
-        
+
         # Fallback to dish name if title extraction fails
         if dish:
             return dish.title()
-        
+
         # Final fallback
         return "Recipe"
-        
+
     except Exception as e:
         print(f"⚠️ RECIPE_TITLE: Error extracting title: {str(e)}", flush=True)
         return dish.title() if dish else "Recipe"
@@ -1112,7 +1169,7 @@ def _extract_time(content: str, time_type: str) -> Optional[int]:
     """Extract prep/cook time from recipe content"""
     try:
         # Look for pattern like "Prep Time: 20 minutes"
-        pattern = rf'{time_type}\s*(\d+)\s*minutes?'
+        pattern = rf"{time_type}\s*(\d+)\s*minutes?"
         match = re.search(pattern, content, re.IGNORECASE)
         if match:
             return int(match.group(1))
@@ -1141,7 +1198,7 @@ async def _save_recipe(
         insert_query = """
             INSERT INTO user_recipes (
                 user_id, app_id, title, content, category, complexity, servings,
-                prep_time_minutes, cook_time_minutes, session_id, model_used, 
+                prep_time_minutes, cook_time_minutes, session_id, model_used,
                 tokens_used, cost_usd, metadata, created_at, updated_at
             )
             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)

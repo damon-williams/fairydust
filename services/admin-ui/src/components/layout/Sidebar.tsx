@@ -4,7 +4,8 @@ import { cn } from '@/lib/utils';
 import { navigation } from '@/lib/navigation';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { Sparkles, Menu, X } from 'lucide-react';
+import { Sparkles, Menu, X, LogOut } from 'lucide-react';
+import { useAuth } from '@/contexts/AuthContext';
 
 interface SidebarProps {
   className?: string;
@@ -13,6 +14,7 @@ interface SidebarProps {
 export function Sidebar({ className }: SidebarProps) {
   const location = useLocation();
   const [collapsed, setCollapsed] = useState(false);
+  const { user, logout } = useAuth();
 
   return (
     <div className={cn(
@@ -94,24 +96,49 @@ export function Sidebar({ className }: SidebarProps) {
       {/* User Section */}
       <div className="p-4 border-t border-slate-700">
         {!collapsed ? (
-          <div className="flex items-center space-x-3">
-            <div className="w-8 h-8 bg-gradient-to-br from-blue-500 to-purple-600 rounded-full flex items-center justify-center">
-              <span className="text-sm font-medium text-white">A</span>
+          <div className="space-y-3">
+            <div className="flex items-center space-x-3">
+              <div className="w-8 h-8 bg-gradient-to-br from-blue-500 to-purple-600 rounded-full flex items-center justify-center">
+                <span className="text-sm font-medium text-white">
+                  {user?.fairyname?.charAt(0).toUpperCase() || 'A'}
+                </span>
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-medium text-white truncate">
+                  {user?.fairyname || 'Admin User'}
+                </p>
+                <p className="text-xs text-slate-400 truncate">
+                  {user?.email || 'admin@fairydust.fun'}
+                </p>
+              </div>
             </div>
-            <div className="flex-1 min-w-0">
-              <p className="text-sm font-medium text-white truncate">
-                Admin User
-              </p>
-              <p className="text-xs text-slate-400 truncate">
-                admin@fairydust.fun
-              </p>
-            </div>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={logout}
+              className="w-full text-slate-300 hover:text-white hover:bg-slate-700 justify-start"
+            >
+              <LogOut className="h-4 w-4 mr-2" />
+              Logout
+            </Button>
           </div>
         ) : (
-          <div className="flex justify-center">
-            <div className="w-8 h-8 bg-gradient-to-br from-blue-500 to-purple-600 rounded-full flex items-center justify-center">
-              <span className="text-sm font-medium text-white">A</span>
+          <div className="space-y-2">
+            <div className="flex justify-center">
+              <div className="w-8 h-8 bg-gradient-to-br from-blue-500 to-purple-600 rounded-full flex items-center justify-center">
+                <span className="text-sm font-medium text-white">
+                  {user?.fairyname?.charAt(0).toUpperCase() || 'A'}
+                </span>
+              </div>
             </div>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={logout}
+              className="w-full text-slate-300 hover:text-white hover:bg-slate-700 justify-center p-2"
+            >
+              <LogOut className="h-4 w-4" />
+            </Button>
           </div>
         )}
       </div>

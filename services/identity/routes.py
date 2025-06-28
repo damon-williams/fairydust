@@ -29,7 +29,6 @@ from models import (
 
 from shared.database import Database, get_db
 from shared.email_service import send_otp_email
-from shared.json_utils import parse_people_profile_data, parse_profile_data
 from shared.redis_client import get_redis
 from shared.sms_service import send_otp_sms
 from shared.streak_utils import calculate_daily_streak
@@ -767,9 +766,6 @@ async def get_person_profile_data(
     return [PersonProfileData(**data) for data in profile_data]
 
 
-
-
-
 @user_router.post("/{user_id}/migrate-local-data")
 async def migrate_local_data(
     user_id: str,
@@ -896,12 +892,8 @@ async def migrate_local_data(
             )
             migrated_items["people"] += 1
 
-
-
     return {
         "success": True,
         "migrated": migrated_items,
         "message": f"Successfully migrated {sum(migrated_items.values())} items",
     }
-
-
