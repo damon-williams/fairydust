@@ -74,7 +74,7 @@ app.include_router(users_router, prefix="/admin/users")
 app.include_router(apps_router, prefix="/admin/apps")
 app.include_router(llm_router, prefix="/admin/llm")
 
-# Direct asset serving routes for debugging
+# Dynamic asset serving for any file with cache-busting
 static_dir = Path(__file__).parent / "static"
 
 
@@ -84,36 +84,33 @@ async def serve_vite_svg():
     return FileResponse(str(static_dir / "vite.svg"))
 
 
-@app.get("/assets/index-DHqLy6ep.css")
-async def serve_css():
-    """Serve CSS file directly with cache-busting headers"""
-    css_path = static_dir / "assets" / "index-DHqLy6ep.css"
-    if css_path.exists():
-        headers = {
-            "Cache-Control": "no-cache, no-store, must-revalidate",
-            "Pragma": "no-cache", 
-            "Expires": "0"
-        }
-        return FileResponse(str(css_path), media_type="text/css", headers=headers)
-    from fastapi import HTTPException
-
-    raise HTTPException(status_code=404, detail="CSS not found")
-
-
-@app.get("/assets/index-xKOFZooz.js")
-async def serve_js():
-    """Serve JS file directly with cache-busting headers"""
-    js_path = static_dir / "assets" / "index-xKOFZooz.js"
-    if js_path.exists():
+@app.get("/assets/{filename}")
+async def serve_assets(filename: str):
+    """Serve any asset file with cache-busting headers"""
+    asset_path = static_dir / "assets" / filename
+    if asset_path.exists() and asset_path.is_file():
+        # Determine content type based on file extension
+        content_type = "application/octet-stream"
+        if filename.endswith('.css'):
+            content_type = "text/css"
+        elif filename.endswith('.js'):
+            content_type = "application/javascript"
+        elif filename.endswith('.svg'):
+            content_type = "image/svg+xml"
+        elif filename.endswith('.png'):
+            content_type = "image/png"
+        elif filename.endswith('.jpg') or filename.endswith('.jpeg'):
+            content_type = "image/jpeg"
+            
         headers = {
             "Cache-Control": "no-cache, no-store, must-revalidate",
             "Pragma": "no-cache",
             "Expires": "0"
         }
-        return FileResponse(str(js_path), media_type="application/javascript", headers=headers)
+        return FileResponse(str(asset_path), media_type=content_type, headers=headers)
+    
     from fastapi import HTTPException
-
-    raise HTTPException(status_code=404, detail="JS not found")
+    raise HTTPException(status_code=404, detail="Asset not found")
 
 
 @app.get("/")
