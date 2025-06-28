@@ -37,7 +37,6 @@ from shared.streak_utils import calculate_daily_streak
 security = HTTPBearer()
 
 # Constants
-INITIAL_DUST_GRANT = 25
 FAIRYNAME_LENGTH = 12
 
 # Create routers
@@ -117,12 +116,10 @@ async def verify_otp(
     )
 
     is_new_user = False
-    dust_granted = 0
 
     if not user:
         # Create new user
         is_new_user = True
-        dust_granted = INITIAL_DUST_GRANT
 
         user_id = uuid4()
         fairyname = generate_fairyname()
@@ -150,18 +147,8 @@ async def verify_otp(
             fairyname,
             otp_verify.identifier if identifier_type == "email" else None,
             otp_verify.identifier if identifier_type == "phone" else None,
-            dust_granted,
+            0,  # Starting balance is 0, app will handle initial grants
             "otp",
-        )
-
-        # Log dust grant transaction
-        await db.execute(
-            """
-            INSERT INTO dust_transactions (user_id, amount, type, description)
-            VALUES ($1, $2, 'grant', 'Welcome bonus')
-            """,
-            user_id,
-            dust_granted,
         )
 
     # Calculate and update daily login streak
@@ -190,7 +177,7 @@ async def verify_otp(
         user=User(**user),
         token=Token(access_token=access_token, refresh_token=refresh_token, expires_in=3600),
         is_new_user=is_new_user,
-        dust_granted=dust_granted,
+        dust_granted=0,  # DUST grants now handled by apps, not identity service
     )
 
 
@@ -227,12 +214,10 @@ async def oauth_login(
     )
 
     is_new_user = False
-    dust_granted = 0
 
     if not user:
         # Create new user
         is_new_user = True
-        dust_granted = INITIAL_DUST_GRANT
 
         user_id = uuid4()
         fairyname = generate_fairyname()
@@ -260,7 +245,7 @@ async def oauth_login(
             fairyname,
             user_info.get("email"),
             user_info.get("picture"),
-            dust_granted,
+            0,  # Starting balance is 0, app will handle initial grants
             provider,
         )
 
@@ -273,16 +258,6 @@ async def oauth_login(
             user_id,
             provider,
             user_info["provider_id"],
-        )
-
-        # Log dust grant transaction
-        await db.execute(
-            """
-            INSERT INTO dust_transactions (user_id, amount, type, description)
-            VALUES ($1, $2, 'grant', 'Welcome bonus')
-            """,
-            user_id,
-            dust_granted,
         )
 
     # Calculate and update daily login streak
@@ -311,7 +286,7 @@ async def oauth_login(
         user=User(**user),
         token=Token(access_token=access_token, refresh_token=refresh_token, expires_in=3600),
         is_new_user=is_new_user,
-        dust_granted=dust_granted,
+        dust_granted=0,  # DUST grants now handled by apps, not identity service
     )
 
 
