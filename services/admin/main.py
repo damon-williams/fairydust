@@ -86,15 +86,15 @@ async def serve_vite_svg():
 
 @app.get("/assets/{filename}")
 async def serve_assets(filename: str):
-    """Serve any asset file with cache-busting headers"""
+    """Serve any asset file with cache-busting headers and proper CORS"""
     asset_path = static_dir / "assets" / filename
     if asset_path.exists() and asset_path.is_file():
         # Determine content type based on file extension
         content_type = "application/octet-stream"
         if filename.endswith('.css'):
-            content_type = "text/css"
+            content_type = "text/css; charset=utf-8"
         elif filename.endswith('.js'):
-            content_type = "application/javascript"
+            content_type = "application/javascript; charset=utf-8"
         elif filename.endswith('.svg'):
             content_type = "image/svg+xml"
         elif filename.endswith('.png'):
@@ -105,7 +105,12 @@ async def serve_assets(filename: str):
         headers = {
             "Cache-Control": "no-cache, no-store, must-revalidate",
             "Pragma": "no-cache",
-            "Expires": "0"
+            "Expires": "0",
+            "Access-Control-Allow-Origin": "*",
+            "Access-Control-Allow-Methods": "GET",
+            "Access-Control-Allow-Headers": "*",
+            "Cross-Origin-Resource-Policy": "cross-origin",
+            "X-Content-Type-Options": "nosniff"
         }
         return FileResponse(str(asset_path), media_type=content_type, headers=headers)
     
@@ -115,9 +120,14 @@ async def serve_assets(filename: str):
 
 @app.get("/")
 async def root():
-    """Serve React app"""
+    """Serve React app with CSP headers"""
     static_dir = Path(__file__).parent / "static"
-    return FileResponse(str(static_dir / "index.html"))
+    headers = {
+        "Content-Security-Policy": "default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; img-src 'self' data:; font-src 'self'",
+        "X-Content-Type-Options": "nosniff",
+        "X-Frame-Options": "DENY"
+    }
+    return FileResponse(str(static_dir / "index.html"), headers=headers)
 
 
 # Catch-all route for React app - MUST BE LAST
@@ -141,7 +151,12 @@ async def serve_react_app(path: str):
         or path.startswith("admin/settings")
     ):
         static_dir = Path(__file__).parent / "static"
-        return FileResponse(str(static_dir / "index.html"))
+        headers = {
+            "Content-Security-Policy": "default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; img-src 'self' data:; font-src 'self'",
+            "X-Content-Type-Options": "nosniff",
+            "X-Frame-Options": "DENY"
+        }
+        return FileResponse(str(static_dir / "index.html"), headers=headers)
 
     # Let FastAPI handle 404 for unknown API routes
     from fastapi import HTTPException
