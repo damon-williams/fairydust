@@ -12,7 +12,7 @@ load_dotenv()
 
 # Import our routes and dependencies
 from background import start_background_tasks, stop_background_tasks
-from routes import admin_router, balance_router, transaction_router
+from routes import admin_router, balance_router, grants_router, transaction_router
 
 from shared.database import close_db, init_db
 from shared.redis_client import close_redis, init_redis
@@ -59,6 +59,7 @@ async def health_check():
 app.include_router(balance_router, prefix="/balance", tags=["balance"])
 app.include_router(transaction_router, prefix="/transactions", tags=["transactions"])
 app.include_router(admin_router, prefix="/admin", tags=["admin"])
+app.include_router(grants_router, prefix="/grants", tags=["grants"])
 
 if __name__ == "__main__":
     port = int(os.getenv("PORT", 8002))

@@ -902,4 +902,32 @@ async def create_tables():
     except Exception as e:
         logger.warning(f"Recipe app creation failed (may already exist): {e}")
 
+    # App Grants table for tracking initial and streak bonuses
+    await db.execute_schema(
+        """
+        CREATE TABLE IF NOT EXISTS app_grants (
+            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            app_id UUID NOT NULL REFERENCES apps(id) ON DELETE CASCADE,
+            grant_type VARCHAR(20) NOT NULL CHECK (grant_type IN ('initial', 'streak')),
+            amount INTEGER NOT NULL CHECK (amount > 0),
+            granted_date DATE NOT NULL DEFAULT CURRENT_DATE,
+            idempotency_key VARCHAR(128) NOT NULL,
+            metadata JSONB DEFAULT '{}',
+            created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+            
+            -- Constraints to prevent duplicate grants
+            UNIQUE(user_id, app_id, grant_type),
+            UNIQUE(user_id, grant_type, granted_date),
+            UNIQUE(idempotency_key)
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_app_grants_user_id ON app_grants(user_id);
+        CREATE INDEX IF NOT EXISTS idx_app_grants_app_id ON app_grants(app_id);
+        CREATE INDEX IF NOT EXISTS idx_app_grants_granted_date ON app_grants(granted_date);
+        CREATE INDEX IF NOT EXISTS idx_app_grants_type ON app_grants(grant_type);
+        CREATE INDEX IF NOT EXISTS idx_app_grants_user_type_date ON app_grants(user_id, grant_type, granted_date);
+    """
+    )
+
     logger.info("Database schema creation/update completed successfully")
