@@ -402,3 +402,239 @@ class LedgerService:
         transactions = await self.db.fetch_all(query, *params)
         # Parse all transactions to handle JSON metadata
         return [Transaction(**self._parse_transaction_data(tx)) for tx in transactions]
+
+    async def grant_initial_dust(
+        self,
+        user_id: UUID,
+        app_id: UUID,
+        amount: int,
+        idempotency_key: str,
+    ) -> TransactionResponse:
+        """Grant initial DUST to user for app onboarding (max 100)"""
+        
+        # Validate amount
+        if amount > 100:
+            raise HTTPException(status_code=400, detail="Initial grant cannot exceed 100 DUST")
+        
+        # Check for existing initial grant for this user/app combination
+        existing_grant = await self.db.fetch_one(
+            "SELECT id FROM app_grants WHERE user_id = $1 AND app_id = $2 AND grant_type = 'initial'",
+            user_id, app_id
+        )
+        
+        if existing_grant:
+            raise HTTPException(
+                status_code=400, 
+                detail="User has already received initial grant for this app"
+            )
+        
+        # Check idempotency
+        existing_key = await self.db.fetch_one(
+            "SELECT id FROM app_grants WHERE idempotency_key = $1",
+            idempotency_key
+        )
+        
+        if existing_key:
+            raise HTTPException(
+                status_code=400,
+                detail="Duplicate request detected"
+            )
+        
+        # Acquire lock
+        lock_acquired = await self._acquire_balance_lock(user_id)
+        if not lock_acquired:
+            raise HTTPException(status_code=409, detail="Balance operation in progress")
+
+        try:
+            async with self.db.transaction() as conn:
+                # Verify user exists
+                user = await conn.fetchrow(
+                    "SELECT id, dust_balance FROM users WHERE id = $1 FOR UPDATE", user_id
+                )
+                
+                if not user:
+                    raise HTTPException(status_code=404, detail="User not found")
+
+                current_balance = user["dust_balance"]
+                new_balance = current_balance + amount
+
+                # Update balance
+                await conn.execute(
+                    "UPDATE users SET dust_balance = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2",
+                    new_balance,
+                    user_id,
+                )
+
+                # Create transaction record
+                transaction_id = uuid4()
+                transaction = await conn.fetchrow(
+                    """
+                    INSERT INTO dust_transactions (
+                        id, user_id, amount, type, status, description, app_id, metadata
+                    ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+                    RETURNING *
+                    """,
+                    transaction_id,
+                    user_id,
+                    amount,
+                    TransactionType.GRANT.value,
+                    TransactionStatus.COMPLETED.value,
+                    "Initial app grant",
+                    app_id,
+                    json.dumps({"grant_type": "initial", "app_id": str(app_id)})
+                )
+
+                # Record grant in app_grants table
+                await conn.execute(
+                    """
+                    INSERT INTO app_grants (
+                        user_id, app_id, grant_type, amount, idempotency_key, metadata
+                    ) VALUES ($1, $2, $3, $4, $5, $6)
+                    """,
+                    user_id,
+                    app_id,
+                    "initial",
+                    amount,
+                    idempotency_key,
+                    json.dumps({"transaction_id": str(transaction_id)})
+                )
+
+                # Invalidate cache
+                await self.balance_cache.delete(str(user_id))
+
+                # Parse transaction data and return
+                transaction_data = self._parse_transaction_data(transaction)
+                return TransactionResponse(
+                    transaction=Transaction(**transaction_data),
+                    new_balance=new_balance,
+                    previous_balance=current_balance,
+                )
+
+        finally:
+            await self._release_balance_lock(user_id)
+
+    async def grant_streak_bonus(
+        self,
+        user_id: UUID,
+        app_id: UUID,
+        amount: int,
+        streak_days: int,
+        idempotency_key: str,
+    ) -> TransactionResponse:
+        """Grant daily streak bonus to user (max 25)"""
+        
+        # Validate amount
+        if amount > 25:
+            raise HTTPException(status_code=400, detail="Streak bonus cannot exceed 25 DUST")
+        
+        # Validate streak days
+        if streak_days < 1 or streak_days > 5:
+            raise HTTPException(status_code=400, detail="Streak days must be between 1 and 5")
+        
+        # Check if user already claimed streak bonus today
+        from datetime import date
+        today = date.today()
+        
+        existing_streak = await self.db.fetch_one(
+            "SELECT id FROM app_grants WHERE user_id = $1 AND grant_type = 'streak' AND granted_date = $2",
+            user_id, today
+        )
+        
+        if existing_streak:
+            raise HTTPException(
+                status_code=400,
+                detail="User has already claimed streak bonus today"
+            )
+        
+        # Check idempotency
+        existing_key = await self.db.fetch_one(
+            "SELECT id FROM app_grants WHERE idempotency_key = $1",
+            idempotency_key
+        )
+        
+        if existing_key:
+            raise HTTPException(
+                status_code=400,
+                detail="Duplicate request detected"
+            )
+        
+        # Acquire lock
+        lock_acquired = await self._acquire_balance_lock(user_id)
+        if not lock_acquired:
+            raise HTTPException(status_code=409, detail="Balance operation in progress")
+
+        try:
+            async with self.db.transaction() as conn:
+                # Verify user exists
+                user = await conn.fetchrow(
+                    "SELECT id, dust_balance FROM users WHERE id = $1 FOR UPDATE", user_id
+                )
+                
+                if not user:
+                    raise HTTPException(status_code=404, detail="User not found")
+
+                current_balance = user["dust_balance"]
+                new_balance = current_balance + amount
+
+                # Update balance
+                await conn.execute(
+                    "UPDATE users SET dust_balance = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2",
+                    new_balance,
+                    user_id,
+                )
+
+                # Create transaction record
+                transaction_id = uuid4()
+                transaction = await conn.fetchrow(
+                    """
+                    INSERT INTO dust_transactions (
+                        id, user_id, amount, type, status, description, app_id, metadata
+                    ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+                    RETURNING *
+                    """,
+                    transaction_id,
+                    user_id,
+                    amount,
+                    TransactionType.GRANT.value,
+                    TransactionStatus.COMPLETED.value,
+                    f"Daily streak bonus (day {streak_days})",
+                    app_id,
+                    json.dumps({
+                        "grant_type": "streak", 
+                        "streak_days": streak_days,
+                        "app_id": str(app_id)
+                    })
+                )
+
+                # Record grant in app_grants table
+                await conn.execute(
+                    """
+                    INSERT INTO app_grants (
+                        user_id, app_id, grant_type, amount, granted_date, idempotency_key, metadata
+                    ) VALUES ($1, $2, $3, $4, $5, $6, $7)
+                    """,
+                    user_id,
+                    app_id,
+                    "streak",
+                    amount,
+                    today,
+                    idempotency_key,
+                    json.dumps({
+                        "transaction_id": str(transaction_id),
+                        "streak_days": streak_days
+                    })
+                )
+
+                # Invalidate cache
+                await self.balance_cache.delete(str(user_id))
+
+                # Parse transaction data and return
+                transaction_data = self._parse_transaction_data(transaction)
+                return TransactionResponse(
+                    transaction=Transaction(**transaction_data),
+                    new_balance=new_balance,
+                    previous_balance=current_balance,
+                )
+
+        finally:
+            await self._release_balance_lock(user_id)

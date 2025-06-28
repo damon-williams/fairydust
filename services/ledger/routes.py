@@ -9,6 +9,8 @@ import redis.asyncio as redis
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from ledger_service import LedgerService
 from models import (
+    AppInitialGrantRequest,
+    AppStreakGrantRequest,
     Balance,
     BalanceAdjustment,
     BulkGrantRequest,
@@ -30,6 +32,7 @@ from shared.redis_client import get_redis
 balance_router = APIRouter()
 transaction_router = APIRouter()
 admin_router = APIRouter()
+grants_router = APIRouter()
 
 
 # Dependency to get ledger service
@@ -425,3 +428,61 @@ async def validate_app(app_id: UUID) -> dict:
             # If apps service is down, reject the transaction
             print(f"Error validating app {app_id}: {e}")
             return {"is_valid": False, "is_active": False}
+
+
+# App Grant Routes
+@grants_router.post("/app-initial", response_model=TransactionResponse)
+async def grant_initial_dust(
+    request: AppInitialGrantRequest,
+    current_user: TokenData = Depends(get_current_user),
+    ledger: LedgerService = Depends(get_ledger_service),
+):
+    """Grant initial DUST to user for app onboarding (app-initiated)"""
+    
+    # Validate the app first
+    app_validation = await validate_app(request.app_id)
+    
+    if not app_validation["is_valid"]:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="App not found")
+    
+    if not app_validation["is_active"]:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN, detail="App is not active or not approved"
+        )
+    
+    # Apps can only grant to any user, but we'll validate the user exists
+    return await ledger.grant_initial_dust(
+        user_id=request.user_id,
+        app_id=request.app_id,
+        amount=request.amount,
+        idempotency_key=request.idempotency_key,
+    )
+
+
+@grants_router.post("/app-streak", response_model=TransactionResponse)
+async def grant_streak_bonus(
+    request: AppStreakGrantRequest,
+    current_user: TokenData = Depends(get_current_user),
+    ledger: LedgerService = Depends(get_ledger_service),
+):
+    """Grant daily streak bonus to user (app-initiated)"""
+    
+    # Validate the app first
+    app_validation = await validate_app(request.app_id)
+    
+    if not app_validation["is_valid"]:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="App not found")
+    
+    if not app_validation["is_active"]:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN, detail="App is not active or not approved"
+        )
+    
+    # Apps can grant streak bonuses to any user
+    return await ledger.grant_streak_bonus(
+        user_id=request.user_id,
+        app_id=request.app_id,
+        amount=request.amount,
+        streak_days=request.streak_days,
+        idempotency_key=request.idempotency_key,
+    )
