@@ -212,7 +212,7 @@ fairydust is a microservices-based payment and identity platform for AI-powered 
 
 **User System**:
 - Unique "fairynames" auto-generated: `{adjective}_{noun}_{4-digit-number}`
-- New users receive 25 DUST initial grant
+- New users start with 0 DUST (initial grants handled by apps, not identity service)
 - Builder flag distinguishes app developers from regular users
 - Balance tracked directly on user record (denormalized) + full history in dust_transactions
 - Progressive profiling system to collect user preferences and personal information
