@@ -311,7 +311,7 @@ export function Apps() {
             <TableHeader>
               <TableRow>
                 <TableHead>App</TableHead>
-                <TableHead>Builder</TableHead>
+                <TableHead>UUID</TableHead>
                 <TableHead>Category</TableHead>
                 <TableHead>Status</TableHead>
                 <TableHead>Created</TableHead>
@@ -338,7 +338,9 @@ export function Apps() {
                     </div>
                   </TableCell>
                   <TableCell>
-                    <div className="text-sm">{app.builder_name}</div>
+                    <div className="text-xs font-mono text-slate-500 max-w-[200px] truncate" title={app.id}>
+                      {app.id}
+                    </div>
                   </TableCell>
                   <TableCell>
                     <Badge variant="outline" className="capitalize">
