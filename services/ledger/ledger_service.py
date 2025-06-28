@@ -416,17 +416,7 @@ class LedgerService:
         if amount > 100:
             raise HTTPException(status_code=400, detail="Initial grant cannot exceed 100 DUST")
 
-        # Check for existing initial grant for this user/app combination
-        existing_grant = await self.db.fetch_one(
-            "SELECT id FROM app_grants WHERE user_id = $1 AND app_id = $2 AND grant_type = 'initial'",
-            user_id,
-            app_id,
-        )
-
-        if existing_grant:
-            raise HTTPException(
-                status_code=400, detail="User has already received initial grant for this app"
-            )
+        # No per-app grant restrictions - allow multiple grants
 
         # Check idempotency
         existing_key = await self.db.fetch_one(
@@ -527,21 +517,7 @@ class LedgerService:
         if streak_days < 1 or streak_days > 5:
             raise HTTPException(status_code=400, detail="Streak days must be between 1 and 5")
 
-        # Check if user already claimed streak bonus today
-        from datetime import date
-
-        today = date.today()
-
-        existing_streak = await self.db.fetch_one(
-            "SELECT id FROM app_grants WHERE user_id = $1 AND grant_type = 'streak' AND granted_date = $2",
-            user_id,
-            today,
-        )
-
-        if existing_streak:
-            raise HTTPException(
-                status_code=400, detail="User has already claimed streak bonus today"
-            )
+        # No daily streak limits - allow multiple streak bonuses per day
 
         # Check idempotency
         existing_key = await self.db.fetch_one(
