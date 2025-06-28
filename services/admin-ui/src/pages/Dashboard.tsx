@@ -55,7 +55,7 @@ export function Dashboard() {
     loadDashboardData();
   }, []);
 
-  const hasSystemIssues = systemHealth ? Object.values(systemHealth).some(status => status !== 'online') : false;
+  const hasSystemIssues = systemHealth && Object.values(systemHealth).some(status => status !== 'online');
 
   if (loading) {
     return (
@@ -98,7 +98,14 @@ export function Dashboard() {
           <AlertTitle className="text-yellow-800">System Status Alert</AlertTitle>
           <AlertDescription className="text-yellow-700">
             Some services are experiencing issues. 
-            <Button variant="link" className="p-0 ml-1 text-yellow-800 underline">
+            <Button 
+              variant="link" 
+              className="p-0 ml-1 text-yellow-800 underline"
+              onClick={() => {
+                // Scroll to system health section
+                document.getElementById('system-health-section')?.scrollIntoView({ behavior: 'smooth' });
+              }}
+            >
               View System Status
             </Button>
           </AlertDescription>
@@ -181,7 +188,7 @@ export function Dashboard() {
       <RecentActivity recentUsers={recentUsers} recentApps={recentApps} />
 
       {/* System Health Overview */}
-      <Card>
+      <Card id="system-health-section">
         <CardHeader>
           <CardTitle className="flex items-center">
             <Activity className="mr-2 h-5 w-5" />
