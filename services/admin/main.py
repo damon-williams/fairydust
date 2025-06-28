@@ -5,7 +5,6 @@ from pathlib import Path
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
-from fastapi.staticfiles import StaticFiles
 
 from shared.database import close_db, init_db
 from shared.redis_client import close_redis, init_redis
@@ -75,17 +74,36 @@ app.include_router(users_router, prefix="/admin/users")
 app.include_router(apps_router, prefix="/admin/apps")
 app.include_router(llm_router, prefix="/admin/llm")
 
-# Mount static files AFTER routes but BEFORE catch-all
+# Direct asset serving routes for debugging
 static_dir = Path(__file__).parent / "static"
-if static_dir.exists():
-    app.mount("/assets", StaticFiles(directory=str(static_dir / "assets")), name="assets")
 
 
 @app.get("/vite.svg")
 async def serve_vite_svg():
     """Serve vite.svg"""
-    static_dir = Path(__file__).parent / "static"
     return FileResponse(str(static_dir / "vite.svg"))
+
+
+@app.get("/assets/index-DHqLy6ep.css")
+async def serve_css():
+    """Serve CSS file directly"""
+    css_path = static_dir / "assets" / "index-DHqLy6ep.css"
+    if css_path.exists():
+        return FileResponse(str(css_path), media_type="text/css")
+    from fastapi import HTTPException
+
+    raise HTTPException(status_code=404, detail="CSS not found")
+
+
+@app.get("/assets/index-xKOFZooz.js")
+async def serve_js():
+    """Serve JS file directly"""
+    js_path = static_dir / "assets" / "index-xKOFZooz.js"
+    if js_path.exists():
+        return FileResponse(str(js_path), media_type="application/javascript")
+    from fastapi import HTTPException
+
+    raise HTTPException(status_code=404, detail="JS not found")
 
 
 @app.get("/")
