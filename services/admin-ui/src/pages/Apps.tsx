@@ -1,8 +1,8 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
+import { Alert, AlertDescription } from '@/components/ui/alert';
 import { 
   Table,
   TableBody,
@@ -11,95 +11,34 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
-import { 
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select';
 import { App } from '@/types/admin';
-import { Search, Filter, Download, MoreHorizontal, CheckCircle, XCircle, Clock } from 'lucide-react';
+import { MoreHorizontal, CheckCircle, XCircle, Clock, RefreshCw, AlertTriangle } from 'lucide-react';
 import { formatDistanceToNow } from 'date-fns';
-
-// Mock data
-const mockApps: App[] = [
-  {
-    id: '1',
-    name: 'Recipe Generator',
-    slug: 'fairydust-recipe',
-    description: 'AI-powered recipe creation with personalized recommendations',
-    status: 'approved',
-    builder_id: '2',
-    builder_name: 'stellar_spark_5678',
-    category: 'cooking',
-    created_at: '2024-01-10T14:20:00Z',
-    updated_at: '2024-01-15T09:15:00Z',
-  },
-  {
-    id: '2',
-    name: 'Story Creator',
-    slug: 'fairydust-story',
-    description: 'Personalized storytelling for families and children',
-    status: 'approved',
-    builder_id: '3',
-    builder_name: 'mystic_moon_9012',
-    category: 'entertainment',
-    created_at: '2024-01-12T16:45:00Z',
-    updated_at: '2024-01-14T11:30:00Z',
-  },
-  {
-    id: '3',
-    name: 'Inspiration Generator',
-    slug: 'fairydust-inspire',
-    description: 'Daily inspiration and motivation challenges',
-    status: 'pending',
-    builder_id: '4',
-    builder_name: 'radiant_twilight_3456',
-    category: 'wellness',
-    created_at: '2024-01-14T10:15:00Z',
-    updated_at: '2024-01-14T10:15:00Z',
-  },
-  {
-    id: '4',
-    name: 'Activity Finder',
-    slug: 'fairydust-activity',
-    description: 'Find local activities and attractions',
-    status: 'approved',
-    builder_id: '2',
-    builder_name: 'stellar_spark_5678',
-    category: 'travel',
-    created_at: '2024-01-08T09:30:00Z',
-    updated_at: '2024-01-13T15:20:00Z',
-  },
-  {
-    id: '5',
-    name: 'Learning Assistant',
-    slug: 'smart-study-helper',
-    description: 'AI tutoring and study assistance',
-    status: 'rejected',
-    builder_id: '5',
-    builder_name: 'ethereal_light_7890',
-    category: 'education',
-    created_at: '2024-01-05T11:45:00Z',
-    updated_at: '2024-01-07T14:30:00Z',
-  },
-];
+import { AdminAPI } from '@/lib/admin-api';
+import { toast } from 'sonner';
 
 export function Apps() {
-  const [apps, setApps] = useState<App[]>(mockApps);
-  const [searchTerm, setSearchTerm] = useState('');
-  const [statusFilter, setStatusFilter] = useState('all');
+  const [apps, setApps] = useState<App[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
-  const filteredApps = apps.filter(app => {
-    const matchesSearch = app.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                         app.builder_name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                         app.category.toLowerCase().includes(searchTerm.toLowerCase());
-    
-    const matchesStatus = statusFilter === 'all' || app.status === statusFilter;
-    
-    return matchesSearch && matchesStatus;
-  });
+  const loadApps = async () => {
+    try {
+      setLoading(true);
+      setError(null);
+      const data = await AdminAPI.getApps();
+      setApps(data.apps);
+    } catch (err) {
+      console.error('Failed to load apps:', err);
+      setError('Failed to load apps. Please try again.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    loadApps();
+  }, []);
 
   const getStatusIcon = (status: string) => {
     switch (status) {
@@ -122,104 +61,35 @@ export function Apps() {
           <h1 className="text-3xl font-bold text-slate-900">Apps</h1>
           <p className="text-slate-500">Manage applications and review submissions</p>
         </div>
-        <div className="flex space-x-2">
-          <Button variant="outline">
-            <Download className="mr-2 h-4 w-4" />
-            Export
-          </Button>
-          <Button>
-            Add App
-          </Button>
-        </div>
       </div>
-
-      {/* Stats Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-        <Card>
-          <CardContent className="pt-6">
-            <div className="flex items-center">
-              <CheckCircle className="h-8 w-8 text-green-600" />
-              <div className="ml-4">
-                <p className="text-sm font-medium text-slate-600">Approved</p>
-                <p className="text-2xl font-bold">{apps.filter(a => a.status === 'approved').length}</p>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="pt-6">
-            <div className="flex items-center">
-              <Clock className="h-8 w-8 text-yellow-600" />
-              <div className="ml-4">
-                <p className="text-sm font-medium text-slate-600">Pending</p>
-                <p className="text-2xl font-bold">{apps.filter(a => a.status === 'pending').length}</p>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="pt-6">
-            <div className="flex items-center">
-              <XCircle className="h-8 w-8 text-red-600" />
-              <div className="ml-4">
-                <p className="text-sm font-medium text-slate-600">Rejected</p>
-                <p className="text-2xl font-bold">{apps.filter(a => a.status === 'rejected').length}</p>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="pt-6">
-            <div className="flex items-center">
-              <div className="h-8 w-8 bg-blue-100 rounded-full flex items-center justify-center">
-                <span className="text-blue-600 font-bold">T</span>
-              </div>
-              <div className="ml-4">
-                <p className="text-sm font-medium text-slate-600">Total</p>
-                <p className="text-2xl font-bold">{apps.length}</p>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-      </div>
-
-      {/* Filters */}
-      <Card>
-        <CardContent className="pt-6">
-          <div className="flex space-x-4">
-            <div className="flex-1">
-              <div className="relative">
-                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-slate-400 h-4 w-4" />
-                <Input
-                  placeholder="Search apps..."
-                  value={searchTerm}
-                  onChange={(e) => setSearchTerm(e.target.value)}
-                  className="pl-10"
-                />
-              </div>
-            </div>
-            <Select value={statusFilter} onValueChange={setStatusFilter}>
-              <SelectTrigger className="w-48">
-                <Filter className="mr-2 h-4 w-4" />
-                <SelectValue placeholder="Filter by status" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All Status</SelectItem>
-                <SelectItem value="approved">Approved</SelectItem>
-                <SelectItem value="pending">Pending</SelectItem>
-                <SelectItem value="rejected">Rejected</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
-        </CardContent>
-      </Card>
 
       {/* Apps Table */}
       <Card>
         <CardHeader>
-          <CardTitle>Applications ({filteredApps.length})</CardTitle>
+          <CardTitle>Applications ({apps.length})</CardTitle>
         </CardHeader>
         <CardContent>
+          {loading && (
+            <div className="flex items-center justify-center py-8">
+              <RefreshCw className="h-6 w-6 animate-spin mr-2" />
+              Loading apps...
+            </div>
+          )}
+          
+          {error && (
+            <Alert variant="destructive" className="mb-4">
+              <AlertTriangle className="h-4 w-4" />
+              <AlertDescription>{error}</AlertDescription>
+            </Alert>
+          )}
+          
+          {!loading && !error && apps.length === 0 && (
+            <div className="text-center py-8 text-slate-500">
+              No apps found.
+            </div>
+          )}
+          
+          {!loading && !error && apps.length > 0 && (
           <Table>
             <TableHeader>
               <TableRow>
@@ -233,7 +103,7 @@ export function Apps() {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {filteredApps.map((app) => (
+              {apps.map((app) => (
                 <TableRow key={app.id}>
                   <TableCell>
                     <div className="flex items-center space-x-3">
@@ -292,6 +162,7 @@ export function Apps() {
               ))}
             </TableBody>
           </Table>
+          )}
         </CardContent>
       </Card>
     </div>
