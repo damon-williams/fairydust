@@ -17,7 +17,6 @@ async def check_service_health() -> dict:
         "Apps": "https://fairydust-apps-production.up.railway.app/health",
         "Content": "https://fairydust-content-production.up.railway.app/health",
         "Admin": "https://fairydust-admin-production.up.railway.app/health",
-        "Builder": "https://fairydust-builder-production.up.railway.app/health",
     }
 
     async def check_single_service(name: str, url: str) -> tuple[str, bool, str]:

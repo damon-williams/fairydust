@@ -344,6 +344,29 @@ async def adjust_balance(
         raise HTTPException(status_code=501, detail="Negative adjustments not yet implemented")
 
 
+@admin_router.delete("/testing/reset-grants/{user_id}")
+async def reset_user_grants(
+    user_id: UUID,
+    current_user: TokenData = Depends(require_admin),
+    db: Database = Depends(get_db),
+):
+    """Reset all grants for a user (testing only)"""
+    import os
+    if os.getenv("ENVIRONMENT") != "development":
+        raise HTTPException(status_code=403, detail="Only available in development environment")
+    
+    # Delete all grants for the user
+    result = await db.execute(
+        "DELETE FROM app_grants WHERE user_id = $1", user_id
+    )
+    
+    return {
+        "success": True,
+        "message": f"Reset all grants for user {user_id}",
+        "grants_deleted": result
+    }
+
+
 @admin_router.get("/analytics/app/{app_id}")
 async def get_app_analytics(
     app_id: UUID,

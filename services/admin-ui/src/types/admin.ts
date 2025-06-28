@@ -56,7 +56,6 @@ export interface SystemHealth {
   apps: 'online' | 'offline' | 'degraded';
   content: 'online' | 'offline' | 'degraded';
   admin: 'online' | 'offline' | 'degraded';
-  builder: 'online' | 'offline' | 'degraded';
 }
 
 export interface LLMUsageMetrics {
