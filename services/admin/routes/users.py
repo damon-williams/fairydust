@@ -206,7 +206,8 @@ async def get_users_json(
     base_query = """
         SELECT id, fairyname, email, phone, is_builder, is_admin, is_active,
                dust_balance, created_at, updated_at, auth_provider, city, country,
-               streak_days, metadata
+               streak_days, metadata, avatar_url, first_name, age_range,
+               last_profiling_session, total_profiling_sessions, last_login_date
         FROM users
     """
     count_query = "SELECT COUNT(*) as total FROM users"
@@ -235,17 +236,22 @@ async def get_users_json(
             "fairyname": user["fairyname"],
             "email": user["email"],
             "phone": user["phone"],
+            "avatar_url": user["avatar_url"],
             "is_builder": user["is_builder"],
             "is_admin": user["is_admin"],
             "is_active": user["is_active"],
-            "dust_balance": user["dust_balance"],
-            "created_at": user["created_at"].isoformat() if user["created_at"] else None,
-            "updated_at": user["updated_at"].isoformat() if user["updated_at"] else None,
-            "auth_provider": user["auth_provider"] or "email",
+            "first_name": user["first_name"],
+            "age_range": user["age_range"],
             "city": user["city"],
             "country": user["country"],
+            "dust_balance": user["dust_balance"],
+            "auth_provider": user["auth_provider"] or "email",
+            "last_profiling_session": user["last_profiling_session"].isoformat() if user["last_profiling_session"] else None,
+            "total_profiling_sessions": user["total_profiling_sessions"] or 0,
             "streak_days": user["streak_days"] or 0,
-            "metadata": metadata,
+            "last_login_date": user["last_login_date"].isoformat() if user["last_login_date"] else None,
+            "created_at": user["created_at"].isoformat() if user["created_at"] else None,
+            "updated_at": user["updated_at"].isoformat() if user["updated_at"] else None,
         })
 
     return {
