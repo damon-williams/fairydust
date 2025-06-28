@@ -16,23 +16,18 @@ async def get_llm_usage_metrics(
     db: Database = Depends(get_db),
 ):
     """Get LLM usage metrics for React app"""
-    
+
     # Map timeframe to SQL interval
-    interval_map = {
-        "1d": "1 day",
-        "7d": "7 days", 
-        "30d": "30 days",
-        "90d": "90 days"
-    }
-    
+    interval_map = {"1d": "1 day", "7d": "7 days", "30d": "30 days", "90d": "90 days"}
+
     interval = interval_map.get(timeframe, "7 days")
-    
+
     # Get total usage stats
     stats = await db.fetch_one(
         f"""
         SELECT
             COUNT(*) as total_requests,
-            SUM(total_tokens) as total_tokens,
+            SUM(prompt_tokens + completion_tokens) as total_tokens,
             SUM(cost_usd) as total_cost_usd,
             AVG(latency_ms) as avg_latency_ms
         FROM llm_usage_logs
@@ -66,7 +61,7 @@ async def get_llm_usage_metrics(
             COUNT(l.id) as total_requests,
             AVG(l.prompt_tokens) as avg_prompt_tokens,
             AVG(l.completion_tokens) as avg_completion_tokens,
-            AVG(l.total_tokens) as avg_total_tokens,
+            AVG(l.prompt_tokens + l.completion_tokens) as avg_total_tokens,
             AVG(l.cost_usd) as avg_cost_per_request,
             SUM(l.cost_usd) as total_cost,
             AVG(l.latency_ms) as avg_latency_ms
@@ -81,9 +76,9 @@ async def get_llm_usage_metrics(
 
     return {
         "timeframe": timeframe,
-        "total_stats": dict(stats),
+        "total_stats": dict(stats) if stats else {},
         "model_breakdown": [dict(row) for row in model_stats],
-        "app_usage": [dict(row) for row in app_usage_stats]
+        "app_usage": [dict(row) for row in app_usage_stats],
     }
 
 
@@ -94,22 +89,17 @@ async def get_llm_cost_trends(
     db: Database = Depends(get_db),
 ):
     """Get LLM cost trends over time for React app"""
-    
+
     # Map timeframe to appropriate grouping
     if timeframe in ["1d", "7d"]:
         group_by = "DATE(created_at)"
     else:
         group_by = "DATE_TRUNC('week', created_at)"
-    
-    interval_map = {
-        "1d": "1 day",
-        "7d": "7 days",
-        "30d": "30 days", 
-        "90d": "90 days"
-    }
-    
+
+    interval_map = {"1d": "1 day", "7d": "7 days", "30d": "30 days", "90d": "90 days"}
+
     interval = interval_map.get(timeframe, "30 days")
-    
+
     trends = await db.fetch_all(
         f"""
         SELECT
@@ -123,7 +113,10 @@ async def get_llm_cost_trends(
         """
     )
 
-    return [{"date": row["date"].isoformat(), "cost": float(row["cost"]), "requests": row["requests"]} for row in trends]
+    return [
+        {"date": row["date"].isoformat(), "cost": float(row["cost"]), "requests": row["requests"]}
+        for row in trends
+    ]
 
 
 @llm_router.get("/model-usage")
@@ -132,7 +125,7 @@ async def get_llm_model_usage(
     db: Database = Depends(get_db),
 ):
     """Get model usage statistics for React app"""
-    
+
     model_usage = await db.fetch_all(
         """
         SELECT
@@ -157,7 +150,7 @@ async def get_app_configs(
     db: Database = Depends(get_db),
 ):
     """Get app LLM configurations for React app"""
-    
+
     configs = await db.fetch_all(
         """
         SELECT
@@ -186,9 +179,9 @@ async def get_app_configs(
             "app_slug": config["app_slug"],
             "primary_provider": config["primary_provider"],
             "primary_model_id": config["primary_model_id"],
-            "updated_at": config["updated_at"].isoformat() if config["updated_at"] else None
+            "updated_at": config["updated_at"].isoformat() if config["updated_at"] else None,
         }
-        
+
         # Parse JSONB fields safely
         for field in ["primary_parameters", "fallback_models", "cost_limits", "feature_flags"]:
             value = config[field]
@@ -202,7 +195,7 @@ async def get_app_configs(
                     formatted_config[field] = value
             else:
                 formatted_config[field] = None
-                
+
         formatted_configs.append(formatted_config)
 
     return formatted_configs
@@ -216,24 +209,24 @@ async def update_app_config(
     db: Database = Depends(get_db),
 ):
     """Update app LLM configuration via JSON API"""
-    
+
     # Verify app exists
     try:
         uuid_app_id = UUID(app_id)
         app = await db.fetch_one("SELECT id, name FROM apps WHERE id = $1", uuid_app_id)
     except (ValueError, TypeError):
         app = await db.fetch_one("SELECT id, name FROM apps WHERE slug = $1", app_id)
-    
+
     if not app:
         raise HTTPException(status_code=404, detail="App not found")
-    
+
     # Validate and process config data
     try:
         primary_parameters = json.dumps(config_data.get("primary_parameters", {}))
         fallback_models = json.dumps(config_data.get("fallback_models", []))
         cost_limits = json.dumps(config_data.get("cost_limits", {}))
         feature_flags = json.dumps(config_data.get("feature_flags", {}))
-        
+
         # Update configuration
         await db.execute(
             """
@@ -256,26 +249,25 @@ async def update_app_config(
             primary_parameters,
             fallback_models,
             cost_limits,
-            feature_flags
+            feature_flags,
         )
-        
+
         # Invalidate cache
         from shared.app_config_cache import get_app_config_cache
+
         cache = await get_app_config_cache()
         await cache.invalidate_model_config(str(app["id"]))
-        
+
         return {"success": True, "message": "Configuration updated successfully"}
-        
+
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to update configuration: {str(e)}")
 
 
 @llm_router.get("/models")
-async def get_available_models(
-    admin_user: dict = Depends(get_current_admin_user)
-):
+async def get_available_models(admin_user: dict = Depends(get_current_admin_user)):
     """Get available LLM models by provider"""
-    
+
     return {
         "anthropic": [
             "claude-3-5-sonnet-20241022",

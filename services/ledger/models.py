@@ -55,10 +55,11 @@ class AppInitialGrantRequest(BaseModel):
     app_id: UUID
     amount: int = Field(..., ge=1, le=100, description="Initial DUST amount (max 100)")
     idempotency_key: str = Field(..., min_length=1, max_length=128)
-    
+
     @validator("idempotency_key")
     def validate_idempotency_key(cls, v):
         import re
+
         if not re.match(r"^[a-zA-Z0-9_\-:]+$", v):
             raise ValueError("Idempotency key must be alphanumeric with -_: allowed")
         return v
@@ -70,10 +71,11 @@ class AppStreakGrantRequest(BaseModel):
     amount: int = Field(..., ge=1, le=25, description="Daily bonus amount (max 25)")
     streak_days: int = Field(..., ge=1, le=5, description="Current streak for validation")
     idempotency_key: str = Field(..., min_length=1, max_length=128)
-    
+
     @validator("idempotency_key")
     def validate_idempotency_key(cls, v):
         import re
+
         if not re.match(r"^[a-zA-Z0-9_\-:]+$", v):
             raise ValueError("Idempotency key must be alphanumeric with -_: allowed")
         return v

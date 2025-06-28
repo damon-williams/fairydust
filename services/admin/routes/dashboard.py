@@ -159,5 +159,3 @@ async def get_recent_apps(
     )
 
     return [dict(app) for app in recent_apps]
-
-

@@ -915,7 +915,7 @@ async def create_tables():
             idempotency_key VARCHAR(128) NOT NULL,
             metadata JSONB DEFAULT '{}',
             created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
-            
+
             -- Constraints to prevent duplicate grants
             UNIQUE(user_id, app_id, grant_type),
             UNIQUE(user_id, grant_type, granted_date),
