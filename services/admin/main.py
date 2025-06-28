@@ -63,9 +63,8 @@ app.add_middleware(
 # Mount static files for React app
 static_dir = Path(__file__).parent / "static"
 if static_dir.exists():
-    # Mount assets and static files to handle relative paths
+    # Mount assets first (more specific route)
     app.mount("/assets", StaticFiles(directory=str(static_dir / "assets")), name="assets")
-    app.mount("/static", StaticFiles(directory=str(static_dir)), name="static")
 
 from routes import (
     apps_router,
@@ -88,18 +87,6 @@ async def serve_vite_svg():
     """Serve vite.svg"""
     static_dir = Path(__file__).parent / "static"
     return FileResponse(str(static_dir / "vite.svg"))
-
-
-@app.get("/assets/{file_path:path}")
-async def serve_assets(file_path: str):
-    """Serve React assets with relative paths"""
-    static_dir = Path(__file__).parent / "static"
-    asset_path = static_dir / "assets" / file_path
-    if asset_path.exists():
-        return FileResponse(str(asset_path))
-    from fastapi import HTTPException
-
-    raise HTTPException(status_code=404, detail="Asset not found")
 
 
 @app.get("/")
