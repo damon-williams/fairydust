@@ -42,6 +42,10 @@ export interface DashboardStats {
   total_dust_issued: number;
   active_users_today: number;
   active_users_week: number;
+  new_users_week: number;
+  total_dust_consumed: number;
+  dust_consumed_today: number;
+  dust_consumed_week: number;
   total_transactions: number;
   total_llm_usage: number;
 }

@@ -119,7 +119,7 @@ export function Dashboard() {
         </Alert>
       )}
 
-      {/* Stats Grid */}
+      {/* Top Row Stats */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
         <StatsCard
           title="Total Users"
@@ -128,23 +128,6 @@ export function Dashboard() {
           icon={<Users className="h-5 w-5" />}
           gradient="from-blue-500 to-blue-600"
         />
-        <StatsCard
-          title="Pending Apps"
-          value={stats?.pending_apps || 0}
-          icon={<Clock className="h-5 w-5" />}
-          gradient="from-yellow-500 to-yellow-600"
-        />
-        <StatsCard
-          title="Total DUST Issued"
-          value={`${(stats?.total_dust_issued || 0).toLocaleString()}`}
-          change={{ value: 15, trend: 'up', period: 'last week' }}
-          icon={<Sparkles className="h-5 w-5" />}
-          gradient="from-purple-500 to-purple-600"
-        />
-      </div>
-
-      {/* Secondary Stats */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
         <StatsCard
           title="Active Today"
           value={stats?.active_users_today || 0}
@@ -158,16 +141,39 @@ export function Dashboard() {
           gradient="from-cyan-500 to-cyan-600"
         />
         <StatsCard
-          title="Total Transactions"
-          value={stats?.total_transactions || 0}
+          title="New This Week"
+          value={stats?.new_users_week || 0}
+          icon={<Users className="h-5 w-5" />}
+          gradient="from-green-500 to-green-600"
+        />
+      </div>
+
+      {/* Bottom Row Stats - DUST Metrics */}
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+        <StatsCard
+          title="Total DUST Consumed"
+          value={`${(stats?.total_dust_consumed || 0).toLocaleString()}`}
           icon={<DollarSign className="h-5 w-5" />}
           gradient="from-orange-500 to-orange-600"
         />
         <StatsCard
-          title="LLM Requests"
-          value={stats?.total_llm_usage || 0}
+          title="Consumed Today"
+          value={`${(stats?.dust_consumed_today || 0).toLocaleString()}`}
           icon={<Activity className="h-5 w-5" />}
+          gradient="from-red-500 to-red-600"
+        />
+        <StatsCard
+          title="Consumed This Week"
+          value={`${(stats?.dust_consumed_week || 0).toLocaleString()}`}
+          icon={<TrendingUp className="h-5 w-5" />}
           gradient="from-pink-500 to-pink-600"
+        />
+        <StatsCard
+          title="Total DUST Issued"
+          value={`${(stats?.total_dust_issued || 0).toLocaleString()}`}
+          change={{ value: 15, trend: 'up', period: 'last week' }}
+          icon={<Sparkles className="h-5 w-5" />}
+          gradient="from-purple-500 to-purple-600"
         />
       </div>
 

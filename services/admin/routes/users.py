@@ -191,7 +191,7 @@ async def users_list(
 
 
 # JSON API endpoint for React app
-@users_router.get("")
+@users_router.get("/api")
 async def get_users_json(
     page: int = 1,
     limit: int = 50,
