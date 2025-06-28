@@ -196,6 +196,18 @@ async def request_otp(identifier: str = Form(...)):
             return {"success": False, "message": "Service unavailable"}
 
 
+@auth_router.get("/me")
+async def get_current_admin_user_info(admin_user: dict = Depends(get_current_admin_user)):
+    """Get current admin user information"""
+    user_data = admin_user.get("user", {})
+    return {
+        "id": admin_user["user_id"],
+        "fairyname": admin_user["fairyname"],
+        "email": user_data.get("email"),
+        "is_admin": True,
+    }
+
+
 @auth_router.get("/logout")
 async def logout(admin_user: dict = Depends(get_current_admin_user)):
     redis_client = await get_redis()

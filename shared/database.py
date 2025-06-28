@@ -333,7 +333,6 @@ async def create_tables():
     """
     )
 
-
     await db.execute_schema(
         """
         CREATE TABLE IF NOT EXISTS people_in_my_life (

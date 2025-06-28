@@ -10,6 +10,7 @@ from typing import Optional
 import httpx
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from models import (
+    StoriesListResponse,
     StoryConfigResponse,
     StoryDeleteResponse,
     StoryErrorResponse,
@@ -19,7 +20,6 @@ from models import (
     StoryGenerationResponseNew,
     StoryGenre,
     StoryLength,
-    StoriesListResponse,
     TargetAudience,
     TokenUsage,
     UserStoryNew,
@@ -29,7 +29,7 @@ from shared.auth_middleware import TokenData, get_current_user
 from shared.database import Database, get_db
 from shared.json_utils import parse_jsonb_field
 from shared.llm_pricing import calculate_llm_cost
-from shared.llm_usage_logger import log_llm_usage, calculate_prompt_hash, create_request_metadata
+from shared.llm_usage_logger import calculate_prompt_hash, create_request_metadata, log_llm_usage
 
 router = APIRouter()
 
@@ -101,7 +101,7 @@ async def generate_story(
 
         # Get user context for personalization
         user_context = await _get_user_context(db, request.user_id)
-        print(f"👤 STORY: Retrieved user context", flush=True)
+        print("👤 STORY: Retrieved user context", flush=True)
 
         # Generate story using LLM
         (
@@ -128,7 +128,7 @@ async def generate_story(
             # Calculate prompt hash for the story generation
             full_prompt = _build_story_prompt(request, user_context)
             prompt_hash = calculate_prompt_hash(full_prompt)
-            
+
             # Create request metadata
             request_metadata = create_request_metadata(
                 action="story_generation",
@@ -144,7 +144,7 @@ async def generate_story(
                 user_context=user_context if user_context != "general user" else None,
                 session_id=str(request.session_id) if request.session_id else None,
             )
-            
+
             # Log usage asynchronously (don't block story generation on logging failures)
             await log_llm_usage(
                 user_id=request.user_id,
@@ -272,7 +272,7 @@ async def get_user_stories(
     try:
         # Build query with filters
         base_query = """
-            SELECT id, title, content, genre, story_length, target_audience, 
+            SELECT id, title, content, genre, story_length, target_audience,
                    word_count, is_favorited, created_at, metadata
             FROM user_stories
             WHERE user_id = $1
@@ -321,7 +321,7 @@ async def get_user_stories(
 
         # Get total counts
         count_query = """
-            SELECT 
+            SELECT
                 COUNT(*) as total_count,
                 COUNT(*) FILTER (WHERE is_favorited = TRUE) as favorites_count
             FROM user_stories
@@ -411,10 +411,10 @@ async def toggle_story_favorite(
     try:
         # Update favorite status
         update_query = """
-            UPDATE user_stories 
+            UPDATE user_stories
             SET is_favorited = $1, updated_at = CURRENT_TIMESTAMP
             WHERE id = $2 AND user_id = $3
-            RETURNING id, title, content, genre, story_length, target_audience, 
+            RETURNING id, title, content, genre, story_length, target_audience,
                       word_count, is_favorited, created_at, metadata
         """
 
@@ -470,7 +470,7 @@ async def delete_story(
     try:
         # Delete story
         delete_query = """
-            DELETE FROM user_stories 
+            DELETE FROM user_stories
             WHERE id = $1 AND user_id = $2
         """
 
@@ -494,7 +494,7 @@ async def get_story_config():
     """
     Get available genres, story lengths, and DUST costs.
     """
-    print(f"⚙️ STORY: Getting story configuration", flush=True)
+    print("⚙️ STORY: Getting story configuration", flush=True)
 
     try:
         config = {
@@ -551,7 +551,7 @@ async def get_story_config():
             ],
         }
 
-        print(f"✅ STORY: Returning story configuration", flush=True)
+        print("✅ STORY: Returning story configuration", flush=True)
         return StoryConfigResponse(config=config)
 
     except Exception as e:
@@ -641,7 +641,7 @@ async def _check_rate_limit(db: Database, user_id: uuid.UUID) -> bool:
         query = """
             SELECT COUNT(*) as generation_count
             FROM user_stories
-            WHERE user_id = $1 
+            WHERE user_id = $1
             AND created_at > NOW() - INTERVAL '1 hour'
         """
 
@@ -672,8 +672,8 @@ async def _get_user_context(db: Database, user_id: uuid.UUID) -> str:
     try:
         # Get user profile data
         profile_query = """
-            SELECT field_name, field_value 
-            FROM user_profile_data 
+            SELECT field_name, field_value
+            FROM user_profile_data
             WHERE user_id = $1
         """
 
@@ -682,7 +682,7 @@ async def _get_user_context(db: Database, user_id: uuid.UUID) -> str:
         # Get people in my life
         people_query = """
             SELECT name, relationship, age_range
-            FROM people_in_my_life 
+            FROM people_in_my_life
             WHERE user_id = $1
         """
 
@@ -869,13 +869,13 @@ async def _generate_story_llm(
         prompt = _build_story_prompt(request, user_context)
 
         print(f"🤖 STORY_LLM: Generating with {provider} model {model_id}", flush=True)
-        
+
         # Check API key
         api_key = os.getenv("ANTHROPIC_API_KEY", "")
         if not api_key:
             print("❌ STORY_LLM: Missing ANTHROPIC_API_KEY environment variable", flush=True)
             return None, "", 0, "", model_id, {}, 0.0, 0
-        
+
         print(f"🔑 STORY_LLM: API key configured (length: {len(api_key)})", flush=True)
 
         # Track request latency
@@ -928,7 +928,10 @@ async def _generate_story_llm(
                     # Calculate latency
                     latency_ms = int((time.time() - start_time) * 1000)
 
-                    print(f"✅ STORY_LLM: Generated story successfully (latency: {latency_ms}ms)", flush=True)
+                    print(
+                        f"✅ STORY_LLM: Generated story successfully (latency: {latency_ms}ms)",
+                        flush=True,
+                    )
                     return (
                         content,
                         title,
@@ -961,6 +964,7 @@ async def _generate_story_llm(
         print(f"❌ STORY_LLM: Error type: {type(e).__name__}", flush=True)
         print(f"❌ STORY_LLM: Error details: {repr(e)}", flush=True)
         import traceback
+
         print(f"❌ STORY_LLM: Traceback: {traceback.format_exc()}", flush=True)
         return None, "", 0, "", "claude-3-5-sonnet-20241022", {}, 0.0, 0
 
@@ -1003,10 +1007,10 @@ async def _save_story(
         insert_query = """
             INSERT INTO user_stories (
                 id, user_id, title, content, genre, story_length, target_audience,
-                characters_involved, metadata, dust_cost, word_count, 
+                characters_involved, metadata, dust_cost, word_count,
                 created_at, updated_at
             )
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8::jsonb, $9::jsonb, $10, $11, 
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8::jsonb, $9::jsonb, $10, $11,
                     CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
         """
 

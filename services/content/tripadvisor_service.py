@@ -1,8 +1,8 @@
 # services/content/tripadvisor_service.py
+import math
 from typing import Optional
 
 import httpx
-import math
 from models import ActivityHours
 
 
@@ -12,7 +12,7 @@ class TripAdvisorService:
         self.base_url = "https://api.content.tripadvisor.com/api/v1"
         self.headers = {
             "X-API-KEY": api_key,
-            "Referer": "https://fairydust-content-production.up.railway.app/"
+            "Referer": "https://fairydust-content-production.up.railway.app/",
         }
 
     async def search_nearby_activities(
@@ -51,17 +51,20 @@ class TripAdvisorService:
 
                     print(f"🔍 TRIPADVISOR_DEBUG: API Key: {self.api_key[:10]}...", flush=True)
                     print(f"🔍 TRIPADVISOR_DEBUG: Headers: {self.headers}", flush=True)
-                    print(f"🔍 TRIPADVISOR_DEBUG: URL: {self.base_url}/location/nearby_search", flush=True)
+                    print(
+                        f"🔍 TRIPADVISOR_DEBUG: URL: {self.base_url}/location/nearby_search",
+                        flush=True,
+                    )
                     print(f"🔍 TRIPADVISOR_DEBUG: Params: {params}", flush=True)
 
                     # Log the full request details
                     full_url = f"{self.base_url}/location/nearby_search"
-                    print(f"🔍 TRIPADVISOR_FULL_REQUEST:", flush=True)
-                    print(f"  Method: GET", flush=True)
+                    print("🔍 TRIPADVISOR_FULL_REQUEST:", flush=True)
+                    print("  Method: GET", flush=True)
                     print(f"  URL: {full_url}", flush=True)
                     print(f"  Headers: {self.headers}", flush=True)
                     print(f"  Query Params: {params}", flush=True)
-                    
+
                     # Build query string manually to see exact URL
                     query_parts = []
                     for key, value in params.items():
@@ -75,12 +78,17 @@ class TripAdvisorService:
                         headers=self.headers,
                         params=params,
                     )
-                    
+
                     # Log response details
-                    print(f"🔍 TRIPADVISOR_RESPONSE:", flush=True)
+                    print("🔍 TRIPADVISOR_RESPONSE:", flush=True)
                     print(f"  Status Code: {response.status_code}", flush=True)
                     print(f"  Response Headers: {dict(response.headers)}", flush=True)
-                    print(f"  Response Body: {response.text[:500]}..." if len(response.text) > 500 else f"  Response Body: {response.text}", flush=True)
+                    print(
+                        f"  Response Body: {response.text[:500]}..."
+                        if len(response.text) > 500
+                        else f"  Response Body: {response.text}",
+                        flush=True,
+                    )
 
                     if response.status_code == 200:
                         data = response.json()
@@ -103,11 +111,16 @@ class TripAdvisorService:
                             f"❌ ACTIVITY_SEARCH: TripAdvisor API error {response.status_code}: {response.text}",
                             flush=True,
                         )
-                        
+
                         # Temporary fallback while waiting for TripAdvisor API access
                         if response.status_code == 401:
-                            print("🔄 ACTIVITY_SEARCH: Using fallback mock data due to API authentication issue", flush=True)
-                            mock_activities = self._get_mock_activities(latitude, longitude, category)
+                            print(
+                                "🔄 ACTIVITY_SEARCH: Using fallback mock data due to API authentication issue",
+                                flush=True,
+                            )
+                            mock_activities = self._get_mock_activities(
+                                latitude, longitude, category
+                            )
                             all_activities.extend(mock_activities)
                             total_found += len(mock_activities)
 
@@ -183,9 +196,9 @@ class TripAdvisorService:
                 details_url = f"{self.base_url}/location/{location_id}/details"
                 print(f"🔍 TRIPADVISOR_DETAILS_REQUEST: GET {details_url}", flush=True)
                 print(f"🔍 TRIPADVISOR_DETAILS_HEADERS: {self.headers}", flush=True)
-                
+
                 response = await client.get(details_url, headers=self.headers)
-                
+
                 print(f"🔍 TRIPADVISOR_DETAILS_RESPONSE: {response.status_code}", flush=True)
                 if response.status_code != 200:
                     print(f"🔍 TRIPADVISOR_DETAILS_ERROR: {response.text}", flush=True)
@@ -214,9 +227,9 @@ class TripAdvisorService:
                 params = {"limit": 5}
                 print(f"🔍 TRIPADVISOR_PHOTOS_REQUEST: GET {photos_url}?limit=5", flush=True)
                 print(f"🔍 TRIPADVISOR_PHOTOS_HEADERS: {self.headers}", flush=True)
-                
+
                 response = await client.get(photos_url, headers=self.headers, params=params)
-                
+
                 print(f"🔍 TRIPADVISOR_PHOTOS_RESPONSE: {response.status_code}", flush=True)
                 if response.status_code != 200:
                     print(f"🔍 TRIPADVISOR_PHOTOS_ERROR: {response.text}", flush=True)
@@ -352,20 +365,22 @@ class TripAdvisorService:
         except Exception:
             return None
 
-    def _calculate_distance_miles(self, lat1: float, lon1: float, lat2: float, lon2: float) -> float:
+    def _calculate_distance_miles(
+        self, lat1: float, lon1: float, lat2: float, lon2: float
+    ) -> float:
         """Calculate distance between two coordinates using haversine formula"""
         # Convert latitude and longitude from degrees to radians
         lat1, lon1, lat2, lon2 = map(math.radians, [lat1, lon1, lat2, lon2])
-        
+
         # Haversine formula
         dlat = lat2 - lat1
         dlon = lon2 - lon1
-        a = math.sin(dlat/2)**2 + math.cos(lat1) * math.cos(lat2) * math.sin(dlon/2)**2
+        a = math.sin(dlat / 2) ** 2 + math.cos(lat1) * math.cos(lat2) * math.sin(dlon / 2) ** 2
         c = 2 * math.asin(math.sqrt(a))
-        
+
         # Radius of earth in miles
         r = 3956
-        
+
         return round(c * r, 1)
 
     def get_location_address(self, latitude: float, longitude: float) -> str:
@@ -373,11 +388,11 @@ class TripAdvisorService:
         # In a real implementation, you'd use reverse geocoding
         # For now, return a basic coordinate string
         return f"{latitude:.4f}, {longitude:.4f}"
-    
+
     def _get_mock_activities(self, latitude: float, longitude: float, category: str) -> list[dict]:
         """Temporary mock data while waiting for TripAdvisor API access"""
         base_activities = []
-        
+
         if category == "attractions":
             base_activities = [
                 {
@@ -396,12 +411,12 @@ class TripAdvisorService:
                     "current_status": None,
                     "phone": "(555) 123-4567",
                     "website": "https://example.com",
-                    "raw_details": {}
+                    "raw_details": {},
                 },
                 {
                     "tripadvisor_id": "mock_theater_1",
                     "name": "Community Theater",
-                    "type": "attraction", 
+                    "type": "attraction",
                     "address": "456 Arts Avenue",
                     "latitude": latitude - 0.02,
                     "longitude": longitude + 0.02,
@@ -414,8 +429,8 @@ class TripAdvisorService:
                     "current_status": None,
                     "phone": "(555) 234-5678",
                     "website": "https://example.com",
-                    "raw_details": {}
-                }
+                    "raw_details": {},
+                },
             ]
         elif category == "geos":
             base_activities = [
@@ -435,10 +450,10 @@ class TripAdvisorService:
                     "current_status": None,
                     "phone": None,
                     "website": None,
-                    "raw_details": {}
+                    "raw_details": {},
                 },
                 {
-                    "tripadvisor_id": "mock_trail_1", 
+                    "tripadvisor_id": "mock_trail_1",
                     "name": "Nature Walking Trail",
                     "type": "destination",
                     "address": "Mountain View Drive",
@@ -453,8 +468,8 @@ class TripAdvisorService:
                     "current_status": None,
                     "phone": None,
                     "website": None,
-                    "raw_details": {}
-                }
+                    "raw_details": {},
+                },
             ]
-        
+
         return base_activities

@@ -1,5 +1,4 @@
 # services/content/inspire_routes.py
-import json
 import os
 import time
 import uuid
@@ -24,7 +23,7 @@ from models import (
 from shared.auth_middleware import TokenData, get_current_user
 from shared.database import Database, get_db
 from shared.llm_pricing import calculate_llm_cost
-from shared.llm_usage_logger import log_llm_usage, calculate_prompt_hash, create_request_metadata
+from shared.llm_usage_logger import calculate_prompt_hash, create_request_metadata, log_llm_usage
 
 router = APIRouter()
 
@@ -60,9 +59,7 @@ async def generate_inspiration(
             f"🚨 INSPIRE: User {current_user.user_id} attempted to generate inspiration for different user {request.user_id}",
             flush=True,
         )
-        return InspirationErrorResponse(
-            error="Can only generate inspirations for yourself"
-        )
+        return InspirationErrorResponse(error="Can only generate inspirations for yourself")
 
     try:
         # Extract Authorization header for service-to-service calls
@@ -92,7 +89,7 @@ async def generate_inspiration(
 
         # Get user context for personalization
         user_context = await _get_user_context(db, request.user_id)
-        print(f"👤 INSPIRE: Retrieved user context", flush=True)
+        print("👤 INSPIRE: Retrieved user context", flush=True)
 
         # Generate inspiration using LLM
         inspiration_content, model_used, tokens_used, cost = await _generate_inspiration_llm(
@@ -117,18 +114,20 @@ async def generate_inspiration(
                 user_context=user_context,
             )
             prompt_hash = calculate_prompt_hash(full_prompt)
-            
+
             # Create request metadata
             request_metadata = create_request_metadata(
                 action="inspiration_generation",
                 parameters={
                     "category": request.category.value,
-                    "used_suggestions_count": len(request.used_suggestions) if request.used_suggestions else 0,
+                    "used_suggestions_count": len(request.used_suggestions)
+                    if request.used_suggestions
+                    else 0,
                 },
                 user_context=user_context if user_context != "general user" else None,
                 session_id=str(request.session_id) if request.session_id else None,
             )
-            
+
             # Log usage asynchronously (don't block inspiration generation on logging failures)
             await log_llm_usage(
                 user_id=request.user_id,
@@ -201,9 +200,7 @@ async def generate_inspiration(
     except Exception as e:
         print(f"❌ INSPIRE: Unexpected error: {str(e)}", flush=True)
         print(f"❌ INSPIRE: Error type: {type(e).__name__}", flush=True)
-        return InspirationErrorResponse(
-            error="Internal server error during inspiration generation"
-        )
+        return InspirationErrorResponse(error="Internal server error during inspiration generation")
 
 
 @router.get("/users/{user_id}/inspirations", response_model=InspirationsListResponse)
@@ -264,7 +261,7 @@ async def get_user_inspirations(
 
         # Get total counts
         count_query = """
-            SELECT 
+            SELECT
                 COUNT(*) as total_count,
                 COUNT(*) FILTER (WHERE is_favorited = TRUE) as favorites_count
             FROM user_inspirations
@@ -335,15 +332,13 @@ async def toggle_inspiration_favorite(
     try:
         # Update favorite status
         update_query = """
-            UPDATE user_inspirations 
+            UPDATE user_inspirations
             SET is_favorited = $1, updated_at = CURRENT_TIMESTAMP
             WHERE id = $2 AND user_id = $3 AND deleted_at IS NULL
             RETURNING id, content, category, is_favorited, created_at
         """
 
-        result = await db.fetch_one(
-            update_query, request.is_favorited, inspiration_id, user_id
-        )
+        result = await db.fetch_one(update_query, request.is_favorited, inspiration_id, user_id)
 
         if not result:
             return InspirationErrorResponse(
@@ -393,7 +388,7 @@ async def delete_inspiration(
     try:
         # Soft delete (set deleted_at timestamp)
         delete_query = """
-            UPDATE user_inspirations 
+            UPDATE user_inspirations
             SET deleted_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP
             WHERE id = $1 AND user_id = $2 AND deleted_at IS NULL
         """
@@ -497,7 +492,7 @@ async def _check_rate_limit(db: Database, user_id: uuid.UUID) -> bool:
         query = """
             SELECT COUNT(*) as generation_count
             FROM user_inspirations
-            WHERE user_id = $1 
+            WHERE user_id = $1
             AND created_at > NOW() - INTERVAL '1 hour'
             AND deleted_at IS NULL
         """
@@ -529,8 +524,8 @@ async def _get_user_context(db: Database, user_id: uuid.UUID) -> str:
     try:
         # Get user profile data
         profile_query = """
-            SELECT field_name, field_value 
-            FROM user_profile_data 
+            SELECT field_name, field_value
+            FROM user_profile_data
             WHERE user_id = $1
         """
 
@@ -539,7 +534,7 @@ async def _get_user_context(db: Database, user_id: uuid.UUID) -> str:
         # Get people in my life
         people_query = """
             SELECT name, relationship, age_range
-            FROM people_in_my_life 
+            FROM people_in_my_life
             WHERE user_id = $1
         """
 
@@ -621,11 +616,11 @@ async def _generate_inspiration_llm(
     try:
         # Get LLM model configuration from database/cache
         model_config = await _get_llm_model_config()
-        
+
         provider = model_config.get("primary_provider", "anthropic")
         model_id = model_config.get("primary_model_id", "claude-3-haiku-20240307")
         parameters = model_config.get("primary_parameters", {})
-        
+
         temperature = parameters.get("temperature", 0.8)
         max_tokens = parameters.get("max_tokens", 150)
         top_p = parameters.get("top_p", 0.9)
@@ -680,9 +675,11 @@ async def _generate_inspiration_llm(
                         "total": total_tokens,
                     }
 
-                    cost = calculate_llm_cost("anthropic", model_id, prompt_tokens, completion_tokens)
+                    cost = calculate_llm_cost(
+                        "anthropic", model_id, prompt_tokens, completion_tokens
+                    )
 
-                    print(f"✅ INSPIRE_LLM: Generated inspiration successfully", flush=True)
+                    print("✅ INSPIRE_LLM: Generated inspiration successfully", flush=True)
                     return content, model_id, tokens_used, cost
 
                 else:
@@ -727,7 +724,7 @@ async def _generate_inspiration_llm(
                     # Calculate cost using shared pricing module
                     cost = calculate_llm_cost("openai", model_id, prompt_tokens, completion_tokens)
 
-                    print(f"✅ INSPIRE_LLM: Generated inspiration successfully", flush=True)
+                    print("✅ INSPIRE_LLM: Generated inspiration successfully", flush=True)
                     return content, model_id, tokens_used, cost
 
                 else:
@@ -764,7 +761,7 @@ async def _save_inspiration(
     try:
         insert_query = """
             INSERT INTO user_inspirations (
-                user_id, content, category, session_id, model_used, 
+                user_id, content, category, session_id, model_used,
                 tokens_used, cost_usd, created_at, updated_at
             )
             VALUES ($1, $2, $3, $4, $5, $6, $7, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)

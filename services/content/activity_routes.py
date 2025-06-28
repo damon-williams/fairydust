@@ -2,7 +2,6 @@
 import json
 import os
 import uuid
-from datetime import datetime
 
 import httpx
 from fastapi import APIRouter, Depends, HTTPException, Request
@@ -18,7 +17,7 @@ from tripadvisor_service import TripAdvisorService
 from shared.auth_middleware import TokenData, get_current_user
 from shared.database import Database, get_db
 from shared.llm_pricing import calculate_llm_cost
-from shared.llm_usage_logger import log_llm_usage, calculate_prompt_hash, create_request_metadata
+from shared.llm_usage_logger import calculate_prompt_hash, create_request_metadata, log_llm_usage
 
 router = APIRouter()
 
@@ -63,7 +62,7 @@ async def search_activities(
         auth_token = http_request.headers.get("authorization", "")
         if not auth_token:
             raise HTTPException(status_code=401, detail="Authorization header required")
-        
+
         # Verify user has enough DUST
         user_balance = await _get_user_balance(request.user_id, auth_token)
         if user_balance < ACTIVITY_DUST_COST:
@@ -122,11 +121,10 @@ async def search_activities(
         # Consume DUST after successful search
         dust_consumed = await _consume_dust(request.user_id, ACTIVITY_DUST_COST, auth_token, db)
         if not dust_consumed:
-            print(f"❌ ACTIVITY_SEARCH: Failed to consume DUST for user {request.user_id}", flush=True)
-            raise HTTPException(
-                status_code=402,
-                detail="Payment processing failed"
+            print(
+                f"❌ ACTIVITY_SEARCH: Failed to consume DUST for user {request.user_id}", flush=True
             )
+            raise HTTPException(status_code=402, detail="Payment processing failed")
         print(
             f"💰 ACTIVITY_SEARCH: Consumed {ACTIVITY_DUST_COST} DUST from user {request.user_id}",
             flush=True,
@@ -186,7 +184,9 @@ async def _get_user_balance(user_id: uuid.UUID, auth_token: str) -> int:
                 headers={"Authorization": auth_token},
                 timeout=10.0,
             )
-            print(f"🔍 ACTIVITY_BALANCE: Ledger service response: {response.status_code}", flush=True)
+            print(
+                f"🔍 ACTIVITY_BALANCE: Ledger service response: {response.status_code}", flush=True
+            )
 
             if response.status_code == 200:
                 balance_data = response.json()
@@ -204,14 +204,11 @@ async def _get_user_balance(user_id: uuid.UUID, auth_token: str) -> int:
 
 async def _get_app_id(db: Database) -> str:
     """Get the UUID for the fairydust-activity app"""
-    result = await db.fetch_one(
-        "SELECT id FROM apps WHERE slug = $1", 
-        "fairydust-activity"
-    )
+    result = await db.fetch_one("SELECT id FROM apps WHERE slug = $1", "fairydust-activity")
     if not result:
         raise HTTPException(
-            status_code=500, 
-            detail="fairydust-activity app not found in database. Please create the app first."
+            status_code=500,
+            detail="fairydust-activity app not found in database. Please create the app first.",
         )
     return str(result["id"])
 
@@ -222,11 +219,12 @@ async def _consume_dust(user_id: uuid.UUID, amount: int, auth_token: str, db: Da
     try:
         # Get the proper app UUID
         app_id = await _get_app_id(db)
-        
+
         # Generate idempotency key to prevent double-charging
         import time
+
         idempotency_key = f"activity_search_{str(user_id).replace('-', '')[:16]}_{int(time.time())}"
-        
+
         async with httpx.AsyncClient() as client:
             payload = {
                 "user_id": str(user_id),
@@ -234,10 +232,7 @@ async def _consume_dust(user_id: uuid.UUID, amount: int, auth_token: str, db: Da
                 "app_id": app_id,  # Now using proper UUID
                 "action": "activity_search",  # Required field
                 "idempotency_key": idempotency_key,  # Required field
-                "metadata": {
-                    "service": "content",
-                    "feature": "activity_search"
-                }
+                "metadata": {"service": "content", "feature": "activity_search"},
             }
             print(f"🔍 ACTIVITY_DUST: Payload: {payload}", flush=True)
 
@@ -386,7 +381,9 @@ async def _get_llm_model_config() -> dict:
     return default_config
 
 
-async def _generate_batch_contexts(activities: list[dict], group_context: str, user_id: uuid.UUID, auth_token: str) -> list[dict]:
+async def _generate_batch_contexts(
+    activities: list[dict], group_context: str, user_id: uuid.UUID, auth_token: str
+) -> list[dict]:
     """Generate AI contexts for a batch of activities"""
     try:
         # Get LLM configuration
@@ -482,7 +479,7 @@ Respond with exactly {len(activities)} entries in this JSON format:
                             "group_context": group_context,
                         },
                     )
-                    
+
                     await log_llm_usage(
                         user_id=user_id,
                         app_id="fairydust-activity",

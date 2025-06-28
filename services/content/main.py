@@ -20,11 +20,10 @@ logger = logging.getLogger(__name__)
 
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI, Request, HTTPException
-from fastapi.middleware.cors import CORSMiddleware
+from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
-from pydantic import ValidationError
 
 print("🚨 STARTUP: FastAPI imports successful", flush=True)
 
@@ -131,18 +130,19 @@ async def validation_exception_handler(request: Request, exc: RequestValidationE
         print(f"❌ VALIDATION_ERROR: Request body: {request_body.decode('utf-8')}", flush=True)
     except Exception as e:
         print(f"❌ VALIDATION_ERROR: Could not read request body: {e}", flush=True)
-    
+
     print(f"❌ VALIDATION_ERROR: {exc.errors()}", flush=True)
     print(f"❌ VALIDATION_ERROR: URL: {request.url}", flush=True)
-    
+
     return JSONResponse(
         status_code=422,
         content={
-            "error": "Validation failed", 
+            "error": "Validation failed",
             "details": exc.errors(),
-            "message": "Request body validation failed. Check required fields and data types."
-        }
+            "message": "Request body validation failed. Check required fields and data types.",
+        },
     )
+
 
 # CORS middleware
 allowed_origins = os.getenv("ALLOWED_ORIGINS", "*").split(",")
@@ -204,9 +204,7 @@ print(
     "🚨 CONTENT_SERVICE: Router prefixes - recipes: /recipes, stories: /, restaurants: /restaurant, activities: /, inspire: /, recipe-new: /",
     flush=True,
 )
-print(
-    "🚨 CONTENT_SERVICE: Expected story URL: /apps/story/generate", flush=True
-)
+print("🚨 CONTENT_SERVICE: Expected story URL: /apps/story/generate", flush=True)
 print("🚨 CONTENT_SERVICE: Expected restaurant URL: /restaurant/generate", flush=True)
 print("🚨 CONTENT_SERVICE: Expected activity URL: /activity/search", flush=True)
 
