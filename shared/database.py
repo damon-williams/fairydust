@@ -502,16 +502,19 @@ async def create_tables():
             CASE
                 WHEN a.slug = 'fairydust-inspire' THEN 'anthropic'
                 WHEN a.slug = 'fairydust-recipe' THEN 'anthropic'
+                WHEN a.slug = 'fairydust-fortune-teller' THEN 'anthropic'
                 ELSE 'anthropic'
             END,
             CASE
                 WHEN a.slug = 'fairydust-inspire' THEN 'claude-3-5-haiku-20241022'
                 WHEN a.slug = 'fairydust-recipe' THEN 'claude-3-5-sonnet-20241022'
+                WHEN a.slug = 'fairydust-fortune-teller' THEN 'claude-3-5-sonnet-20241022'
                 ELSE 'claude-3-5-haiku-20241022'
             END,
             CASE
                 WHEN a.slug = 'fairydust-inspire' THEN '{"temperature": 0.8, "max_tokens": 150, "top_p": 0.9}'::jsonb
                 WHEN a.slug = 'fairydust-recipe' THEN '{"temperature": 0.7, "max_tokens": 1000, "top_p": 0.9}'::jsonb
+                WHEN a.slug = 'fairydust-fortune-teller' THEN '{"temperature": 0.8, "max_tokens": 400, "top_p": 0.9}'::jsonb
                 ELSE '{"temperature": 0.8, "max_tokens": 150, "top_p": 0.9}'::jsonb
             END,
             CASE
@@ -537,16 +540,25 @@ async def create_tables():
                         "parameters": {"temperature": 0.7, "max_tokens": 1000}
                     }
                 ]'::jsonb
+                WHEN a.slug = 'fairydust-fortune-teller' THEN '[
+                    {
+                        "provider": "openai",
+                        "model_id": "gpt-4o",
+                        "trigger": "provider_error",
+                        "parameters": {"temperature": 0.8, "max_tokens": 400}
+                    }
+                ]'::jsonb
                 ELSE '[]'::jsonb
             END,
             CASE
                 WHEN a.slug = 'fairydust-inspire' THEN '{"per_request_max": 0.05, "daily_max": 10.0, "monthly_max": 100.0}'::jsonb
                 WHEN a.slug = 'fairydust-recipe' THEN '{"per_request_max": 0.15, "daily_max": 25.0, "monthly_max": 200.0}'::jsonb
+                WHEN a.slug = 'fairydust-fortune-teller' THEN '{"per_request_max": 0.10, "daily_max": 15.0, "monthly_max": 150.0}'::jsonb
                 ELSE '{"per_request_max": 0.05, "daily_max": 10.0, "monthly_max": 100.0}'::jsonb
             END,
             '{"streaming_enabled": true, "cache_responses": true, "log_prompts": false}'::jsonb
         FROM apps a
-        WHERE a.slug IN ('fairydust-inspire', 'fairydust-recipe')
+        WHERE a.slug IN ('fairydust-inspire', 'fairydust-recipe', 'fairydust-fortune-teller')
         ON CONFLICT (app_id) DO UPDATE SET
             primary_provider = EXCLUDED.primary_provider,
             primary_model_id = EXCLUDED.primary_model_id,
@@ -855,6 +867,68 @@ async def create_tables():
         )
     except Exception as e:
         logger.warning(f"Inspire app creation failed (may already exist): {e}")
+
+    # Fortune Readings table for Fortune Teller app
+    await db.execute_schema(
+        """
+        CREATE TABLE IF NOT EXISTS fortune_readings (
+            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            target_person_id UUID NOT NULL REFERENCES people_in_my_life(id) ON DELETE CASCADE,
+            target_person_name VARCHAR(100) NOT NULL,
+            reading_type VARCHAR(20) NOT NULL CHECK (reading_type IN ('question', 'daily')),
+            question TEXT,
+            content TEXT NOT NULL,
+            cosmic_influences JSONB NOT NULL,
+            lucky_elements JSONB NOT NULL,
+            metadata JSONB DEFAULT '{}',
+            is_favorited BOOLEAN DEFAULT FALSE,
+            created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_fortune_readings_user_id ON fortune_readings(user_id);
+        CREATE INDEX IF NOT EXISTS idx_fortune_readings_created_at ON fortune_readings(created_at DESC);
+        CREATE INDEX IF NOT EXISTS idx_fortune_readings_favorited ON fortune_readings(user_id, is_favorited) WHERE is_favorited = TRUE;
+        CREATE INDEX IF NOT EXISTS idx_fortune_readings_target_person ON fortune_readings(target_person_id);
+        CREATE INDEX IF NOT EXISTS idx_fortune_readings_type ON fortune_readings(reading_type);
+        CREATE INDEX IF NOT EXISTS idx_fortune_readings_user_type ON fortune_readings(user_id, reading_type, created_at DESC);
+    """
+    )
+
+    # Insert fortune teller app if it doesn't exist
+    try:
+        await db.execute_schema(
+            """
+            INSERT INTO apps (
+                id, builder_id, name, slug, description, icon_url, dust_per_use,
+                status, category, website_url, demo_url, callback_url,
+                is_active, admin_notes, created_at, updated_at
+            )
+            SELECT
+                gen_random_uuid(),
+                (SELECT id FROM users WHERE is_builder = true LIMIT 1),
+                'Fortune Teller',
+                'fairydust-fortune-teller',
+                'Get personalized mystical guidance and fortune readings based on astrology and numerology',
+                NULL,
+                3,
+                'approved',
+                'lifestyle',
+                NULL,
+                NULL,
+                NULL,
+                true,
+                'Auto-created for mobile app implementation',
+                CURRENT_TIMESTAMP,
+                CURRENT_TIMESTAMP
+            WHERE NOT EXISTS (
+                SELECT 1 FROM apps WHERE slug = 'fairydust-fortune-teller'
+            );
+        """
+        )
+    except Exception as e:
+        logger.warning(f"Fortune Teller app creation failed (may already exist): {e}")
 
     # User Recipe Preferences table for Recipe app
     await db.execute_schema(

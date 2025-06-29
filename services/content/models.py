@@ -235,6 +235,108 @@ class StoryErrorResponse(BaseModel):
     story_id: Optional[UUID] = None
 
 
+# Fortune Teller App Models
+class ReadingType(str, Enum):
+    QUESTION = "question"
+    DAILY = "daily"
+
+
+class CosmicInfluences(BaseModel):
+    zodiac_sign: str
+    moon_phase: str
+    planetary_focus: str
+    life_path_number: int
+
+
+class LuckyElements(BaseModel):
+    color: str
+    number: int
+    element: str
+    gemstone: str
+
+
+class FortuneReading(BaseModel):
+    id: UUID
+    content: str
+    reading_type: ReadingType
+    question: Optional[str] = None
+    target_person_name: str
+    cosmic_influences: CosmicInfluences
+    lucky_elements: LuckyElements
+    created_at: datetime
+    is_favorited: bool = False
+
+
+class FortuneGenerationRequest(BaseModel):
+    user_id: UUID
+    target_person_id: UUID
+    reading_type: ReadingType
+    question: Optional[str] = Field(None, max_length=500)
+    birth_date: str = Field(..., pattern=r"^\d{4}-\d{2}-\d{2}$")
+    birth_time: Optional[str] = Field(None, pattern=r"^\d{2}:\d{2}$")
+    birth_location: Optional[str] = Field(None, max_length=200)
+    name: str = Field(..., min_length=1, max_length=100)
+    gender: Optional[str] = Field(None, max_length=20)
+
+
+class FortuneGenerationResponse(BaseModel):
+    success: bool = True
+    reading: FortuneReading
+    model_used: str
+    tokens_used: TokenUsage
+    cost: float
+    new_dust_balance: int
+
+
+class FortuneHistoryResponse(BaseModel):
+    success: bool = True
+    readings: list[FortuneReading]
+    total_count: int
+    favorites_count: int
+
+
+class FortuneProfile(BaseModel):
+    birth_date: str
+    birth_time: Optional[str] = None
+    birth_location: Optional[str] = None
+    zodiac_sign: str
+    zodiac_element: str
+    life_path_number: int
+    ruling_planet: str
+
+
+class FortuneProfileRequest(BaseModel):
+    birth_date: str = Field(..., pattern=r"^\d{4}-\d{2}-\d{2}$")
+    birth_time: Optional[str] = Field(None, pattern=r"^\d{2}:\d{2}$")
+    birth_location: Optional[str] = Field(None, max_length=200)
+    gender: Optional[str] = Field(None, max_length=20)
+
+
+class FortuneProfileResponse(BaseModel):
+    success: bool = True
+    person: dict  # Will contain person data with fortune_profile
+
+
+class FortuneFavoriteRequest(BaseModel):
+    is_favorited: bool
+
+
+class FortuneFavoriteResponse(BaseModel):
+    success: bool = True
+    reading: FortuneReading
+
+
+class FortuneDeleteResponse(BaseModel):
+    success: bool = True
+    message: str = "Reading deleted successfully"
+
+
+class FortuneErrorResponse(BaseModel):
+    success: bool = False
+    error: str
+    reading_id: Optional[UUID] = None
+
+
 # Restaurant App Models
 class RestaurantLocation(BaseModel):
     latitude: float = Field(..., ge=-90, le=90)
