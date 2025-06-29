@@ -93,14 +93,6 @@ class User(BaseModel):
         from_attributes = True
 
 
-class UserPublic(BaseModel):
-    id: UUID
-    fairyname: str
-    avatar_url: Optional[str] = None
-    is_builder: bool
-    created_at: datetime
-
-
 # Token models
 class Token(BaseModel):
     access_token: str

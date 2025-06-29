@@ -18,7 +18,6 @@ from models import (
     RefreshTokenRequest,
     Token,
     User,
-    UserPublic,
     UserUpdate,
 )
 
@@ -432,28 +431,10 @@ async def update_user_profile(
     return User(**user)
 
 
-@user_router.get("/{user_id}/public", response_model=UserPublic)
-async def get_user_public_profile(user_id: str, db: Database = Depends(get_db)):
-    """Get public user profile"""
-    user = await db.fetch_one(
-        """
-        SELECT id, fairyname, avatar_url, is_builder, created_at
-        FROM users
-        WHERE id = $1 AND is_active = true
-        """,
-        user_id,
-    )
-
-    if not user:
-        raise HTTPException(status_code=404, detail="User not found")
-
-    return UserPublic(**user)
-
-
 # Progressive Profiling Routes
 
 
-# Profile data endpoints removed - no longer needed
+# Public profile and profile data endpoints removed - no longer needed
 
 
 @user_router.post("/{user_id}/people", response_model=PersonInMyLife)
