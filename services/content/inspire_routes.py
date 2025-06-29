@@ -50,6 +50,7 @@ async def generate_inspiration(
     """
     Generate a new inspiration using LLM and automatically save it to user's collection.
     """
+    print(f"🚀 INSPIRE DEBUG: === NEW REQUEST START === User: {request.user_id}, Category: {request.category}", flush=True)
     print(f"🌟 INSPIRE: Starting generation for user {request.user_id}", flush=True)
     print(f"📂 INSPIRE: Category: {request.category}", flush=True)
 
@@ -76,6 +77,7 @@ async def generate_inspiration(
 
         # Verify user has enough DUST
         user_balance = await _get_user_balance(request.user_id, auth_token)
+        print(f"💰 INSPIRE DEBUG: Initial user balance: {user_balance} DUST (Required: {INSPIRE_DUST_COST})", flush=True)
         if user_balance < INSPIRE_DUST_COST:
             print(
                 f"💰 INSPIRE: Insufficient DUST balance: {user_balance} < {INSPIRE_DUST_COST}",
@@ -92,6 +94,7 @@ async def generate_inspiration(
         print("👤 INSPIRE: Retrieved user context", flush=True)
 
         # Generate inspiration using LLM
+        print(f"🤖 INSPIRE DEBUG: Starting LLM generation for category: {request.category}", flush=True)
         inspiration_content, model_used, tokens_used, cost = await _generate_inspiration_llm(
             category=request.category,
             used_suggestions=request.used_suggestions,
@@ -99,11 +102,13 @@ async def generate_inspiration(
         )
 
         if not inspiration_content:
+            print(f"❌ INSPIRE DEBUG: LLM generation failed", flush=True)
             return InspirationErrorResponse(
                 error="Failed to generate inspiration. Please try again."
             )
 
-        print(f"🤖 INSPIRE: Generated inspiration: {inspiration_content[:50]}...", flush=True)
+        print(f"🤖 INSPIRE DEBUG: Generated inspiration: {inspiration_content[:50]}...", flush=True)
+        print(f"🤖 INSPIRE DEBUG: Model used: {model_used}, LLM cost: ${cost}, Tokens: {tokens_used}", flush=True)
 
         # Log LLM usage for analytics (background task)
         try:
@@ -163,14 +168,30 @@ async def generate_inspiration(
         )
 
         # Consume DUST after successful generation and saving
+        print(f"💰 INSPIRE DEBUG: About to consume {INSPIRE_DUST_COST} DUST from user {request.user_id}", flush=True)
+        print(f"💰 INSPIRE DEBUG: User balance before consumption: {user_balance} DUST", flush=True)
+        
         dust_consumed = await _consume_dust(request.user_id, INSPIRE_DUST_COST, auth_token, db)
+        
+        print(f"💰 INSPIRE DEBUG: _consume_dust returned: {dust_consumed}", flush=True)
+        
         if not dust_consumed:
-            print(f"❌ INSPIRE: Failed to consume DUST for user {request.user_id}", flush=True)
+            print(f"❌ INSPIRE DEBUG: Failed to consume DUST for user {request.user_id}", flush=True)
             return InspirationErrorResponse(error="Payment processing failed")
 
-        new_balance = user_balance - INSPIRE_DUST_COST
+        # Check balance after consumption to verify charge
+        post_consumption_balance = await _get_user_balance(request.user_id, auth_token)
+        actual_consumed = user_balance - post_consumption_balance
+        
+        print(f"💰 INSPIRE DEBUG: Balance after consumption: {post_consumption_balance} DUST", flush=True)
+        print(f"💰 INSPIRE DEBUG: Actual DUST consumed: {actual_consumed} (Expected: {INSPIRE_DUST_COST})", flush=True)
+        
+        if actual_consumed != INSPIRE_DUST_COST:
+            print(f"⚠️ INSPIRE DEBUG: WARNING - Consumption mismatch! Expected {INSPIRE_DUST_COST}, actual {actual_consumed}", flush=True)
+
+        new_balance = post_consumption_balance
         print(
-            f"💰 INSPIRE: Consumed {INSPIRE_DUST_COST} DUST from user {request.user_id}",
+            f"💰 INSPIRE DEBUG: Successfully consumed {actual_consumed} DUST from user {request.user_id}",
             flush=True,
         )
 
@@ -455,6 +476,7 @@ async def _consume_dust(user_id: uuid.UUID, amount: int, auth_token: str, db: Da
 
         # Generate idempotency key to prevent double-charging
         idempotency_key = f"inspire_gen_{str(user_id).replace('-', '')[:16]}_{int(time.time())}"
+        print(f"🔍 INSPIRE_DUST DEBUG: Generated idempotency key: {idempotency_key}", flush=True)
 
         async with httpx.AsyncClient() as client:
             payload = {
@@ -465,6 +487,8 @@ async def _consume_dust(user_id: uuid.UUID, amount: int, auth_token: str, db: Da
                 "idempotency_key": idempotency_key,
                 "metadata": {"service": "content", "feature": "inspire_generation"},
             }
+            
+            print(f"🔍 INSPIRE_DUST DEBUG: Sending payload to ledger: {payload}", flush=True)
 
             response = await client.post(
                 "https://fairydust-ledger-production.up.railway.app/transactions/consume",
@@ -472,13 +496,16 @@ async def _consume_dust(user_id: uuid.UUID, amount: int, auth_token: str, db: Da
                 headers={"Authorization": auth_token},
                 timeout=10.0,
             )
+            
+            print(f"🔍 INSPIRE_DUST DEBUG: Ledger response status: {response.status_code}", flush=True)
 
             if response.status_code != 200:
                 response_text = response.text
-                print(f"❌ INSPIRE_DUST: Error response: {response_text}", flush=True)
+                print(f"❌ INSPIRE_DUST DEBUG: Error response: {response_text}", flush=True)
                 return False
 
-            print("✅ INSPIRE_DUST: DUST consumption successful", flush=True)
+            response_data = response.json()
+            print(f"✅ INSPIRE_DUST DEBUG: DUST consumption successful - Response: {response_data}", flush=True)
             return True
     except Exception as e:
         print(f"❌ INSPIRE_DUST: Exception consuming DUST: {str(e)}", flush=True)
