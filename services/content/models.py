@@ -81,9 +81,8 @@ class StoryLength(str, Enum):
 
 
 class TargetAudience(str, Enum):
-    CHILD = "child"
-    ADULT = "adult"
-    FAMILY = "family"
+    KIDS = "kids"
+    ADULTS = "adults"
 
 
 class StoryCharacter(BaseModel):
@@ -104,7 +103,7 @@ class StoryGenerationRequest(BaseModel):
     story_length: StoryLength  # Reading time instead of word count
     characters: list[StoryCharacter] = Field(default_factory=list, max_items=8)
     custom_prompt: Optional[str] = Field(None, max_length=1000)
-    target_audience: TargetAudience = TargetAudience.FAMILY
+    target_audience: TargetAudience = TargetAudience.KIDS
     session_id: Optional[UUID] = None
 
 
