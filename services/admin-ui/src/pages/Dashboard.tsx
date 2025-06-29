@@ -99,7 +99,7 @@ export function Dashboard() {
         </div>
         <div className="text-right">
           <p className="text-sm text-slate-400">Admin Portal</p>
-          <p className="text-lg font-semibold text-slate-600">v2.1.2</p>
+          <p className="text-lg font-semibold text-slate-600">v2.1.3</p>
         </div>
       </div>
 
