@@ -44,13 +44,16 @@ CATEGORY_PROMPTS = {
 async def generate_inspiration(
     request: InspirationGenerateRequest,
     http_request: Request,
+    skip_payment: bool = Query(False, description="Skip DUST payment (when already handled by client)"),
     current_user: TokenData = Depends(get_current_user),
     db: Database = Depends(get_db),
 ):
     """
     Generate a new inspiration using LLM and automatically save it to user's collection.
     """
-    print(f"🚀 INSPIRE DEBUG: === NEW REQUEST START === User: {request.user_id}, Category: {request.category}", flush=True)
+    import uuid
+    request_id = str(uuid.uuid4())[:8]
+    print(f"🚀 INSPIRE DEBUG: === NEW REQUEST START [{request_id}] === User: {request.user_id}, Category: {request.category}", flush=True)
     print(f"🌟 INSPIRE: Starting generation for user {request.user_id}", flush=True)
     print(f"📂 INSPIRE: Category: {request.category}", flush=True)
 
@@ -75,10 +78,11 @@ async def generate_inspiration(
                 error=f"Rate limit exceeded. Maximum {INSPIRE_RATE_LIMIT} inspirations per hour."
             )
 
-        # Verify user has enough DUST
+        # Verify user has enough DUST (only if payment is not skipped)
         user_balance = await _get_user_balance(request.user_id, auth_token)
-        print(f"💰 INSPIRE DEBUG: Initial user balance: {user_balance} DUST (Required: {INSPIRE_DUST_COST})", flush=True)
-        if user_balance < INSPIRE_DUST_COST:
+        print(f"💰 INSPIRE DEBUG: Initial user balance: {user_balance} DUST (Required: {INSPIRE_DUST_COST}, Skip payment: {skip_payment})", flush=True)
+        
+        if not skip_payment and user_balance < INSPIRE_DUST_COST:
             print(
                 f"💰 INSPIRE: Insufficient DUST balance: {user_balance} < {INSPIRE_DUST_COST}",
                 flush=True,
@@ -167,33 +171,38 @@ async def generate_inspiration(
             cost=cost,
         )
 
-        # Consume DUST after successful generation and saving
-        print(f"💰 INSPIRE DEBUG: About to consume {INSPIRE_DUST_COST} DUST from user {request.user_id}", flush=True)
-        print(f"💰 INSPIRE DEBUG: User balance before consumption: {user_balance} DUST", flush=True)
-        
-        dust_consumed = await _consume_dust(request.user_id, INSPIRE_DUST_COST, auth_token, db)
-        
-        print(f"💰 INSPIRE DEBUG: _consume_dust returned: {dust_consumed}", flush=True)
-        
-        if not dust_consumed:
-            print(f"❌ INSPIRE DEBUG: Failed to consume DUST for user {request.user_id}", flush=True)
-            return InspirationErrorResponse(error="Payment processing failed")
+        # Consume DUST after successful generation and saving (unless skipped)
+        if skip_payment:
+            print(f"💰 INSPIRE DEBUG: Skipping DUST consumption (skip_payment=True)", flush=True)
+            new_balance = user_balance  # No change to balance
+            actual_consumed = 0
+        else:
+            print(f"💰 INSPIRE DEBUG: About to consume {INSPIRE_DUST_COST} DUST from user {request.user_id}", flush=True)
+            print(f"💰 INSPIRE DEBUG: User balance before consumption: {user_balance} DUST", flush=True)
+            
+            dust_consumed = await _consume_dust(request.user_id, INSPIRE_DUST_COST, auth_token, db)
+            
+            print(f"💰 INSPIRE DEBUG: _consume_dust returned: {dust_consumed}", flush=True)
+            
+            if not dust_consumed:
+                print(f"❌ INSPIRE DEBUG: Failed to consume DUST for user {request.user_id}", flush=True)
+                return InspirationErrorResponse(error="Payment processing failed")
 
-        # Check balance after consumption to verify charge
-        post_consumption_balance = await _get_user_balance(request.user_id, auth_token)
-        actual_consumed = user_balance - post_consumption_balance
-        
-        print(f"💰 INSPIRE DEBUG: Balance after consumption: {post_consumption_balance} DUST", flush=True)
-        print(f"💰 INSPIRE DEBUG: Actual DUST consumed: {actual_consumed} (Expected: {INSPIRE_DUST_COST})", flush=True)
-        
-        if actual_consumed != INSPIRE_DUST_COST:
-            print(f"⚠️ INSPIRE DEBUG: WARNING - Consumption mismatch! Expected {INSPIRE_DUST_COST}, actual {actual_consumed}", flush=True)
+            # Check balance after consumption to verify charge
+            post_consumption_balance = await _get_user_balance(request.user_id, auth_token)
+            actual_consumed = user_balance - post_consumption_balance
+            
+            print(f"💰 INSPIRE DEBUG: Balance after consumption: {post_consumption_balance} DUST", flush=True)
+            print(f"💰 INSPIRE DEBUG: Actual DUST consumed: {actual_consumed} (Expected: {INSPIRE_DUST_COST})", flush=True)
+            
+            if actual_consumed != INSPIRE_DUST_COST:
+                print(f"⚠️ INSPIRE DEBUG: WARNING - Consumption mismatch! Expected {INSPIRE_DUST_COST}, actual {actual_consumed}", flush=True)
 
-        new_balance = post_consumption_balance
-        print(
-            f"💰 INSPIRE DEBUG: Successfully consumed {actual_consumed} DUST from user {request.user_id}",
-            flush=True,
-        )
+            new_balance = post_consumption_balance
+            print(
+                f"💰 INSPIRE DEBUG: Successfully consumed {actual_consumed} DUST from user {request.user_id}",
+                flush=True,
+            )
 
         # Build response
         inspiration = UserInspiration(
