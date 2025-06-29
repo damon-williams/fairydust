@@ -14,6 +14,10 @@ export function Login() {
   const [step, setStep] = useState<'identifier' | 'otp'>('identifier');
   const [error, setError] = useState('');
 
+  // Debug logging
+  console.log('🔍 LOGIN_DEBUG: Login component loaded with Quick Fill button v2.1.3');
+  console.log('🔍 LOGIN_DEBUG: Build timestamp:', new Date().toISOString());
+
   const handleRequestOTP = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!identifier.trim()) {

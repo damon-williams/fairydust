@@ -40,6 +40,10 @@ export function Apps() {
   const [apps, setApps] = useState<App[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+
+  // Debug logging
+  console.log('🔍 APPS_DEBUG: Apps component loaded with SLUG display v2.1.3');
+  console.log('🔍 APPS_DEBUG: Build timestamp:', new Date().toISOString());
   const [createDialogOpen, setCreateDialogOpen] = useState(false);
   const [builders, setBuilders] = useState<Array<{ id: string; fairyname: string; email: string }>>([]);
   const [creatingApp, setCreatingApp] = useState(false);
