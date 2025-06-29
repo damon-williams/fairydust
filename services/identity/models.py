@@ -117,37 +117,7 @@ class TokenData(BaseModel):
     exp: Optional[datetime] = None
 
 
-# Progressive Profiling models
-class UserProfileDataCreate(BaseModel):
-    category: str = Field(..., max_length=50)
-    field_name: str = Field(..., max_length=100)
-    field_value: dict | list | str | int | float | bool
-    confidence_score: float = Field(1.0, ge=0.0, le=1.0)
-    source: str = Field("user_input", max_length=50)
-    app_context: Optional[str] = Field(None, max_length=50)
-
-
-class UserProfileDataUpdate(BaseModel):
-    field_value: Optional[dict | list | str | int | float | bool] = None
-    confidence_score: Optional[float] = Field(None, ge=0.0, le=1.0)
-    source: Optional[str] = Field(None, max_length=50)
-    app_context: Optional[str] = Field(None, max_length=50)
-
-
-class UserProfileData(BaseModel):
-    id: UUID
-    user_id: UUID
-    category: str
-    field_name: str
-    field_value: dict | list | str | int | float | bool
-    confidence_score: float
-    source: str
-    app_context: Optional[str] = None
-    created_at: datetime
-    updated_at: datetime
-
-    class Config:
-        from_attributes = True
+# Progressive Profiling models - removed (no longer needed)
 
 
 class PersonInMyLifeCreate(BaseModel):
@@ -175,40 +145,10 @@ class PersonInMyLife(BaseModel):
         from_attributes = True
 
 
-class PersonProfileDataCreate(BaseModel):
-    category: str = Field(..., max_length=50)
-    field_name: str = Field(..., max_length=100)
-    field_value: dict | list | str | int | float | bool
-    confidence_score: float = Field(1.0, ge=0.0, le=1.0)
-    source: str = Field("user_input", max_length=50)
+# Person profile data models - removed (no longer needed)
 
 
-class PersonProfileData(BaseModel):
-    id: UUID
-    person_id: UUID
-    user_id: UUID
-    category: str
-    field_name: str
-    field_value: dict | list | str | int | float | bool
-    confidence_score: float
-    source: str
-    created_at: datetime
-    updated_at: datetime
-
-    class Config:
-        from_attributes = True
-
-
-# Migration models
-class LocalProfileData(BaseModel):
-    id: str
-    profile: dict
-    people_in_my_life: list[dict]
-
-
-# Batch operations
-class ProfileDataBatch(BaseModel):
-    profile_data: list[UserProfileDataCreate]
+# Migration and batch operation models - removed (no longer needed)
 
 
 # Response models
