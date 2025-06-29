@@ -4,6 +4,13 @@ from datetime import datetime, timedelta
 from uuid import UUID, uuid4
 
 import httpx
+
+# Service URL configuration based on environment
+import os
+environment = os.getenv('ENVIRONMENT', 'staging')
+base_url_suffix = 'production' if environment == 'production' else 'staging'
+ledger_url = f"https://fairydust-ledger-{base_url_suffix}.up.railway.app"
+identity_url = f"https://fairydust-identity-{base_url_suffix}.up.railway.app"
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.security import HTTPBearer
 from google_places_http import get_google_places_http_service
@@ -714,7 +721,7 @@ async def consume_dust_for_restaurant_search(user_id: UUID) -> bool:
             print(f"🔍 DUST_DEBUG: Payload: {payload}")
 
             response = await client.post(
-                "https://fairydust-ledger-production.up.railway.app/transactions/consume",
+                f"{ledger_url}/transactions/consume",
                 json=payload,
                 timeout=10.0,
             )
@@ -744,7 +751,7 @@ async def get_people_data(user_id: UUID, selected_people: list[UUID]) -> list[di
         print("🔍 PEOPLE_DEBUG: Making request to Identity Service...")
         async with httpx.AsyncClient() as client:
             response = await client.get(
-                f"https://fairydust-identity-production.up.railway.app/users/{user_id}/people",
+                f"{identity_url}/users/{user_id}/people",
                 timeout=10.0,
             )
             print(f"🔍 PEOPLE_DEBUG: Identity Service response: {response.status_code}")
@@ -975,7 +982,7 @@ async def get_restaurant_preferences(
     try:
         async with httpx.AsyncClient() as client:
             response = await client.get(
-                f"https://fairydust-identity-production.up.railway.app/users/{user_id}/people",
+                f"{identity_url}/users/{user_id}/people",
                 timeout=10.0,
             )
             people_data = response.json().get("people", []) if response.status_code == 200 else []
@@ -1052,7 +1059,7 @@ async def update_restaurant_preferences(
                     # Update favorite restaurants
                     if person_pref.favorite_restaurants:
                         await client.put(
-                            f"https://fairydust-identity-production.up.railway.app/users/{user_id}/people/{person_pref.person_id}/profile",
+                            f"{identity_url}/users/{user_id}/people/{person_pref.person_id}/profile",
                             json={
                                 "category": "favorite_restaurants",
                                 "field_name": "restaurants",
@@ -1064,7 +1071,7 @@ async def update_restaurant_preferences(
                     # Update dining notes
                     if person_pref.notes:
                         await client.put(
-                            f"https://fairydust-identity-production.up.railway.app/users/{user_id}/people/{person_pref.person_id}/profile",
+                            f"{identity_url}/users/{user_id}/people/{person_pref.person_id}/profile",
                             json={
                                 "category": "dining_preferences",
                                 "field_name": "notes",

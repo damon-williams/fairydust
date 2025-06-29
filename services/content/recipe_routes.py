@@ -9,6 +9,12 @@ from typing import Optional
 
 import httpx
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
+
+# Service URL configuration based on environment
+environment = os.getenv('ENVIRONMENT', 'staging')
+base_url_suffix = 'production' if environment == 'production' else 'staging'
+ledger_url = f"https://fairydust-ledger-{base_url_suffix}.up.railway.app"
+
 from models import (
     DietaryRestriction,
     PersonPreference,
@@ -667,7 +673,7 @@ async def _get_user_balance(user_id: uuid.UUID, auth_token: str) -> int:
     try:
         async with httpx.AsyncClient() as client:
             response = await client.get(
-                f"https://fairydust-ledger-production.up.railway.app/balance/{user_id}",
+                f"{ledger_url}/balance/{user_id}",
                 headers={"Authorization": auth_token},
                 timeout=10.0,
             )
@@ -717,7 +723,7 @@ async def _consume_dust(user_id: uuid.UUID, amount: int, auth_token: str, db: Da
             }
 
             response = await client.post(
-                "https://fairydust-ledger-production.up.railway.app/transactions/consume",
+                f"{ledger_url}/transactions/consume",
                 json=payload,
                 headers={"Authorization": auth_token},
                 timeout=10.0,

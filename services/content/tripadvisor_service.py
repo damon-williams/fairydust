@@ -1,8 +1,14 @@
 # services/content/tripadvisor_service.py
 import math
+import os
 from typing import Optional
 
 import httpx
+
+# Service URL configuration based on environment
+environment = os.getenv('ENVIRONMENT', 'staging')
+base_url_suffix = 'production' if environment == 'production' else 'staging'
+content_url = f"https://fairydust-content-{base_url_suffix}.up.railway.app"
 from models import ActivityHours
 
 
@@ -12,7 +18,7 @@ class TripAdvisorService:
         self.base_url = "https://api.content.tripadvisor.com/api/v1"
         self.headers = {
             "X-API-KEY": api_key,
-            "Referer": "https://fairydust-content-production.up.railway.app/",
+            "Referer": f"{content_url}/",
         }
 
     async def search_nearby_activities(
