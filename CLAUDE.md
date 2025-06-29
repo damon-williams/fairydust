@@ -468,6 +468,51 @@ Benefits:
 - Easier debugging and testing
 - Better separation of concerns
 
+### Admin Portal Build Process
+
+**🚨 CRITICAL: Admin Portal Deployment Process 🚨**
+
+The Admin Portal consists of two parts:
+1. **Backend**: Python FastAPI service (`/services/admin/`)
+2. **Frontend**: React app (`/services/admin-ui/`)
+
+**Deployment Architecture:**
+- The admin service serves static React files from `/services/admin/static/`
+- The React app builds to `/services/admin-ui/dist/`
+- **Manual build step required** to copy files from `dist/` to `static/`
+
+**Required Build Process:**
+```bash
+# 1. Navigate to admin-ui directory
+cd services/admin-ui
+
+# 2. Build the React app (creates dist/ folder)
+npm run build
+
+# 3. Copy built files to admin service static directory
+cp -r dist/* ../admin/static/
+
+# 4. Commit both the source changes AND the built static files
+git add ../admin-ui/src/ ../admin/static/
+git commit -m "Update admin portal with [feature]"
+git push origin develop
+```
+
+**⚠️ Common Deployment Issues:**
+- **Symptom**: Admin portal changes not visible after Railway deployment
+- **Cause**: Built static files not updated in `/services/admin/static/`
+- **Fix**: Run the build process above and commit static files
+
+**Build Verification:**
+- New builds generate different bundle hashes (e.g., `index-ABC123.js`)
+- Check Railway deployment logs for new bundle names
+- Add console.log debug messages to verify deployment
+
+**TypeScript Build Requirements:**
+- All TypeScript errors must be fixed before build succeeds
+- Common issues: implicit 'any' types in setState callbacks
+- Always test build locally: `npm run build` before committing
+
 ## Development Notes
 
 - Environment detection via `ENVIRONMENT` variable (development/production)
@@ -479,6 +524,29 @@ Benefits:
 - JSON parsing centralized in `/shared/json_utils.py`
 - LLM pricing centralized in `/shared/llm_pricing.py`
 - Request validation centralized in `/shared/middleware.py`
+
+### Service-to-Service Communication
+
+**Environment-Based URLs:**
+All inter-service communication uses environment-based URL construction to ensure proper routing between staging and production:
+
+```python
+# Service URL configuration based on environment
+environment = os.getenv('ENVIRONMENT', 'staging')
+base_url_suffix = 'production' if environment == 'production' else 'staging'
+ledger_url = f"https://fairydust-ledger-{base_url_suffix}.up.railway.app"
+identity_url = f"https://fairydust-identity-{base_url_suffix}.up.railway.app"
+content_url = f"https://fairydust-content-{base_url_suffix}.up.railway.app"
+```
+
+**🚨 NEVER hardcode production URLs in service calls 🚨**
+- **Wrong**: `https://fairydust-ledger-production.up.railway.app/balance/...`
+- **Correct**: `f"{ledger_url}/balance/..."`
+
+**Environment Variable Pattern:**
+- `ENVIRONMENT=staging` → Routes to staging services
+- `ENVIRONMENT=production` → Routes to production services
+- **Default**: staging (for safety)
 
 ## Centralized Middleware System
 
