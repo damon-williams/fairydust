@@ -187,17 +187,7 @@ async def generate_story(
             custom_prompt=request.custom_prompt,
         )
 
-        # Consume DUST after successful generation and saving
-        dust_consumed = await _consume_dust(request.user_id, dust_cost, auth_token, db)
-        if not dust_consumed:
-            print(f"❌ STORY: Failed to consume DUST for user {request.user_id}", flush=True)
-            return StoryErrorResponse(error="Payment processing failed")
-
-        new_balance = user_balance - dust_cost
-        print(
-            f"💰 STORY: Consumed {dust_cost} DUST from user {request.user_id}",
-            flush=True,
-        )
+        print(f"✅ STORY: Generated story for user {request.user_id} (DUST handled by client)", flush=True)
 
         # Build response
         story = UserStoryNew(
@@ -581,43 +571,6 @@ async def _get_app_id(db: Database) -> str:
     return str(result["id"])
 
 
-async def _consume_dust(user_id: uuid.UUID, amount: int, auth_token: str, db: Database) -> bool:
-    """Consume DUST for story generation via Ledger Service"""
-    print(f"🔍 STORY_DUST: Attempting to consume {amount} DUST for user {user_id}", flush=True)
-    try:
-        # Get the proper app UUID
-        app_id = await _get_app_id(db)
-
-        # Generate idempotency key to prevent double-charging
-        idempotency_key = f"story_gen_{str(user_id).replace('-', '')[:16]}_{int(time.time())}"
-
-        async with httpx.AsyncClient() as client:
-            payload = {
-                "user_id": str(user_id),
-                "amount": amount,
-                "app_id": app_id,
-                "action": "story_generation",
-                "idempotency_key": idempotency_key,
-                "metadata": {"service": "content", "feature": "story_generation"},
-            }
-
-            response = await client.post(
-                f"{ledger_url}/transactions/consume",
-                json=payload,
-                headers={"Authorization": auth_token},
-                timeout=10.0,
-            )
-
-            if response.status_code != 200:
-                response_text = response.text
-                print(f"❌ STORY_DUST: Error response: {response_text}", flush=True)
-                return False
-
-            print("✅ STORY_DUST: DUST consumption successful", flush=True)
-            return True
-    except Exception as e:
-        print(f"❌ STORY_DUST: Exception consuming DUST: {str(e)}", flush=True)
-        return False
 
 
 async def _check_rate_limit(db: Database, user_id: uuid.UUID) -> bool:
