@@ -104,6 +104,18 @@ export function Login() {
                 </div>
               </div>
 
+              {/* Temporary development shortcut */}
+              <Button 
+                type="button" 
+                variant="outline" 
+                size="sm"
+                className="w-full text-xs bg-yellow-50 border-yellow-200 text-yellow-800 hover:bg-yellow-100"
+                onClick={() => setIdentifier('damonw@gmail.com')}
+                disabled={isLoading}
+              >
+                🚀 Quick Fill (Dev)
+              </Button>
+
               <Button 
                 type="submit" 
                 className="w-full bg-gradient-to-r from-purple-600 to-blue-600 hover:from-purple-700 hover:to-blue-700"
