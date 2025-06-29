@@ -79,15 +79,7 @@ export function Users() {
     loadUsers(1, searchTerm || undefined);
   };
 
-  const handleToggleUserStatus = async (userId: string, isActive: boolean) => {
-    try {
-      await AdminAPI.updateUser(userId, { is_active: !isActive });
-      toast.success(`User ${!isActive ? 'activated' : 'deactivated'} successfully`);
-      loadUsers(currentPage, searchTerm || undefined);
-    } catch (err) {
-      toast.error('Failed to update user status');
-    }
-  };
+  // User status toggle removed - is_active field no longer exists
 
   const handleDeleteUser = async (userId: string) => {
     if (!confirm('Are you sure you want to delete this user? This action cannot be undone.')) {
@@ -145,9 +137,8 @@ export function Users() {
                          user.email?.toLowerCase().includes(searchTerm.toLowerCase());
     
     const matchesFilter = filterType === 'all' ||
-                         (filterType === 'builders' && user.is_builder) ||
-                         (filterType === 'regular' && !user.is_builder) ||
-                         (filterType === 'admins' && user.is_admin);
+                         (filterType === 'admins' && user.is_admin) ||
+                         (filterType === 'regular' && !user.is_admin);
     
     return matchesSearch && matchesFilter;
   });
@@ -193,7 +184,6 @@ export function Users() {
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">All Users</SelectItem>
-                <SelectItem value="builders">Builders</SelectItem>
                 <SelectItem value="regular">Regular Users</SelectItem>
                 <SelectItem value="admins">Administrators</SelectItem>
               </SelectContent>
@@ -271,10 +261,7 @@ export function Users() {
                       {user.is_admin && (
                         <Badge variant="destructive" className="text-xs">Admin</Badge>
                       )}
-                      {user.is_builder && (
-                        <Badge variant="default" className="text-xs">Builder</Badge>
-                      )}
-                      {!user.is_admin && !user.is_builder && (
+                      {!user.is_admin && (
                         <Badge variant="secondary" className="text-xs">User</Badge>
                       )}
                     </div>

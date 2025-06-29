@@ -3,18 +3,11 @@ export interface User {
   fairyname: string;
   email?: string;
   phone?: string;
-  avatar_url?: string;
-  is_builder: boolean;
   is_admin: boolean;
-  is_active: boolean;
   first_name?: string;
   age_range?: string;
-  city?: string;
-  country?: string;
   dust_balance: number;
   auth_provider: string;
-  last_profiling_session?: string;
-  total_profiling_sessions: number;
   streak_days: number;
   last_login_date?: string;
   created_at: string;
