@@ -103,8 +103,12 @@ async def consume_dust(
 ):
     """Consume DUST for an app action"""
 
-    # Validate the app first
-    app_validation = await validate_app(request.app_id)
+    # Resolve app slug to UUID if needed
+    app_uuid = await resolve_app_id(request.app_id, db, cache)
+    print(f"🎨 CONSUME: Resolved app '{request.app_id}' to UUID {app_uuid}", flush=True)
+
+    # Validate the app
+    app_validation = await validate_app(app_uuid)
 
     if not app_validation["is_valid"]:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="App not found")
@@ -124,11 +128,11 @@ async def consume_dust(
             detail=f"Insufficient DUST balance. Required: {request.amount}, Available: {balance}",
         )
 
-    # Process the consumption
+    # Process the consumption (pass resolved UUID)
     transaction = await ledger.consume_dust(
         user_id=request.user_id,
         amount=request.amount,
-        app_id=request.app_id,
+        app_id=app_uuid,
         action=request.action,
         idempotency_key=request.idempotency_key,
         metadata=request.metadata,
@@ -428,6 +432,52 @@ async def get_app_analytics(
     }
 
 
+async def resolve_app_id(app_id_or_slug: str, db: Database, cache: redis.Redis) -> UUID:
+    """Resolve app slug to UUID, with Redis caching"""
+    from uuid import UUID
+    import json
+    
+    # Try to parse as UUID first
+    try:
+        return UUID(app_id_or_slug)
+    except ValueError:
+        pass
+    
+    # It's a slug, try cache first
+    cache_key = f"app_slug:{app_id_or_slug}"
+    try:
+        cached_id = await cache.get(cache_key)
+        if cached_id:
+            print(f"🔍 SLUG_CACHE: Hit for {app_id_or_slug} -> {cached_id.decode()}", flush=True)
+            return UUID(cached_id.decode())
+    except Exception as e:
+        print(f"⚠️ SLUG_CACHE: Cache error: {e}", flush=True)
+    
+    # Cache miss, query database
+    print(f"🔍 SLUG_RESOLVE: Resolving slug '{app_id_or_slug}' to UUID", flush=True)
+    result = await db.fetch_one(
+        "SELECT id FROM apps WHERE slug = $1",
+        app_id_or_slug
+    )
+    
+    if not result:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"App with slug '{app_id_or_slug}' not found"
+        )
+    
+    app_uuid = result["id"]
+    
+    # Cache the result for 5 minutes
+    try:
+        await cache.setex(cache_key, 300, str(app_uuid))
+        print(f"✅ SLUG_CACHE: Cached {app_id_or_slug} -> {app_uuid}", flush=True)
+    except Exception as e:
+        print(f"⚠️ SLUG_CACHE: Cache set error: {e}", flush=True)
+    
+    return app_uuid
+
+
 async def validate_app(app_id: UUID) -> dict:
     """Validate app with Apps Service"""
     apps_service_url = os.getenv("APPS_SERVICE_URL", "http://localhost:8003")
@@ -459,11 +509,17 @@ async def grant_initial_dust(
     request: AppInitialGrantRequest,
     current_user: TokenData = Depends(get_current_user),
     ledger: LedgerService = Depends(get_ledger_service),
+    db: Database = Depends(get_db),
+    cache: redis.Redis = Depends(get_redis),
 ):
     """Grant initial DUST to user for app onboarding (app-initiated)"""
 
-    # Validate the app first
-    app_validation = await validate_app(request.app_id)
+    # Resolve app slug to UUID if needed
+    app_uuid = await resolve_app_id(request.app_id, db, cache)
+    print(f"🎨 GRANT_INITIAL: Resolved app '{request.app_id}' to UUID {app_uuid}", flush=True)
+
+    # Validate the app
+    app_validation = await validate_app(app_uuid)
 
     if not app_validation["is_valid"]:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="App not found")
@@ -476,7 +532,7 @@ async def grant_initial_dust(
     # Apps can only grant to any user, but we'll validate the user exists
     return await ledger.grant_initial_dust(
         user_id=request.user_id,
-        app_id=request.app_id,
+        app_id=app_uuid,
         amount=request.amount,
         idempotency_key=request.idempotency_key,
     )
@@ -487,11 +543,17 @@ async def grant_streak_bonus(
     request: AppStreakGrantRequest,
     current_user: TokenData = Depends(get_current_user),
     ledger: LedgerService = Depends(get_ledger_service),
+    db: Database = Depends(get_db),
+    cache: redis.Redis = Depends(get_redis),
 ):
     """Grant daily streak bonus to user (app-initiated)"""
 
-    # Validate the app first
-    app_validation = await validate_app(request.app_id)
+    # Resolve app slug to UUID if needed
+    app_uuid = await resolve_app_id(request.app_id, db, cache)
+    print(f"🎨 GRANT_STREAK: Resolved app '{request.app_id}' to UUID {app_uuid}", flush=True)
+
+    # Validate the app
+    app_validation = await validate_app(app_uuid)
 
     if not app_validation["is_valid"]:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="App not found")
@@ -504,7 +566,7 @@ async def grant_streak_bonus(
     # Apps can grant streak bonuses to any user
     return await ledger.grant_streak_bonus(
         user_id=request.user_id,
-        app_id=request.app_id,
+        app_id=app_uuid,
         amount=request.amount,
         streak_days=request.streak_days,
         idempotency_key=request.idempotency_key,

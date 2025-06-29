@@ -311,7 +311,7 @@ export function Apps() {
             <TableHeader>
               <TableRow>
                 <TableHead>App</TableHead>
-                <TableHead>UUID</TableHead>
+                <TableHead>Slug</TableHead>
                 <TableHead>Category</TableHead>
                 <TableHead>Status</TableHead>
                 <TableHead>Created</TableHead>
@@ -338,8 +338,8 @@ export function Apps() {
                     </div>
                   </TableCell>
                   <TableCell>
-                    <div className="text-xs font-mono text-slate-500 max-w-[200px] truncate" title={app.id}>
-                      {app.id}
+                    <div className="text-sm font-mono text-slate-700 max-w-[200px] truncate" title={app.slug}>
+                      {app.slug}
                     </div>
                   </TableCell>
                   <TableCell>

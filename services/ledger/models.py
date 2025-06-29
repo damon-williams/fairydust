@@ -27,10 +27,29 @@ class TransactionStatus(str, Enum):
 class ConsumeRequest(BaseModel):
     user_id: UUID
     amount: int = Field(..., gt=0, description="Amount of DUST to consume")
-    app_id: UUID
+    app_id: str = Field(..., description="App UUID or slug (e.g., 'fairydust-fortune-teller')")
     action: str = Field(..., description="Action being performed")
     idempotency_key: str = Field(..., min_length=1, max_length=128)
     metadata: Optional[dict[str, Any]] = None
+
+    @validator("app_id")
+    def validate_app_id(cls, v):
+        # Accept either UUID format or slug format
+        import re
+        from uuid import UUID
+        
+        # Try to parse as UUID first
+        try:
+            UUID(v)
+            return v  # Valid UUID
+        except ValueError:
+            pass
+        
+        # Check if it's a valid slug format (alphanumeric with hyphens)
+        if re.match(r"^[a-zA-Z0-9][a-zA-Z0-9\-]*[a-zA-Z0-9]$", v) and len(v) <= 255:
+            return v  # Valid slug
+        
+        raise ValueError("app_id must be a valid UUID or slug (e.g., 'fairydust-fortune-teller')")
 
     @validator("idempotency_key")
     def validate_idempotency_key(cls, v):
@@ -52,9 +71,26 @@ class GrantRequest(BaseModel):
 
 class AppInitialGrantRequest(BaseModel):
     user_id: UUID
-    app_id: UUID
+    app_id: str = Field(..., description="App UUID or slug")
     amount: int = Field(..., ge=1, le=100, description="Initial DUST amount (max 100)")
     idempotency_key: str = Field(..., min_length=1, max_length=128)
+
+    @validator("app_id")
+    def validate_app_id(cls, v):
+        # Accept either UUID format or slug format
+        import re
+        from uuid import UUID
+        
+        try:
+            UUID(v)
+            return v  # Valid UUID
+        except ValueError:
+            pass
+        
+        if re.match(r"^[a-zA-Z0-9][a-zA-Z0-9\-]*[a-zA-Z0-9]$", v) and len(v) <= 255:
+            return v  # Valid slug
+        
+        raise ValueError("app_id must be a valid UUID or slug")
 
     @validator("idempotency_key")
     def validate_idempotency_key(cls, v):
@@ -67,10 +103,27 @@ class AppInitialGrantRequest(BaseModel):
 
 class AppStreakGrantRequest(BaseModel):
     user_id: UUID
-    app_id: UUID
+    app_id: str = Field(..., description="App UUID or slug")
     amount: int = Field(..., ge=1, le=25, description="Daily bonus amount (max 25)")
     streak_days: int = Field(..., ge=1, le=5, description="Current streak for validation")
     idempotency_key: str = Field(..., min_length=1, max_length=128)
+
+    @validator("app_id")
+    def validate_app_id(cls, v):
+        # Accept either UUID format or slug format
+        import re
+        from uuid import UUID
+        
+        try:
+            UUID(v)
+            return v  # Valid UUID
+        except ValueError:
+            pass
+        
+        if re.match(r"^[a-zA-Z0-9][a-zA-Z0-9\-]*[a-zA-Z0-9]$", v) and len(v) <= 255:
+            return v  # Valid slug
+        
+        raise ValueError("app_id must be a valid UUID or slug")
 
     @validator("idempotency_key")
     def validate_idempotency_key(cls, v):
