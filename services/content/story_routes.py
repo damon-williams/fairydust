@@ -34,15 +34,15 @@ router = APIRouter()
 
 # Constants - Reading time based
 STORY_DUST_COSTS = {
-    StoryLength.SHORT: 2,   # 2 minute read
-    StoryLength.MEDIUM: 4,  # 5 minute read  
-    StoryLength.LONG: 6,    # 10 minute read
+    StoryLength.QUICK: 2,   # 2-3 minute read
+    StoryLength.MEDIUM: 4,  # 5-7 minute read  
+    StoryLength.LONG: 6,    # 8-12 minute read
 }
 
 READING_TIME_WORD_TARGETS = {
-    StoryLength.SHORT: (300, 500),    # ~2 min reading time
-    StoryLength.MEDIUM: (900, 1200),  # ~5 min reading time
-    StoryLength.LONG: (1800, 2400),   # ~10 min reading time
+    StoryLength.QUICK: (400, 600),     # ~2-3 min reading time
+    StoryLength.MEDIUM: (1000, 1400),  # ~5-7 min reading time
+    StoryLength.LONG: (1600, 2400),    # ~8-12 min reading time
 }
 
 STORY_RATE_LIMIT = 10  # Max 10 stories per hour per user
@@ -479,23 +479,23 @@ async def get_story_config():
             "story_lengths": [
                 {
                     "label": "Quick Read",
-                    "value": "2_min",
-                    "reading_time": "2 minutes",
-                    "words": "300-500",
-                    "dust": STORY_DUST_COSTS[StoryLength.SHORT],
+                    "value": "quick",
+                    "reading_time": "2-3 minutes",
+                    "words": "400-600",
+                    "dust": STORY_DUST_COSTS[StoryLength.QUICK],
                 },
                 {
-                    "label": "Short Story", 
-                    "value": "5_min",
-                    "reading_time": "5 minutes",
-                    "words": "900-1200",
+                    "label": "Medium Story", 
+                    "value": "medium",
+                    "reading_time": "5-7 minutes",
+                    "words": "1000-1400",
                     "dust": STORY_DUST_COSTS[StoryLength.MEDIUM],
                 },
                 {
                     "label": "Long Story",
-                    "value": "10_min", 
-                    "reading_time": "10 minutes",
-                    "words": "1800-2400",
+                    "value": "long", 
+                    "reading_time": "8-12 minutes",
+                    "words": "1600-2400",
                     "dust": STORY_DUST_COSTS[StoryLength.LONG],
                 },
             ],
@@ -754,9 +754,9 @@ def _build_story_prompt(request: StoryGenerationRequest, user_context: str) -> s
     
     # Convert story length to readable format
     length_descriptions = {
-        StoryLength.SHORT: "2-minute read (~400 words)",
-        StoryLength.MEDIUM: "5-minute read (~1000 words)", 
-        StoryLength.LONG: "10-minute read (~2000 words)"
+        StoryLength.QUICK: "2-3 minute read (~500 words)",
+        StoryLength.MEDIUM: "5-7 minute read (~1200 words)", 
+        StoryLength.LONG: "8-12 minute read (~2000 words)"
     }
 
     # Build character descriptions
@@ -777,8 +777,8 @@ def _build_story_prompt(request: StoryGenerationRequest, user_context: str) -> s
         else "No specific characters required - create original characters as needed."
     )
 
-    # Build simplified prompt without genre, setting, theme
-    prompt = f"""Generate an engaging story for {request.target_audience.value} audience that takes about {length_descriptions[request.story_length]} to read.
+    # Create varied, unpredictable prompt
+    prompt = f"""You are a master storyteller with infinite creativity. Create a truly unique and surprising story for {request.target_audience.value} audience that takes about {length_descriptions[request.story_length]} to read.
 
 {character_text}"""
 
@@ -790,20 +790,46 @@ def _build_story_prompt(request: StoryGenerationRequest, user_context: str) -> s
 
     prompt += f"""
 
-Story requirements:
+CREATIVE REQUIREMENTS:
 - Target word count: {target_words} words (for {length_descriptions[request.story_length]})
 - Audience: {request.target_audience.value}
-- Include a clear title at the beginning
-- Make it engaging and age-appropriate
-- If characters are provided, make them central to the story
-- Include dialogue and vivid descriptions
-- Create an interesting plot with a satisfying conclusion
-- Choose an appropriate genre and setting that fits the story naturally
+- BREAK THE MOLD: Avoid predictable story patterns, clichés, and formulaic plots
+- SURPRISE THE READER: Include unexpected twists, unusual perspectives, or creative narrative devices
+- VARY YOUR APPROACH: Choose from different storytelling styles randomly:
+  * First person, second person, or third person narration
+  * Multiple perspectives or unreliable narrator
+  * Experimental formats (diary entries, text messages, news reports, etc.)
+  * Time jumps, flashbacks, or non-linear storytelling
+  * Stories within stories or meta-fiction elements
+
+GENRE VARIETY (pick unexpectedly):
+- Mix genres creatively (sci-fi comedy, fantasy mystery, historical thriller, etc.)
+- Try unusual combinations: slice-of-life with magical realism, workplace drama with supernatural elements
+- Consider: adventure, mystery, comedy, sci-fi, fantasy, slice-of-life, historical fiction, magical realism, psychological thriller, coming-of-age, workplace drama, family saga, etc.
+
+SETTING CREATIVITY:
+- Avoid overused settings like "magical kingdoms" or "haunted houses"
+- Be specific and unusual: a 24-hour laundromat, underwater research station, food truck at a music festival, retirement home game night, etc.
+- Use settings that serve the story and create natural conflict or intrigue
+
+PLOT INNOVATION:
+- Start in the middle of action or at an unusual moment
+- Subvert reader expectations about character roles and story direction
+- Create organic conflicts that arise from character relationships and setting
+- End with satisfaction but avoid overly neat resolutions
+
+LANGUAGE AND STYLE:
+- Match tone to your chosen genre and approach
+- Use vivid, specific details rather than generic descriptions
+- Include natural dialogue that reveals character
+- Vary sentence structure and pacing for engagement
 
 Format the story with:
-TITLE: [Story Title]
+TITLE: [Creative, intriguing title]
 
-[Story content with paragraphs, dialogue, and descriptions]"""
+[Story content with rich details, natural dialogue, and compelling narrative]
+
+Remember: Your goal is to create something memorable and unique that readers haven't seen before. Be bold, creative, and surprising while staying appropriate for the audience."""
 
     return prompt
 

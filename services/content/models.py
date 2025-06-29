@@ -75,9 +75,9 @@ class RecipeSyncResponse(BaseModel):
 
 # Story App Models
 class StoryLength(str, Enum):
-    SHORT = "2_min"   # ~2 minute read
-    MEDIUM = "5_min"  # ~5 minute read  
-    LONG = "10_min"   # ~10 minute read
+    QUICK = "quick"    # 2-3 minute read
+    MEDIUM = "medium"  # 5-7 minute read  
+    LONG = "long"      # 8-12 minute read
 
 
 class TargetAudience(str, Enum):
