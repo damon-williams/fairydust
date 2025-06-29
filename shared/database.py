@@ -610,7 +610,7 @@ async def create_tables():
     # Add target_audience column to user_stories table
     await db.execute_schema(
         """
-        ALTER TABLE user_stories ADD COLUMN IF NOT EXISTS target_audience VARCHAR(20) DEFAULT 'family';
+        ALTER TABLE user_stories ADD COLUMN IF NOT EXISTS target_audience VARCHAR(20) DEFAULT 'kids';
         """
     )
 
