@@ -2,8 +2,7 @@ import { useLocation } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { 
-  Search, 
-  RefreshCw
+  Search
 } from 'lucide-react';
 
 export function TopBar() {
@@ -39,11 +38,7 @@ export function TopBar() {
 
         {/* Actions */}
         <div className="flex items-center space-x-3">
-          {/* Refresh */}
-          <Button variant="outline" size="sm">
-            <RefreshCw className="h-4 w-4 mr-2" />
-            Refresh
-          </Button>
+          {/* Future actions can go here */}
         </div>
       </div>
     </header>
