@@ -140,17 +140,9 @@ async def generate_recipe(
 
         # Log LLM usage for analytics (background task)
         try:
-            # Calculate prompt hash for the recipe generation
-            full_prompt = _build_recipe_prompt(
-                dish=request.dish,
-                complexity=request.complexity,
-                include_ingredients=request.include_ingredients,
-                exclude_ingredients=request.exclude_ingredients,
-                total_people=request.total_people,
-                user_context=user_context,
-                dietary_preferences=dietary_preferences,
-            )
-            prompt_hash = calculate_prompt_hash(full_prompt)
+            # Use a simple prompt hash based on key parameters
+            prompt_components = f"{request.dish or 'any'}_{request.complexity}_{request.total_people}_{request.include_ingredients or ''}_{request.exclude_ingredients or ''}"
+            prompt_hash = calculate_prompt_hash(prompt_components)
 
             # Create request metadata
             request_metadata = create_request_metadata(
@@ -247,7 +239,7 @@ async def generate_recipe(
                 total=tokens_used.get("total", 0),
             ),
             cost=cost,
-            new_dust_balance=new_balance,
+            new_dust_balance=user_balance,  # Balance unchanged since DUST handled by client
         )
 
     except HTTPException:
