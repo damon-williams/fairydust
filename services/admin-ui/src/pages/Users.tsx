@@ -31,7 +31,7 @@ import {
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { User } from '@/types/admin';
-import { Search, Filter, Download, MoreHorizontal, RefreshCw, AlertTriangle, RotateCcw } from 'lucide-react';
+import { Search, Filter, Download, MoreHorizontal, RefreshCw, AlertTriangle } from 'lucide-react';
 import { formatDistanceToNow } from 'date-fns';
 import { AdminAPI } from '@/lib/admin-api';
 import { toast } from 'sonner';
@@ -161,14 +161,6 @@ export function Users() {
           <p className="text-slate-500">Manage user accounts and permissions</p>
         </div>
         <div className="flex space-x-2">
-          <Button 
-            variant="outline"
-            onClick={() => loadUsers(currentPage, searchTerm || undefined)}
-            disabled={loading}
-          >
-            <RotateCcw className="mr-2 h-4 w-4" />
-            Refresh
-          </Button>
           <Button variant="outline">
             <Download className="mr-2 h-4 w-4" />
             Export
