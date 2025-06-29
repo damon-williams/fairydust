@@ -96,6 +96,35 @@ interface ModelUsage {
   avg_latency: number;
 }
 
+interface ConfigFormData {
+  primary_provider: string;
+  primary_model_id: string;
+  primary_parameters: {
+    temperature: number;
+    max_tokens: number;
+    top_p: number;
+  };
+  fallback_models: Array<{
+    provider: string;
+    model_id: string;
+    trigger: string;
+    parameters: {
+      temperature: number;
+      max_tokens: number;
+    };
+  }>;
+  cost_limits: {
+    per_request_max: number;
+    daily_max: number;
+    monthly_max: number;
+  };
+  feature_flags: {
+    streaming_enabled: boolean;
+    cache_responses: boolean;
+    log_prompts: boolean;
+  };
+}
+
 export function LLM() {
   const [metrics, setMetrics] = useState<LLMUsageMetrics | null>(null);
   const [appConfigs, setAppConfigs] = useState<AppConfig[]>([]);
@@ -106,7 +135,26 @@ export function LLM() {
   const [timeframe, setTimeframe] = useState('7d');
   const [configDialogOpen, setConfigDialogOpen] = useState(false);
   const [selectedConfig, setSelectedConfig] = useState<AppConfig | null>(null);
-  const [configForm, setConfigForm] = useState<any>({});
+  const [configForm, setConfigForm] = useState<ConfigFormData>({
+    primary_provider: 'anthropic',
+    primary_model_id: 'claude-3-5-haiku-20241022',
+    primary_parameters: {
+      temperature: 0.8,
+      max_tokens: 150,
+      top_p: 0.9
+    },
+    fallback_models: [],
+    cost_limits: {
+      per_request_max: 0.05,
+      daily_max: 10.0,
+      monthly_max: 100.0
+    },
+    feature_flags: {
+      streaming_enabled: true,
+      cache_responses: true,
+      log_prompts: false
+    }
+  });
 
   const loadData = async () => {
     try {
@@ -172,7 +220,7 @@ export function LLM() {
   };
 
   const addFallbackModel = () => {
-    setConfigForm(prev => ({
+    setConfigForm((prev: ConfigFormData) => ({
       ...prev,
       fallback_models: [
         ...prev.fallback_models,
@@ -187,9 +235,9 @@ export function LLM() {
   };
 
   const removeFallbackModel = (index: number) => {
-    setConfigForm(prev => ({
+    setConfigForm((prev: ConfigFormData) => ({
       ...prev,
-      fallback_models: prev.fallback_models.filter((_, i) => i !== index)
+      fallback_models: prev.fallback_models.filter((_: any, i: number) => i !== index)
     }));
   };
 
@@ -506,7 +554,7 @@ export function LLM() {
                   <Label>Provider</Label>
                   <Select 
                     value={configForm.primary_provider} 
-                    onValueChange={(value) => setConfigForm(prev => ({ ...prev, primary_provider: value }))}
+                    onValueChange={(value) => setConfigForm((prev: ConfigFormData) => ({ ...prev, primary_provider: value }))}
                   >
                     <SelectTrigger>
                       <SelectValue />
@@ -521,7 +569,7 @@ export function LLM() {
                   <Label>Model</Label>
                   <Select 
                     value={configForm.primary_model_id} 
-                    onValueChange={(value) => setConfigForm(prev => ({ ...prev, primary_model_id: value }))}
+                    onValueChange={(value) => setConfigForm((prev: ConfigFormData) => ({ ...prev, primary_model_id: value }))}
                   >
                     <SelectTrigger>
                       <SelectValue />
@@ -544,7 +592,7 @@ export function LLM() {
                     min="0" 
                     max="2"
                     value={configForm.primary_parameters?.temperature || 0.8}
-                    onChange={(e) => setConfigForm(prev => ({
+                    onChange={(e) => setConfigForm((prev: ConfigFormData) => ({
                       ...prev,
                       primary_parameters: {
                         ...prev.primary_parameters,
@@ -560,7 +608,7 @@ export function LLM() {
                     min="1" 
                     max="4000"
                     value={configForm.primary_parameters?.max_tokens || 150}
-                    onChange={(e) => setConfigForm(prev => ({
+                    onChange={(e) => setConfigForm((prev: ConfigFormData) => ({
                       ...prev,
                       primary_parameters: {
                         ...prev.primary_parameters,
@@ -577,7 +625,7 @@ export function LLM() {
                     min="0" 
                     max="1"
                     value={configForm.primary_parameters?.top_p || 0.9}
-                    onChange={(e) => setConfigForm(prev => ({
+                    onChange={(e) => setConfigForm((prev: ConfigFormData) => ({
                       ...prev,
                       primary_parameters: {
                         ...prev.primary_parameters,
@@ -599,7 +647,7 @@ export function LLM() {
                     type="number" 
                     step="0.01"
                     value={configForm.cost_limits?.per_request_max || 0.05}
-                    onChange={(e) => setConfigForm(prev => ({
+                    onChange={(e) => setConfigForm((prev: ConfigFormData) => ({
                       ...prev,
                       cost_limits: {
                         ...prev.cost_limits,
@@ -614,7 +662,7 @@ export function LLM() {
                     type="number" 
                     step="0.01"
                     value={configForm.cost_limits?.daily_max || 10.0}
-                    onChange={(e) => setConfigForm(prev => ({
+                    onChange={(e) => setConfigForm((prev: ConfigFormData) => ({
                       ...prev,
                       cost_limits: {
                         ...prev.cost_limits,
@@ -629,7 +677,7 @@ export function LLM() {
                     type="number" 
                     step="0.01"
                     value={configForm.cost_limits?.monthly_max || 100.0}
-                    onChange={(e) => setConfigForm(prev => ({
+                    onChange={(e) => setConfigForm((prev: ConfigFormData) => ({
                       ...prev,
                       cost_limits: {
                         ...prev.cost_limits,
@@ -650,7 +698,7 @@ export function LLM() {
                   <Switch 
                     id="streaming"
                     checked={configForm.feature_flags?.streaming_enabled || false}
-                    onCheckedChange={(checked) => setConfigForm(prev => ({
+                    onCheckedChange={(checked) => setConfigForm((prev: ConfigFormData) => ({
                       ...prev,
                       feature_flags: {
                         ...prev.feature_flags,
@@ -664,7 +712,7 @@ export function LLM() {
                   <Switch 
                     id="cache"
                     checked={configForm.feature_flags?.cache_responses || false}
-                    onCheckedChange={(checked) => setConfigForm(prev => ({
+                    onCheckedChange={(checked) => setConfigForm((prev: ConfigFormData) => ({
                       ...prev,
                       feature_flags: {
                         ...prev.feature_flags,
@@ -678,7 +726,7 @@ export function LLM() {
                   <Switch 
                     id="log"
                     checked={configForm.feature_flags?.log_prompts || false}
-                    onCheckedChange={(checked) => setConfigForm(prev => ({
+                    onCheckedChange={(checked) => setConfigForm((prev: ConfigFormData) => ({
                       ...prev,
                       feature_flags: {
                         ...prev.feature_flags,
@@ -699,7 +747,7 @@ export function LLM() {
                   Add Fallback
                 </Button>
               </div>
-              {configForm.fallback_models?.map((fallback: any, index: number) => (
+              {configForm.fallback_models?.map((fallback: ConfigFormData['fallback_models'][0], index: number) => (
                 <div key={index} className="border rounded-lg p-4 space-y-4">
                   <div className="flex items-center justify-between">
                     <h5 className="font-medium">Fallback {index + 1}</h5>
@@ -719,7 +767,7 @@ export function LLM() {
                         onValueChange={(value) => {
                           const newFallbacks = [...configForm.fallback_models];
                           newFallbacks[index].provider = value;
-                          setConfigForm(prev => ({ ...prev, fallback_models: newFallbacks }));
+                          setConfigForm((prev: ConfigFormData) => ({ ...prev, fallback_models: newFallbacks }));
                         }}
                       >
                         <SelectTrigger>
@@ -738,7 +786,7 @@ export function LLM() {
                         onValueChange={(value) => {
                           const newFallbacks = [...configForm.fallback_models];
                           newFallbacks[index].model_id = value;
-                          setConfigForm(prev => ({ ...prev, fallback_models: newFallbacks }));
+                          setConfigForm((prev: ConfigFormData) => ({ ...prev, fallback_models: newFallbacks }));
                         }}
                       >
                         <SelectTrigger>
@@ -758,7 +806,7 @@ export function LLM() {
                         onValueChange={(value) => {
                           const newFallbacks = [...configForm.fallback_models];
                           newFallbacks[index].trigger = value;
-                          setConfigForm(prev => ({ ...prev, fallback_models: newFallbacks }));
+                          setConfigForm((prev: ConfigFormData) => ({ ...prev, fallback_models: newFallbacks }));
                         }}
                       >
                         <SelectTrigger>
