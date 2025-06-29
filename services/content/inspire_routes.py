@@ -607,6 +607,22 @@ async def _get_llm_model_config() -> dict:
     return default_config
 
 
+def _build_inspiration_prompt(category: InspirationCategory, used_suggestions: list[str], user_context: str) -> str:
+    """Build the full prompt for inspiration generation"""
+    # Build prompt using the same logic as in _generate_inspiration_llm
+    base_prompt = CATEGORY_PROMPTS[category]
+    
+    # Add context and anti-duplication
+    context_prompt = f"Context: User is a {user_context}. "
+    
+    anti_dup_prompt = ""
+    if used_suggestions:
+        suggestions_text = "\n".join([f"- {s}" for s in used_suggestions[-10:]])
+        anti_dup_prompt = f"\n\nAvoid suggesting anything similar to these recent suggestions:\n{suggestions_text}\n\n"
+    
+    return f"{context_prompt}{base_prompt}{anti_dup_prompt}Respond with just the inspiration text, nothing else."
+
+
 async def _generate_inspiration_llm(
     category: InspirationCategory,
     used_suggestions: list[str],
@@ -736,11 +752,11 @@ async def _generate_inspiration_llm(
 
             else:
                 print(
-                    f"⚠️ INSPIRE_LLM: Unsupported provider {provider}, falling back to Anthropic",
+                    f"⚠️ INSPIRE_LLM: Unsupported provider {provider}, using default response",
                     flush=True,
                 )
-                # Fallback to Anthropic with default model
-                return await _generate_inspiration_llm(category, used_suggestions, user_context)
+                # Return default inspiration instead of recursive call
+                return "Stay positive and keep moving forward! ✨", "claude-3-haiku-20240307", {}, 0.0
 
     except Exception as e:
         print(f"❌ INSPIRE_LLM: Error generating inspiration: {str(e)}", flush=True)
