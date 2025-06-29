@@ -35,6 +35,7 @@ from models import (
 
 from shared.auth_middleware import TokenData, get_current_user
 from shared.database import Database, get_db
+from shared.json_utils import parse_jsonb_field
 from shared.llm_pricing import calculate_llm_cost
 from shared.llm_usage_logger import calculate_prompt_hash, create_request_metadata, log_llm_usage
 
@@ -369,7 +370,7 @@ async def get_user_recipes(
                 cook_time_minutes=row["cook_time_minutes"],
                 created_at=row["created_at"],
                 is_favorited=row["is_favorited"],
-                metadata=row["metadata"] or {},
+                metadata=parse_jsonb_field(row["metadata"], default={}, field_name="recipe_metadata"),
             )
             recipes.append(recipe)
 
@@ -439,7 +440,7 @@ async def toggle_recipe_favorite(
             cook_time_minutes=result["cook_time_minutes"],
             created_at=result["created_at"],
             is_favorited=result["is_favorited"],
-            metadata=result["metadata"] or {},
+            metadata=parse_jsonb_field(result["metadata"], default={}, field_name="recipe_metadata"),
         )
 
         print(f"✅ RECIPE: Updated favorite status for recipe {recipe_id}", flush=True)
