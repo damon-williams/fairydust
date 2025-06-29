@@ -158,6 +158,9 @@ async def generate_inspiration(
             cost=cost,
         )
 
+        # Mark onboarding as completed for first-time users
+        await _mark_onboarding_completed(db, request.user_id)
+
         # DUST payment is handled by the app before calling this endpoint
         # Content service only handles content generation, not payment
         print(f"💰 INSPIRE DEBUG: Content generation complete - payment handled by app", flush=True)
@@ -747,3 +750,21 @@ async def _save_inspiration(
     except Exception as e:
         print(f"❌ INSPIRE_SAVE: Error saving inspiration: {str(e)}", flush=True)
         raise HTTPException(status_code=500, detail="Failed to save inspiration")
+
+
+async def _mark_onboarding_completed(db: Database, user_id: uuid.UUID) -> None:
+    """Mark user's onboarding as completed if not already completed"""
+    try:
+        # Update only if onboarding is not already completed
+        await db.execute(
+            """
+            UPDATE users 
+            SET is_onboarding_completed = TRUE, updated_at = CURRENT_TIMESTAMP 
+            WHERE id = $1 AND is_onboarding_completed = FALSE
+            """,
+            user_id,
+        )
+        print(f"✅ ONBOARDING: Marked onboarding completed for user {user_id}", flush=True)
+    except Exception as e:
+        print(f"⚠️ ONBOARDING: Error marking onboarding complete: {str(e)}", flush=True)
+        # Don't raise exception - onboarding completion is not critical for inspiration generation

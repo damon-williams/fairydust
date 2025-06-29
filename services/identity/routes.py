@@ -107,7 +107,7 @@ async def verify_otp(
     identifier_type = "email" if "@" in otp_verify.identifier else "phone"
     user = await db.fetch_one(
         f"""SELECT id, fairyname, email, phone, avatar_url, is_builder, is_admin, is_active,
-                  first_name, age_range, city, country, dust_balance, auth_provider,
+                  is_onboarding_completed, first_name, age_range, city, country, dust_balance, auth_provider,
                   last_profiling_session, total_profiling_sessions, streak_days, last_login_date,
                   created_at, updated_at
            FROM users WHERE {identifier_type} = $1""",
@@ -344,7 +344,7 @@ async def get_current_user_profile(
     """Get current user profile"""
     user = await db.fetch_one(
         """SELECT id, fairyname, email, phone, avatar_url, is_builder, is_admin, is_active,
-                  first_name, age_range, city, country, dust_balance, auth_provider,
+                  is_onboarding_completed, first_name, age_range, city, country, dust_balance, auth_provider,
                   last_profiling_session, total_profiling_sessions, streak_days, last_login_date,
                   created_at, updated_at
            FROM users WHERE id = $1""",
