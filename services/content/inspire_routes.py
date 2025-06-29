@@ -1,6 +1,5 @@
 # services/content/inspire_routes.py
 import os
-import time
 import uuid
 from datetime import datetime
 from typing import Optional
@@ -50,7 +49,9 @@ async def generate_inspiration(
     """
     Generate a new inspiration using LLM and automatically save it to user's collection.
     """
-    print(f"🚀 INSPIRE DEBUG: === NEW REQUEST START === User: {request.user_id}, Category: {request.category}", flush=True)
+    import uuid
+    request_id = str(uuid.uuid4())[:8]
+    print(f"🚀 INSPIRE DEBUG: === NEW REQUEST START [{request_id}] === User: {request.user_id}, Category: {request.category}", flush=True)
     print(f"🌟 INSPIRE: Starting generation for user {request.user_id}", flush=True)
     print(f"📂 INSPIRE: Category: {request.category}", flush=True)
 
@@ -75,19 +76,9 @@ async def generate_inspiration(
                 error=f"Rate limit exceeded. Maximum {INSPIRE_RATE_LIMIT} inspirations per hour."
             )
 
-        # Verify user has enough DUST
+        # Get user balance for logging purposes only (payment handled by app)
         user_balance = await _get_user_balance(request.user_id, auth_token)
-        print(f"💰 INSPIRE DEBUG: Initial user balance: {user_balance} DUST (Required: {INSPIRE_DUST_COST})", flush=True)
-        if user_balance < INSPIRE_DUST_COST:
-            print(
-                f"💰 INSPIRE: Insufficient DUST balance: {user_balance} < {INSPIRE_DUST_COST}",
-                flush=True,
-            )
-            return InspirationErrorResponse(
-                error="Insufficient DUST balance",
-                current_balance=user_balance,
-                required_amount=INSPIRE_DUST_COST,
-            )
+        print(f"💰 INSPIRE DEBUG: User balance: {user_balance} DUST (payment handled by app)", flush=True)
 
         # Get user context for personalization
         user_context = await _get_user_context(db, request.user_id)
@@ -167,33 +158,10 @@ async def generate_inspiration(
             cost=cost,
         )
 
-        # Consume DUST after successful generation and saving
-        print(f"💰 INSPIRE DEBUG: About to consume {INSPIRE_DUST_COST} DUST from user {request.user_id}", flush=True)
-        print(f"💰 INSPIRE DEBUG: User balance before consumption: {user_balance} DUST", flush=True)
-        
-        dust_consumed = await _consume_dust(request.user_id, INSPIRE_DUST_COST, auth_token, db)
-        
-        print(f"💰 INSPIRE DEBUG: _consume_dust returned: {dust_consumed}", flush=True)
-        
-        if not dust_consumed:
-            print(f"❌ INSPIRE DEBUG: Failed to consume DUST for user {request.user_id}", flush=True)
-            return InspirationErrorResponse(error="Payment processing failed")
-
-        # Check balance after consumption to verify charge
-        post_consumption_balance = await _get_user_balance(request.user_id, auth_token)
-        actual_consumed = user_balance - post_consumption_balance
-        
-        print(f"💰 INSPIRE DEBUG: Balance after consumption: {post_consumption_balance} DUST", flush=True)
-        print(f"💰 INSPIRE DEBUG: Actual DUST consumed: {actual_consumed} (Expected: {INSPIRE_DUST_COST})", flush=True)
-        
-        if actual_consumed != INSPIRE_DUST_COST:
-            print(f"⚠️ INSPIRE DEBUG: WARNING - Consumption mismatch! Expected {INSPIRE_DUST_COST}, actual {actual_consumed}", flush=True)
-
-        new_balance = post_consumption_balance
-        print(
-            f"💰 INSPIRE DEBUG: Successfully consumed {actual_consumed} DUST from user {request.user_id}",
-            flush=True,
-        )
+        # DUST payment is handled by the app before calling this endpoint
+        # Content service only handles content generation, not payment
+        print(f"💰 INSPIRE DEBUG: Content generation complete - payment handled by app", flush=True)
+        new_balance = user_balance  # Balance unchanged by content service
 
         # Build response
         inspiration = UserInspiration(
@@ -456,60 +424,10 @@ async def _get_user_balance(user_id: uuid.UUID, auth_token: str) -> int:
         return 0
 
 
-async def _get_app_id(db: Database) -> str:
-    """Get the UUID for the fairydust-inspire app"""
-    result = await db.fetch_one("SELECT id FROM apps WHERE slug = $1", "fairydust-inspire")
-    if not result:
-        raise HTTPException(
-            status_code=500,
-            detail="fairydust-inspire app not found in database. Please create the app first.",
-        )
-    return str(result["id"])
+# App ID lookup no longer needed - payment handled by app layer
 
 
-async def _consume_dust(user_id: uuid.UUID, amount: int, auth_token: str, db: Database) -> bool:
-    """Consume DUST for inspiration generation via Ledger Service"""
-    print(f"🔍 INSPIRE_DUST: Attempting to consume {amount} DUST for user {user_id}", flush=True)
-    try:
-        # Get the proper app UUID
-        app_id = await _get_app_id(db)
-
-        # Generate idempotency key to prevent double-charging
-        idempotency_key = f"inspire_gen_{str(user_id).replace('-', '')[:16]}_{int(time.time())}"
-        print(f"🔍 INSPIRE_DUST DEBUG: Generated idempotency key: {idempotency_key}", flush=True)
-
-        async with httpx.AsyncClient() as client:
-            payload = {
-                "user_id": str(user_id),
-                "amount": amount,
-                "app_id": app_id,
-                "action": "inspiration_generation",
-                "idempotency_key": idempotency_key,
-                "metadata": {"service": "content", "feature": "inspire_generation"},
-            }
-            
-            print(f"🔍 INSPIRE_DUST DEBUG: Sending payload to ledger: {payload}", flush=True)
-
-            response = await client.post(
-                "https://fairydust-ledger-production.up.railway.app/transactions/consume",
-                json=payload,
-                headers={"Authorization": auth_token},
-                timeout=10.0,
-            )
-            
-            print(f"🔍 INSPIRE_DUST DEBUG: Ledger response status: {response.status_code}", flush=True)
-
-            if response.status_code != 200:
-                response_text = response.text
-                print(f"❌ INSPIRE_DUST DEBUG: Error response: {response_text}", flush=True)
-                return False
-
-            response_data = response.json()
-            print(f"✅ INSPIRE_DUST DEBUG: DUST consumption successful - Response: {response_data}", flush=True)
-            return True
-    except Exception as e:
-        print(f"❌ INSPIRE_DUST: Exception consuming DUST: {str(e)}", flush=True)
-        return False
+# DUST consumption is now handled by the app, not the content service
 
 
 async def _check_rate_limit(db: Database, user_id: uuid.UUID) -> bool:
