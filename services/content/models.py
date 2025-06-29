@@ -74,20 +74,10 @@ class RecipeSyncResponse(BaseModel):
 
 
 # Story App Models
-class StoryGenre(str, Enum):
-    ADVENTURE = "adventure"
-    FANTASY = "fantasy"
-    ROMANCE = "romance"
-    COMEDY = "comedy"
-    MYSTERY = "mystery"
-    FAMILY = "family"
-    BEDTIME = "bedtime"
-
-
 class StoryLength(str, Enum):
-    SHORT = "short"  # 300-500 words
-    MEDIUM = "medium"  # 600-1000 words
-    LONG = "long"  # 1000-1500 words
+    QUICK = "quick"    # 2-3 minute read
+    MEDIUM = "medium"  # 5-7 minute read  
+    LONG = "long"      # 8-12 minute read
 
 
 class TargetAudience(str, Enum):
@@ -111,11 +101,8 @@ class TokenUsage(BaseModel):
 
 class StoryGenerationRequest(BaseModel):
     user_id: UUID
-    genre: StoryGenre
-    story_length: StoryLength
+    story_length: StoryLength  # Reading time instead of word count
     characters: list[StoryCharacter] = Field(default_factory=list, max_items=8)
-    setting: Optional[str] = Field(None, max_length=500)
-    theme: Optional[str] = Field(None, max_length=500)
     custom_prompt: Optional[str] = Field(None, max_length=1000)
     target_audience: TargetAudience = TargetAudience.FAMILY
     session_id: Optional[UUID] = None
@@ -134,8 +121,7 @@ class UserStory(BaseModel):
     user_id: UUID
     title: str
     content: str
-    genre: StoryGenre
-    story_length: StoryLength
+    story_length: StoryLength  # Reading time
     characters_involved: list[StoryCharacter]
     metadata: dict
     is_favorited: bool
@@ -194,8 +180,7 @@ class UserStoryNew(BaseModel):
     id: UUID
     title: str
     content: str
-    genre: StoryGenre
-    story_length: StoryLength
+    story_length: StoryLength  # Reading time instead of word count
     target_audience: TargetAudience
     word_count: int
     estimated_reading_time: str

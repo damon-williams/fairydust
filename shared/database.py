@@ -582,7 +582,7 @@ async def create_tables():
     """
     )
 
-    # User Stories table for story app
+    # User Stories table for story app (genre column removed for simplification)
     await db.execute_schema(
         """
         CREATE TABLE IF NOT EXISTS user_stories (
@@ -590,7 +590,6 @@ async def create_tables():
             user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
             title VARCHAR(255) NOT NULL,
             content TEXT NOT NULL,
-            genre VARCHAR(50) NOT NULL,
             story_length VARCHAR(20) NOT NULL,
             characters_involved JSONB DEFAULT '[]',
             metadata JSONB DEFAULT '{}',
@@ -603,7 +602,6 @@ async def create_tables():
 
         CREATE INDEX IF NOT EXISTS idx_user_stories_user_id ON user_stories(user_id);
         CREATE INDEX IF NOT EXISTS idx_user_stories_created_at ON user_stories(created_at DESC);
-        CREATE INDEX IF NOT EXISTS idx_user_stories_genre ON user_stories(genre);
         CREATE INDEX IF NOT EXISTS idx_user_stories_favorited ON user_stories(user_id, is_favorited) WHERE is_favorited = TRUE;
         CREATE INDEX IF NOT EXISTS idx_user_stories_story_length ON user_stories(story_length);
     """
@@ -622,6 +620,30 @@ async def create_tables():
         CREATE INDEX IF NOT EXISTS idx_user_stories_target_audience ON user_stories(target_audience);
         """
     )
+
+    # Remove genre column and index (story app simplification)
+    try:
+        # Check if genre column exists before trying to drop it
+        genre_exists = await db.fetch_one(
+            """
+            SELECT column_name 
+            FROM information_schema.columns 
+            WHERE table_name = 'user_stories' AND column_name = 'genre'
+            """
+        )
+        
+        if genre_exists:
+            await db.execute_schema(
+                """
+                DROP INDEX IF EXISTS idx_user_stories_genre;
+                ALTER TABLE user_stories DROP COLUMN genre;
+                """
+            )
+            logger.info("Removed genre column from user_stories table")
+        else:
+            logger.info("Genre column already removed from user_stories table")
+    except Exception as e:
+        logger.warning(f"Genre column migration failed: {e}")
 
     # Story generation logs table for analytics and debugging
     await db.execute_schema(
