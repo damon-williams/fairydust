@@ -100,9 +100,9 @@ async def verify_otp(
     # Check if user exists
     identifier_type = "email" if "@" in otp_verify.identifier else "phone"
     user = await db.fetch_one(
-        f"""SELECT id, fairyname, email, phone, avatar_url, is_builder, is_admin, is_active,
-                  is_onboarding_completed, first_name, age_range, city, country, dust_balance, auth_provider,
-                  last_profiling_session, total_profiling_sessions, streak_days, last_login_date,
+        f"""SELECT id, fairyname, email, phone, is_admin,
+                  first_name, age_range, dust_balance, auth_provider,
+                  streak_days, last_login_date,
                   created_at, updated_at
            FROM users WHERE {identifier_type} = $1""",
         otp_verify.identifier,
@@ -159,7 +159,6 @@ async def verify_otp(
     token_data = {
         "user_id": str(user["id"]),
         "fairyname": user["fairyname"],
-        "is_builder": user["is_builder"],
         "is_admin": user.get("is_admin", False),
     }
 
@@ -230,14 +229,13 @@ async def oauth_login(
         # Create user
         user = await db.fetch_one(
             """
-            INSERT INTO users (id, fairyname, email, avatar_url, dust_balance, auth_provider)
-            VALUES ($1, $2, $3, $4, $5, $6)
+            INSERT INTO users (id, fairyname, email, dust_balance, auth_provider)
+            VALUES ($1, $2, $3, $4, $5)
             RETURNING *
             """,
             user_id,
             fairyname,
             user_info.get("email"),
-            user_info.get("picture"),
             0,  # Starting balance is 0, app will handle initial grants
             provider,
         )
@@ -268,7 +266,6 @@ async def oauth_login(
     token_data = {
         "user_id": str(user["id"]),
         "fairyname": user["fairyname"],
-        "is_builder": user["is_builder"],
         "is_admin": user.get("is_admin", False),
     }
 
@@ -304,7 +301,7 @@ async def refresh_token(
     new_token_data = {
         "user_id": token_data.user_id,
         "fairyname": token_data.fairyname,
-        "is_builder": token_data.is_builder,
+        "is_admin": token_data.is_admin,
     }
 
     new_access_token = await auth_service.create_access_token(new_token_data)
@@ -337,9 +334,9 @@ async def get_current_user_profile(
 ):
     """Get current user profile"""
     user = await db.fetch_one(
-        """SELECT id, fairyname, email, phone, avatar_url, is_builder, is_admin, is_active,
-                  is_onboarding_completed, first_name, age_range, city, country, dust_balance, auth_provider,
-                  last_profiling_session, total_profiling_sessions, streak_days, last_login_date,
+        """SELECT id, fairyname, email, phone, is_admin, 
+                  first_name, age_range, dust_balance, auth_provider,
+                  streak_days, last_login_date,
                   created_at, updated_at
            FROM users WHERE id = $1""",
         current_user.user_id,
@@ -387,11 +384,6 @@ async def update_user_profile(
         values.append(update_data.phone)
         param_count += 1
 
-    if update_data.avatar_url is not None:
-        updates.append(f"avatar_url = ${param_count}")
-        values.append(update_data.avatar_url)
-        param_count += 1
-
     if update_data.first_name is not None:
         updates.append(f"first_name = ${param_count}")
         values.append(update_data.first_name)
@@ -400,16 +392,6 @@ async def update_user_profile(
     if update_data.age_range is not None:
         updates.append(f"age_range = ${param_count}")
         values.append(update_data.age_range)
-        param_count += 1
-
-    if update_data.city is not None:
-        updates.append(f"city = ${param_count}")
-        values.append(update_data.city)
-        param_count += 1
-
-    if update_data.country is not None:
-        updates.append(f"country = ${param_count}")
-        values.append(update_data.country)
         param_count += 1
 
     if not updates:

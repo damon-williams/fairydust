@@ -62,11 +62,8 @@ class UserUpdate(BaseModel):
     fairyname: Optional[str] = None
     email: Optional[EmailStr] = None
     phone: Optional[str] = None
-    avatar_url: Optional[str] = None
     first_name: Optional[str] = Field(None, max_length=100)
     age_range: Optional[str] = Field(None, max_length=20)
-    city: Optional[str] = Field(None, max_length=100)
-    country: Optional[str] = Field(None, max_length=100)
 
 
 class User(BaseModel):
@@ -74,17 +71,12 @@ class User(BaseModel):
     fairyname: str
     email: Optional[EmailStr] = None
     phone: Optional[str] = None
-    avatar_url: Optional[str] = None
-    is_builder: bool = False
     is_admin: bool = False
-    is_active: bool = True
-    is_onboarding_completed: bool = False
     first_name: Optional[str] = None
     age_range: Optional[str] = None
-    city: Optional[str] = None
-    country: Optional[str] = None
-    last_profiling_session: Optional[datetime] = None
-    total_profiling_sessions: int = 0
+    streak_days: int = 0
+    last_login_date: Optional[datetime] = None
+    auth_provider: Optional[str] = None
     created_at: datetime
     updated_at: datetime
     dust_balance: int = 0  # Denormalized for performance
@@ -104,7 +96,6 @@ class Token(BaseModel):
 class TokenData(BaseModel):
     user_id: str
     fairyname: str
-    is_builder: bool = False
     is_admin: bool = False
     exp: Optional[datetime] = None
 

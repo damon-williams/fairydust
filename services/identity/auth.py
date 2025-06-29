@@ -209,12 +209,7 @@ async def get_current_user(
     return token_data
 
 
-# Optional: Dependency to require builder role
-async def require_builder(current_user: TokenData = Depends(get_current_user)) -> TokenData:
-    """Require the current user to be a builder"""
-    if not current_user.is_builder:
-        raise HTTPException(status_code=403, detail="Builder access required")
-    return current_user
+# Builder role requirement removed - no longer supported
 
 
 # Admin access dependency
