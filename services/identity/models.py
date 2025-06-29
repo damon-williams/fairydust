@@ -78,6 +78,7 @@ class User(BaseModel):
     is_builder: bool = False
     is_admin: bool = False
     is_active: bool = True
+    is_onboarding_completed: bool = False
     first_name: Optional[str] = None
     age_range: Optional[str] = None
     city: Optional[str] = None
