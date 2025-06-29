@@ -445,6 +445,11 @@ async def update_user_profile(
 
 
 # Onboard Tracking Routes
+@user_router.get("/me/onboard-test")
+async def test_onboard_route():
+    """Test route to verify routing is working"""
+    return {"message": "onboard route accessible", "timestamp": "2025-06-29"}
+
 @user_router.get("/me/onboard", response_model=OnboardTracking)
 async def get_user_onboard_tracking(
     current_user: TokenData = Depends(get_current_user), db: Database = Depends(get_db)
