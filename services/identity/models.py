@@ -64,6 +64,7 @@ class UserUpdate(BaseModel):
     phone: Optional[str] = None
     first_name: Optional[str] = Field(None, max_length=100)
     age_range: Optional[str] = Field(None, max_length=20)
+    is_onboarding_completed: Optional[bool] = None
 
 
 class User(BaseModel):
@@ -74,6 +75,7 @@ class User(BaseModel):
     is_admin: bool = False
     first_name: Optional[str] = None
     age_range: Optional[str] = None
+    is_onboarding_completed: bool = False
     streak_days: int = 0
     last_login_date: Optional[datetime] = None
     auth_provider: Optional[str] = None
@@ -132,6 +134,29 @@ class PersonInMyLife(BaseModel):
 
 
 # Migration and batch operation models - removed (no longer needed)
+
+
+# Onboard tracking models
+class OnboardTracking(BaseModel):
+    user_id: UUID
+    has_used_inspire: bool = False
+    has_completed_first_inspiration: bool = False
+    onboarding_step: Optional[str] = None
+    has_seen_inspire_tip: bool = False
+    has_seen_inspire_result_tip: bool = False
+    has_seen_onboarding_complete_tip: bool = False
+
+    class Config:
+        from_attributes = True
+
+
+class OnboardTrackingUpdate(BaseModel):
+    has_used_inspire: Optional[bool] = None
+    has_completed_first_inspiration: Optional[bool] = None
+    onboarding_step: Optional[str] = None
+    has_seen_inspire_tip: Optional[bool] = None
+    has_seen_inspire_result_tip: Optional[bool] = None
+    has_seen_onboarding_complete_tip: Optional[bool] = None
 
 
 # Response models

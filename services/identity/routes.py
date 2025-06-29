@@ -10,6 +10,8 @@ from fastapi.security import HTTPBearer
 from models import (
     AuthResponse,
     OAuthCallback,
+    OnboardTracking,
+    OnboardTrackingUpdate,
     OTPRequest,
     OTPVerify,
     PersonInMyLife,
@@ -101,7 +103,7 @@ async def verify_otp(
     identifier_type = "email" if "@" in otp_verify.identifier else "phone"
     user = await db.fetch_one(
         f"""SELECT id, fairyname, email, phone, is_admin,
-                  first_name, age_range, dust_balance, auth_provider,
+                  first_name, age_range, is_onboarding_completed, dust_balance, auth_provider,
                   streak_days, last_login_date,
                   created_at, updated_at
            FROM users WHERE {identifier_type} = $1""",
@@ -335,7 +337,7 @@ async def get_current_user_profile(
     """Get current user profile"""
     user = await db.fetch_one(
         """SELECT id, fairyname, email, phone, is_admin, 
-                  first_name, age_range, dust_balance, auth_provider,
+                  first_name, age_range, is_onboarding_completed, dust_balance, auth_provider,
                   streak_days, last_login_date,
                   created_at, updated_at
            FROM users WHERE id = $1""",
@@ -394,6 +396,11 @@ async def update_user_profile(
         values.append(update_data.age_range)
         param_count += 1
 
+    if update_data.is_onboarding_completed is not None:
+        updates.append(f"is_onboarding_completed = ${param_count}")
+        values.append(update_data.is_onboarding_completed)
+        param_count += 1
+
     if not updates:
         raise HTTPException(status_code=400, detail="No fields to update")
 
@@ -411,6 +418,95 @@ async def update_user_profile(
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
     return User(**user)
+
+
+# Onboard Tracking Routes
+@user_router.get("/me/onboard", response_model=OnboardTracking)
+async def get_user_onboard_tracking(
+    current_user: TokenData = Depends(get_current_user), db: Database = Depends(get_db)
+):
+    """Get current user's onboard tracking state"""
+    tracking = await db.fetch_one(
+        "SELECT * FROM user_onboard_tracking WHERE user_id = $1",
+        current_user.user_id,
+    )
+
+    if not tracking:
+        # Create default tracking record if it doesn't exist
+        tracking = await db.fetch_one(
+            """
+            INSERT INTO user_onboard_tracking (user_id) 
+            VALUES ($1) 
+            RETURNING *
+            """,
+            current_user.user_id,
+        )
+
+    return OnboardTracking(**tracking)
+
+
+@user_router.patch("/me/onboard", response_model=OnboardTracking)
+async def update_user_onboard_tracking(
+    update_data: OnboardTrackingUpdate,
+    current_user: TokenData = Depends(get_current_user),
+    db: Database = Depends(get_db),
+):
+    """Update current user's onboard tracking state"""
+    # Build update query dynamically
+    updates = []
+    values = []
+    param_count = 1
+
+    if update_data.has_used_inspire is not None:
+        updates.append(f"has_used_inspire = ${param_count}")
+        values.append(update_data.has_used_inspire)
+        param_count += 1
+
+    if update_data.has_completed_first_inspiration is not None:
+        updates.append(f"has_completed_first_inspiration = ${param_count}")
+        values.append(update_data.has_completed_first_inspiration)
+        param_count += 1
+
+    if update_data.onboarding_step is not None:
+        updates.append(f"onboarding_step = ${param_count}")
+        values.append(update_data.onboarding_step)
+        param_count += 1
+
+    if update_data.has_seen_inspire_tip is not None:
+        updates.append(f"has_seen_inspire_tip = ${param_count}")
+        values.append(update_data.has_seen_inspire_tip)
+        param_count += 1
+
+    if update_data.has_seen_inspire_result_tip is not None:
+        updates.append(f"has_seen_inspire_result_tip = ${param_count}")
+        values.append(update_data.has_seen_inspire_result_tip)
+        param_count += 1
+
+    if update_data.has_seen_onboarding_complete_tip is not None:
+        updates.append(f"has_seen_onboarding_complete_tip = ${param_count}")
+        values.append(update_data.has_seen_onboarding_complete_tip)
+        param_count += 1
+
+    if not updates:
+        raise HTTPException(status_code=400, detail="No fields to update")
+
+    # Add user_id as last parameter
+    values.append(current_user.user_id)
+
+    # Use UPSERT (INSERT ... ON CONFLICT) to handle case where record doesn't exist yet
+    upsert_query = f"""
+        INSERT INTO user_onboard_tracking (user_id) 
+        VALUES (${param_count}) 
+        ON CONFLICT (user_id) 
+        DO UPDATE SET {', '.join(updates)}, updated_at = CURRENT_TIMESTAMP
+        RETURNING *
+    """
+
+    tracking = await db.fetch_one(upsert_query, *values)
+    if not tracking:
+        raise HTTPException(status_code=500, detail="Failed to update onboard tracking")
+    
+    return OnboardTracking(**tracking)
 
 
 # Progressive Profiling Routes
