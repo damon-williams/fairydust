@@ -624,12 +624,28 @@ async def create_tables():
     )
 
     # Remove genre column and index (story app simplification)
-    await db.execute_schema(
-        """
-        DROP INDEX IF EXISTS idx_user_stories_genre;
-        ALTER TABLE user_stories DROP COLUMN IF EXISTS genre;
-        """
-    )
+    try:
+        # Check if genre column exists before trying to drop it
+        genre_exists = await db.fetch_one(
+            """
+            SELECT column_name 
+            FROM information_schema.columns 
+            WHERE table_name = 'user_stories' AND column_name = 'genre'
+            """
+        )
+        
+        if genre_exists:
+            await db.execute_schema(
+                """
+                DROP INDEX IF EXISTS idx_user_stories_genre;
+                ALTER TABLE user_stories DROP COLUMN genre;
+                """
+            )
+            logger.info("Removed genre column from user_stories table")
+        else:
+            logger.info("Genre column already removed from user_stories table")
+    except Exception as e:
+        logger.warning(f"Genre column migration failed: {e}")
 
     # Story generation logs table for analytics and debugging
     await db.execute_schema(
