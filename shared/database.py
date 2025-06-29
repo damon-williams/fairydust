@@ -350,6 +350,25 @@ async def create_tables():
     """
     )
 
+    # User onboard tracking table - app milestones and UI tip tracking
+    await db.execute_schema(
+        """
+        CREATE TABLE IF NOT EXISTS user_onboard_tracking (
+            user_id UUID PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+            has_used_inspire BOOLEAN DEFAULT FALSE,
+            has_completed_first_inspiration BOOLEAN DEFAULT FALSE,
+            onboarding_step VARCHAR(50),
+            has_seen_inspire_tip BOOLEAN DEFAULT FALSE,
+            has_seen_inspire_result_tip BOOLEAN DEFAULT FALSE,
+            has_seen_onboarding_complete_tip BOOLEAN DEFAULT FALSE,
+            created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_user_onboard_tracking_step ON user_onboard_tracking(onboarding_step);
+    """
+    )
+
     await db.execute_schema(
         """
         CREATE TABLE IF NOT EXISTS person_profile_data (
