@@ -1,4 +1,5 @@
 import asyncio
+import os
 
 import httpx
 from auth import get_current_admin_user
@@ -11,12 +12,16 @@ dashboard_router = APIRouter()
 
 async def check_service_health() -> dict:
     """Check health status of all fairydust services"""
+    # Environment-based service URLs
+    environment = os.getenv("ENVIRONMENT", "production")
+    env_suffix = "staging" if environment == "staging" else "production"
+    
     services = {
-        "Identity": "https://fairydust-identity-production.up.railway.app/health",
-        "Ledger": "https://fairydust-ledger-production.up.railway.app/health",
-        "Apps": "https://fairydust-apps-production.up.railway.app/health",
-        "Content": "https://fairydust-content-production.up.railway.app/health",
-        "Admin": "https://fairydust-admin-production.up.railway.app/health",
+        "Identity": f"https://fairydust-identity-{env_suffix}.up.railway.app/health",
+        "Ledger": f"https://fairydust-ledger-{env_suffix}.up.railway.app/health",
+        "Apps": f"https://fairydust-apps-{env_suffix}.up.railway.app/health",
+        "Content": f"https://fairydust-content-{env_suffix}.up.railway.app/health",
+        "Admin": f"https://fairydust-admin-{env_suffix}.up.railway.app/health",
     }
 
     async def check_single_service(name: str, url: str) -> tuple[str, bool, str]:

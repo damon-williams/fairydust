@@ -4,6 +4,7 @@ Centralized LLM usage logging utility for fairydust services.
 Logs usage data to the Apps Service for analytics and cost tracking.
 """
 
+import os
 import time
 from typing import Optional
 from uuid import UUID
@@ -73,8 +74,12 @@ async def log_llm_usage(
     }
 
     try:
-        # Apps Service URL
-        apps_service_url = "https://fairydust-apps-production.up.railway.app"
+        # Apps Service URL - environment-based routing
+        environment = os.getenv("ENVIRONMENT", "production")
+        if environment == "staging":
+            apps_service_url = "https://fairydust-apps-staging.up.railway.app"
+        else:
+            apps_service_url = "https://fairydust-apps-production.up.railway.app"
 
         headers = {
             "Content-Type": "application/json",
