@@ -623,6 +623,14 @@ async def create_tables():
         """
     )
 
+    # Remove genre column and index (story app simplification)
+    await db.execute_schema(
+        """
+        DROP INDEX IF EXISTS idx_user_stories_genre;
+        ALTER TABLE user_stories DROP COLUMN IF EXISTS genre;
+        """
+    )
+
     # Story generation logs table for analytics and debugging
     await db.execute_schema(
         """

@@ -18,7 +18,6 @@ from models import (
     StoryFavoriteResponse,
     StoryGenerationRequest,
     StoryGenerationResponseNew,
-    StoryGenre,
     StoryLength,
     TargetAudience,
     TokenUsage,
@@ -33,17 +32,17 @@ from shared.llm_usage_logger import calculate_prompt_hash, create_request_metada
 
 router = APIRouter()
 
-# Constants
+# Constants - Reading time based
 STORY_DUST_COSTS = {
-    StoryLength.SHORT: 2,
-    StoryLength.MEDIUM: 4,
-    StoryLength.LONG: 6,
+    StoryLength.SHORT: 2,   # 2 minute read
+    StoryLength.MEDIUM: 4,  # 5 minute read  
+    StoryLength.LONG: 6,    # 10 minute read
 }
 
-WORD_COUNT_TARGETS = {
-    StoryLength.SHORT: (300, 500),
-    StoryLength.MEDIUM: (600, 1000),
-    StoryLength.LONG: (1000, 1500),
+READING_TIME_WORD_TARGETS = {
+    StoryLength.SHORT: (300, 500),    # ~2 min reading time
+    StoryLength.MEDIUM: (900, 1200),  # ~5 min reading time
+    StoryLength.LONG: (1800, 2400),   # ~10 min reading time
 }
 
 STORY_RATE_LIMIT = 10  # Max 10 stories per hour per user
@@ -60,7 +59,7 @@ async def generate_story(
     Generate a new story using LLM and automatically save it to user's collection.
     """
     print(f"📖 STORY: Starting generation for user {request.user_id}", flush=True)
-    print(f"📂 STORY: Genre: {request.genre}, Length: {request.story_length}", flush=True)
+    print(f"📂 STORY: Length: {request.story_length}", flush=True)
 
     # Verify user can only generate stories for themselves
     if current_user.user_id != str(request.user_id):
@@ -133,13 +132,10 @@ async def generate_story(
             request_metadata = create_request_metadata(
                 action="story_generation",
                 parameters={
-                    "genre": request.genre.value,
                     "story_length": request.story_length.value,
                     "target_audience": request.target_audience.value,
                     "character_count": len(request.characters),
                     "has_custom_prompt": bool(request.custom_prompt),
-                    "has_setting": bool(request.setting),
-                    "has_theme": bool(request.theme),
                 },
                 user_context=user_context if user_context != "general user" else None,
                 session_id=str(request.session_id) if request.session_id else None,
@@ -173,7 +169,6 @@ async def generate_story(
             user_id=request.user_id,
             title=title,
             content=story_content,
-            genre=request.genre,
             story_length=request.story_length,
             target_audience=request.target_audience,
             word_count=word_count,
@@ -183,8 +178,6 @@ async def generate_story(
             tokens_used=tokens_used,
             cost=cost,
             dust_cost=dust_cost,
-            setting=request.setting,
-            theme=request.theme,
             custom_prompt=request.custom_prompt,
         )
 
@@ -205,7 +198,6 @@ async def generate_story(
             id=story_id,
             title=title,
             content=story_content,
-            genre=request.genre,
             story_length=request.story_length,
             target_audience=request.target_audience,
             word_count=word_count,
@@ -214,8 +206,6 @@ async def generate_story(
             is_favorited=False,
             metadata={
                 "characters": [char.dict() for char in request.characters],
-                "setting": request.setting,
-                "theme": request.theme,
                 "custom_prompt": request.custom_prompt,
                 "dust_cost": dust_cost,
             },
@@ -248,7 +238,6 @@ async def get_user_stories(
     db: Database = Depends(get_db),
     limit: int = Query(50, ge=1, le=100, description="Number of results to return"),
     offset: int = Query(0, ge=0, description="Pagination offset"),
-    genre: Optional[StoryGenre] = Query(None, description="Filter by genre"),
     story_length: Optional[StoryLength] = Query(None, description="Filter by story length"),
     target_audience: Optional[TargetAudience] = Query(
         None, description="Filter by target audience"
@@ -272,18 +261,13 @@ async def get_user_stories(
     try:
         # Build query with filters
         base_query = """
-            SELECT id, title, content, genre, story_length, target_audience,
+            SELECT id, title, content, story_length, target_audience,
                    word_count, is_favorited, created_at, metadata
             FROM user_stories
             WHERE user_id = $1
         """
         params = [user_id]
         param_count = 1
-
-        if genre:
-            param_count += 1
-            base_query += f" AND genre = ${param_count}"
-            params.append(genre.value)
 
         if story_length:
             param_count += 1
@@ -329,10 +313,6 @@ async def get_user_stories(
         """
         count_params = [user_id]
 
-        if genre:
-            count_query += " AND genre = $2"
-            count_params.append(genre.value)
-
         if story_length:
             param_idx = len(count_params) + 1
             count_query += f" AND story_length = ${param_idx}"
@@ -360,7 +340,6 @@ async def get_user_stories(
                 id=row["id"],
                 title=row["title"],
                 content=row["content"],
-                genre=StoryGenre(row["genre"]),
                 story_length=StoryLength(row["story_length"]),
                 target_audience=TargetAudience(row["target_audience"] or "family"),
                 word_count=row["word_count"] or 0,
@@ -414,7 +393,7 @@ async def toggle_story_favorite(
             UPDATE user_stories
             SET is_favorited = $1, updated_at = CURRENT_TIMESTAMP
             WHERE id = $2 AND user_id = $3
-            RETURNING id, title, content, genre, story_length, target_audience,
+            RETURNING id, title, content, story_length, target_audience,
                       word_count, is_favorited, created_at, metadata
         """
 
@@ -428,7 +407,6 @@ async def toggle_story_favorite(
             id=result["id"],
             title=result["title"],
             content=result["content"],
-            genre=StoryGenre(result["genre"]),
             story_length=StoryLength(result["story_length"]),
             target_audience=TargetAudience(result["target_audience"] or "family"),
             word_count=result["word_count"] or 0,
@@ -492,30 +470,32 @@ async def delete_story(
 @router.get("/apps/story/config")
 async def get_story_config():
     """
-    Get available genres, story lengths, and DUST costs.
+    Get available story lengths (reading times), and DUST costs.
     """
     print("⚙️ STORY: Getting story configuration", flush=True)
 
     try:
         config = {
-            "genres": [genre.value for genre in StoryGenre],
             "story_lengths": [
                 {
-                    "label": "Short",
-                    "value": "short",
+                    "label": "Quick Read",
+                    "value": "2_min",
+                    "reading_time": "2 minutes",
                     "words": "300-500",
                     "dust": STORY_DUST_COSTS[StoryLength.SHORT],
                 },
                 {
-                    "label": "Medium",
-                    "value": "medium",
-                    "words": "600-1000",
+                    "label": "Short Story", 
+                    "value": "5_min",
+                    "reading_time": "5 minutes",
+                    "words": "900-1200",
                     "dust": STORY_DUST_COSTS[StoryLength.MEDIUM],
                 },
                 {
-                    "label": "Long",
-                    "value": "long",
-                    "words": "1000-1500",
+                    "label": "Long Story",
+                    "value": "10_min", 
+                    "reading_time": "10 minutes",
+                    "words": "1800-2400",
                     "dust": STORY_DUST_COSTS[StoryLength.LONG],
                 },
             ],
@@ -769,8 +749,15 @@ def _calculate_reading_time(word_count: int) -> str:
 
 def _build_story_prompt(request: StoryGenerationRequest, user_context: str) -> str:
     """Build the LLM prompt for story generation"""
-    min_words, max_words = WORD_COUNT_TARGETS[request.story_length]
+    min_words, max_words = READING_TIME_WORD_TARGETS[request.story_length]
     target_words = (min_words + max_words) // 2
+    
+    # Convert story length to readable format
+    length_descriptions = {
+        StoryLength.SHORT: "2-minute read (~400 words)",
+        StoryLength.MEDIUM: "5-minute read (~1000 words)", 
+        StoryLength.LONG: "10-minute read (~2000 words)"
+    }
 
     # Build character descriptions
     character_descriptions = []
@@ -790,16 +777,10 @@ def _build_story_prompt(request: StoryGenerationRequest, user_context: str) -> s
         else "No specific characters required - create original characters as needed."
     )
 
-    # Build prompt
-    prompt = f"""Generate a {request.genre.value} story that is {request.story_length.value} length (target: {target_words} words) for {request.target_audience.value} audience.
+    # Build simplified prompt without genre, setting, theme
+    prompt = f"""Generate an engaging story for {request.target_audience.value} audience that takes about {length_descriptions[request.story_length]} to read.
 
 {character_text}"""
-
-    if request.setting:
-        prompt += f"\nSetting: {request.setting}"
-
-    if request.theme:
-        prompt += f"\nTheme: {request.theme}"
 
     if request.custom_prompt:
         prompt += f"\nSpecial request: {request.custom_prompt}"
@@ -810,14 +791,14 @@ def _build_story_prompt(request: StoryGenerationRequest, user_context: str) -> s
     prompt += f"""
 
 Story requirements:
-- Target word count: {target_words} words
-- Genre: {request.genre.value}
+- Target word count: {target_words} words (for {length_descriptions[request.story_length]})
 - Audience: {request.target_audience.value}
 - Include a clear title at the beginning
 - Make it engaging and age-appropriate
 - If characters are provided, make them central to the story
 - Include dialogue and vivid descriptions
-- Ensure the story has a satisfying conclusion
+- Create an interesting plot with a satisfying conclusion
+- Choose an appropriate genre and setting that fits the story naturally
 
 Format the story with:
 TITLE: [Story Title]
@@ -974,7 +955,6 @@ async def _save_story(
     user_id: uuid.UUID,
     title: str,
     content: str,
-    genre: StoryGenre,
     story_length: StoryLength,
     target_audience: TargetAudience,
     word_count: int,
@@ -984,8 +964,6 @@ async def _save_story(
     tokens_used: dict,
     cost: float,
     dust_cost: int,
-    setting: Optional[str],
-    theme: Optional[str],
     custom_prompt: Optional[str],
 ) -> uuid.UUID:
     """Save story to database"""
@@ -994,8 +972,6 @@ async def _save_story(
 
         metadata = {
             "characters": [char.dict() for char in characters],
-            "setting": setting,
-            "theme": theme,
             "custom_prompt": custom_prompt,
             "session_id": str(session_id) if session_id else None,
             "model_used": model_used,
@@ -1006,11 +982,11 @@ async def _save_story(
 
         insert_query = """
             INSERT INTO user_stories (
-                id, user_id, title, content, genre, story_length, target_audience,
+                id, user_id, title, content, story_length, target_audience,
                 characters_involved, metadata, dust_cost, word_count,
                 created_at, updated_at
             )
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8::jsonb, $9::jsonb, $10, $11,
+            VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb, $8::jsonb, $9, $10,
                     CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
         """
 
@@ -1020,7 +996,6 @@ async def _save_story(
             user_id,
             title,
             content,
-            genre.value,
             story_length.value,
             target_audience.value,
             json.dumps([char.dict() for char in characters]),
