@@ -123,17 +123,7 @@ async def search_activities(
             flush=True,
         )
 
-        # Consume DUST after successful search
-        dust_consumed = await _consume_dust(request.user_id, ACTIVITY_DUST_COST, auth_token, db)
-        if not dust_consumed:
-            print(
-                f"❌ ACTIVITY_SEARCH: Failed to consume DUST for user {request.user_id}", flush=True
-            )
-            raise HTTPException(status_code=402, detail="Payment processing failed")
-        print(
-            f"💰 ACTIVITY_SEARCH: Consumed {ACTIVITY_DUST_COST} DUST from user {request.user_id}",
-            flush=True,
-        )
+        print(f"✅ ACTIVITY_SEARCH: Generated activities for user {request.user_id} (DUST handled by client)", flush=True)
 
         # Build response
         activities = []
@@ -218,47 +208,6 @@ async def _get_app_id(db: Database) -> str:
     return str(result["id"])
 
 
-async def _consume_dust(user_id: uuid.UUID, amount: int, auth_token: str, db: Database) -> bool:
-    """Consume DUST for activity search via Ledger Service"""
-    print(f"🔍 ACTIVITY_DUST: Attempting to consume {amount} DUST for user {user_id}", flush=True)
-    try:
-        # Get the proper app UUID
-        app_id = await _get_app_id(db)
-
-        # Generate idempotency key to prevent double-charging
-        import time
-
-        idempotency_key = f"activity_search_{str(user_id).replace('-', '')[:16]}_{int(time.time())}"
-
-        async with httpx.AsyncClient() as client:
-            payload = {
-                "user_id": str(user_id),
-                "amount": amount,
-                "app_id": app_id,  # Now using proper UUID
-                "action": "activity_search",  # Required field
-                "idempotency_key": idempotency_key,  # Required field
-                "metadata": {"service": "content", "feature": "activity_search"},
-            }
-            print(f"🔍 ACTIVITY_DUST: Payload: {payload}", flush=True)
-
-            response = await client.post(
-                f"{ledger_url}/transactions/consume",
-                json=payload,
-                headers={"Authorization": auth_token},
-                timeout=10.0,
-            )
-            print(f"🔍 ACTIVITY_DUST: Ledger service response: {response.status_code}", flush=True)
-
-            if response.status_code != 200:
-                response_text = response.text
-                print(f"❌ ACTIVITY_DUST: Error response: {response_text}", flush=True)
-                return False
-
-            print("✅ ACTIVITY_DUST: DUST consumption successful", flush=True)
-            return True
-    except Exception as e:
-        print(f"❌ ACTIVITY_DUST: Exception consuming DUST: {str(e)}", flush=True)
-        return False
 
 
 async def _get_people_info(

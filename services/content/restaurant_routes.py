@@ -707,36 +707,7 @@ async def generate_ai_highlights(
     return highlights[:3]  # Limit to 3 highlights
 
 
-async def consume_dust_for_restaurant_search(user_id: UUID) -> bool:
-    """Consume DUST for restaurant search via Ledger Service"""
-    print(f"🔍 DUST_DEBUG: Attempting to consume 3 DUST for user {user_id}")
-    try:
-        async with httpx.AsyncClient() as client:
-            payload = {
-                "user_id": str(user_id),
-                "amount": 3,
-                "app_id": "fairydust-restaurant",
-                "description": "Restaurant search",
-            }
-            print(f"🔍 DUST_DEBUG: Payload: {payload}")
-
-            response = await client.post(
-                f"{ledger_url}/transactions/consume",
-                json=payload,
-                timeout=10.0,
-            )
-            print(f"🔍 DUST_DEBUG: Ledger service response: {response.status_code}")
-
-            if response.status_code != 200:
-                response_text = response.text
-                print(f"🔍 DUST_DEBUG: Error response: {response_text}")
-                return False
-
-            print("🔍 DUST_DEBUG: ✅ DUST consumption successful")
-            return True
-    except Exception as e:
-        print(f"🔍 DUST_DEBUG: ❌ Exception consuming DUST: {e}")
-        return False
+# DUST consumption removed - handled by app client, not content service
 
 
 async def get_people_data(user_id: UUID, selected_people: list[UUID]) -> list[dict]:
