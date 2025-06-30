@@ -152,6 +152,72 @@ git push origin develop      # Deploy to staging via develop branch
 - Develop branch auto-deploys to: `*-staging.up.railway.app`
 - Main branch auto-deploys to: `*-production.up.railway.app`
 
+### Admin Portal React Build & Deployment
+
+**🚨 CRITICAL: Admin Portal Deployment Process 🚨**
+
+The Admin Portal requires a special build and deployment process because it's a React app served as static files by the Python FastAPI admin service.
+
+**⚠️ Common Problem: "Still seeing old version after deployment"**
+
+**Root Cause:** Railway deploys from git repository, but React builds create static files that must be committed to git.
+
+**✅ Correct Admin Portal Update Process:**
+
+```bash
+# 1. Make changes to React components in services/admin-ui/src/
+cd services/admin-ui
+
+# 2. Build the React app
+npm run build
+
+# 3. Copy built files to admin service static directory
+cp -r dist/* ../admin/static/
+
+# 4. CRITICAL: Commit BOTH React source AND built static files
+cd .. # Back to services/ directory
+git add .
+git commit -m "Update admin portal: [description of changes]"
+git push origin develop
+
+# 5. Railway will auto-deploy with the new static files
+```
+
+**🔥 Critical Steps:**
+1. **Always rebuild React app** after making component changes
+2. **Copy built files** to `../admin/static/` directory
+3. **Commit static files to git** - Railway serves from git, not local files
+4. **Both source AND static files** must be committed together
+
+**⚡ Quick Deploy Script:**
+```bash
+# From services/admin-ui/ directory:
+npm run build && cp -r dist/* ../admin/static/ && cd .. && git add . && git commit -m "Admin portal updates" && git push origin develop
+```
+
+**🐛 Debugging Deployment Issues:**
+
+If still seeing old version after Railway deployment:
+1. **Check git status**: Ensure static files were committed
+2. **Verify asset hashes**: New builds should have different JS/CSS filenames
+3. **Clear browser cache**: Hard refresh (Ctrl+F5 / Cmd+Shift+R)
+4. **Check Railway logs**: Verify deployment completed successfully
+
+**📂 File Structure:**
+```
+services/
+├── admin-ui/          # React source code
+│   ├── src/          # React components
+│   ├── dist/         # Built React app (generated)
+│   └── package.json
+└── admin/            # Python FastAPI service
+    ├── static/       # Static files served by FastAPI (copied from admin-ui/dist/)
+    └── main.py       # FastAPI server
+```
+
+**🎯 Key Learning:**
+Railway doesn't automatically build React apps - the built static files must be committed to git and deployed as part of the Python service.
+
 ### Environment Variables Configuration
 
 **Where to set variables:**

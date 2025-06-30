@@ -118,6 +118,7 @@ async def generate_story(
             tokens_used,
             cost,
             latency_ms,
+            provider_used,
         ) = await _generate_story_llm(
             request=request,
             user_context=user_context,
@@ -151,7 +152,7 @@ async def generate_story(
             await log_llm_usage(
                 user_id=request.user_id,
                 app_id="fairydust-story",
-                provider="anthropic",
+                provider=provider_used,
                 model_id=model_used,
                 prompt_tokens=tokens_used.get("prompt", 0),
                 completion_tokens=tokens_used.get("completion", 0),
@@ -665,10 +666,25 @@ async def _get_user_context(db: Database, user_id: uuid.UUID) -> str:
 async def _get_llm_model_config() -> dict:
     """Get LLM configuration for story app (with caching)"""
     from shared.app_config_cache import get_app_config_cache
+    from shared.database import get_db
 
-    app_id = "fairydust-story"
-
-    print(f"🔍 STORY_CONFIG: Checking model config for {app_id}", flush=True)
+    app_slug = "fairydust-story"
+    
+    # First, get the app UUID from the slug
+    db = await get_db()
+    app_result = await db.fetch_one("SELECT id FROM apps WHERE slug = $1", app_slug)
+    
+    if not app_result:
+        print(f"❌ STORY_CONFIG: App with slug '{app_slug}' not found in database", flush=True)
+        # Return default config if app not found
+        return {
+            "primary_provider": "anthropic",
+            "primary_model_id": "claude-3-5-sonnet-20241022",
+            "primary_parameters": {"temperature": 0.8, "max_tokens": 2000, "top_p": 0.9},
+        }
+    
+    app_id = str(app_result["id"])
+    print(f"🔍 STORY_CONFIG: Resolved {app_slug} to UUID {app_id}", flush=True)
 
     # Try to get from cache first
     cache = await get_app_config_cache()
@@ -695,9 +711,7 @@ async def _get_llm_model_config() -> dict:
     print(f"⚠️ STORY_CONFIG: Cache miss, checking database directly", flush=True)
     
     try:
-        from shared.database import get_db
-        db = await get_db()
-        
+        # Don't need to get_db again, we already have it
         db_config = await db.fetch_one(
             "SELECT * FROM app_model_configs WHERE app_id = $1", app_id
         )
@@ -863,8 +877,8 @@ def _extract_title_and_content(generated_text: str) -> tuple[str, str]:
 async def _generate_story_llm(
     request: StoryGenerationRequest,
     user_context: str,
-) -> tuple[Optional[str], str, int, str, str, dict, float, int]:
-    """Generate story using LLM"""
+) -> tuple[Optional[str], str, int, str, str, dict, float, int, str]:
+    """Generate story using LLM - returns (content, title, word_count, reading_time, model_id, tokens, cost, latency_ms, provider)"""
     try:
         # Get LLM model configuration from database/cache
         model_config = await _get_llm_model_config()
@@ -882,13 +896,22 @@ async def _generate_story_llm(
 
         print(f"🤖 STORY_LLM: Generating with {provider} model {model_id}", flush=True)
 
-        # Check API key
-        api_key = os.getenv("ANTHROPIC_API_KEY", "")
-        if not api_key:
-            print("❌ STORY_LLM: Missing ANTHROPIC_API_KEY environment variable", flush=True)
+        # Check API key based on provider
+        if provider == "anthropic":
+            api_key = os.getenv("ANTHROPIC_API_KEY", "")
+            if not api_key:
+                print("❌ STORY_LLM: Missing ANTHROPIC_API_KEY environment variable", flush=True)
+                return None, "", 0, "", model_id, {}, 0.0, 0, provider
+        elif provider == "openai":
+            api_key = os.getenv("OPENAI_API_KEY", "")
+            if not api_key:
+                print("❌ STORY_LLM: Missing OPENAI_API_KEY environment variable", flush=True)
+                return None, "", 0, "", model_id, {}, 0.0, 0, provider
+        else:
+            print(f"❌ STORY_LLM: Unsupported provider: {provider}", flush=True)
             return None, "", 0, "", model_id, {}, 0.0, 0
 
-        print(f"🔑 STORY_LLM: API key configured (length: {len(api_key)})", flush=True)
+        print(f"🔑 STORY_LLM: {provider.upper()} API key configured (length: {len(api_key)})", flush=True)
 
         # Track request latency
         start_time = time.time()
@@ -956,12 +979,18 @@ async def _generate_story_llm(
                     )
 
                 else:
+                    error_detail = response.text
+                    try:
+                        error_json = response.json()
+                        error_detail = error_json.get("error", {}).get("message", response.text)
+                    except:
+                        pass
                     print(
-                        f"❌ STORY_LLM: Anthropic API error {response.status_code}: {response.text}",
+                        f"❌ STORY_LLM: Anthropic API error {response.status_code}: {error_detail}",
                         flush=True,
                     )
                     latency_ms = int((time.time() - start_time) * 1000)
-                    return None, "", 0, "", model_id, {}, 0.0, latency_ms
+                    return None, "", 0, "", model_id, {}, 0.0, latency_ms, provider
 
             elif provider == "openai":
                 response = await client.post(
@@ -1018,19 +1047,30 @@ async def _generate_story_llm(
                         tokens_used,
                         cost,
                         latency_ms,
+                        provider,
                     )
 
                 else:
+                    error_detail = response.text
+                    try:
+                        error_json = response.json()
+                        error_detail = error_json.get("error", {}).get("message", response.text)
+                    except:
+                        pass
+                    print(
+                        f"❌ STORY_LLM: OpenAI API error {response.status_code}: {error_detail}",
+                        flush=True,
+                    )
                     latency_ms = int((time.time() - start_time) * 1000)
-                    return None, "", 0, "", model_id, {}, 0.0, latency_ms
+                    return None, "", 0, "", model_id, {}, 0.0, latency_ms, provider
 
             else:
                 print(
-                    f"⚠️ STORY_LLM: Unsupported provider {provider}, falling back to Anthropic",
+                    f"❌ STORY_LLM: Unsupported provider {provider}",
                     flush=True,
                 )
-                # Fallback to Anthropic with default model
-                return await _generate_story_llm(request, user_context)
+                latency_ms = int((time.time() - start_time) * 1000)
+                return None, "", 0, "", model_id, {}, 0.0, latency_ms, provider
 
     except Exception as e:
         print(f"❌ STORY_LLM: Error generating story: {str(e)}", flush=True)
@@ -1039,7 +1079,7 @@ async def _generate_story_llm(
         import traceback
 
         print(f"❌ STORY_LLM: Traceback: {traceback.format_exc()}", flush=True)
-        return None, "", 0, "", "claude-3-5-sonnet-20241022", {}, 0.0, 0
+        return None, "", 0, "", "claude-3-5-sonnet-20241022", {}, 0.0, 0, "anthropic"
 
 
 async def _save_story(
