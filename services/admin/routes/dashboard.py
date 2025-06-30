@@ -83,13 +83,13 @@ async def get_dashboard_stats(
         "SELECT COUNT(*) as count FROM users WHERE created_at >= CURRENT_DATE - INTERVAL '7 days'"
     )
     total_dust_consumed = await db.fetch_one(
-        "SELECT COALESCE(SUM(amount), 0) as total FROM dust_transactions WHERE type = 'consumption'"
+        "SELECT COALESCE(SUM(ABS(amount)), 0) as total FROM dust_transactions WHERE type = 'consume'"
     )
     dust_consumed_today = await db.fetch_one(
-        "SELECT COALESCE(SUM(amount), 0) as total FROM dust_transactions WHERE type = 'consumption' AND DATE(created_at) = CURRENT_DATE"
+        "SELECT COALESCE(SUM(ABS(amount)), 0) as total FROM dust_transactions WHERE type = 'consume' AND DATE(created_at) = CURRENT_DATE"
     )
     dust_consumed_week = await db.fetch_one(
-        "SELECT COALESCE(SUM(amount), 0) as total FROM dust_transactions WHERE type = 'consumption' AND created_at >= CURRENT_DATE - INTERVAL '7 days'"
+        "SELECT COALESCE(SUM(ABS(amount)), 0) as total FROM dust_transactions WHERE type = 'consume' AND created_at >= CURRENT_DATE - INTERVAL '7 days'"
     )
     total_transactions = await db.fetch_one("SELECT COUNT(*) as count FROM dust_transactions")
     total_llm_usage = await db.fetch_one("SELECT COUNT(*) as count FROM llm_usage_logs")
