@@ -515,6 +515,12 @@ git push origin develop
 - **Prevention**: ALWAYS run build process when changing React components
 - **Note**: This has caused 45+ minute debugging sessions - don't forget this step!
 
+**🎯 REMINDER: Update Admin Portal Version Number**
+- **Location**: `/services/admin-ui/src/components/layout/Sidebar.tsx` line 127
+- **Action Required**: Increment version when making significant UI changes
+- **Current Pattern**: Major UI changes = minor version bump (2.1.5 → 2.1.6)
+- **Example**: `Admin Portal v2.1.6` for Apps screen redesign + edit functionality
+
 **Build Verification:**
 - New builds generate different bundle hashes (e.g., `index-ABC123.js`)
 - Check Railway deployment logs for new bundle names
