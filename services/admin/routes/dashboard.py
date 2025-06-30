@@ -69,7 +69,7 @@ async def get_dashboard_stats(
     """Get dashboard statistics for React app"""
     total_users = await db.fetch_one("SELECT COUNT(*) as count FROM users WHERE is_active = true")
     total_apps = await db.fetch_one("SELECT COUNT(*) as count FROM apps")
-    pending_apps = await db.fetch_one("SELECT COUNT(*) as count FROM apps WHERE status = 'pending'")
+    # Removed pending_apps query - auto-approval workflow
     total_dust_issued = await db.fetch_one(
         "SELECT COALESCE(SUM(amount), 0) as total FROM dust_transactions WHERE type = 'grant'"
     )
@@ -97,7 +97,7 @@ async def get_dashboard_stats(
     return {
         "total_users": total_users["count"],
         "total_apps": total_apps["count"],
-        "pending_apps": pending_apps["count"],
+        # Removed pending_apps - auto-approval workflow
         "total_dust_issued": total_dust_issued["total"],
         "active_users_today": active_users_today["count"],
         "active_users_week": active_users_week["count"],
