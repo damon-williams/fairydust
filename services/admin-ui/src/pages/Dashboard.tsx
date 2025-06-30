@@ -92,15 +92,9 @@ export function Dashboard() {
   return (
     <div className="space-y-6">
       {/* Header with Version */}
-      <div className="flex justify-between items-start">
-        <div>
-          <h1 className="text-3xl font-bold text-slate-900">Dashboard</h1>
-          <p className="text-slate-500">Welcome to the fairydust admin portal</p>
-        </div>
-        <div className="text-right">
-          <p className="text-sm text-slate-400">Admin Portal</p>
-          <p className="text-lg font-semibold text-slate-600">v2.1.8</p>
-        </div>
+      <div>
+        <h1 className="text-3xl font-bold text-slate-900">Dashboard</h1>
+        <p className="text-slate-500">Welcome to the fairydust admin portal.</p>
       </div>
 
       {/* System Health Alert */}
