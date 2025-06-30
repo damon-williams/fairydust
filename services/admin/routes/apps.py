@@ -345,6 +345,8 @@ async def update_app_model_config_api(
     """Update app model configuration via proxy to apps service"""
     import httpx
     import os
+    import jwt
+    from datetime import datetime, timedelta
     
     try:
         # Determine apps service URL based on environment
@@ -352,14 +354,32 @@ async def update_app_model_config_api(
         base_url_suffix = 'production' if environment == 'production' else 'staging'
         apps_url = f"https://fairydust-apps-{base_url_suffix}.up.railway.app"
         
-        # Create admin token for apps service authentication
-        # We'll need to implement proper token passing here
+        # Create JWT token for apps service authentication
+        # Use same JWT settings as identity service
+        SECRET_KEY = os.getenv("SECRET_KEY", "your-secret-key-here")
+        ALGORITHM = "HS256"
+        ACCESS_TOKEN_EXPIRE_MINUTES = 60
+        
+        # Create token data for admin user
+        token_data = {
+            "user_id": str(admin_user["user_id"]),
+            "fairyname": admin_user["fairyname"],
+            "is_admin": True,
+            "exp": datetime.utcnow() + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES),
+            "type": "access"
+        }
+        
+        # Create JWT token
+        access_token = jwt.encode(token_data, SECRET_KEY, algorithm=ALGORITHM)
         
         async with httpx.AsyncClient(timeout=30.0) as client:
             response = await client.put(
                 f"{apps_url}/llm/{app_id}/model-config",
                 json=model_config,
-                headers={"Content-Type": "application/json"}
+                headers={
+                    "Content-Type": "application/json",
+                    "Authorization": f"Bearer {access_token}"
+                }
             )
             
             if response.status_code == 200:
