@@ -27,7 +27,7 @@ async def get_apps_api(
                amc.primary_model_id, amc.primary_provider
         FROM apps a
         JOIN users u ON a.builder_id = u.id
-        LEFT JOIN app_model_configs amc ON amc.app_id = a.id::text
+        LEFT JOIN app_model_configs amc ON amc.app_id::uuid = a.id
     """
     count_query = "SELECT COUNT(*) as total FROM apps a"
 
@@ -96,7 +96,7 @@ async def update_app_status_api(
                amc.primary_model_id, amc.primary_provider
         FROM apps a
         JOIN users u ON a.builder_id = u.id
-        LEFT JOIN app_model_configs amc ON amc.app_id = a.id::text
+        LEFT JOIN app_model_configs amc ON amc.app_id::uuid = a.id
         WHERE a.id = $1
         """,
         app_id,
@@ -200,7 +200,7 @@ async def create_app_api(
                    amc.primary_model_id, amc.primary_provider
             FROM apps a
             JOIN users u ON a.builder_id = u.id
-            LEFT JOIN app_model_configs amc ON amc.app_id = a.id::text
+            LEFT JOIN app_model_configs amc ON amc.app_id::uuid = a.id
             WHERE a.id = $1
             """,
             app_id,
