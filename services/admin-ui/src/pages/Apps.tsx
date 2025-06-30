@@ -42,7 +42,7 @@ export function Apps() {
   const [error, setError] = useState<string | null>(null);
 
   // Debug logging
-  console.log('🔍 APPS_DEBUG: Apps component loaded with LLM Config and wider modal v2.1.6');
+  console.log('🔍 APPS_DEBUG: Apps component loaded with LLM Config and max-w-6xl modal v2.1.7');
   console.log('🔍 APPS_DEBUG: Build timestamp:', new Date().toISOString());
   const [createDialogOpen, setCreateDialogOpen] = useState(false);
   const [configureDialogOpen, setConfigureDialogOpen] = useState(false);
@@ -480,7 +480,7 @@ export function Apps() {
 
       {/* Configure App Dialog */}
       <Dialog open={configureDialogOpen} onOpenChange={setConfigureDialogOpen}>
-        <DialogContent className="max-w-4xl">
+        <DialogContent className="max-w-6xl">
           <DialogHeader>
             <DialogTitle>Edit App: {editingApp?.name}</DialogTitle>
             <DialogDescription>
