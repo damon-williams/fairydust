@@ -237,7 +237,8 @@ export function Apps() {
         is_active: editingPricing.is_active,
       });
       
-      toast.success('Pricing updated successfully');
+      const isCreating = !editingPricing.created_at;
+      toast.success(isCreating ? 'Action created successfully' : 'Pricing updated successfully');
       setPricingDialogOpen(false);
       setEditingPricing(null);
       await loadActionPricing();
@@ -682,20 +683,6 @@ export function Apps() {
                 </div>
               </div>
             </div>
-            
-            <div className="space-y-2 col-span-2">
-              <Label>Per-Action DUST Costs</Label>
-              <div className="p-4 bg-slate-50 rounded-lg">
-                <div className="text-sm text-slate-600">
-                  Configure individual DUST costs per action. This will replace the single "dust_per_use" value with granular pricing.
-                </div>
-                <div className="mt-2">
-                  <div className="text-xs text-amber-600">
-                    ⚠️ Coming Soon: Per-action cost management interface
-                  </div>
-                </div>
-              </div>
-            </div>
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setConfigureDialogOpen(false)}>
@@ -713,6 +700,26 @@ export function Apps() {
         </TabsContent>
 
         <TabsContent value="pricing" className="space-y-6">
+          <div className="flex justify-end">
+            <Dialog open={pricingDialogOpen} onOpenChange={setPricingDialogOpen}>
+              <DialogTrigger asChild>
+                <Button onClick={() => {
+                  setEditingPricing({
+                    action_slug: '',
+                    dust_cost: 1,
+                    description: '',
+                    is_active: true,
+                    created_at: '',
+                    updated_at: ''
+                  });
+                }}>
+                  <Plus className="h-4 w-4 mr-2" />
+                  Create Action
+                </Button>
+              </DialogTrigger>
+            </Dialog>
+          </div>
+
           {/* Action Pricing Table */}
           <Card>
             <CardHeader>
@@ -806,13 +813,32 @@ export function Apps() {
           <Dialog open={pricingDialogOpen} onOpenChange={setPricingDialogOpen}>
             <DialogContent className="max-w-md">
               <DialogHeader>
-                <DialogTitle>Edit Action Pricing</DialogTitle>
+                <DialogTitle>
+                  {editingPricing?.action_slug ? 'Edit Action Pricing' : 'Create New Action'}
+                </DialogTitle>
                 <DialogDescription>
-                  Modify DUST cost and settings for {editingPricing?.action_slug}
+                  {editingPricing?.action_slug 
+                    ? `Modify DUST cost and settings for ${editingPricing.action_slug}`
+                    : 'Create a new action with DUST pricing'
+                  }
                 </DialogDescription>
               </DialogHeader>
               {editingPricing && (
                 <div className="space-y-4 py-4">
+                  {!editingPricing.action_slug && (
+                    <div className="space-y-2">
+                      <Label htmlFor="action-slug">Action Slug *</Label>
+                      <Input
+                        id="action-slug"
+                        placeholder="e.g., story-short, recipe-simple"
+                        value={editingPricing.action_slug}
+                        onChange={(e) => setEditingPricing(prev => prev ? {
+                          ...prev,
+                          action_slug: e.target.value
+                        } : null)}
+                      />
+                    </div>
+                  )}
                   <div className="space-y-2">
                     <Label htmlFor="dust-cost">DUST Cost</Label>
                     <Input
@@ -863,8 +889,11 @@ export function Apps() {
                 <Button variant="outline" onClick={() => setPricingDialogOpen(false)}>
                   Cancel
                 </Button>
-                <Button onClick={handleUpdatePricing}>
-                  Save Changes
+                <Button 
+                  onClick={handleUpdatePricing}
+                  disabled={!editingPricing?.action_slug || !editingPricing?.description}
+                >
+                  {editingPricing?.created_at ? 'Save Changes' : 'Create Action'}
                 </Button>
               </DialogFooter>
             </DialogContent>
