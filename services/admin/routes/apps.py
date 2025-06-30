@@ -218,6 +218,83 @@ async def create_app_api(
         raise HTTPException(status_code=500, detail="Failed to create app")
 
 
+@apps_router.put("/{app_id}")
+async def update_app_api(
+    app_id: str,
+    app_data: dict,
+    admin_user: dict = Depends(get_current_admin_user),
+    db: Database = Depends(get_db),
+):
+    """Update app via API for React app"""
+    try:
+        # Extract data
+        name = app_data.get("name")
+        slug = app_data.get("slug")
+        description = app_data.get("description")
+        category = app_data.get("category")
+        status = app_data.get("status", "active")
+
+        # Validate required fields
+        if not all([name, slug, description, category]):
+            raise HTTPException(status_code=400, detail="Missing required fields")
+
+        # Check if app exists
+        existing_app = await db.fetch_one("SELECT id, slug FROM apps WHERE id = $1", app_id)
+        if not existing_app:
+            raise HTTPException(status_code=404, detail="App not found")
+
+        # Check if slug is taken by another app
+        if existing_app["slug"] != slug:
+            slug_check = await db.fetch_one("SELECT id FROM apps WHERE slug = $1 AND id != $2", slug, app_id)
+            if slug_check:
+                raise HTTPException(status_code=400, detail="App slug already exists")
+
+        # Convert status to database format
+        db_status = "approved" if status == "active" else "pending"
+        is_active = status == "active"
+
+        # Update the app
+        await db.execute(
+            """
+            UPDATE apps
+            SET name = $1, slug = $2, description = $3, category = $4, 
+                status = $5, is_active = $6, updated_at = CURRENT_TIMESTAMP
+            WHERE id = $7
+            """,
+            name,
+            slug,
+            description,
+            category,
+            db_status,
+            is_active,
+            app_id,
+        )
+
+        # Return updated app
+        app = await db.fetch_one(
+            """
+            SELECT a.*, u.fairyname as builder_name, u.email as builder_email,
+                   amc.primary_model_id, amc.primary_provider
+            FROM apps a
+            JOIN users u ON a.builder_id = u.id
+            LEFT JOIN app_model_configs amc ON amc.app_id::uuid = a.id
+            WHERE a.id = $1
+            """,
+            app_id,
+        )
+
+        return dict(app)
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        import logging
+
+        logger = logging.getLogger(__name__)
+        logger.error(f"Error updating app via API: {e}")
+        raise HTTPException(status_code=500, detail="Failed to update app")
+
+
 @apps_router.get("/builders")
 async def get_builders_api(
     admin_user: dict = Depends(get_current_admin_user),

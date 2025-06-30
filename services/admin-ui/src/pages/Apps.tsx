@@ -47,6 +47,14 @@ export function Apps() {
   const [createDialogOpen, setCreateDialogOpen] = useState(false);
   const [configureDialogOpen, setConfigureDialogOpen] = useState(false);
   const [editingApp, setEditingApp] = useState<App | null>(null);
+  const [editingAppData, setEditingAppData] = useState({
+    name: '',
+    slug: '',
+    description: '',
+    category: '',
+    status: 'active',
+  });
+  const [savingApp, setSavingApp] = useState(false);
   const [builders, setBuilders] = useState<Array<{ id: string; fairyname: string; email: string }>>([]);
   const [creatingApp, setCreatingApp] = useState(false);
   const [newApp, setNewApp] = useState({
@@ -115,7 +123,38 @@ export function Apps() {
 
   const handleConfigureApp = (app: App) => {
     setEditingApp(app);
+    setEditingAppData({
+      name: app.name,
+      slug: app.slug,
+      description: app.description,
+      category: app.category,
+      status: app.status === 'approved' ? 'active' : 'inactive',
+    });
     setConfigureDialogOpen(true);
+  };
+
+  const handleSaveApp = async () => {
+    if (!editingApp) return;
+    
+    try {
+      setSavingApp(true);
+      const updatedApp = await AdminAPI.updateApp(editingApp.id, editingAppData);
+      
+      // Update the apps list with the new data
+      setApps(prevApps => 
+        prevApps.map(app => 
+          app.id === editingApp.id ? { ...app, ...updatedApp } : app
+        )
+      );
+      
+      setConfigureDialogOpen(false);
+      toast.success('App updated successfully');
+    } catch (err) {
+      console.error('Failed to update app:', err);
+      toast.error('Failed to update app');
+    } finally {
+      setSavingApp(false);
+    }
   };
 
   const categories = [
@@ -135,16 +174,15 @@ export function Apps() {
   }, []);
 
   const getStatusIcon = (status: string) => {
-    switch (status) {
-      case 'approved':
-        return <CheckCircle className="h-4 w-4 text-green-600" />;
-      case 'pending':
-        return <Clock className="h-4 w-4 text-yellow-600" />;
-      case 'rejected':
-        return <XCircle className="h-4 w-4 text-red-600" />;
-      default:
-        return null;
-    }
+    // Convert old status to new active/inactive model
+    const isActive = status === 'approved';
+    return isActive ? 
+      <CheckCircle className="h-4 w-4 text-green-600" /> : 
+      <XCircle className="h-4 w-4 text-red-600" />;
+  };
+
+  const getStatusDisplay = (status: string) => {
+    return status === 'approved' ? 'active' : 'inactive';
   };
 
   return (
@@ -361,14 +399,10 @@ export function Apps() {
                     <div className="flex items-center space-x-2">
                       {getStatusIcon(app.status)}
                       <Badge 
-                        variant={
-                          app.status === 'approved' ? 'default' :
-                          app.status === 'pending' ? 'secondary' :
-                          'destructive'
-                        }
+                        variant={app.status === 'approved' ? 'default' : 'destructive'}
                         className="capitalize"
                       >
-                        {app.status}
+                        {getStatusDisplay(app.status)}
                       </Badge>
                     </div>
                   </TableCell>
@@ -409,12 +443,68 @@ export function Apps() {
       <Dialog open={configureDialogOpen} onOpenChange={setConfigureDialogOpen}>
         <DialogContent className="max-w-2xl">
           <DialogHeader>
-            <DialogTitle>Configure App: {editingApp?.name}</DialogTitle>
+            <DialogTitle>Edit App: {editingApp?.name}</DialogTitle>
             <DialogDescription>
-              Configure LLM settings and per-action DUST costs for this app
+              Edit app properties, settings, and configuration
             </DialogDescription>
           </DialogHeader>
           <div className="grid grid-cols-2 gap-4 py-4">
+            <div className="space-y-2">
+              <Label htmlFor="edit-name">App Name *</Label>
+              <Input
+                id="edit-name"
+                value={editingAppData.name}
+                onChange={(e) => setEditingAppData(prev => ({ ...prev, name: e.target.value }))}
+                placeholder="e.g., Recipe Generator"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="edit-slug">Slug *</Label>
+              <Input
+                id="edit-slug"
+                value={editingAppData.slug}
+                onChange={(e) => setEditingAppData(prev => ({ ...prev, slug: e.target.value }))}
+                placeholder="e.g., recipe-generator"
+              />
+            </div>
+            <div className="space-y-2 col-span-2">
+              <Label htmlFor="edit-description">Description *</Label>
+              <Textarea
+                id="edit-description"
+                value={editingAppData.description}
+                onChange={(e) => setEditingAppData(prev => ({ ...prev, description: e.target.value }))}
+                placeholder="Describe what your app does..."
+                rows={3}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="edit-category">Category *</Label>
+              <Select value={editingAppData.category} onValueChange={(value) => setEditingAppData(prev => ({ ...prev, category: value }))}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Select category" />
+                </SelectTrigger>
+                <SelectContent>
+                  {categories.map((category) => (
+                    <SelectItem key={category.value} value={category.value}>
+                      {category.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="edit-status">Status *</Label>
+              <Select value={editingAppData.status} onValueChange={(value) => setEditingAppData(prev => ({ ...prev, status: value }))}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Select status" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="active">Active</SelectItem>
+                  <SelectItem value="inactive">Inactive</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            
             <div className="space-y-2 col-span-2">
               <Label>Current Model Configuration</Label>
               <div className="p-4 bg-slate-50 rounded-lg">
@@ -445,10 +535,13 @@ export function Apps() {
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setConfigureDialogOpen(false)}>
-              Close
+              Cancel
             </Button>
-            <Button disabled>
-              Save Configuration
+            <Button 
+              onClick={handleSaveApp}
+              disabled={savingApp || !editingAppData.name || !editingAppData.slug || !editingAppData.description || !editingAppData.category}
+            >
+              {savingApp ? 'Saving...' : 'Save Changes'}
             </Button>
           </DialogFooter>
         </DialogContent>
