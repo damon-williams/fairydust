@@ -216,7 +216,7 @@ async def generate_story(
                 total=tokens_used.get("total", 0),
             ),
             cost=cost,
-            new_dust_balance=new_balance,
+            new_dust_balance=user_balance,
         )
 
     except HTTPException:
