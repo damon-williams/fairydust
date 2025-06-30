@@ -107,7 +107,10 @@ export function Apps() {
 
   const loadSupportedModels = async () => {
     try {
+      console.log('🔍 Loading supported models...');
       const modelsData = await AdminAPI.getSupportedModels();
+      console.log('📊 Received models data:', modelsData);
+      console.log('🔧 Setting supported models:', modelsData.supported_models || {});
       setSupportedModels(modelsData.supported_models || {});
     } catch (err) {
       console.error('Failed to load supported models:', err);
@@ -561,6 +564,10 @@ export function Apps() {
             <div className="space-y-2 col-span-2">
               <Label>LLM Model Configuration</Label>
               <div className="grid grid-cols-2 gap-4 p-4 bg-slate-50 rounded-lg">
+                {/* Debug info */}
+                <div className="col-span-2 text-xs text-gray-500">
+                  Debug: supportedModels keys = {Object.keys(supportedModels).join(', ') || 'empty'}
+                </div>
                 <div className="space-y-2">
                   <Label htmlFor="edit-provider">Provider</Label>
                   <Select 
@@ -575,11 +582,14 @@ export function Apps() {
                       <SelectValue placeholder="Select provider" />
                     </SelectTrigger>
                     <SelectContent>
-                      {Object.keys(supportedModels).map((provider) => (
-                        <SelectItem key={provider} value={provider}>
-                          {provider.charAt(0).toUpperCase() + provider.slice(1)}
-                        </SelectItem>
-                      ))}
+                      {Object.keys(supportedModels).map((provider) => {
+                        console.log('🎛️ Rendering provider:', provider);
+                        return (
+                          <SelectItem key={provider} value={provider}>
+                            {provider.charAt(0).toUpperCase() + provider.slice(1)}
+                          </SelectItem>
+                        );
+                      })}
                     </SelectContent>
                   </Select>
                 </div>
