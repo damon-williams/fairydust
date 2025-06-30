@@ -503,6 +503,18 @@ git push origin develop
 - **Cause**: Built static files not updated in `/services/admin/static/`
 - **Fix**: Run the build process above and commit static files
 
+**🚨 CRITICAL: React Changes Not Appearing (45-Minute Debug Issue) 🚨**
+- **Symptom**: React UI changes (table columns, buttons, dialogs) not visible in browser
+- **Root Cause**: React builds are cached and must be manually rebuilt + deployed
+- **Immediate Fix**: 
+  1. `cd services/admin-ui && npm run build`
+  2. `rm -rf ../admin/static/* && cp -r dist/* ../admin/static/`
+  3. `git add ../admin/static/ src/`
+  4. `git commit -m "Update admin portal static files"`
+  5. `git push origin develop`
+- **Prevention**: ALWAYS run build process when changing React components
+- **Note**: This has caused 45+ minute debugging sessions - don't forget this step!
+
 **Build Verification:**
 - New builds generate different bundle hashes (e.g., `index-ABC123.js`)
 - Check Railway deployment logs for new bundle names
