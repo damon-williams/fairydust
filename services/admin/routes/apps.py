@@ -445,3 +445,107 @@ async def invalidate_model_config_cache_api(
     except Exception as e:
         logger.error(f"❌ ADMIN_DEBUG: Error invalidating cache for app {app_id}: {e}")
         raise HTTPException(status_code=500, detail="Failed to invalidate cache")
+
+
+# ============================================================================
+# ACTION PRICING ROUTES (PROXY TO APPS SERVICE)
+# ============================================================================
+
+@apps_router.get("/pricing/actions")
+async def get_action_pricing(
+    admin_user: dict = Depends(get_current_admin_user),
+):
+    """Get action pricing for admin portal"""
+    import httpx
+    import jwt
+    
+    # Create JWT token for cross-service auth
+    token_data = {
+        "sub": str(admin_user["user_id"]),
+        "user_id": str(admin_user["user_id"]),
+        "fairyname": admin_user["fairyname"],
+        "is_admin": True,
+    }
+    access_token = jwt.encode(token_data, JWT_SECRET_KEY, algorithm=JWT_ALGORITHM)
+    
+    # Proxy request to apps service
+    async with httpx.AsyncClient() as client:
+        response = await client.get(
+            f"{APPS_SERVICE_URL}/admin/pricing/actions",
+            headers={"Authorization": f"Bearer {access_token}"},
+            timeout=30.0
+        )
+        
+        if response.status_code == 200:
+            return response.json()
+        else:
+            raise HTTPException(status_code=response.status_code, detail="Failed to fetch action pricing")
+
+
+@apps_router.put("/pricing/actions/{action_slug}")
+async def update_action_pricing(
+    action_slug: str,
+    pricing_data: dict,
+    admin_user: dict = Depends(get_current_admin_user),
+):
+    """Update action pricing via proxy to apps service"""
+    import httpx
+    import jwt
+    
+    # Create JWT token for cross-service auth
+    token_data = {
+        "sub": str(admin_user["user_id"]),
+        "user_id": str(admin_user["user_id"]),
+        "fairyname": admin_user["fairyname"],
+        "is_admin": True,
+    }
+    access_token = jwt.encode(token_data, JWT_SECRET_KEY, algorithm=JWT_ALGORITHM)
+    
+    # Proxy request to apps service
+    async with httpx.AsyncClient() as client:
+        response = await client.put(
+            f"{APPS_SERVICE_URL}/admin/pricing/actions/{action_slug}",
+            headers={
+                "Authorization": f"Bearer {access_token}",
+                "Content-Type": "application/json"
+            },
+            json=pricing_data,
+            timeout=30.0
+        )
+        
+        if response.status_code == 200:
+            return response.json()
+        else:
+            raise HTTPException(status_code=response.status_code, detail="Failed to update action pricing")
+
+
+@apps_router.delete("/pricing/actions/{action_slug}")
+async def delete_action_pricing(
+    action_slug: str,
+    admin_user: dict = Depends(get_current_admin_user),
+):
+    """Delete action pricing via proxy to apps service"""
+    import httpx
+    import jwt
+    
+    # Create JWT token for cross-service auth
+    token_data = {
+        "sub": str(admin_user["user_id"]),
+        "user_id": str(admin_user["user_id"]),
+        "fairyname": admin_user["fairyname"],
+        "is_admin": True,
+    }
+    access_token = jwt.encode(token_data, JWT_SECRET_KEY, algorithm=JWT_ALGORITHM)
+    
+    # Proxy request to apps service
+    async with httpx.AsyncClient() as client:
+        response = await client.delete(
+            f"{APPS_SERVICE_URL}/admin/pricing/actions/{action_slug}",
+            headers={"Authorization": f"Bearer {access_token}"},
+            timeout=30.0
+        )
+        
+        if response.status_code == 200:
+            return response.json()
+        else:
+            raise HTTPException(status_code=response.status_code, detail="Failed to delete action pricing")

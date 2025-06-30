@@ -596,7 +596,7 @@ async def get_user_llm_usage(
 
 
 # Action-based DUST pricing endpoints
-@router.get("/pricing/actions")
+@app_router.get("/pricing/actions")
 async def get_action_pricing(
     current_user: TokenData = Depends(get_current_user),
     db: Database = Depends(get_db),
@@ -641,7 +641,7 @@ async def get_action_pricing(
         )
 
 
-@router.get("/pricing/health")
+@app_router.get("/pricing/health")
 async def get_pricing_health():
     """
     Health check for pricing service.
@@ -653,7 +653,7 @@ async def get_pricing_health():
 
 
 # Admin endpoints for managing action pricing
-@router.get("/admin/pricing/actions")
+@admin_router.get("/admin/pricing/actions")
 async def get_admin_action_pricing(
     admin_user: TokenData = Depends(require_admin),
     db: Database = Depends(get_db),
@@ -680,7 +680,7 @@ async def get_admin_action_pricing(
         raise HTTPException(status_code=500, detail="Failed to retrieve pricing data")
 
 
-@router.put("/admin/pricing/actions/{action_slug}")
+@admin_router.put("/admin/pricing/actions/{action_slug}")
 async def update_action_pricing(
     action_slug: str,
     pricing_data: dict,
@@ -744,7 +744,7 @@ async def update_action_pricing(
         raise HTTPException(status_code=500, detail="Failed to update pricing")
 
 
-@router.delete("/admin/pricing/actions/{action_slug}")
+@admin_router.delete("/admin/pricing/actions/{action_slug}")
 async def delete_action_pricing(
     action_slug: str,
     admin_user: TokenData = Depends(require_admin),

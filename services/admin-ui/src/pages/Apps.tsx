@@ -710,6 +710,167 @@ export function Apps() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+        </TabsContent>
+
+        <TabsContent value="pricing" className="space-y-6">
+          {/* Action Pricing Table */}
+          <Card>
+            <CardHeader>
+              <CardTitle>Action Pricing ({actionPricing.length})</CardTitle>
+            </CardHeader>
+            <CardContent>
+              {pricingLoading && (
+                <div className="flex items-center justify-center py-8">
+                  <RefreshCw className="h-6 w-6 animate-spin mr-2" />
+                  Loading pricing...
+                </div>
+              )}
+              
+              {!pricingLoading && actionPricing.length === 0 && (
+                <div className="text-center py-8 text-slate-500">
+                  No action pricing found.
+                </div>
+              )}
+              
+              {!pricingLoading && actionPricing.length > 0 && (
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Action Slug</TableHead>
+                      <TableHead>DUST Cost</TableHead>
+                      <TableHead>Description</TableHead>
+                      <TableHead>Status</TableHead>
+                      <TableHead>Last Updated</TableHead>
+                      <TableHead>Actions</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {actionPricing.map((pricing) => (
+                      <TableRow key={pricing.action_slug}>
+                        <TableCell>
+                          <div className="font-mono text-sm">{pricing.action_slug}</div>
+                        </TableCell>
+                        <TableCell>
+                          <Badge variant="outline" className="font-mono">
+                            {pricing.dust_cost} DUST
+                          </Badge>
+                        </TableCell>
+                        <TableCell>
+                          <div className="max-w-xs truncate" title={pricing.description}>
+                            {pricing.description}
+                          </div>
+                        </TableCell>
+                        <TableCell>
+                          <div className="flex items-center space-x-2">
+                            {pricing.is_active ? (
+                              <CheckCircle className="h-4 w-4 text-green-600" />
+                            ) : (
+                              <XCircle className="h-4 w-4 text-red-600" />
+                            )}
+                            <Badge 
+                              variant={pricing.is_active ? 'default' : 'destructive'}
+                              className="capitalize"
+                            >
+                              {pricing.is_active ? 'Active' : 'Inactive'}
+                            </Badge>
+                          </div>
+                        </TableCell>
+                        <TableCell>
+                          <div className="text-sm text-slate-500">
+                            {formatDistanceToNow(new Date(pricing.updated_at), { addSuffix: true })}
+                          </div>
+                        </TableCell>
+                        <TableCell>
+                          <Button 
+                            variant="ghost" 
+                            size="sm"
+                            onClick={() => {
+                              setEditingPricing(pricing);
+                              setPricingDialogOpen(true);
+                            }}
+                            className="text-blue-600 hover:text-blue-800"
+                          >
+                            <Edit className="h-4 w-4 mr-1" />
+                            Edit
+                          </Button>
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              )}
+            </CardContent>
+          </Card>
+
+          {/* Edit Pricing Dialog */}
+          <Dialog open={pricingDialogOpen} onOpenChange={setPricingDialogOpen}>
+            <DialogContent className="max-w-md">
+              <DialogHeader>
+                <DialogTitle>Edit Action Pricing</DialogTitle>
+                <DialogDescription>
+                  Modify DUST cost and settings for {editingPricing?.action_slug}
+                </DialogDescription>
+              </DialogHeader>
+              {editingPricing && (
+                <div className="space-y-4 py-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="dust-cost">DUST Cost</Label>
+                    <Input
+                      id="dust-cost"
+                      type="number"
+                      min="0"
+                      max="100"
+                      value={editingPricing.dust_cost}
+                      onChange={(e) => setEditingPricing(prev => prev ? {
+                        ...prev,
+                        dust_cost: parseInt(e.target.value) || 0
+                      } : null)}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="description">Description</Label>
+                    <Textarea
+                      id="description"
+                      value={editingPricing.description}
+                      onChange={(e) => setEditingPricing(prev => prev ? {
+                        ...prev,
+                        description: e.target.value
+                      } : null)}
+                      rows={3}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="is-active">Status</Label>
+                    <Select 
+                      value={editingPricing.is_active ? 'active' : 'inactive'}
+                      onValueChange={(value) => setEditingPricing(prev => prev ? {
+                        ...prev,
+                        is_active: value === 'active'
+                      } : null)}
+                    >
+                      <SelectTrigger>
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="active">Active</SelectItem>
+                        <SelectItem value="inactive">Inactive</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
+              )}
+              <DialogFooter>
+                <Button variant="outline" onClick={() => setPricingDialogOpen(false)}>
+                  Cancel
+                </Button>
+                <Button onClick={handleUpdatePricing}>
+                  Save Changes
+                </Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
+        </TabsContent>
+      </Tabs>
     </div>
   );
 }
