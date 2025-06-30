@@ -23,9 +23,11 @@ async def get_apps_api(
 
     # Build query with optional status filter
     base_query = """
-        SELECT a.*, u.fairyname as builder_name, u.email as builder_email
+        SELECT a.*, u.fairyname as builder_name, u.email as builder_email,
+               amc.primary_model_id, amc.primary_provider
         FROM apps a
         JOIN users u ON a.builder_id = u.id
+        LEFT JOIN app_model_configs amc ON a.id::text = amc.app_id
     """
     count_query = "SELECT COUNT(*) as total FROM apps a"
 
@@ -90,9 +92,11 @@ async def update_app_status_api(
     # Return updated app
     app = await db.fetch_one(
         """
-        SELECT a.*, u.fairyname as builder_name, u.email as builder_email
+        SELECT a.*, u.fairyname as builder_name, u.email as builder_email,
+               amc.primary_model_id, amc.primary_provider
         FROM apps a
         JOIN users u ON a.builder_id = u.id
+        LEFT JOIN app_model_configs amc ON a.id::text = amc.app_id
         WHERE a.id = $1
         """,
         app_id,
@@ -192,9 +196,11 @@ async def create_app_api(
         # Return created app
         app = await db.fetch_one(
             """
-            SELECT a.*, u.fairyname as builder_name, u.email as builder_email
+            SELECT a.*, u.fairyname as builder_name, u.email as builder_email,
+                   amc.primary_model_id, amc.primary_provider
             FROM apps a
             JOIN users u ON a.builder_id = u.id
+            LEFT JOIN app_model_configs amc ON a.id::text = amc.app_id
             WHERE a.id = $1
             """,
             app_id,

@@ -24,6 +24,8 @@ export interface App {
   builder_name: string;
   category: string;
   icon_url?: string;
+  primary_model_id?: string;
+  primary_provider?: string;
   created_at: string;
   updated_at: string;
 }

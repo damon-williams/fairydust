@@ -31,7 +31,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { App } from '@/types/admin';
-import { MoreHorizontal, CheckCircle, XCircle, Clock, RefreshCw, AlertTriangle, Plus } from 'lucide-react';
+import { MoreHorizontal, CheckCircle, XCircle, Clock, RefreshCw, AlertTriangle, Plus, Settings, Edit } from 'lucide-react';
 import { formatDistanceToNow } from 'date-fns';
 import { AdminAPI } from '@/lib/admin-api';
 import { toast } from 'sonner';
@@ -45,6 +45,8 @@ export function Apps() {
   console.log('🔍 APPS_DEBUG: Apps component loaded with SLUG display v2.1.4');
   console.log('🔍 APPS_DEBUG: Build timestamp:', new Date().toISOString());
   const [createDialogOpen, setCreateDialogOpen] = useState(false);
+  const [configureDialogOpen, setConfigureDialogOpen] = useState(false);
+  const [editingApp, setEditingApp] = useState<App | null>(null);
   const [builders, setBuilders] = useState<Array<{ id: string; fairyname: string; email: string }>>([]);
   const [creatingApp, setCreatingApp] = useState(false);
   const [newApp, setNewApp] = useState({
@@ -109,6 +111,11 @@ export function Apps() {
     } finally {
       setCreatingApp(false);
     }
+  };
+
+  const handleConfigureApp = (app: App) => {
+    setEditingApp(app);
+    setConfigureDialogOpen(true);
   };
 
   const categories = [
@@ -318,8 +325,7 @@ export function Apps() {
                 <TableHead>Slug</TableHead>
                 <TableHead>Category</TableHead>
                 <TableHead>Status</TableHead>
-                <TableHead>Created</TableHead>
-                <TableHead>Last Updated</TableHead>
+                <TableHead>Model</TableHead>
                 <TableHead>Actions</TableHead>
               </TableRow>
             </TableHeader>
@@ -367,19 +373,29 @@ export function Apps() {
                     </div>
                   </TableCell>
                   <TableCell>
-                    <div className="text-sm text-slate-500">
-                      {formatDistanceToNow(new Date(app.created_at), { addSuffix: true })}
+                    <div className="text-sm">
+                      {app.primary_model_id ? (
+                        <div>
+                          <div className="font-mono text-slate-700">{app.primary_model_id}</div>
+                          <div className="text-xs text-slate-500 capitalize">{app.primary_provider}</div>
+                        </div>
+                      ) : (
+                        <div className="text-slate-400 italic">Not configured</div>
+                      )}
                     </div>
                   </TableCell>
                   <TableCell>
-                    <div className="text-sm text-slate-500">
-                      {formatDistanceToNow(new Date(app.updated_at), { addSuffix: true })}
+                    <div className="flex items-center space-x-2">
+                      <Button 
+                        variant="ghost" 
+                        size="sm"
+                        onClick={() => handleConfigureApp(app)}
+                        className="text-blue-600 hover:text-blue-800"
+                      >
+                        <Settings className="h-4 w-4 mr-1" />
+                        Configure
+                      </Button>
                     </div>
-                  </TableCell>
-                  <TableCell>
-                    <Button variant="ghost" size="sm">
-                      <MoreHorizontal className="h-4 w-4" />
-                    </Button>
                   </TableCell>
                 </TableRow>
               ))}
@@ -388,6 +404,55 @@ export function Apps() {
           )}
         </CardContent>
       </Card>
+
+      {/* Configure App Dialog */}
+      <Dialog open={configureDialogOpen} onOpenChange={setConfigureDialogOpen}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>Configure App: {editingApp?.name}</DialogTitle>
+            <DialogDescription>
+              Configure LLM settings and per-action DUST costs for this app
+            </DialogDescription>
+          </DialogHeader>
+          <div className="grid grid-cols-2 gap-4 py-4">
+            <div className="space-y-2 col-span-2">
+              <Label>Current Model Configuration</Label>
+              <div className="p-4 bg-slate-50 rounded-lg">
+                {editingApp?.primary_model_id ? (
+                  <div>
+                    <div className="font-mono text-sm">{editingApp.primary_model_id}</div>
+                    <div className="text-xs text-slate-500 capitalize">Provider: {editingApp.primary_provider}</div>
+                  </div>
+                ) : (
+                  <div className="text-slate-400 italic">No model configuration found</div>
+                )}
+              </div>
+            </div>
+            
+            <div className="space-y-2 col-span-2">
+              <Label>Per-Action DUST Costs</Label>
+              <div className="p-4 bg-slate-50 rounded-lg">
+                <div className="text-sm text-slate-600">
+                  Configure individual DUST costs per action. This will replace the single "dust_per_use" value with granular pricing.
+                </div>
+                <div className="mt-2">
+                  <div className="text-xs text-amber-600">
+                    ⚠️ Coming Soon: Per-action cost management interface
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setConfigureDialogOpen(false)}>
+              Close
+            </Button>
+            <Button disabled>
+              Save Configuration
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
