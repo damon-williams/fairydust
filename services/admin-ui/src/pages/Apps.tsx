@@ -3,6 +3,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Alert, AlertDescription } from '@/components/ui/alert';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { 
   Table,
   TableBody,
@@ -30,7 +31,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { App } from '@/types/admin';
+import { App, ActionPricing } from '@/types/admin';
 import { MoreHorizontal, CheckCircle, XCircle, Clock, RefreshCw, AlertTriangle, Plus, Settings, Edit } from 'lucide-react';
 import { formatDistanceToNow } from 'date-fns';
 import { AdminAPI } from '@/lib/admin-api';
@@ -79,6 +80,12 @@ export function Apps() {
     demo_url: '',
     callback_url: '',
   });
+
+  // Action Pricing state
+  const [actionPricing, setActionPricing] = useState<ActionPricing[]>([]);
+  const [pricingLoading, setPricingLoading] = useState(false);
+  const [editingPricing, setEditingPricing] = useState<ActionPricing | null>(null);
+  const [pricingDialogOpen, setPricingDialogOpen] = useState(false);
 
   const loadApps = async () => {
     try {
@@ -206,10 +213,45 @@ export function Apps() {
     { value: 'other', label: 'Other' },
   ];
 
+  // Action Pricing functions
+  const loadActionPricing = async () => {
+    try {
+      setPricingLoading(true);
+      const data = await AdminAPI.getActionPricing();
+      setActionPricing(data);
+    } catch (err) {
+      console.error('Failed to load action pricing:', err);
+      toast.error('Failed to load action pricing');
+    } finally {
+      setPricingLoading(false);
+    }
+  };
+
+  const handleUpdatePricing = async () => {
+    if (!editingPricing) return;
+
+    try {
+      await AdminAPI.updateActionPricing(editingPricing.action_slug, {
+        dust_cost: editingPricing.dust_cost,
+        description: editingPricing.description,
+        is_active: editingPricing.is_active,
+      });
+      
+      toast.success('Pricing updated successfully');
+      setPricingDialogOpen(false);
+      setEditingPricing(null);
+      await loadActionPricing();
+    } catch (err) {
+      console.error('Failed to update pricing:', err);
+      toast.error('Failed to update pricing');
+    }
+  };
+
   useEffect(() => {
     loadApps();
     loadBuilders();
     loadSupportedModels();
+    loadActionPricing();
   }, []);
 
   const getStatusIcon = (status: string) => {
@@ -229,9 +271,19 @@ export function Apps() {
       {/* Header */}
       <div className="flex justify-between items-center">
         <div>
-          <h1 className="text-3xl font-bold text-slate-900">Apps</h1>
-          <p className="text-slate-500">Manage applications and review submissions</p>
+          <h1 className="text-3xl font-bold text-slate-900">Apps & Pricing</h1>
+          <p className="text-slate-500">Manage applications and DUST pricing</p>
         </div>
+      </div>
+
+      <Tabs defaultValue="apps" className="space-y-6">
+        <TabsList>
+          <TabsTrigger value="apps">Apps Management</TabsTrigger>
+          <TabsTrigger value="pricing">Action Pricing</TabsTrigger>
+        </TabsList>
+
+        <TabsContent value="apps" className="space-y-6">
+          <div className="flex justify-end">
         <Dialog open={createDialogOpen} onOpenChange={setCreateDialogOpen}>
           <DialogTrigger asChild>
             <Button>

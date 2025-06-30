@@ -87,3 +87,12 @@ export interface AdminUser {
   email?: string;
   is_admin: boolean;
 }
+
+export interface ActionPricing {
+  action_slug: string;
+  dust_cost: number;
+  description: string;
+  is_active: boolean;
+  created_at: string;
+  updated_at: string;
+}
