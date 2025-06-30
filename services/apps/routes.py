@@ -593,3 +593,181 @@ async def get_user_llm_usage(
         period_start=start_date,
         period_end=end_date,
     )
+
+
+# Action-based DUST pricing endpoints
+@router.get("/pricing/actions")
+async def get_action_pricing(
+    current_user: TokenData = Depends(get_current_user),
+    db: Database = Depends(get_db),
+):
+    """
+    Get action-based DUST pricing for mobile app.
+    Returns pricing for all active action slugs with caching headers.
+    """
+    try:
+        # Get all active pricing
+        pricing_rows = await db.fetch_all(
+            """
+            SELECT action_slug, dust_cost, description, updated_at
+            FROM action_pricing 
+            WHERE is_active = true
+            ORDER BY action_slug
+            """
+        )
+
+        # Format response as expected by mobile app
+        pricing_data = {}
+        for row in pricing_rows:
+            pricing_data[row["action_slug"]] = {
+                "dust": row["dust_cost"],
+                "description": row["description"],
+                "last_updated": row["updated_at"].isoformat() + "Z",
+            }
+
+        return pricing_data
+
+    except Exception as e:
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.error(f"Error fetching action pricing: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail={
+                "error": "Failed to retrieve pricing",
+                "code": "PRICING_UNAVAILABLE",
+                "message": "Pricing service temporarily unavailable"
+            }
+        )
+
+
+@router.get("/pricing/health")
+async def get_pricing_health():
+    """
+    Health check for pricing service.
+    """
+    return {
+        "status": "healthy",
+        "timestamp": datetime.utcnow().isoformat() + "Z"
+    }
+
+
+# Admin endpoints for managing action pricing
+@router.get("/admin/pricing/actions")
+async def get_admin_action_pricing(
+    admin_user: TokenData = Depends(require_admin),
+    db: Database = Depends(get_db),
+):
+    """
+    Get all action pricing (including inactive) for admin management.
+    """
+    try:
+        pricing_rows = await db.fetch_all(
+            """
+            SELECT action_slug, dust_cost, description, is_active, 
+                   created_at, updated_at
+            FROM action_pricing 
+            ORDER BY action_slug
+            """
+        )
+
+        return [dict(row) for row in pricing_rows]
+
+    except Exception as e:
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.error(f"Error fetching admin action pricing: {e}")
+        raise HTTPException(status_code=500, detail="Failed to retrieve pricing data")
+
+
+@router.put("/admin/pricing/actions/{action_slug}")
+async def update_action_pricing(
+    action_slug: str,
+    pricing_data: dict,
+    admin_user: TokenData = Depends(require_admin),
+    db: Database = Depends(get_db),
+):
+    """
+    Update action pricing. Admin only.
+    """
+    try:
+        dust_cost = pricing_data.get("dust_cost")
+        description = pricing_data.get("description")
+        is_active = pricing_data.get("is_active", True)
+
+        # Validate input
+        if dust_cost is None or dust_cost < 0:
+            raise HTTPException(status_code=400, detail="dust_cost must be >= 0")
+        if not description or len(description.strip()) == 0:
+            raise HTTPException(status_code=400, detail="description is required")
+
+        # Update pricing
+        result = await db.execute(
+            """
+            UPDATE action_pricing 
+            SET dust_cost = $1, description = $2, is_active = $3, 
+                updated_at = CURRENT_TIMESTAMP
+            WHERE action_slug = $4
+            """,
+            dust_cost, description.strip(), is_active, action_slug
+        )
+
+        if "UPDATE 0" in result:
+            # Create new action if it doesn't exist
+            await db.execute(
+                """
+                INSERT INTO action_pricing (action_slug, dust_cost, description, is_active)
+                VALUES ($1, $2, $3, $4)
+                """,
+                action_slug, dust_cost, description.strip(), is_active
+            )
+
+        # Return updated pricing
+        updated_row = await db.fetch_one(
+            """
+            SELECT action_slug, dust_cost, description, is_active, 
+                   created_at, updated_at
+            FROM action_pricing 
+            WHERE action_slug = $1
+            """,
+            action_slug
+        )
+
+        return dict(updated_row)
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.error(f"Error updating action pricing: {e}")
+        raise HTTPException(status_code=500, detail="Failed to update pricing")
+
+
+@router.delete("/admin/pricing/actions/{action_slug}")
+async def delete_action_pricing(
+    action_slug: str,
+    admin_user: TokenData = Depends(require_admin),
+    db: Database = Depends(get_db),
+):
+    """
+    Delete action pricing. Admin only.
+    """
+    try:
+        result = await db.execute(
+            "DELETE FROM action_pricing WHERE action_slug = $1",
+            action_slug
+        )
+
+        if "DELETE 0" in result:
+            raise HTTPException(status_code=404, detail="Action pricing not found")
+
+        return {"message": f"Action pricing for '{action_slug}' deleted successfully"}
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.error(f"Error deleting action pricing: {e}")
+        raise HTTPException(status_code=500, detail="Failed to delete pricing")

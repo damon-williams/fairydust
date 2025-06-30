@@ -1046,4 +1046,42 @@ async def create_tables():
     """
     )
 
+    # Action-based DUST pricing table
+    await db.execute_schema(
+        """
+        CREATE TABLE IF NOT EXISTS action_pricing (
+            action_slug VARCHAR(50) PRIMARY KEY,
+            dust_cost INTEGER NOT NULL CHECK (dust_cost >= 0),
+            description TEXT NOT NULL,
+            is_active BOOLEAN DEFAULT true,
+            created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_action_pricing_active ON action_pricing(is_active);
+    """
+    )
+
+    # Seed default action pricing data
+    await db.execute_schema(
+        """
+        INSERT INTO action_pricing (action_slug, dust_cost, description, is_active) VALUES
+        ('story-short', 2, 'Short story (300-500 words)', true),
+        ('story-medium', 4, 'Medium story (600-1000 words)', true),
+        ('story-long', 6, 'Long story (1000-1500 words)', true),
+        ('recipe-simple', 2, 'Simple recipe', true),
+        ('recipe-medium', 3, 'Medium complexity recipe', true),
+        ('recipe-gourmet', 5, 'Gourmet recipe', true),
+        ('inspire-challenge', 2, 'Challenge inspiration', true),
+        ('inspire-creative', 2, 'Creative inspiration', true),
+        ('inspire-wellness', 2, 'Wellness inspiration', true),
+        ('inspire-kindness', 2, 'Kindness inspiration', true),
+        ('restaurant-search', 3, 'Restaurant recommendation', true),
+        ('fortune-reading', 3, 'Fortune reading', true),
+        ('activity-suggestion', 3, 'Activity suggestion', true)
+        ON CONFLICT (action_slug) DO UPDATE SET
+            updated_at = CURRENT_TIMESTAMP;
+    """
+    )
+
     logger.info("Database schema creation/update completed successfully")
