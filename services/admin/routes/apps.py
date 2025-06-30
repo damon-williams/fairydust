@@ -226,7 +226,14 @@ async def update_app_api(
     db: Database = Depends(get_db),
 ):
     """Update app via API for React app"""
+    import logging
+    logger = logging.getLogger(__name__)
+    
     try:
+        # Log the app update attempt
+        logger.info(f"📝 ADMIN_EDIT: User {admin_user['fairyname']} updating app {app_id}")
+        logger.info(f"📝 ADMIN_EDIT: New app data: {app_data}")
+        
         # Extract data
         name = app_data.get("name")
         slug = app_data.get("slug")
@@ -283,6 +290,10 @@ async def update_app_api(
             app_id,
         )
 
+        if app:
+            logger.info(f"✅ ADMIN_EDIT: Successfully updated app {app_id}")
+            logger.info(f"✅ ADMIN_EDIT: Updated app details: name={app['name']}, status={app['status']}")
+        
         return dict(app)
 
     except HTTPException:
@@ -347,12 +358,20 @@ async def update_app_model_config_api(
     import os
     import jwt
     from datetime import datetime, timedelta
+    import logging
+    
+    logger = logging.getLogger(__name__)
     
     try:
+        # Log the model configuration update attempt
+        logger.info(f"🔧 ADMIN_EDIT: User {admin_user['fairyname']} updating model config for app {app_id}")
+        logger.info(f"🔧 ADMIN_EDIT: New model config: {model_config}")
+        
         # Determine apps service URL based on environment
         environment = os.getenv('ENVIRONMENT', 'staging')
         base_url_suffix = 'production' if environment == 'production' else 'staging'
         apps_url = f"https://fairydust-apps-{base_url_suffix}.up.railway.app"
+        logger.info(f"🔧 ADMIN_EDIT: Sending to apps service: {apps_url}")
         
         # Create JWT token for apps service authentication
         # Use same JWT settings as auth middleware
@@ -384,8 +403,12 @@ async def update_app_model_config_api(
             )
             
             if response.status_code == 200:
-                return response.json()
+                result = response.json()
+                logger.info(f"✅ ADMIN_EDIT: Successfully updated model config for app {app_id}")
+                logger.info(f"✅ ADMIN_EDIT: Apps service response: {result}")
+                return result
             else:
+                logger.error(f"❌ ADMIN_EDIT: Apps service error {response.status_code}: {response.text}")
                 raise HTTPException(status_code=response.status_code, detail="Failed to update model configuration")
                 
     except Exception as e:
@@ -393,3 +416,32 @@ async def update_app_model_config_api(
         logger = logging.getLogger(__name__)
         logger.error(f"Error updating model config: {e}")
         raise HTTPException(status_code=500, detail="Failed to update model configuration")
+
+
+@apps_router.post("/{app_id}/model-config/invalidate-cache")
+async def invalidate_model_config_cache_api(
+    app_id: str,
+    admin_user: dict = Depends(get_current_admin_user),
+):
+    """Manually invalidate model configuration cache for debugging"""
+    import logging
+    logger = logging.getLogger(__name__)
+    
+    try:
+        from shared.app_config_cache import get_app_config_cache
+        
+        logger.info(f"🗑️ ADMIN_DEBUG: User {admin_user['fairyname']} manually invalidating cache for app {app_id}")
+        
+        cache = await get_app_config_cache()
+        result = await cache.invalidate_model_config(app_id)
+        
+        if result:
+            logger.info(f"✅ ADMIN_DEBUG: Successfully invalidated cache for app {app_id}")
+            return {"message": f"Cache invalidated for app {app_id}", "success": True}
+        else:
+            logger.info(f"⚠️ ADMIN_DEBUG: No cache found to invalidate for app {app_id}")
+            return {"message": f"No cache found for app {app_id}", "success": False}
+            
+    except Exception as e:
+        logger.error(f"❌ ADMIN_DEBUG: Error invalidating cache for app {app_id}: {e}")
+        raise HTTPException(status_code=500, detail="Failed to invalidate cache")

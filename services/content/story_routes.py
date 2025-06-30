@@ -668,20 +668,65 @@ async def _get_llm_model_config() -> dict:
 
     app_id = "fairydust-story"
 
+    print(f"🔍 STORY_CONFIG: Checking model config for {app_id}", flush=True)
+
     # Try to get from cache first
     cache = await get_app_config_cache()
     cached_config = await cache.get_model_config(app_id)
 
     if cached_config:
-        return {
+        print(f"✅ STORY_CONFIG: Found cached config", flush=True)
+        print(f"✅ STORY_CONFIG: Provider: {cached_config.get('primary_provider')}", flush=True)
+        print(f"✅ STORY_CONFIG: Model: {cached_config.get('primary_model_id')}", flush=True)
+        print(f"✅ STORY_CONFIG: Full cached config: {cached_config}", flush=True)
+        
+        config = {
             "primary_provider": cached_config.get("primary_provider", "anthropic"),
             "primary_model_id": cached_config.get("primary_model_id", "claude-3-5-sonnet-20241022"),
             "primary_parameters": cached_config.get(
                 "primary_parameters", {"temperature": 0.8, "max_tokens": 2000, "top_p": 0.9}
             ),
         }
+        
+        print(f"✅ STORY_CONFIG: Returning config: {config}", flush=True)
+        return config
 
-    # Cache miss - use default config and cache it
+    # Cache miss - check database directly
+    print(f"⚠️ STORY_CONFIG: Cache miss, checking database directly", flush=True)
+    
+    try:
+        from shared.database import get_db
+        db = await get_db()
+        
+        db_config = await db.fetch_one(
+            "SELECT * FROM app_model_configs WHERE app_id = $1", app_id
+        )
+        
+        if db_config:
+            print(f"📊 STORY_CONFIG: Found database config", flush=True)
+            print(f"📊 STORY_CONFIG: DB Provider: {db_config['primary_provider']}", flush=True)
+            print(f"📊 STORY_CONFIG: DB Model: {db_config['primary_model_id']}", flush=True)
+            
+            # Parse and cache the database config
+            from shared.json_utils import parse_model_config_field
+            
+            parsed_config = {
+                "primary_provider": db_config["primary_provider"],
+                "primary_model_id": db_config["primary_model_id"],
+                "primary_parameters": parse_model_config_field(dict(db_config), "primary_parameters") or {"temperature": 0.8, "max_tokens": 2000, "top_p": 0.9},
+            }
+            
+            # Cache the database config
+            await cache.set_model_config(app_id, parsed_config)
+            print(f"✅ STORY_CONFIG: Cached database config: {parsed_config}", flush=True)
+            
+            return parsed_config
+            
+    except Exception as e:
+        print(f"❌ STORY_CONFIG: Database error: {e}", flush=True)
+
+    # Fallback to default config
+    print(f"🔄 STORY_CONFIG: Using default config (no cache, no database)", flush=True)
     default_config = {
         "primary_provider": "anthropic",
         "primary_model_id": "claude-3-5-sonnet-20241022",
@@ -690,6 +735,7 @@ async def _get_llm_model_config() -> dict:
 
     # Cache the default config for future requests
     await cache.set_model_config(app_id, default_config)
+    print(f"✅ STORY_CONFIG: Cached default config: {default_config}", flush=True)
 
     return default_config
 
