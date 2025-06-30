@@ -124,7 +124,7 @@ async def root():
     """Serve React app with CSP headers"""
     static_dir = Path(__file__).parent / "static"
     headers = {
-        "Content-Security-Policy": "default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; img-src 'self' data:; font-src 'self'",
+        "Content-Security-Policy": "default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; img-src 'self' data:; font-src 'self'; connect-src 'self' https://fairydust-apps-staging.up.railway.app https://fairydust-apps-production.up.railway.app",
         "X-Content-Type-Options": "nosniff",
         "X-Frame-Options": "DENY",
     }
@@ -153,7 +153,7 @@ async def serve_react_app(path: str):
     ):
         static_dir = Path(__file__).parent / "static"
         headers = {
-            "Content-Security-Policy": "default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; img-src 'self' data:; font-src 'self'",
+            "Content-Security-Policy": "default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; img-src 'self' data:; font-src 'self'; connect-src 'self' https://fairydust-apps-staging.up.railway.app https://fairydust-apps-production.up.railway.app",
             "X-Content-Type-Options": "nosniff",
             "X-Frame-Options": "DENY",
         }
