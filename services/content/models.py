@@ -124,7 +124,6 @@ class UserStory(BaseModel):
     characters_involved: list[StoryCharacter]
     metadata: dict
     is_favorited: bool
-    dust_cost: int
     word_count: Optional[int]
     created_at: datetime
     updated_at: datetime
@@ -197,7 +196,6 @@ class StoryGenerationResponseNew(BaseModel):
     model_used: str
     tokens_used: TokenUsage
     cost: float
-    new_dust_balance: int
 
     class Config:
         protected_namespaces = ()
@@ -228,8 +226,6 @@ class StoryConfigResponse(BaseModel):
 class StoryErrorResponse(BaseModel):
     success: bool = False
     error: str
-    current_balance: Optional[int] = None
-    required_amount: Optional[int] = None
     valid_genres: Optional[list[str]] = None
     valid_lengths: Optional[list[dict]] = None
     story_id: Optional[UUID] = None

@@ -10,10 +10,7 @@ from typing import Optional
 import httpx
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 
-# Service URL configuration based on environment
-environment = os.getenv('ENVIRONMENT', 'staging')
-base_url_suffix = 'production' if environment == 'production' else 'staging'
-ledger_url = f"https://fairydust-ledger-{base_url_suffix}.up.railway.app"
+# Content service no longer manages DUST - all DUST handling is external
 
 from models import (
     StoriesListResponse,
@@ -38,12 +35,7 @@ from shared.llm_usage_logger import calculate_prompt_hash, create_request_metada
 
 router = APIRouter()
 
-# Constants - Reading time based
-STORY_DUST_COSTS = {
-    StoryLength.QUICK: 2,   # 2-3 minute read
-    StoryLength.MEDIUM: 4,  # 5-7 minute read  
-    StoryLength.LONG: 6,    # 8-12 minute read
-}
+# Constants - Reading time targets for story generation
 
 READING_TIME_WORD_TARGETS = {
     StoryLength.QUICK: (400, 600),     # ~2-3 min reading time
@@ -76,32 +68,11 @@ async def generate_story(
         return StoryErrorResponse(error="Can only generate stories for yourself")
 
     try:
-        # Extract Authorization header for service-to-service calls
-        auth_token = http_request.headers.get("authorization", "")
-        if not auth_token:
-            return StoryErrorResponse(error="Authorization header required")
-
         # Check rate limiting
         rate_limit_exceeded = await _check_rate_limit(db, request.user_id)
         if rate_limit_exceeded:
             return StoryErrorResponse(
                 error=f"Rate limit exceeded. Maximum {STORY_RATE_LIMIT} stories per hour."
-            )
-
-        # Get DUST cost for story length
-        dust_cost = STORY_DUST_COSTS[request.story_length]
-
-        # Verify user has enough DUST
-        user_balance = await _get_user_balance(request.user_id, auth_token)
-        if user_balance < dust_cost:
-            print(
-                f"💰 STORY: Insufficient DUST balance: {user_balance} < {dust_cost}",
-                flush=True,
-            )
-            return StoryErrorResponse(
-                error="Insufficient DUST balance",
-                current_balance=user_balance,
-                required_amount=dust_cost,
             )
 
         # Get user context for personalization
@@ -184,11 +155,10 @@ async def generate_story(
             model_used=model_used,
             tokens_used=tokens_used,
             cost=cost,
-            dust_cost=dust_cost,
             custom_prompt=request.custom_prompt,
         )
 
-        print(f"✅ STORY: Generated story for user {request.user_id} (DUST handled by client)", flush=True)
+        print(f"✅ STORY: Generated story for user {request.user_id}", flush=True)
 
         # Build response
         story = UserStoryNew(
@@ -204,7 +174,6 @@ async def generate_story(
             metadata={
                 "characters": [char.dict() for char in request.characters],
                 "custom_prompt": request.custom_prompt,
-                "dust_cost": dust_cost,
             },
         )
 
@@ -217,7 +186,6 @@ async def generate_story(
                 total=tokens_used.get("total", 0),
             ),
             cost=cost,
-            new_dust_balance=user_balance,
         )
 
     except HTTPException:
@@ -479,21 +447,18 @@ async def get_story_config():
                     "value": "quick",
                     "reading_time": "2-3 minutes",
                     "words": "400-600",
-                    "dust": STORY_DUST_COSTS[StoryLength.QUICK],
                 },
                 {
                     "label": "Medium Story", 
                     "value": "medium",
                     "reading_time": "5-7 minutes",
                     "words": "1000-1400",
-                    "dust": STORY_DUST_COSTS[StoryLength.MEDIUM],
                 },
                 {
                     "label": "Long Story",
                     "value": "long", 
                     "reading_time": "8-12 minutes",
                     "words": "1600-2400",
-                    "dust": STORY_DUST_COSTS[StoryLength.LONG],
                 },
             ],
             "target_audiences": [audience.value for audience in TargetAudience],
@@ -537,30 +502,6 @@ async def get_story_config():
 
 
 # Helper functions
-async def _get_user_balance(user_id: uuid.UUID, auth_token: str) -> int:
-    """Get user's current DUST balance via Ledger Service"""
-    print(f"🔍 STORY_BALANCE: Checking DUST balance for user {user_id}", flush=True)
-    try:
-        async with httpx.AsyncClient() as client:
-            response = await client.get(
-                f"{ledger_url}/balance/{user_id}",
-                headers={"Authorization": auth_token},
-                timeout=10.0,
-            )
-
-            if response.status_code == 200:
-                balance_data = response.json()
-                balance = balance_data.get("balance", 0)
-                print(f"✅ STORY_BALANCE: User {user_id} has {balance} DUST", flush=True)
-                return balance
-            else:
-                print(f"❌ STORY_BALANCE: Ledger service error: {response.text}", flush=True)
-                return 0
-    except Exception as e:
-        print(f"❌ STORY_BALANCE: Exception getting balance: {str(e)}", flush=True)
-        return 0
-
-
 async def _get_app_id(db: Database) -> str:
     """Get the UUID for the fairydust-story app"""
     result = await db.fetch_one("SELECT id FROM apps WHERE slug = $1", "fairydust-story")
@@ -1095,7 +1036,6 @@ async def _save_story(
     model_used: str,
     tokens_used: dict,
     cost: float,
-    dust_cost: int,
     custom_prompt: Optional[str],
 ) -> uuid.UUID:
     """Save story to database"""
@@ -1109,16 +1049,15 @@ async def _save_story(
             "model_used": model_used,
             "tokens_used": tokens_used.get("total", 0),
             "cost_usd": cost,
-            "dust_cost": dust_cost,
         }
 
         insert_query = """
             INSERT INTO user_stories (
                 id, user_id, title, content, story_length, target_audience,
-                characters_involved, metadata, dust_cost, word_count,
+                characters_involved, metadata, word_count,
                 created_at, updated_at
             )
-            VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb, $8::jsonb, $9, $10,
+            VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb, $8::jsonb, $9,
                     CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
         """
 
@@ -1132,7 +1071,6 @@ async def _save_story(
             target_audience.value,
             json.dumps([char.dict() for char in characters]),
             json.dumps(metadata),
-            dust_cost,
             word_count,
         )
 
