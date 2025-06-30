@@ -305,3 +305,70 @@ async def get_builders_api(
         "SELECT id, fairyname, email FROM users WHERE is_builder = true ORDER BY fairyname"
     )
     return [dict(builder) for builder in builders]
+
+
+@apps_router.get("/supported-models")
+async def get_supported_models_api(
+    admin_user: dict = Depends(get_current_admin_user),
+):
+    """Get supported LLM models via proxy to apps service"""
+    import httpx
+    import os
+    
+    try:
+        # Determine apps service URL based on environment
+        environment = os.getenv('ENVIRONMENT', 'staging')
+        base_url_suffix = 'production' if environment == 'production' else 'staging'
+        apps_url = f"https://fairydust-apps-{base_url_suffix}.up.railway.app"
+        
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            response = await client.get(f"{apps_url}/llm/supported-models")
+            
+            if response.status_code == 200:
+                return response.json()
+            else:
+                raise HTTPException(status_code=response.status_code, detail="Failed to fetch supported models")
+                
+    except Exception as e:
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.error(f"Error fetching supported models: {e}")
+        raise HTTPException(status_code=500, detail="Failed to fetch supported models")
+
+
+@apps_router.put("/{app_id}/model-config")
+async def update_app_model_config_api(
+    app_id: str,
+    model_config: dict,
+    admin_user: dict = Depends(get_current_admin_user),
+):
+    """Update app model configuration via proxy to apps service"""
+    import httpx
+    import os
+    
+    try:
+        # Determine apps service URL based on environment
+        environment = os.getenv('ENVIRONMENT', 'staging')
+        base_url_suffix = 'production' if environment == 'production' else 'staging'
+        apps_url = f"https://fairydust-apps-{base_url_suffix}.up.railway.app"
+        
+        # Create admin token for apps service authentication
+        # We'll need to implement proper token passing here
+        
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            response = await client.put(
+                f"{apps_url}/llm/{app_id}/model-config",
+                json=model_config,
+                headers={"Content-Type": "application/json"}
+            )
+            
+            if response.status_code == 200:
+                return response.json()
+            else:
+                raise HTTPException(status_code=response.status_code, detail="Failed to update model configuration")
+                
+    except Exception as e:
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.error(f"Error updating model config: {e}")
+        raise HTTPException(status_code=500, detail="Failed to update model configuration")
