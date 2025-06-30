@@ -218,8 +218,8 @@ async def update_app_model_config(
             """
             INSERT INTO app_model_configs (
                 id, app_id, primary_provider, primary_model_id, primary_parameters,
-                fallback_models, cost_limits, feature_flags, is_enabled
-            ) VALUES ($1, $2, $3, $4, $5::jsonb, $6::jsonb, $7::jsonb, $8::jsonb, $9)
+                fallback_models, cost_limits, feature_flags
+            ) VALUES ($1, $2, $3, $4, $5::jsonb, $6::jsonb, $7::jsonb, $8::jsonb)
             """,
             config_id,
             app_id,
@@ -229,7 +229,6 @@ async def update_app_model_config(
             json.dumps([model.dict(exclude_none=True) for model in config_update.fallback_models] if config_update.fallback_models else []),
             json.dumps(config_update.cost_limits.dict(exclude_none=True) if config_update.cost_limits else {}),
             json.dumps(config_update.feature_flags.dict() if config_update.feature_flags else {}),
-            True,
         )
         
         # Fetch the created config
