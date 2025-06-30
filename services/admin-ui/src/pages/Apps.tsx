@@ -904,7 +904,7 @@ export function Apps() {
                 </Button>
                 <Button 
                   onClick={handleUpdatePricing}
-                  disabled={!editingPricing?.action_slug || !editingPricing?.description}
+                  disabled={!editingPricing?.action_slug}
                 >
                   {isCreatingAction ? 'Create Action' : 'Save Changes'}
                 </Button>

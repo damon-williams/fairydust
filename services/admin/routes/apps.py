@@ -1,10 +1,22 @@
+import os
 import uuid
+from datetime import datetime, timedelta
 from typing import Optional
 
+import httpx
+import jwt
 from auth import get_current_admin_user
 from fastapi import APIRouter, Depends, HTTPException
 
 from shared.database import Database, get_db
+
+# JWT settings for cross-service authentication
+JWT_SECRET_KEY = os.getenv("JWT_SECRET_KEY", os.getenv("SECRET_KEY", "your-secret-key-here"))
+JWT_ALGORITHM = "HS256"
+ACCESS_TOKEN_EXPIRE_MINUTES = 60
+
+# Service URLs
+APPS_SERVICE_URL = os.getenv("APPS_SERVICE_URL", "http://localhost:8003")
 
 apps_router = APIRouter()
 
@@ -323,7 +335,6 @@ async def get_supported_models_api(
     admin_user: dict = Depends(get_current_admin_user),
 ):
     """Get supported LLM models via proxy to apps service"""
-    import httpx
     import os
     
     try:
@@ -354,10 +365,6 @@ async def update_app_model_config_api(
     admin_user: dict = Depends(get_current_admin_user),
 ):
     """Update app model configuration via proxy to apps service"""
-    import httpx
-    import os
-    import jwt
-    from datetime import datetime, timedelta
     import logging
     
     logger = logging.getLogger(__name__)
@@ -372,12 +379,6 @@ async def update_app_model_config_api(
         base_url_suffix = 'production' if environment == 'production' else 'staging'
         apps_url = f"https://fairydust-apps-{base_url_suffix}.up.railway.app"
         logger.info(f"🔧 ADMIN_EDIT: Sending to apps service: {apps_url}")
-        
-        # Create JWT token for apps service authentication
-        # Use same JWT settings as auth middleware
-        JWT_SECRET_KEY = os.getenv("JWT_SECRET_KEY", os.getenv("SECRET_KEY", "your-secret-key-here"))
-        JWT_ALGORITHM = "HS256"
-        ACCESS_TOKEN_EXPIRE_MINUTES = 60
         
         # Create token data for admin user (match auth middleware expectations)
         token_data = {
@@ -456,8 +457,6 @@ async def get_action_pricing(
     admin_user: dict = Depends(get_current_admin_user),
 ):
     """Get action pricing for admin portal"""
-    import httpx
-    import jwt
     
     # Create JWT token for cross-service auth
     token_data = {
@@ -489,8 +488,6 @@ async def update_action_pricing(
     admin_user: dict = Depends(get_current_admin_user),
 ):
     """Update action pricing via proxy to apps service"""
-    import httpx
-    import jwt
     
     # Create JWT token for cross-service auth
     token_data = {
@@ -525,8 +522,6 @@ async def delete_action_pricing(
     admin_user: dict = Depends(get_current_admin_user),
 ):
     """Delete action pricing via proxy to apps service"""
-    import httpx
-    import jwt
     
     # Create JWT token for cross-service auth
     token_data = {
