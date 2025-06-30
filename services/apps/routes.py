@@ -211,8 +211,36 @@ async def update_app_model_config(
     # Get current config
     current_config = await db.fetch_one("SELECT * FROM app_model_configs WHERE app_id = $1", app_id)
 
+    # If no configuration exists, create a new one
     if not current_config:
-        raise HTTPException(status_code=404, detail="Model configuration not found")
+        config_id = uuid4()
+        await db.execute(
+            """
+            INSERT INTO app_model_configs (
+                id, app_id, primary_provider, primary_model_id, primary_parameters,
+                fallback_models, cost_limits, feature_flags, is_enabled
+            ) VALUES ($1, $2, $3, $4, $5::jsonb, $6::jsonb, $7::jsonb, $8::jsonb, $9)
+            """,
+            config_id,
+            app_id,
+            config_update.primary_provider.value if config_update.primary_provider else "anthropic",
+            config_update.primary_model_id or "claude-3-5-sonnet-20241022",
+            json.dumps(config_update.primary_parameters.dict(exclude_none=True) if config_update.primary_parameters else {"temperature": 0.7, "max_tokens": 1000, "top_p": 0.9}),
+            json.dumps([model.dict(exclude_none=True) for model in config_update.fallback_models] if config_update.fallback_models else []),
+            json.dumps(config_update.cost_limits.dict(exclude_none=True) if config_update.cost_limits else {}),
+            json.dumps(config_update.feature_flags.dict() if config_update.feature_flags else {}),
+            True,
+        )
+        
+        # Fetch the created config
+        current_config = await db.fetch_one("SELECT * FROM app_model_configs WHERE id = $1", config_id)
+        
+        # Invalidate cache and return new config
+        from shared.app_config_cache import get_app_config_cache
+        cache = await get_app_config_cache()
+        await cache.invalidate_model_config(app_id)
+        
+        return AppModelConfig(**current_config)
 
     # Build update query dynamically
     update_fields = []
@@ -279,11 +307,27 @@ async def update_app_model_config(
 
     # Invalidate cache after successful update
     from shared.app_config_cache import get_app_config_cache
+    from shared.json_utils import parse_model_config_field
 
     cache = await get_app_config_cache()
     await cache.invalidate_model_config(app_id)
 
-    return AppModelConfig(**updated_config)
+    # Parse JSONB fields properly before returning
+    config_dict = dict(updated_config)
+    parsed_config = {
+        "id": config_dict["id"],
+        "app_id": config_dict["app_id"],
+        "primary_provider": config_dict["primary_provider"],
+        "primary_model_id": config_dict["primary_model_id"],
+        "primary_parameters": parse_model_config_field(config_dict, "primary_parameters"),
+        "fallback_models": parse_model_config_field(config_dict, "fallback_models"),
+        "cost_limits": parse_model_config_field(config_dict, "cost_limits"),
+        "feature_flags": parse_model_config_field(config_dict, "feature_flags"),
+        "created_at": config_dict["created_at"],
+        "updated_at": config_dict["updated_at"],
+    }
+
+    return AppModelConfig(**parsed_config)
 
 
 @llm_router.post("/usage", status_code=status.HTTP_201_CREATED)
