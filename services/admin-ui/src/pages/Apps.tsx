@@ -86,6 +86,7 @@ export function Apps() {
   const [pricingLoading, setPricingLoading] = useState(false);
   const [editingPricing, setEditingPricing] = useState<ActionPricing | null>(null);
   const [pricingDialogOpen, setPricingDialogOpen] = useState(false);
+  const [isCreatingAction, setIsCreatingAction] = useState(false);
 
   const loadApps = async () => {
     try {
@@ -237,10 +238,10 @@ export function Apps() {
         is_active: editingPricing.is_active,
       });
       
-      const isCreating = !editingPricing.created_at;
-      toast.success(isCreating ? 'Action created successfully' : 'Pricing updated successfully');
+      toast.success(isCreatingAction ? 'Action created successfully' : 'Pricing updated successfully');
       setPricingDialogOpen(false);
       setEditingPricing(null);
+      setIsCreatingAction(false);
       await loadActionPricing();
     } catch (err) {
       console.error('Failed to update pricing:', err);
@@ -701,9 +702,16 @@ export function Apps() {
 
         <TabsContent value="pricing" className="space-y-6">
           <div className="flex justify-end">
-            <Dialog open={pricingDialogOpen} onOpenChange={setPricingDialogOpen}>
+            <Dialog open={pricingDialogOpen} onOpenChange={(open) => {
+              setPricingDialogOpen(open);
+              if (!open) {
+                setIsCreatingAction(false);
+                setEditingPricing(null);
+              }
+            }}>
               <DialogTrigger asChild>
                 <Button onClick={() => {
+                  setIsCreatingAction(true);
                   setEditingPricing({
                     action_slug: '',
                     dust_cost: 1,
@@ -792,6 +800,7 @@ export function Apps() {
                             variant="ghost" 
                             size="sm"
                             onClick={() => {
+                              setIsCreatingAction(false);
                               setEditingPricing(pricing);
                               setPricingDialogOpen(true);
                             }}
@@ -814,18 +823,18 @@ export function Apps() {
             <DialogContent className="max-w-md">
               <DialogHeader>
                 <DialogTitle>
-                  {editingPricing?.action_slug ? 'Edit Action Pricing' : 'Create New Action'}
+                  {isCreatingAction ? 'Create New Action' : 'Edit Action Pricing'}
                 </DialogTitle>
                 <DialogDescription>
-                  {editingPricing?.action_slug 
-                    ? `Modify DUST cost and settings for ${editingPricing.action_slug}`
-                    : 'Create a new action with DUST pricing'
+                  {isCreatingAction 
+                    ? 'Create a new action with DUST pricing'
+                    : `Modify DUST cost and settings for ${editingPricing?.action_slug}`
                   }
                 </DialogDescription>
               </DialogHeader>
               {editingPricing && (
                 <div className="space-y-4 py-4">
-                  {!editingPricing.action_slug && (
+                  {isCreatingAction && (
                     <div className="space-y-2">
                       <Label htmlFor="action-slug">Action Slug *</Label>
                       <Input
@@ -886,14 +895,18 @@ export function Apps() {
                 </div>
               )}
               <DialogFooter>
-                <Button variant="outline" onClick={() => setPricingDialogOpen(false)}>
+                <Button variant="outline" onClick={() => {
+                  setPricingDialogOpen(false);
+                  setIsCreatingAction(false);
+                  setEditingPricing(null);
+                }}>
                   Cancel
                 </Button>
                 <Button 
                   onClick={handleUpdatePricing}
                   disabled={!editingPricing?.action_slug || !editingPricing?.description}
                 >
-                  {editingPricing?.created_at ? 'Save Changes' : 'Create Action'}
+                  {isCreatingAction ? 'Create Action' : 'Save Changes'}
                 </Button>
               </DialogFooter>
             </DialogContent>
