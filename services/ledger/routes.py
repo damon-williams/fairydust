@@ -35,6 +35,42 @@ admin_router = APIRouter()
 grants_router = APIRouter()
 
 
+# Helper functions
+async def get_action_pricing(action_slug: str, cache: redis.Redis) -> Optional[int]:
+    """Get DUST cost for action from pricing service with caching"""
+    try:
+        # Try to get from cache first (TTL: 5 minutes)
+        cached_price = await cache.get(f"action_pricing:{action_slug}")
+        if cached_price:
+            return int(cached_price)
+        
+        # Fetch from apps service pricing API
+        apps_service_url = os.getenv("APPS_SERVICE_URL", "http://localhost:8003")
+        
+        async with httpx.AsyncClient() as client:
+            response = await client.get(
+                f"{apps_service_url}/apps/pricing/actions",
+                timeout=5.0
+            )
+            
+            if response.status_code == 200:
+                pricing_data = response.json()
+                
+                # Cache all pricing data for 5 minutes
+                for slug, data in pricing_data.items():
+                    await cache.setex(f"action_pricing:{slug}", 300, str(data["dust"]))
+                
+                # Return the requested action price
+                if action_slug in pricing_data:
+                    return pricing_data[action_slug]["dust"]
+                    
+        return None  # Action not found or service unavailable
+        
+    except Exception as e:
+        print(f"⚠️ Failed to fetch action pricing for '{action_slug}': {e}", flush=True)
+        return None  # Allow consumption with client-provided amount if pricing unavailable
+
+
 # Dependency to get ledger service
 async def get_ledger_service(
     db: Database = Depends(get_db), redis_client: redis.Redis = Depends(get_redis)
@@ -117,6 +153,15 @@ async def consume_dust(
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN, detail="App is not active or not approved"
         )
+
+    # Validate action pricing if action is provided
+    if request.action:
+        expected_amount = await get_action_pricing(request.action, cache)
+        if expected_amount is not None and request.amount != expected_amount:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Invalid DUST amount for action '{request.action}'. Expected: {expected_amount}, Provided: {request.amount}",
+            )
 
     # Verify the user has enough DUST
     ledger = LedgerService(db, cache)
