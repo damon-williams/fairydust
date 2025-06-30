@@ -166,7 +166,7 @@ async def generate_recipe(
             await log_llm_usage(
                 user_id=request.user_id,
                 app_id="fairydust-recipe",
-                provider="anthropic",
+                provider=provider,
                 model_id=model_used,
                 prompt_tokens=tokens_used.get("prompt", 0),
                 completion_tokens=tokens_used.get("completion", 0),
@@ -849,8 +849,25 @@ async def _get_dietary_preferences(
 async def _get_llm_model_config() -> dict:
     """Get LLM configuration for recipe app (with caching)"""
     from shared.app_config_cache import get_app_config_cache
+    from shared.database import get_db
 
-    app_id = "fairydust-recipe"
+    app_slug = "fairydust-recipe"
+    
+    # First, get the app UUID from the slug
+    db = await get_db()
+    app_result = await db.fetch_one("SELECT id FROM apps WHERE slug = $1", app_slug)
+    
+    if not app_result:
+        print(f"❌ RECIPE_CONFIG: App with slug '{app_slug}' not found in database", flush=True)
+        # Return default config if app not found
+        return {
+            "primary_provider": "anthropic",
+            "primary_model_id": "claude-3-5-sonnet-20241022",
+            "primary_parameters": {"temperature": 0.7, "max_tokens": 1000, "top_p": 0.9},
+        }
+    
+    app_id = str(app_result["id"])
+    print(f"🔍 RECIPE_CONFIG: Resolved {app_slug} to UUID {app_id}", flush=True)
 
     # Try to get from cache first
     cache = await get_app_config_cache()
@@ -865,7 +882,40 @@ async def _get_llm_model_config() -> dict:
             ),
         }
 
-    # Cache miss - use default config and cache it
+    # Cache miss - check database directly
+    print(f"⚠️ RECIPE_CONFIG: Cache miss, checking database directly", flush=True)
+    
+    try:
+        # Don't need to get_db again, we already have it
+        db_config = await db.fetch_one(
+            "SELECT * FROM app_model_configs WHERE app_id = $1", app_id
+        )
+        
+        if db_config:
+            print(f"📊 RECIPE_CONFIG: Found database config", flush=True)
+            print(f"📊 RECIPE_CONFIG: DB Provider: {db_config['primary_provider']}", flush=True)
+            print(f"📊 RECIPE_CONFIG: DB Model: {db_config['primary_model_id']}", flush=True)
+            
+            # Parse and cache the database config
+            from shared.json_utils import parse_model_config_field
+            
+            parsed_config = {
+                "primary_provider": db_config["primary_provider"],
+                "primary_model_id": db_config["primary_model_id"],
+                "primary_parameters": parse_model_config_field(dict(db_config), "primary_parameters") or {"temperature": 0.7, "max_tokens": 1000, "top_p": 0.9},
+            }
+            
+            # Cache the database config
+            await cache.set_model_config(app_id, parsed_config)
+            print(f"✅ RECIPE_CONFIG: Cached database config: {parsed_config}", flush=True)
+            
+            return parsed_config
+            
+    except Exception as e:
+        print(f"❌ RECIPE_CONFIG: Database error: {e}", flush=True)
+
+    # Fallback to default config
+    print(f"🔄 RECIPE_CONFIG: Using default config (no cache, no database)", flush=True)
     default_config = {
         "primary_provider": "anthropic",
         "primary_model_id": "claude-3-5-sonnet-20241022",
@@ -874,6 +924,7 @@ async def _get_llm_model_config() -> dict:
 
     # Cache the default config for future requests
     await cache.set_model_config(app_id, default_config)
+    print(f"✅ RECIPE_CONFIG: Cached default config: {default_config}", flush=True)
 
     return default_config
 
