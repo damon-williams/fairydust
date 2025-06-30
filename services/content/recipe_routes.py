@@ -10,10 +10,6 @@ from typing import Optional
 import httpx
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 
-# Service URL configuration based on environment
-environment = os.getenv('ENVIRONMENT', 'staging')
-base_url_suffix = 'production' if environment == 'production' else 'staging'
-ledger_url = f"https://fairydust-ledger-{base_url_suffix}.up.railway.app"
 
 from models import (
     DietaryRestriction,
@@ -42,7 +38,6 @@ from shared.llm_usage_logger import calculate_prompt_hash, create_request_metada
 router = APIRouter()
 
 # Constants
-RECIPE_DUST_COST = 3
 RECIPE_RATE_LIMIT = 15  # Max 15 generations per hour per user
 
 
@@ -80,18 +75,7 @@ async def generate_recipe(
                 error=f"Rate limit exceeded. Maximum {RECIPE_RATE_LIMIT} recipes per hour."
             )
 
-        # Verify user has enough DUST
-        user_balance = await _get_user_balance(request.user_id, auth_token)
-        if user_balance < RECIPE_DUST_COST:
-            print(
-                f"💰 RECIPE: Insufficient DUST balance: {user_balance} < {RECIPE_DUST_COST}",
-                flush=True,
-            )
-            return RecipeErrorResponse(
-                error="Insufficient DUST balance",
-                current_balance=user_balance,
-                required_amount=RECIPE_DUST_COST,
-            )
+        # Content service no longer manages DUST - handled externally
 
         # Validate selected people exist in user's "People in My Life"
         if request.selected_people:

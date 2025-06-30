@@ -5,10 +5,6 @@ import uuid
 
 import httpx
 
-# Service URL configuration based on environment
-environment = os.getenv('ENVIRONMENT', 'staging')
-base_url_suffix = 'production' if environment == 'production' else 'staging'
-ledger_url = f"https://fairydust-ledger-{base_url_suffix}.up.railway.app"
 from fastapi import APIRouter, Depends, HTTPException, Request
 from models import (
     Activity,
@@ -34,7 +30,6 @@ if not TRIPADVISOR_API_KEY:
 
 tripadvisor_service = TripAdvisorService(TRIPADVISOR_API_KEY)
 
-ACTIVITY_DUST_COST = 3
 
 
 @router.post("/activity/search", response_model=ActivitySearchResponse)
@@ -68,17 +63,7 @@ async def search_activities(
         if not auth_token:
             raise HTTPException(status_code=401, detail="Authorization header required")
 
-        # Verify user has enough DUST
-        user_balance = await _get_user_balance(request.user_id, auth_token)
-        if user_balance < ACTIVITY_DUST_COST:
-            print(
-                f"💰 ACTIVITY_SEARCH: Insufficient DUST balance: {user_balance} < {ACTIVITY_DUST_COST}",
-                flush=True,
-            )
-            raise HTTPException(
-                status_code=402,
-                detail=f"Insufficient DUST balance. Need {ACTIVITY_DUST_COST} DUST, have {user_balance}",
-            )
+        # Content service no longer manages DUST - handled externally
 
         # Get people information for AI context
         people_info = await _get_people_info(db, request.user_id, request.selected_people)

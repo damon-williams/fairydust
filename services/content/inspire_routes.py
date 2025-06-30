@@ -6,10 +6,6 @@ from typing import Optional
 
 import httpx
 
-# Service URL configuration based on environment
-environment = os.getenv('ENVIRONMENT', 'staging')
-base_url_suffix = 'production' if environment == 'production' else 'staging'
-ledger_url = f"https://fairydust-ledger-{base_url_suffix}.up.railway.app"
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from models import (
     InspirationCategory,
@@ -32,7 +28,6 @@ from shared.llm_usage_logger import calculate_prompt_hash, create_request_metada
 router = APIRouter()
 
 # Constants
-INSPIRE_DUST_COST = 2
 INSPIRE_RATE_LIMIT = 10  # Max 10 generations per hour per user
 
 # Category-specific prompts
