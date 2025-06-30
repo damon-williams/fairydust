@@ -42,7 +42,7 @@ export function Apps() {
   const [error, setError] = useState<string | null>(null);
 
   // Debug logging
-  console.log('🔍 APPS_DEBUG: Apps component loaded with SLUG display v2.1.4');
+  console.log('🔍 APPS_DEBUG: Apps component loaded with LLM Config and wider modal v2.1.6');
   console.log('🔍 APPS_DEBUG: Build timestamp:', new Date().toISOString());
   const [createDialogOpen, setCreateDialogOpen] = useState(false);
   const [configureDialogOpen, setConfigureDialogOpen] = useState(false);
@@ -480,7 +480,7 @@ export function Apps() {
 
       {/* Configure App Dialog */}
       <Dialog open={configureDialogOpen} onOpenChange={setConfigureDialogOpen}>
-        <DialogContent className="max-w-2xl">
+        <DialogContent className="max-w-4xl">
           <DialogHeader>
             <DialogTitle>Edit App: {editingApp?.name}</DialogTitle>
             <DialogDescription>
@@ -546,9 +546,9 @@ export function Apps() {
             
             <div className="space-y-2 col-span-2">
               <Label>LLM Model Configuration</Label>
-              <div className="grid grid-cols-4 gap-3 p-3 bg-slate-50 rounded-lg">
+              <div className="grid grid-cols-2 gap-4 p-4 bg-slate-50 rounded-lg">
                 <div className="space-y-2">
-                  <Label htmlFor="edit-provider" className="text-sm">Provider</Label>
+                  <Label htmlFor="edit-provider">Provider</Label>
                   <Select 
                     value={modelConfig.primary_provider} 
                     onValueChange={(value) => setModelConfig(prev => ({ 
@@ -557,7 +557,7 @@ export function Apps() {
                       primary_model_id: '' // Reset model when provider changes
                     }))}
                   >
-                    <SelectTrigger className="text-sm">
+                    <SelectTrigger>
                       <SelectValue placeholder="Select provider" />
                     </SelectTrigger>
                     <SelectContent>
@@ -571,13 +571,13 @@ export function Apps() {
                 </div>
                 
                 <div className="space-y-2">
-                  <Label htmlFor="edit-model" className="text-sm">Model</Label>
+                  <Label htmlFor="edit-model">Model</Label>
                   <Select 
                     value={modelConfig.primary_model_id} 
                     onValueChange={(value) => setModelConfig(prev => ({ ...prev, primary_model_id: value }))}
                     disabled={!modelConfig.primary_provider}
                   >
-                    <SelectTrigger className="text-sm">
+                    <SelectTrigger>
                       <SelectValue placeholder="Select model" />
                     </SelectTrigger>
                     <SelectContent>
@@ -593,14 +593,13 @@ export function Apps() {
                 </div>
                 
                 <div className="space-y-2">
-                  <Label htmlFor="edit-temperature" className="text-sm">Temperature</Label>
+                  <Label htmlFor="edit-temperature">Temperature</Label>
                   <Input
                     id="edit-temperature"
                     type="number"
                     min="0"
                     max="2"
                     step="0.1"
-                    className="text-sm"
                     value={modelConfig.primary_parameters.temperature}
                     onChange={(e) => setModelConfig(prev => ({
                       ...prev,
@@ -613,13 +612,12 @@ export function Apps() {
                 </div>
                 
                 <div className="space-y-2">
-                  <Label htmlFor="edit-max-tokens" className="text-sm">Max Tokens</Label>
+                  <Label htmlFor="edit-max-tokens">Max Tokens</Label>
                   <Input
                     id="edit-max-tokens"
                     type="number"
                     min="1"
                     max="4000"
-                    className="text-sm"
                     value={modelConfig.primary_parameters.max_tokens}
                     onChange={(e) => setModelConfig(prev => ({
                       ...prev,
