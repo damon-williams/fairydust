@@ -33,7 +33,7 @@ export interface App {
 export interface DashboardStats {
   total_users: number;
   total_apps: number;
-  pending_apps: number;
+  // Removed pending_apps - auto-approval workflow
   total_dust_issued: number;
   active_users_today: number;
   active_users_week: number;

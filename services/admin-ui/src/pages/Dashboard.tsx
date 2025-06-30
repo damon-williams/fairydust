@@ -124,19 +124,7 @@ export function Dashboard() {
         </Alert>
       )}
 
-      {/* Pending Apps Alert */}
-      {stats && stats.pending_apps > 0 && (
-        <Alert className="border-blue-200 bg-blue-50">
-          <Clock className="h-4 w-4 text-blue-600" />
-          <AlertTitle className="text-blue-800">Action Required</AlertTitle>
-          <AlertDescription className="text-blue-700">
-            There are {stats?.pending_apps} app{stats?.pending_apps !== 1 ? 's' : ''} waiting for approval.
-            <Button variant="link" className="p-0 ml-1 text-blue-800 underline">
-              Review Pending Apps
-            </Button>
-          </AlertDescription>
-        </Alert>
-      )}
+      {/* Removed pending apps alert - auto-approval workflow */}
 
       {/* Top Row Stats */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
