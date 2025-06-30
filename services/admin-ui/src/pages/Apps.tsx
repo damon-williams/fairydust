@@ -65,7 +65,6 @@ export function Apps() {
   });
   const [supportedModels, setSupportedModels] = useState<any>({});
   const [savingApp, setSavingApp] = useState(false);
-  const [savingModelConfig, setSavingModelConfig] = useState(false);
   const [builders, setBuilders] = useState<Array<{ id: string; fairyname: string; email: string }>>([]);
   const [creatingApp, setCreatingApp] = useState(false);
   const [newApp, setNewApp] = useState({
@@ -174,41 +173,25 @@ export function Apps() {
     
     try {
       setSavingApp(true);
+      
+      // Save app properties
       const updatedApp = await AdminAPI.updateApp(editingApp.id, editingAppData);
       
-      // Update the apps list with the new data
-      setApps(prevApps => 
-        prevApps.map(app => 
-          app.id === editingApp.id ? { ...app, ...updatedApp } : app
-        )
-      );
+      // Save model configuration if provider and model are selected
+      if (modelConfig.primary_provider && modelConfig.primary_model_id) {
+        await AdminAPI.updateAppModelConfig(editingApp.id, modelConfig);
+      }
+      
+      // Reload apps to get all updated data including model config
+      await loadApps();
       
       setConfigureDialogOpen(false);
-      toast.success('App updated successfully');
+      toast.success('App and model configuration updated successfully');
     } catch (err) {
       console.error('Failed to update app:', err);
       toast.error('Failed to update app');
     } finally {
       setSavingApp(false);
-    }
-  };
-
-  const handleSaveModelConfig = async () => {
-    if (!editingApp) return;
-    
-    try {
-      setSavingModelConfig(true);
-      await AdminAPI.updateAppModelConfig(editingApp.id, modelConfig);
-      
-      // Reload apps to get updated model config
-      await loadApps();
-      
-      toast.success('Model configuration updated successfully');
-    } catch (err) {
-      console.error('Failed to update model config:', err);
-      toast.error('Failed to update model configuration');
-    } finally {
-      setSavingModelConfig(false);
     }
   };
 
@@ -563,13 +546,9 @@ export function Apps() {
             
             <div className="space-y-2 col-span-2">
               <Label>LLM Model Configuration</Label>
-              <div className="grid grid-cols-2 gap-4 p-4 bg-slate-50 rounded-lg">
-                {/* Debug info */}
-                <div className="col-span-2 text-xs text-gray-500">
-                  Debug: supportedModels keys = {Object.keys(supportedModels).join(', ') || 'empty'}
-                </div>
+              <div className="grid grid-cols-4 gap-3 p-3 bg-slate-50 rounded-lg">
                 <div className="space-y-2">
-                  <Label htmlFor="edit-provider">Provider</Label>
+                  <Label htmlFor="edit-provider" className="text-sm">Provider</Label>
                   <Select 
                     value={modelConfig.primary_provider} 
                     onValueChange={(value) => setModelConfig(prev => ({ 
@@ -578,30 +557,27 @@ export function Apps() {
                       primary_model_id: '' // Reset model when provider changes
                     }))}
                   >
-                    <SelectTrigger>
+                    <SelectTrigger className="text-sm">
                       <SelectValue placeholder="Select provider" />
                     </SelectTrigger>
                     <SelectContent>
-                      {Object.keys(supportedModels).map((provider) => {
-                        console.log('🎛️ Rendering provider:', provider);
-                        return (
-                          <SelectItem key={provider} value={provider}>
-                            {provider.charAt(0).toUpperCase() + provider.slice(1)}
-                          </SelectItem>
-                        );
-                      })}
+                      {Object.keys(supportedModels).map((provider) => (
+                        <SelectItem key={provider} value={provider}>
+                          {provider.charAt(0).toUpperCase() + provider.slice(1)}
+                        </SelectItem>
+                      ))}
                     </SelectContent>
                   </Select>
                 </div>
                 
                 <div className="space-y-2">
-                  <Label htmlFor="edit-model">Model</Label>
+                  <Label htmlFor="edit-model" className="text-sm">Model</Label>
                   <Select 
                     value={modelConfig.primary_model_id} 
                     onValueChange={(value) => setModelConfig(prev => ({ ...prev, primary_model_id: value }))}
                     disabled={!modelConfig.primary_provider}
                   >
-                    <SelectTrigger>
+                    <SelectTrigger className="text-sm">
                       <SelectValue placeholder="Select model" />
                     </SelectTrigger>
                     <SelectContent>
@@ -617,13 +593,14 @@ export function Apps() {
                 </div>
                 
                 <div className="space-y-2">
-                  <Label htmlFor="edit-temperature">Temperature</Label>
+                  <Label htmlFor="edit-temperature" className="text-sm">Temperature</Label>
                   <Input
                     id="edit-temperature"
                     type="number"
                     min="0"
                     max="2"
                     step="0.1"
+                    className="text-sm"
                     value={modelConfig.primary_parameters.temperature}
                     onChange={(e) => setModelConfig(prev => ({
                       ...prev,
@@ -636,12 +613,13 @@ export function Apps() {
                 </div>
                 
                 <div className="space-y-2">
-                  <Label htmlFor="edit-max-tokens">Max Tokens</Label>
+                  <Label htmlFor="edit-max-tokens" className="text-sm">Max Tokens</Label>
                   <Input
                     id="edit-max-tokens"
                     type="number"
                     min="1"
                     max="4000"
+                    className="text-sm"
                     value={modelConfig.primary_parameters.max_tokens}
                     onChange={(e) => setModelConfig(prev => ({
                       ...prev,
@@ -651,17 +629,6 @@ export function Apps() {
                       }
                     }))}
                   />
-                </div>
-                
-                <div className="space-y-2 col-span-2">
-                  <Button 
-                    variant="outline" 
-                    onClick={handleSaveModelConfig}
-                    disabled={savingModelConfig || !modelConfig.primary_provider || !modelConfig.primary_model_id}
-                    className="w-full"
-                  >
-                    {savingModelConfig ? 'Saving Model Config...' : 'Save Model Configuration'}
-                  </Button>
                 </div>
               </div>
             </div>

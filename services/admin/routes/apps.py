@@ -355,14 +355,15 @@ async def update_app_model_config_api(
         apps_url = f"https://fairydust-apps-{base_url_suffix}.up.railway.app"
         
         # Create JWT token for apps service authentication
-        # Use same JWT settings as identity service
-        SECRET_KEY = os.getenv("SECRET_KEY", "your-secret-key-here")
-        ALGORITHM = "HS256"
+        # Use same JWT settings as auth middleware
+        JWT_SECRET_KEY = os.getenv("JWT_SECRET_KEY", os.getenv("SECRET_KEY", "your-secret-key-here"))
+        JWT_ALGORITHM = "HS256"
         ACCESS_TOKEN_EXPIRE_MINUTES = 60
         
-        # Create token data for admin user
+        # Create token data for admin user (match auth middleware expectations)
         token_data = {
-            "user_id": str(admin_user["user_id"]),
+            "sub": str(admin_user["user_id"]),  # Standard JWT claim
+            "user_id": str(admin_user["user_id"]),  # Fallback claim
             "fairyname": admin_user["fairyname"],
             "is_admin": True,
             "exp": datetime.utcnow() + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES),
@@ -370,7 +371,7 @@ async def update_app_model_config_api(
         }
         
         # Create JWT token
-        access_token = jwt.encode(token_data, SECRET_KEY, algorithm=ALGORITHM)
+        access_token = jwt.encode(token_data, JWT_SECRET_KEY, algorithm=JWT_ALGORITHM)
         
         async with httpx.AsyncClient(timeout=30.0) as client:
             response = await client.put(
