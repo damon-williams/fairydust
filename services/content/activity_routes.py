@@ -391,8 +391,22 @@ Respond with exactly {len(activities)} entries in this JSON format:
                         "messages": [{"role": "user", "content": prompt}],
                     },
                 )
+            elif provider == "openai":
+                response = await client.post(
+                    "https://api.openai.com/v1/chat/completions",
+                    headers={
+                        "Content-Type": "application/json",
+                        "Authorization": f"Bearer {os.getenv('OPENAI_API_KEY', '')}",
+                    },
+                    json={
+                        "model": model_id,
+                        "max_tokens": parameters.get("max_tokens", 1000),
+                        "temperature": parameters.get("temperature", 0.7),
+                        "top_p": parameters.get("top_p", 0.9),
+                        "messages": [{"role": "user", "content": prompt}],
+                    },
+                )
             else:
-                # Add OpenAI support if needed
                 print(
                     f"⚠️ ACTIVITY_AI: Unsupported provider {provider}, falling back to Anthropic",
                     flush=True,
@@ -413,15 +427,28 @@ Respond with exactly {len(activities)} entries in this JSON format:
 
             if response.status_code == 200:
                 result = response.json()
-                content = result["content"][0]["text"]
-
-                # Calculate tokens and cost for logging
-                usage = result.get("usage", {})
-                prompt_tokens = usage.get("input_tokens", 0)
-                completion_tokens = usage.get("output_tokens", 0)
+                
+                # Handle different response formats based on provider
+                if provider == "anthropic":
+                    content = result["content"][0]["text"]
+                    usage = result.get("usage", {})
+                    prompt_tokens = usage.get("input_tokens", 0)
+                    completion_tokens = usage.get("output_tokens", 0)
+                elif provider == "openai":
+                    content = result["choices"][0]["message"]["content"]
+                    usage = result.get("usage", {})
+                    prompt_tokens = usage.get("prompt_tokens", 0)
+                    completion_tokens = usage.get("completion_tokens", 0)
+                else:
+                    # Fallback case
+                    content = result["content"][0]["text"]
+                    usage = result.get("usage", {})
+                    prompt_tokens = usage.get("input_tokens", 0)
+                    completion_tokens = usage.get("output_tokens", 0)
+                
                 total_tokens = prompt_tokens + completion_tokens
 
-                cost = calculate_llm_cost("anthropic", model_id, prompt_tokens, completion_tokens)
+                cost = calculate_llm_cost(provider, model_id, prompt_tokens, completion_tokens)
 
                 # Log LLM usage (don't block on logging failures)
                 try:
@@ -437,7 +464,7 @@ Respond with exactly {len(activities)} entries in this JSON format:
                     await log_llm_usage(
                         user_id=user_id,
                         app_id="fairydust-activity",
-                        provider="anthropic",
+                        provider=provider,
                         model_id=model_id,
                         prompt_tokens=prompt_tokens,
                         completion_tokens=completion_tokens,

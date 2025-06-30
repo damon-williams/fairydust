@@ -917,6 +917,67 @@ async def _generate_story_llm(
                     latency_ms = int((time.time() - start_time) * 1000)
                     return None, "", 0, "", model_id, {}, 0.0, latency_ms
 
+            elif provider == "openai":
+                response = await client.post(
+                    "https://api.openai.com/v1/chat/completions",
+                    headers={
+                        "Content-Type": "application/json",
+                        "Authorization": f"Bearer {os.getenv('OPENAI_API_KEY', '')}",
+                    },
+                    json={
+                        "model": model_id,
+                        "max_tokens": max_tokens,
+                        "temperature": temperature,
+                        "top_p": top_p,
+                        "messages": [{"role": "user", "content": prompt}],
+                    },
+                )
+
+                if response.status_code == 200:
+                    result = response.json()
+                    content = result["choices"][0]["message"]["content"].strip()
+
+                    # Calculate tokens and cost
+                    usage = result.get("usage", {})
+                    prompt_tokens = usage.get("prompt_tokens", 0)
+                    completion_tokens = usage.get("completion_tokens", 0)
+                    total_tokens = usage.get("total_tokens", prompt_tokens + completion_tokens)
+
+                    tokens_used = {
+                        "prompt": prompt_tokens,
+                        "completion": completion_tokens,
+                        "total": total_tokens,
+                    }
+
+                    cost = calculate_llm_cost(
+                        provider="openai",
+                        model_id=model_id,
+                        input_tokens=prompt_tokens,
+                        output_tokens=completion_tokens,
+                    )
+
+                    latency_ms = int((time.time() - start_time) * 1000)
+
+                    # Extract title and validate content
+                    title, story_content = _extract_title_and_content(content)
+                    word_count = len(story_content.split())
+                    estimated_reading_time = _estimate_reading_time(word_count)
+
+                    return (
+                        story_content,
+                        title,
+                        word_count,
+                        estimated_reading_time,
+                        model_id,
+                        tokens_used,
+                        cost,
+                        latency_ms,
+                    )
+
+                else:
+                    latency_ms = int((time.time() - start_time) * 1000)
+                    return None, "", 0, "", model_id, {}, 0.0, latency_ms
+
             else:
                 print(
                     f"⚠️ STORY_LLM: Unsupported provider {provider}, falling back to Anthropic",

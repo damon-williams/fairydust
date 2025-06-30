@@ -113,7 +113,7 @@ async def generate_fortune_reading(
 
         # Generate fortune reading using LLM
         print(f"🤖 FORTUNE: Starting LLM generation", flush=True)
-        reading_content, model_used, tokens_used, cost, latency_ms = await _generate_fortune_llm(
+        reading_content, provider_used, model_used, tokens_used, cost, latency_ms = await _generate_fortune_llm(
             request=request,
             zodiac_sign=zodiac_sign,
             zodiac_element=zodiac_element,
@@ -159,7 +159,7 @@ async def generate_fortune_reading(
             await log_llm_usage(
                 user_id=request.user_id,
                 app_id="fairydust-fortune-teller",
-                provider="anthropic",
+                provider=provider_used,
                 model_id=model_used,
                 prompt_tokens=tokens_used.get("prompt", 0),
                 completion_tokens=tokens_used.get("completion", 0),
@@ -468,6 +468,27 @@ Create a reading that feels like it was crafted specifically for {request.name} 
     return prompt
 
 
+async def _get_llm_model_config() -> dict:
+    """Get LLM model configuration for fortune-teller app"""
+    from shared.app_config_cache import get_app_config_cache
+    
+    cache = await get_app_config_cache()
+    config = await cache.get_model_config("fairydust-fortune-teller")
+    
+    if config:
+        return config
+    
+    # Default configuration for fortune-teller
+    default_config = {
+        "primary_provider": "anthropic",
+        "primary_model_id": "claude-3-5-sonnet-20241022",
+        "primary_parameters": {"temperature": 0.8, "max_tokens": 400, "top_p": 0.9},
+    }
+    
+    await cache.set_model_config("fairydust-fortune-teller", default_config)
+    return default_config
+
+
 async def _generate_fortune_llm(
     request: FortuneGenerationRequest,
     zodiac_sign: str,
@@ -476,7 +497,7 @@ async def _generate_fortune_llm(
     life_path_number: int,
     cosmic_influences: CosmicInfluences,
     lucky_elements: LuckyElements,
-) -> tuple[Optional[str], str, dict, float, int]:
+) -> tuple[Optional[str], str, str, dict, float, int]:
     """Generate fortune reading using LLM"""
     try:
         # Build prompt
@@ -485,37 +506,93 @@ async def _generate_fortune_llm(
             life_path_number, cosmic_influences, lucky_elements
         )
 
-        print(f"🤖 FORTUNE_LLM: Generating with Anthropic Claude", flush=True)
+        # Get model configuration
+        model_config = await _get_llm_model_config()
+        provider = model_config.get("primary_provider", "anthropic")
+        model_id = model_config.get("primary_model_id", "claude-3-5-sonnet-20241022")
+        parameters = model_config.get("primary_parameters", {})
+        
+        max_tokens = parameters.get("max_tokens", 400)
+        temperature = parameters.get("temperature", 0.8)
+        top_p = parameters.get("top_p", 0.9)
 
-        # Make API call to Anthropic
+        print(f"🤖 FORTUNE_LLM: Generating with {provider} {model_id}", flush=True)
+
+        # Make API call based on provider
         start_time = datetime.now()
         async with httpx.AsyncClient(timeout=30.0) as client:
-            response = await client.post(
-                "https://api.anthropic.com/v1/messages",
-                headers={
-                    "Content-Type": "application/json",
-                    "x-api-key": os.getenv("ANTHROPIC_API_KEY", ""),
-                    "anthropic-version": "2023-06-01",
-                },
-                json={
-                    "model": "claude-3-5-sonnet-20241022",
-                    "max_tokens": 400,
-                    "temperature": 0.8,
-                    "top_p": 0.9,
-                    "messages": [{"role": "user", "content": full_prompt}],
-                },
-            )
+            if provider == "anthropic":
+                response = await client.post(
+                    "https://api.anthropic.com/v1/messages",
+                    headers={
+                        "Content-Type": "application/json",
+                        "x-api-key": os.getenv("ANTHROPIC_API_KEY", ""),
+                        "anthropic-version": "2023-06-01",
+                    },
+                    json={
+                        "model": model_id,
+                        "max_tokens": max_tokens,
+                        "temperature": temperature,
+                        "top_p": top_p,
+                        "messages": [{"role": "user", "content": full_prompt}],
+                    },
+                )
+            elif provider == "openai":
+                response = await client.post(
+                    "https://api.openai.com/v1/chat/completions",
+                    headers={
+                        "Content-Type": "application/json",
+                        "Authorization": f"Bearer {os.getenv('OPENAI_API_KEY', '')}",
+                    },
+                    json={
+                        "model": model_id,
+                        "max_tokens": max_tokens,
+                        "temperature": temperature,
+                        "top_p": top_p,
+                        "messages": [{"role": "user", "content": full_prompt}],
+                    },
+                )
+            else:
+                print(f"⚠️ FORTUNE_LLM: Unsupported provider {provider}, falling back to Anthropic", flush=True)
+                response = await client.post(
+                    "https://api.anthropic.com/v1/messages",
+                    headers={
+                        "Content-Type": "application/json",
+                        "x-api-key": os.getenv("ANTHROPIC_API_KEY", ""),
+                        "anthropic-version": "2023-06-01",
+                    },
+                    json={
+                        "model": "claude-3-5-sonnet-20241022",
+                        "max_tokens": 400,
+                        "temperature": 0.8,
+                        "top_p": 0.9,
+                        "messages": [{"role": "user", "content": full_prompt}],
+                    },
+                )
 
         latency_ms = int((datetime.now() - start_time).total_seconds() * 1000)
 
         if response.status_code == 200:
             result = response.json()
-            content = result["content"][0]["text"].strip()
-
-            # Calculate tokens and cost
-            usage = result.get("usage", {})
-            prompt_tokens = usage.get("input_tokens", 0)
-            completion_tokens = usage.get("output_tokens", 0)
+            
+            # Handle different response formats based on provider
+            if provider == "anthropic":
+                content = result["content"][0]["text"].strip()
+                usage = result.get("usage", {})
+                prompt_tokens = usage.get("input_tokens", 0)
+                completion_tokens = usage.get("output_tokens", 0)
+            elif provider == "openai":
+                content = result["choices"][0]["message"]["content"].strip()
+                usage = result.get("usage", {})
+                prompt_tokens = usage.get("prompt_tokens", 0)
+                completion_tokens = usage.get("completion_tokens", 0)
+            else:
+                # Fallback case
+                content = result["content"][0]["text"].strip()
+                usage = result.get("usage", {})
+                prompt_tokens = usage.get("input_tokens", 0)
+                completion_tokens = usage.get("output_tokens", 0)
+            
             total_tokens = prompt_tokens + completion_tokens
 
             tokens_used = {
@@ -524,23 +601,21 @@ async def _generate_fortune_llm(
                 "total": total_tokens,
             }
 
-            cost = calculate_llm_cost(
-                "anthropic", "claude-3-5-sonnet-20241022", prompt_tokens, completion_tokens
-            )
+            cost = calculate_llm_cost(provider, model_id, prompt_tokens, completion_tokens)
 
             print("✅ FORTUNE_LLM: Generated fortune successfully", flush=True)
-            return content, "claude-3-5-sonnet-20241022", tokens_used, cost, latency_ms
+            return content, provider, model_id, tokens_used, cost, latency_ms
 
         else:
             print(
-                f"❌ FORTUNE_LLM: Anthropic API error {response.status_code}: {response.text}",
+                f"❌ FORTUNE_LLM: {provider} API error {response.status_code}: {response.text}",
                 flush=True,
             )
-            return None, "claude-3-5-sonnet-20241022", {}, 0.0, 0
+            return None, provider, model_id, {}, 0.0, latency_ms
 
     except Exception as e:
         print(f"❌ FORTUNE_LLM: Error generating fortune: {str(e)}", flush=True)
-        return None, "claude-3-5-sonnet-20241022", {}, 0.0, 0
+        return None, "anthropic", "claude-3-5-sonnet-20241022", {}, 0.0, 0
 
 
 async def _save_fortune_reading(
