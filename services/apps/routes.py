@@ -237,10 +237,33 @@ async def update_app_model_config(
         
         # Invalidate cache and return new config
         from shared.app_config_cache import get_app_config_cache
+        from shared.json_utils import parse_model_config_field
+        
         cache = await get_app_config_cache()
         await cache.invalidate_model_config(app_id)
         
-        return AppModelConfig(**current_config)
+        # Parse JSONB fields properly before returning
+        config_dict = dict(current_config)
+        
+        # Parse fallback_models - ensure it's a list
+        fallback_models = parse_model_config_field(config_dict, "fallback_models")
+        if isinstance(fallback_models, dict):
+            fallback_models = []  # Default to empty list if dict
+        
+        parsed_config = {
+            "id": config_dict["id"],
+            "app_id": str(config_dict["app_id"]),  # Convert UUID to string
+            "primary_provider": config_dict["primary_provider"],
+            "primary_model_id": config_dict["primary_model_id"],
+            "primary_parameters": parse_model_config_field(config_dict, "primary_parameters"),
+            "fallback_models": fallback_models,
+            "cost_limits": parse_model_config_field(config_dict, "cost_limits"),
+            "feature_flags": parse_model_config_field(config_dict, "feature_flags"),
+            "created_at": config_dict["created_at"],
+            "updated_at": config_dict["updated_at"],
+        }
+        
+        return AppModelConfig(**parsed_config)
 
     # Build update query dynamically
     update_fields = []
@@ -314,13 +337,19 @@ async def update_app_model_config(
 
     # Parse JSONB fields properly before returning
     config_dict = dict(updated_config)
+    
+    # Parse fallback_models - ensure it's a list
+    fallback_models = parse_model_config_field(config_dict, "fallback_models")
+    if isinstance(fallback_models, dict):
+        fallback_models = []  # Default to empty list if dict
+    
     parsed_config = {
         "id": config_dict["id"],
-        "app_id": config_dict["app_id"],
+        "app_id": str(config_dict["app_id"]),  # Convert UUID to string
         "primary_provider": config_dict["primary_provider"],
         "primary_model_id": config_dict["primary_model_id"],
         "primary_parameters": parse_model_config_field(config_dict, "primary_parameters"),
-        "fallback_models": parse_model_config_field(config_dict, "fallback_models"),
+        "fallback_models": fallback_models,
         "cost_limits": parse_model_config_field(config_dict, "cost_limits"),
         "feature_flags": parse_model_config_field(config_dict, "feature_flags"),
         "created_at": config_dict["created_at"],
