@@ -653,7 +653,7 @@ async def get_pricing_health():
 
 
 # Admin endpoints for managing action pricing
-@admin_router.get("/admin/pricing/actions")
+@admin_router.get("/pricing/actions")
 async def get_admin_action_pricing(
     admin_user: TokenData = Depends(require_admin),
     db: Database = Depends(get_db),
@@ -680,7 +680,7 @@ async def get_admin_action_pricing(
         raise HTTPException(status_code=500, detail="Failed to retrieve pricing data")
 
 
-@admin_router.put("/admin/pricing/actions/{action_slug}")
+@admin_router.put("/pricing/actions/{action_slug}")
 async def update_action_pricing(
     action_slug: str,
     pricing_data: dict,
@@ -744,7 +744,7 @@ async def update_action_pricing(
         raise HTTPException(status_code=500, detail="Failed to update pricing")
 
 
-@admin_router.delete("/admin/pricing/actions/{action_slug}")
+@admin_router.delete("/pricing/actions/{action_slug}")
 async def delete_action_pricing(
     action_slug: str,
     admin_user: TokenData = Depends(require_admin),
