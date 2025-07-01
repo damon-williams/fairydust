@@ -16,7 +16,14 @@ JWT_ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 60
 
 # Service URLs
-APPS_SERVICE_URL = os.getenv("APPS_SERVICE_URL", "http://localhost:8003")
+# Determine apps service URL based on environment
+environment = os.getenv('ENVIRONMENT', 'development')
+if environment == 'production':
+    APPS_SERVICE_URL = "https://fairydust-apps-production.up.railway.app"
+elif environment == 'staging':
+    APPS_SERVICE_URL = "https://fairydust-apps-staging.up.railway.app"
+else:
+    APPS_SERVICE_URL = os.getenv("APPS_SERVICE_URL", "http://localhost:8003")
 
 apps_router = APIRouter()
 
@@ -457,6 +464,9 @@ async def get_action_pricing(
     admin_user: dict = Depends(get_current_admin_user),
 ):
     """Get action pricing for admin portal"""
+    import logging
+    logger = logging.getLogger(__name__)
+    logger.info(f"Fetching action pricing from: {APPS_SERVICE_URL}/admin/pricing/actions")
     
     # Create JWT token for cross-service auth
     token_data = {
@@ -476,8 +486,15 @@ async def get_action_pricing(
         )
         
         if response.status_code == 200:
-            return response.json()
+            data = response.json()
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.info(f"Action pricing data from apps service: {data}")
+            return data
         else:
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.error(f"Failed to fetch action pricing: {response.status_code} - {response.text}")
             raise HTTPException(status_code=response.status_code, detail="Failed to fetch action pricing")
 
 
