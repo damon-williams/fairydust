@@ -135,7 +135,7 @@ async def generate_story(
                 was_fallback=False,
                 fallback_reason=None,
                 request_metadata=request_metadata,
-                auth_token=auth_token,
+                auth_token=None,  # No auth token needed for LLM logging
             )
         except Exception as e:
             print(f"⚠️ STORY: Failed to log LLM usage: {str(e)}", flush=True)
@@ -1051,13 +1051,21 @@ async def _save_story(
             "cost_usd": cost,
         }
 
+        # Calculate DUST cost based on story length
+        dust_cost_map = {
+            "quick": 2,   # 2-3 minute read
+            "medium": 4,  # 5-7 minute read  
+            "long": 6,    # 8-12 minute read
+        }
+        dust_cost = dust_cost_map.get(story_length.value, 4)  # Default 4 for medium
+        
         insert_query = """
             INSERT INTO user_stories (
                 id, user_id, title, content, story_length, target_audience,
-                characters_involved, metadata, word_count,
+                characters_involved, metadata, word_count, dust_cost,
                 created_at, updated_at
             )
-            VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb, $8::jsonb, $9,
+            VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb, $8::jsonb, $9, $10,
                     CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
         """
 
@@ -1072,6 +1080,7 @@ async def _save_story(
             json.dumps([char.dict() for char in characters]),
             json.dumps(metadata),
             word_count,
+            dust_cost,
         )
 
         print(f"✅ STORY_SAVE: Saved story {story_id}", flush=True)
