@@ -374,11 +374,21 @@ async def get_current_user_profile(
         print(f"❌ USER_PROFILE: User {current_user.user_id} not found in database", flush=True)
         raise HTTPException(status_code=404, detail="User not found")
 
+    # Parse JSONB fortune_profile field
+    user_dict = dict(user)
+    if user_dict.get("fortune_profile"):
+        try:
+            user_dict["fortune_profile"] = json.loads(user_dict["fortune_profile"])
+        except (json.JSONDecodeError, TypeError):
+            user_dict["fortune_profile"] = {}
+    else:
+        user_dict["fortune_profile"] = {}
+
     # Log the raw database values for debugging
     print(f"🔍 USER_PROFILE: Raw DB values - is_onboarding_completed: {user.get('is_onboarding_completed')} (type: {type(user.get('is_onboarding_completed'))})", flush=True)
     print(f"🔍 USER_PROFILE: Raw DB values - is_admin: {user.get('is_admin')} (type: {type(user.get('is_admin'))})", flush=True)
     
-    user_model = User(**user)
+    user_model = User(**user_dict)
     
     # Log the Pydantic model values for comparison
     print(f"📝 USER_PROFILE: Pydantic model - is_onboarding_completed: {user_model.is_onboarding_completed} (type: {type(user_model.is_onboarding_completed)})", flush=True)
