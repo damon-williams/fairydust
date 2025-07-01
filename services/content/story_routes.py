@@ -977,7 +977,7 @@ async def _generate_story_llm(
                     # Extract title and validate content
                     title, story_content = _extract_title_and_content(content)
                     word_count = len(story_content.split())
-                    estimated_reading_time = _estimate_reading_time(word_count)
+                    estimated_reading_time = _calculate_reading_time(word_count)
 
                     return (
                         story_content,
