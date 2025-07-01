@@ -219,6 +219,7 @@ export function Apps() {
     try {
       setPricingLoading(true);
       const data = await AdminAPI.getActionPricing();
+      console.log('🎯 Action pricing data received:', data);
       setActionPricing(data);
     } catch (err) {
       console.error('Failed to load action pricing:', err);
