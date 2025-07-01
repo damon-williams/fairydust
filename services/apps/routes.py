@@ -604,6 +604,10 @@ async def get_action_pricing(
     Get action-based DUST pricing for mobile app.
     Returns pricing for all active action slugs with caching headers.
     """
+    import logging
+    logger = logging.getLogger(__name__)
+    logger.info("🎯 Mobile pricing endpoint called: /apps/pricing/actions")
+    
     try:
         # Get all active pricing
         pricing_rows = await db.fetch_all(
@@ -624,6 +628,8 @@ async def get_action_pricing(
                 "last_updated": row["updated_at"].isoformat() + "Z",
             }
 
+        logger.info(f"🎯 Returning {len(pricing_data)} pricing entries to mobile app")
+        logger.info(f"🎯 Pricing data: {pricing_data}")
         return pricing_data
 
     except Exception as e:
@@ -645,9 +651,14 @@ async def get_pricing_health():
     """
     Health check for pricing service.
     """
+    import logging
+    logger = logging.getLogger(__name__)
+    logger.info("🎯 Pricing health check called: /apps/pricing/health")
+    
     return {
         "status": "healthy",
-        "timestamp": datetime.utcnow().isoformat() + "Z"
+        "timestamp": datetime.utcnow().isoformat() + "Z",
+        "endpoint": "/apps/pricing/health"
     }
 
 
