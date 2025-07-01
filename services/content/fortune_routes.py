@@ -69,7 +69,8 @@ async def generate_fortune_reading(
     Generate a personalized mystical fortune reading using AI and cosmic data.
     """
     print(f"🔮 FORTUNE: Starting generation for user {request.user_id}", flush=True)
-    print(f"🔮 FORTUNE: Type: {request.reading_type}, Target: {request.target_person_id}", flush=True)
+    is_self_reading = request.target_person_id == request.user_id
+    print(f"🔮 FORTUNE: Type: {request.reading_type}, Target: {request.target_person_id}, Self-reading: {is_self_reading}", flush=True)
 
     # Verify user can only generate readings for themselves
     if current_user.user_id != str(request.user_id):
@@ -172,10 +173,13 @@ async def generate_fortune_reading(
             print(f"⚠️ FORTUNE: Failed to log LLM usage: {str(e)}", flush=True)
 
         # Save reading to database
+        # For self-readings, set target_person_id to NULL
+        target_person_id = None if request.target_person_id == request.user_id else request.target_person_id
+        
         reading_id = await _save_fortune_reading(
             db=db,
             user_id=request.user_id,
-            target_person_id=request.target_person_id,
+            target_person_id=target_person_id,
             target_person_name=request.name,
             reading_type=request.reading_type,
             question=request.question,
