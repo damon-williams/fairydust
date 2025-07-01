@@ -82,6 +82,7 @@ class User(BaseModel):
     created_at: datetime
     updated_at: datetime
     dust_balance: int = 0  # Denormalized for performance
+    fortune_profile: Optional[dict] = None  # Fortune/astrology profile data
 
     class Config:
         from_attributes = True
@@ -157,6 +158,19 @@ class OnboardTrackingUpdate(BaseModel):
     has_seen_inspire_tip: Optional[bool] = None
     has_seen_inspire_result_tip: Optional[bool] = None
     has_seen_onboarding_complete_tip: Optional[bool] = None
+
+
+# Fortune Profile models
+class FortuneProfileRequest(BaseModel):
+    birth_date: str = Field(..., pattern=r"^\d{4}-\d{2}-\d{2}$")
+    birth_time: Optional[str] = Field(None, pattern=r"^\d{2}:\d{2}$")
+    birth_location: Optional[str] = Field(None, max_length=200)
+    gender: Optional[str] = Field(None, max_length=20)
+
+
+class FortuneProfileResponse(BaseModel):
+    success: bool = True
+    user: dict  # Will contain user data with fortune_profile
 
 
 # Response models
