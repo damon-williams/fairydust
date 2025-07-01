@@ -598,7 +598,6 @@ async def get_user_llm_usage(
 # Action-based DUST pricing endpoints
 @app_router.get("/pricing/actions")
 async def get_action_pricing(
-    current_user: TokenData = Depends(get_current_user),
     db: Database = Depends(get_db),
 ):
     """
