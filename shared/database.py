@@ -625,7 +625,6 @@ async def create_tables():
             characters_involved JSONB DEFAULT '[]',
             metadata JSONB DEFAULT '{}',
             is_favorited BOOLEAN DEFAULT FALSE,
-            dust_cost INTEGER NOT NULL,
             word_count INTEGER,
             created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
             updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
@@ -675,6 +674,29 @@ async def create_tables():
             logger.info("Genre column already removed from user_stories table")
     except Exception as e:
         logger.warning(f"Genre column migration failed: {e}")
+
+    # Remove dust_cost column (content service should not handle DUST)
+    try:
+        # Check if dust_cost column exists before trying to drop it
+        dust_cost_exists = await db.fetch_one(
+            """
+            SELECT column_name 
+            FROM information_schema.columns 
+            WHERE table_name = 'user_stories' AND column_name = 'dust_cost'
+            """
+        )
+        
+        if dust_cost_exists:
+            await db.execute_schema(
+                """
+                ALTER TABLE user_stories DROP COLUMN dust_cost;
+                """
+            )
+            logger.info("Removed dust_cost column from user_stories table")
+        else:
+            logger.info("dust_cost column already removed from user_stories table")
+    except Exception as e:
+        logger.warning(f"dust_cost column migration failed: {e}")
 
     # Story generation logs table for analytics and debugging
     await db.execute_schema(
