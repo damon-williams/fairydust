@@ -616,7 +616,7 @@ async def _generate_fortune_llm(
 async def _save_fortune_reading(
     db: Database,
     user_id: uuid.UUID,
-    target_person_id: uuid.UUID,
+    target_person_id: Optional[uuid.UUID],
     target_person_name: str,
     reading_type: ReadingType,
     question: Optional[str],

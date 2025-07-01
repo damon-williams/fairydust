@@ -698,6 +698,17 @@ async def create_tables():
     except Exception as e:
         logger.warning(f"dust_cost column migration failed: {e}")
 
+    # Allow target_person_id to be NULL for self-readings
+    try:
+        await db.execute_schema(
+            """
+            ALTER TABLE fortune_readings ALTER COLUMN target_person_id DROP NOT NULL;
+            """
+        )
+        logger.info("Made target_person_id nullable in fortune_readings table")
+    except Exception as e:
+        logger.warning(f"Fortune readings target_person_id migration failed: {e}")
+
     # Story generation logs table for analytics and debugging
     await db.execute_schema(
         """
@@ -915,7 +926,7 @@ async def create_tables():
         CREATE TABLE IF NOT EXISTS fortune_readings (
             id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
             user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-            target_person_id UUID NOT NULL REFERENCES people_in_my_life(id) ON DELETE CASCADE,
+            target_person_id UUID REFERENCES people_in_my_life(id) ON DELETE CASCADE,
             target_person_name VARCHAR(100) NOT NULL,
             reading_type VARCHAR(20) NOT NULL CHECK (reading_type IN ('question', 'daily')),
             question TEXT,
