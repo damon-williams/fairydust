@@ -375,11 +375,12 @@ async def get_current_user_profile(
         raise HTTPException(status_code=404, detail="User not found")
 
     # Parse JSONB fortune_profile field
+    import json as json_module  # Explicit import to avoid any shadowing issues
     user_dict = dict(user)
     if user_dict.get("fortune_profile"):
         try:
-            user_dict["fortune_profile"] = json.loads(user_dict["fortune_profile"])
-        except (json.JSONDecodeError, TypeError):
+            user_dict["fortune_profile"] = json_module.loads(user_dict["fortune_profile"])
+        except (json_module.JSONDecodeError, TypeError):
             user_dict["fortune_profile"] = {}
     else:
         user_dict["fortune_profile"] = {}
@@ -767,6 +768,8 @@ async def update_user_fortune_profile(
     print(f"🔮 FORTUNE_PROFILE: Updating profile for user {current_user.user_id}", flush=True)
 
     try:
+        import json as json_module  # Explicit import to avoid any shadowing issues
+        
         # Calculate astrological data
         zodiac_sign, zodiac_element, ruling_planet = _calculate_zodiac(request.birth_date)
         life_path_number = _calculate_life_path_number(request.birth_date)
@@ -790,7 +793,7 @@ async def update_user_fortune_profile(
             SET fortune_profile = $1::jsonb, updated_at = CURRENT_TIMESTAMP
             WHERE id = $2
             """,
-            json.dumps(fortune_profile),
+            json_module.dumps(fortune_profile),
             current_user.user_id,
         )
 
@@ -811,7 +814,7 @@ async def update_user_fortune_profile(
         # Format response
         user_data = {
             "id": str(user_result["id"]),
-            "fortune_profile": json.loads(user_result["fortune_profile"]) if user_result["fortune_profile"] else None,
+            "fortune_profile": json_module.loads(user_result["fortune_profile"]) if user_result["fortune_profile"] else None,
         }
 
         print(f"✅ FORTUNE_PROFILE: Updated profile successfully", flush=True)
