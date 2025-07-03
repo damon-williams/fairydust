@@ -36,7 +36,7 @@ FORTUNE_RATE_LIMIT = 15  # Max 15 readings per hour per user
 FREE_ASTROLOGY_API_KEY = os.getenv(
     "FREE_ASTROLOGY_API_KEY", "UEhzlTAEY72bFez65JR7w51hOiAWwb7l94M6yHyr"
 )
-FREE_ASTROLOGY_API_URL = "https://api.freeastrologyapi.com"
+FREE_ASTROLOGY_API_URL = "https://freeastrologyapi.com"  # Remove 'api.' prefix
 
 # Zodiac data
 ZODIAC_SIGNS = {
@@ -266,6 +266,10 @@ async def _get_planetary_positions(
 ) -> dict:
     """Get planetary positions from Free Astrology API"""
     try:
+        # TODO: For dynamic moon phases, we should use current date instead of birth date
+        # For now, using birth date for planetary positions at birth
+        # Consider adding a separate call for current planetary positions
+
         # Convert birth_date to required format
         birth_date_obj = datetime.strptime(birth_date, "%Y-%m-%d")
 
@@ -294,9 +298,22 @@ async def _get_planetary_positions(
         # For now, using default coordinates
 
         async with httpx.AsyncClient() as client:
+            print(
+                f"🌟 ASTROLOGY_API: Making request to {FREE_ASTROLOGY_API_URL}/api/v1/western-horoscope/planets",
+                flush=True,
+            )
+            print(f"🌟 ASTROLOGY_API: Request data: {api_data}", flush=True)
+            print(
+                f"🌟 ASTROLOGY_API: Using API key: {FREE_ASTROLOGY_API_KEY[:10]}...{FREE_ASTROLOGY_API_KEY[-4:]}",
+                flush=True,
+            )
+
             response = await client.post(
                 f"{FREE_ASTROLOGY_API_URL}/api/v1/western-horoscope/planets",
-                headers={"Content-Type": "application/json"},
+                headers={
+                    "Content-Type": "application/json",
+                    "Authorization": f"Bearer {FREE_ASTROLOGY_API_KEY}",  # Added auth header
+                },
                 json=api_data,
                 timeout=10.0,
             )
@@ -304,9 +321,11 @@ async def _get_planetary_positions(
             if response.status_code == 200:
                 data = response.json()
                 print("✅ ASTROLOGY_API: Got planetary data successfully", flush=True)
+                print(f"🌟 ASTROLOGY_API: Response preview: {str(data)[:200]}...", flush=True)
                 return _parse_planetary_data(data)
             else:
                 print(f"❌ ASTROLOGY_API: Error {response.status_code}: {response.text}", flush=True)
+                print(f"❌ ASTROLOGY_API: Full response headers: {response.headers}", flush=True)
                 return {"planets": {}, "moon_phase": "Full Moon"}
 
     except Exception as e:
@@ -317,15 +336,28 @@ async def _get_planetary_positions(
 def _parse_planetary_data(api_response: dict) -> dict:
     """Parse Free Astrology API response to extract useful data"""
     try:
+        print(
+            f"🔍 ASTROLOGY_PARSE: Parsing response with keys: {list(api_response.keys())}",
+            flush=True,
+        )
         planets = {}
         moon_phase = "Full Moon"
 
         # Extract planetary positions from API response
         if "planets" in api_response:
-            for planet_data in api_response["planets"]:
+            print(
+                f"🔍 ASTROLOGY_PARSE: Found {len(api_response['planets'])} planets in response",
+                flush=True,
+            )
+            for i, planet_data in enumerate(api_response["planets"]):
                 planet_name = planet_data.get("name", "")
                 planet_sign = planet_data.get("current_sign", "")
                 is_retrograde = planet_data.get("isRetro", False)
+
+                print(
+                    f"🪐 ASTROLOGY_PARSE: Planet {i+1}: {planet_name} in {planet_sign} (retrograde: {is_retrograde})",
+                    flush=True,
+                )
 
                 planets[planet_name] = {
                     "sign": planet_sign,
@@ -335,8 +367,16 @@ def _parse_planetary_data(api_response: dict) -> dict:
 
                 # Special handling for Moon to determine phase
                 if planet_name.lower() == "moon":
-                    moon_phase = _calculate_moon_phase(planet_data.get("fullDegree", 0))
+                    moon_degree = planet_data.get("fullDegree", 0)
+                    moon_phase = _calculate_moon_phase(moon_degree)
+                    print(f"🌙 ASTROLOGY_PARSE: Moon at {moon_degree}° = {moon_phase}", flush=True)
+        else:
+            print("⚠️ ASTROLOGY_PARSE: No 'planets' key in API response", flush=True)
 
+        print(
+            f"✅ ASTROLOGY_PARSE: Parsed {len(planets)} planets, moon phase: {moon_phase}",
+            flush=True,
+        )
         return {"planets": planets, "moon_phase": moon_phase}
 
     except Exception as e:
@@ -471,24 +511,37 @@ async def _get_cosmic_influences(
 ) -> CosmicInfluences:
     """Get current cosmic influences using real astrological data"""
     try:
+        print(
+            f"🌌 COSMIC: Getting cosmic influences for {zodiac_sign}, birth: {birth_date}",
+            flush=True,
+        )
+
         # Get real planetary positions from Free Astrology API
         planetary_data = await _get_planetary_positions(birth_date, birth_time, birth_location)
 
         # Extract moon phase and planetary focus from real data
         moon_phase = planetary_data.get("moon_phase", "Full Moon")
+        print(f"🌙 COSMIC: Moon phase from API: {moon_phase}", flush=True)
 
         # Determine strongest planetary influence based on current positions
         planets = planetary_data.get("planets", {})
+        print(f"🪐 COSMIC: Got {len(planets)} planets from API", flush=True)
         strongest_planet = _determine_strongest_planetary_influence(planets)
+        print(f"💫 COSMIC: Strongest planetary influence: {strongest_planet}", flush=True)
 
         planetary_focus = f"{strongest_planet} influences your cosmic energy"
 
-        return CosmicInfluences(
+        result = CosmicInfluences(
             zodiac_sign=zodiac_sign,
             moon_phase=moon_phase,
             planetary_focus=planetary_focus,
             life_path_number=life_path_number,
         )
+        print(
+            f"✅ COSMIC: Returning cosmic influences with moon: {moon_phase}, planet: {strongest_planet}",
+            flush=True,
+        )
+        return result
     except Exception as e:
         print(f"❌ FORTUNE_COSMIC: Error getting cosmic influences: {str(e)}", flush=True)
         # Fallback to basic data if API fails
