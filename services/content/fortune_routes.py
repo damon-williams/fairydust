@@ -215,6 +215,7 @@ async def generate_fortune_reading(
             content=reading_content,
             reading_type=request.reading_type,
             question=request.question,
+            target_person_id=target_person_id,  # Use the processed target_person_id
             target_person_name=request.name,
             created_at=datetime.utcnow(),
             is_favorited=False,
@@ -741,7 +742,7 @@ async def get_user_fortune_readings(
     try:
         # Build query with filters
         base_query = """
-            SELECT id, content, reading_type, question, target_person_name,
+            SELECT id, content, reading_type, question, target_person_id, target_person_name,
                    is_favorited, created_at
             FROM fortune_readings
             WHERE user_id = $1
@@ -782,6 +783,7 @@ async def get_user_fortune_readings(
                 content=row["content"],
                 reading_type=ReadingType(row["reading_type"]),
                 question=row["question"],
+                target_person_id=row["target_person_id"],
                 target_person_name=row["target_person_name"],
                 created_at=row["created_at"],
                 is_favorited=row["is_favorited"],
@@ -922,7 +924,7 @@ async def toggle_fortune_reading_favorite(
             UPDATE fortune_readings
             SET is_favorited = $1, updated_at = CURRENT_TIMESTAMP
             WHERE id = $2 AND user_id = $3
-            RETURNING id, content, reading_type, question, target_person_name,
+            RETURNING id, content, reading_type, question, target_person_id, target_person_name,
                       is_favorited, created_at
         """
 
@@ -936,6 +938,7 @@ async def toggle_fortune_reading_favorite(
             content=result["content"],
             reading_type=ReadingType(result["reading_type"]),
             question=result["question"],
+            target_person_id=result["target_person_id"],
             target_person_name=result["target_person_name"],
             created_at=result["created_at"],
             is_favorited=result["is_favorited"],

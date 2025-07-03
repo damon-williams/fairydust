@@ -256,6 +256,7 @@ class FortuneReading(BaseModel):
     content: str
     reading_type: ReadingType
     question: Optional[str] = None
+    target_person_id: Optional[UUID] = None  # None for self-readings, UUID for others
     target_person_name: str
     created_at: datetime
     is_favorited: bool = False
