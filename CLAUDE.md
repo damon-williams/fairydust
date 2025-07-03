@@ -24,6 +24,11 @@ fairydust is a **mobile app backend** that powers a native mobile application de
   - Set in .env file locally (see .env.example for template)
   - Should be configured in Railway environment variables for production
 
+- `OPENAI_API_KEY`: OpenAI API key for AI-powered content generation
+  - Used by content service for personalized activity recommendations and story generation
+  - Set in .env file locally (see .env.example for template)
+  - Should be configured in Railway environment variables for production
+
 ## Commands
 
 ### Local Development
@@ -256,7 +261,7 @@ fairydust is a microservices-based payment and identity platform for AI-powered 
 - **Ledger Service** (port 8002): DUST balance tracking and transactions
 - **Apps Service** (port 8003): App marketplace, LLM management, consumption tracking
 - **Admin Portal** (port 8004): Admin dashboard for user/app/question/LLM management
-- **Builder Portal** (port 8005): Builder dashboard for app submission/management
+- **Builder Portal** (port 8005): Builder dashboard for app submission/management - no longer utilized
 - **Content Service** (port 8006): User-generated content storage (recipes, stories, activities)
 
 ### Shared Infrastructure

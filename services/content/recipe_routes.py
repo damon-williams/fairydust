@@ -107,6 +107,7 @@ async def generate_recipe(
             model_used,
             tokens_used,
             cost,
+            provider,
         ) = await _generate_recipe_llm(
             dish=request.dish,
             complexity=request.complexity,
@@ -223,7 +224,7 @@ async def generate_recipe(
                 total=tokens_used.get("total", 0),
             ),
             cost=cost,
-            new_dust_balance=user_balance,  # Balance unchanged since DUST handled by client
+            new_dust_balance=0,  # Balance unchanged since DUST handled by client
         )
 
     except HTTPException:
@@ -925,7 +926,7 @@ async def _generate_recipe_llm(
     total_people: int,
     user_context: str,
     dietary_preferences: list[str],
-) -> tuple[Optional[str], str, int, Optional[int], Optional[int], str, dict, float]:
+) -> tuple[Optional[str], str, int, Optional[int], Optional[int], str, dict, float, str]:
     """Generate recipe using LLM"""
     try:
         # Get LLM model configuration from database/cache
@@ -1055,6 +1056,7 @@ IMPORTANT: Always include the Nutritional Info section with estimated values."""
                         model_id,
                         tokens_used,
                         cost,
+                        provider,
                     )
 
                 else:
@@ -1062,7 +1064,7 @@ IMPORTANT: Always include the Nutritional Info section with estimated values."""
                         f"❌ RECIPE_LLM: Anthropic API error {response.status_code}: {response.text}",
                         flush=True,
                     )
-                    return None, "", 0, None, None, model_id, {}, 0.0
+                    return None, "", 0, None, None, model_id, {}, 0.0, provider
 
             elif provider == "openai":
                 response = await client.post(
@@ -1113,6 +1115,7 @@ IMPORTANT: Always include the Nutritional Info section with estimated values."""
                         model_id,
                         tokens_used,
                         cost,
+                        provider,
                     )
 
                 else:
@@ -1120,14 +1123,14 @@ IMPORTANT: Always include the Nutritional Info section with estimated values."""
                         f"❌ RECIPE_LLM: OpenAI API error {response.status_code}: {response.text}",
                         flush=True,
                     )
-                    return None, "", 0, None, None, model_id, {}, 0.0
+                    return None, "", 0, None, None, model_id, {}, 0.0, provider
 
             else:
                 print(
                     f"⚠️ RECIPE_LLM: Unsupported provider {provider}, falling back to Anthropic",
                     flush=True,
                 )
-                return None, "", 0, None, None, "claude-3-5-sonnet-20241022", {}, 0.0
+                return None, "", 0, None, None, "claude-3-5-sonnet-20241022", {}, 0.0, "anthropic"
 
     except Exception as e:
         print(f"❌ RECIPE_LLM: Error generating recipe: {str(e)}", flush=True)

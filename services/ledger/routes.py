@@ -115,14 +115,11 @@ async def get_balance(
 async def check_balance_sufficient(
     user_id: UUID,
     amount: int = Query(..., gt=0),
-    app_id: UUID = Query(...),
     current_user: TokenData = Depends(get_current_user),
     ledger: LedgerService = Depends(get_ledger_service),
 ):
     """Check if user has sufficient balance for an action"""
     # This endpoint is for apps to check before attempting consume
-    # Verify the app belongs to the current user (builder)
-    # In a full implementation, we'd check app ownership
 
     balance = await ledger.get_balance(user_id)
 
