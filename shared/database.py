@@ -351,6 +351,9 @@ async def create_tables():
 
         CREATE INDEX IF NOT EXISTS idx_people_in_my_life_user_id ON people_in_my_life(user_id);
         
+        -- Add birth_date column to existing people_in_my_life table
+        ALTER TABLE people_in_my_life ADD COLUMN IF NOT EXISTS birth_date DATE;
+        
         -- Drop old age_range column from people_in_my_life (replaced with birth_date)
         ALTER TABLE people_in_my_life DROP COLUMN IF EXISTS age_range;
     """

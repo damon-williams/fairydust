@@ -1,5 +1,5 @@
 import re
-from datetime import datetime
+from datetime import datetime, date
 from typing import Literal, Optional
 from uuid import UUID
 
@@ -74,7 +74,7 @@ class User(BaseModel):
     phone: Optional[str] = None
     is_admin: bool = False
     first_name: Optional[str] = None
-    birth_date: Optional[datetime] = None
+    birth_date: Optional[date] = None
     is_onboarding_completed: bool = False
     streak_days: int = 0
     last_login_date: Optional[datetime] = None
@@ -121,7 +121,7 @@ class PersonInMyLife(BaseModel):
     id: UUID
     user_id: UUID
     name: str
-    birth_date: Optional[datetime] = None
+    birth_date: Optional[date] = None
     relationship: Optional[str] = None
     created_at: datetime
     updated_at: datetime
