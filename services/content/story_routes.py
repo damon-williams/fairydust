@@ -819,7 +819,30 @@ def _extract_title_and_content(generated_text: str) -> tuple[str, str]:
         title = lines[0].strip()
         content = "\n".join(lines[1:]).strip() if len(lines) > 1 else generated_text
 
+    # Clean up title formatting - remove markdown and common formatting issues
+    title = _clean_title_formatting(title)
+
     return title, content
+
+
+def _clean_title_formatting(title: str) -> str:
+    """Clean up title formatting to remove markdown and unwanted formatting"""
+    # Remove markdown bold formatting
+    title = re.sub(r'\*\*(.*?)\*\*', r'\1', title)
+    
+    # Remove markdown italic formatting
+    title = re.sub(r'\*(.*?)\*', r'\1', title)
+    
+    # Remove any remaining TITLE: prefix that might be embedded
+    title = re.sub(r'^.*?TITLE:\s*', '', title, flags=re.IGNORECASE)
+    
+    # Remove leading/trailing quotes
+    title = title.strip('"\'')
+    
+    # Remove extra whitespace
+    title = re.sub(r'\s+', ' ', title).strip()
+    
+    return title
 
 
 async def _generate_story_llm(
