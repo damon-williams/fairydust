@@ -355,22 +355,70 @@ def _build_daily_fortune_prompt(
 ) -> str:
     """Build bite-sized daily fortune prompt (30-60 words)"""
 
-    prompt = f"""Create a bite-sized daily fortune for {request.name}.
+    import random
+    
+    # Vary the fortune style randomly for more variety
+    styles = [
+        "mystical and intuitive",
+        "practical and grounded", 
+        "playful and energetic",
+        "wise and reflective",
+        "bold and encouraging",
+        "gentle and nurturing",
+        "direct and confident",
+        "poetic and inspiring"
+    ]
+    
+    approaches = [
+        "focus on an unexpected opportunity",
+        "highlight a personal strength to embrace",
+        "suggest a mindful action to take",
+        "reveal a hidden blessing in today",
+        "point to a connection worth nurturing",
+        "encourage a creative breakthrough",
+        "warn of a gentle challenge to overcome",
+        "illuminate a moment of clarity ahead"
+    ]
+    
+    tones = [
+        "like a trusted friend giving advice",
+        "like ancient wisdom speaking directly to them",
+        "like a gentle nudge from the universe",
+        "like cosmic energy flowing through words",
+        "like their higher self offering guidance",
+        "like a whisper from their intuition",
+        "like the voice of their {zodiac_element} element",
+        "like {ruling_planet} speaking through the stars"
+    ]
+    
+    selected_style = random.choice(styles)
+    selected_approach = random.choice(approaches)
+    selected_tone = random.choice(tones)
 
-PERSON'S PROFILE:
-- Name: {request.name}
-- Zodiac: {zodiac_sign} ({zodiac_element} element)
-- Life Path: {life_path_number}
+    prompt = f"""Create a unique daily fortune for {request.name}, a {zodiac_sign} with life path {life_path_number}.
 
-DAILY FORTUNE REQUIREMENTS:
-- Length: 30-60 words maximum (bite-sized like a fortune cookie, but slightly longer)
-- Focus on today's energy and opportunities
-- Be positive, actionable, and specific
-- Sound authentic and personal
-- Skip flowery language - be direct and impactful
-- Reference their {zodiac_sign} nature naturally
+CREATIVE DIRECTION:
+- Style: {selected_style}
+- Approach: {selected_approach}  
+- Tone: {selected_tone}
+- Element energy: {zodiac_element}
 
-Write a concise daily fortune for this {zodiac_sign}."""
+VARIATION REQUIREMENTS:
+- 30-60 words maximum
+- AVOID generic phrases like "embrace your", "trust your journey", "the universe aligns"
+- BREAK THE MOLD: Use unexpected metaphors, fresh perspectives, or surprising insights
+- VARY YOUR LANGUAGE: Sometimes poetic, sometimes conversational, sometimes mystical
+- MAKE IT SPECIFIC: Reference concrete actions, emotions, or situations
+- BE UNPREDICTABLE: Start with unusual openings, use different sentence structures
+
+Examples of fresh approaches:
+- "Your {zodiac_element} nature whispers secrets today..."
+- "Life path {life_path_number} energy creates an opening for..."
+- "Something shifts in your favor when you..."
+- "Today's rhythm matches your {zodiac_sign} heartbeat..."
+- "The space between thoughts holds your answer..."
+
+Write a completely original fortune that feels personal and surprising."""
 
     return prompt
 
@@ -384,31 +432,81 @@ def _build_question_fortune_prompt(
 ) -> str:
     """Build detailed question response prompt (100-200 words)"""
 
-    prompt = f"""Answer this question with mystical wisdom for {request.name}: "{request.question}"
+    import random
+    
+    # Add variety to question responses too
+    response_styles = [
+        "like a wise oracle revealing hidden truths",
+        "like a cosmic counselor offering deep insight", 
+        "like ancient wisdom filtered through modern understanding",
+        "like their spirit guides speaking through the stars",
+        "like the universe answering through elemental wisdom",
+        "like a mystical mentor who sees their soul clearly",
+        "like cosmic forces aligning to offer guidance",
+        "like their higher self speaking from the future"
+    ]
+    
+    structural_approaches = [
+        "Start with what their {zodiac_element} element reveals, then dive deeper",
+        "Begin with their life path {life_path_number} lesson, then apply it specifically", 
+        "Open with a cosmic truth, then make it personal and actionable",
+        "Start with their {zodiac_sign} strength, then address the challenge",
+        "Begin with the energy around them now, then reveal the path forward",
+        "Open with what {ruling_planet} is teaching them, then offer practical steps",
+        "Start with a deeper truth about their question, then illuminate options",
+        "Begin with their soul's perspective, then bridge to everyday reality"
+    ]
+    
+    wisdom_angles = [
+        "Focus on the hidden opportunity within their question",
+        "Reveal the spiritual lesson their situation is teaching",
+        "Illuminate the timing and cosmic patterns at play",
+        "Explore how their past experiences inform this moment", 
+        "Examine the relationship dynamics and energy flows",
+        "Uncover the fear or limiting belief that needs releasing",
+        "Highlight their intuitive knowing they may be ignoring",
+        "Show how this situation serves their highest growth"
+    ]
+    
+    selected_style = random.choice(response_styles)
+    selected_structure = random.choice(structural_approaches)
+    selected_angle = random.choice(wisdom_angles)
 
-PERSON'S PROFILE:
-- Name: {request.name}
-- Birth Date: {request.birth_date}
-- Zodiac Sign: {zodiac_sign} ({zodiac_element} element, ruled by {ruling_planet})
-- Life Path Number: {life_path_number}"""
+    prompt = f"""Provide mystical guidance for {request.name}'s question: "{request.question}"
+
+PERSON'S COSMIC BLUEPRINT:
+- {zodiac_sign} ({zodiac_element} element, ruled by {ruling_planet})
+- Life Path: {life_path_number}
+- Birth: {request.birth_date}"""
 
     if request.birth_time:
-        prompt += f"\n- Birth Time: {request.birth_time}"
+        prompt += f"\n- Time: {request.birth_time}"
 
     if request.birth_location:
-        prompt += f"\n- Birth Location: {request.birth_location}"
+        prompt += f"\n- Location: {request.birth_location}"
 
     prompt += f"""
 
-QUESTION RESPONSE REQUIREMENTS:
-- Length: 100-200 words for detailed guidance
-- Address their specific question directly
-- Weave in their {zodiac_sign} traits and {zodiac_element} element energy
-- Reference their life path {life_path_number} characteristics
-- Provide actionable wisdom and specific insights
-- Be mystical yet practical
+CREATIVE GUIDANCE FRAMEWORK:
+- Response Style: {selected_style}
+- Structure: {selected_structure}
+- Wisdom Angle: {selected_angle}
 
-Give a thoughtful response that uses their astrological and numerological profile to answer their question."""
+VARIETY REQUIREMENTS:
+- 100-200 words of meaningful insight
+- AVOID CLICHÉS: No "everything happens for a reason", "trust the process", "follow your heart"
+- FRESH LANGUAGE: Use unexpected metaphors, original insights, surprising perspectives
+- SPECIFIC WISDOM: Connect their astrological profile to their exact situation
+- AUTHENTIC VOICE: Sometimes mystical, sometimes direct, sometimes poetic
+- PRACTICAL MAGIC: Bridge spiritual insight with actionable guidance
+
+STRUCTURAL VARIETY:
+- Try different openings: questions, statements, cosmic observations
+- Vary paragraph structure: single flow vs. distinct sections
+- Mix sentence lengths: short punchy insights with flowing wisdom
+- End with different energies: empowerment, reflection, invitation, certainty
+
+Channel deep wisdom that feels both cosmic and personally relevant to their unique question."""
 
     return prompt
 
