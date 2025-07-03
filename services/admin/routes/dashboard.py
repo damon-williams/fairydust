@@ -15,7 +15,7 @@ async def check_service_health() -> dict:
     # Environment-based service URLs
     environment = os.getenv("ENVIRONMENT", "production")
     env_suffix = "staging" if environment == "staging" else "production"
-    
+
     services = {
         "Identity": f"https://fairydust-identity-{env_suffix}.up.railway.app/health",
         "Ledger": f"https://fairydust-ledger-{env_suffix}.up.railway.app/health",

@@ -4,7 +4,6 @@ import os
 import uuid
 
 import httpx
-
 from fastapi import APIRouter, Depends, HTTPException, Request
 from models import (
     Activity,
@@ -29,7 +28,6 @@ if not TRIPADVISOR_API_KEY:
     raise ValueError("TRIPADVISOR_API_KEY environment variable is required")
 
 tripadvisor_service = TripAdvisorService(TRIPADVISOR_API_KEY)
-
 
 
 @router.post("/activity/search", response_model=ActivitySearchResponse)
@@ -108,7 +106,10 @@ async def search_activities(
             flush=True,
         )
 
-        print(f"✅ ACTIVITY_SEARCH: Generated activities for user {request.user_id} (DUST handled by client)", flush=True)
+        print(
+            f"✅ ACTIVITY_SEARCH: Generated activities for user {request.user_id} (DUST handled by client)",
+            flush=True,
+        )
 
         # Build response
         activities = []
@@ -191,8 +192,6 @@ async def _get_app_id(db: Database) -> str:
             detail="fairydust-activity app not found in database. Please create the app first.",
         )
     return str(result["id"])
-
-
 
 
 async def _get_people_info(
@@ -412,7 +411,7 @@ Respond with exactly {len(activities)} entries in this JSON format:
 
             if response.status_code == 200:
                 result = response.json()
-                
+
                 # Handle different response formats based on provider
                 if provider == "anthropic":
                     content = result["content"][0]["text"]
@@ -430,7 +429,7 @@ Respond with exactly {len(activities)} entries in this JSON format:
                     usage = result.get("usage", {})
                     prompt_tokens = usage.get("input_tokens", 0)
                     completion_tokens = usage.get("output_tokens", 0)
-                
+
                 total_tokens = prompt_tokens + completion_tokens
 
                 cost = calculate_llm_cost(provider, model_id, prompt_tokens, completion_tokens)

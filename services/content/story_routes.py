@@ -11,7 +11,6 @@ import httpx
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 
 # Content service no longer manages DUST - all DUST handling is external
-
 from models import (
     StoriesListResponse,
     StoryConfigResponse,
@@ -38,9 +37,9 @@ router = APIRouter()
 # Constants - Reading time targets for story generation
 
 READING_TIME_WORD_TARGETS = {
-    StoryLength.QUICK: (400, 600),     # ~2-3 min reading time
+    StoryLength.QUICK: (400, 600),  # ~2-3 min reading time
     StoryLength.MEDIUM: (1000, 1400),  # ~5-7 min reading time
-    StoryLength.LONG: (1600, 2400),    # ~8-12 min reading time
+    StoryLength.LONG: (1600, 2400),  # ~8-12 min reading time
 }
 
 STORY_RATE_LIMIT = 10  # Max 10 stories per hour per user
@@ -449,14 +448,14 @@ async def get_story_config():
                     "words": "400-600",
                 },
                 {
-                    "label": "Medium Story", 
+                    "label": "Medium Story",
                     "value": "medium",
                     "reading_time": "5-7 minutes",
                     "words": "1000-1400",
                 },
                 {
                     "label": "Long Story",
-                    "value": "long", 
+                    "value": "long",
                     "reading_time": "8-12 minutes",
                     "words": "1600-2400",
                 },
@@ -510,8 +509,6 @@ async def _get_app_id(db: Database) -> str:
             detail="fairydust-story app not found in database. Please create the app first.",
         )
     return str(result["id"])
-
-
 
 
 async def _check_rate_limit(db: Database, user_id: uuid.UUID) -> bool:
@@ -591,6 +588,7 @@ async def _get_user_context(db: Database, user_id: uuid.UUID) -> str:
                 if row["birth_date"]:
                     # Calculate age from birth date
                     from datetime import date
+
                     birth = date.fromisoformat(str(row["birth_date"]))
                     age = (date.today() - birth).days // 365
                     person_desc += f", {age} years old"
@@ -613,11 +611,11 @@ async def _get_llm_model_config() -> dict:
     from shared.database import get_db
 
     app_slug = "fairydust-story"
-    
+
     # First, get the app UUID from the slug
     db = await get_db()
     app_result = await db.fetch_one("SELECT id FROM apps WHERE slug = $1", app_slug)
-    
+
     if not app_result:
         print(f"❌ STORY_CONFIG: App with slug '{app_slug}' not found in database", flush=True)
         # Return default config if app not found
@@ -626,7 +624,7 @@ async def _get_llm_model_config() -> dict:
             "primary_model_id": "claude-3-5-sonnet-20241022",
             "primary_parameters": {"temperature": 0.8, "max_tokens": 2000, "top_p": 0.9},
         }
-    
+
     app_id = str(app_result["id"])
     print(f"🔍 STORY_CONFIG: Resolved {app_slug} to UUID {app_id}", flush=True)
 
@@ -635,11 +633,11 @@ async def _get_llm_model_config() -> dict:
     cached_config = await cache.get_model_config(app_id)
 
     if cached_config:
-        print(f"✅ STORY_CONFIG: Found cached config", flush=True)
+        print("✅ STORY_CONFIG: Found cached config", flush=True)
         print(f"✅ STORY_CONFIG: Provider: {cached_config.get('primary_provider')}", flush=True)
         print(f"✅ STORY_CONFIG: Model: {cached_config.get('primary_model_id')}", flush=True)
         print(f"✅ STORY_CONFIG: Full cached config: {cached_config}", flush=True)
-        
+
         config = {
             "primary_provider": cached_config.get("primary_provider", "anthropic"),
             "primary_model_id": cached_config.get("primary_model_id", "claude-3-5-sonnet-20241022"),
@@ -647,44 +645,45 @@ async def _get_llm_model_config() -> dict:
                 "primary_parameters", {"temperature": 0.8, "max_tokens": 2000, "top_p": 0.9}
             ),
         }
-        
+
         print(f"✅ STORY_CONFIG: Returning config: {config}", flush=True)
         return config
 
     # Cache miss - check database directly
-    print(f"⚠️ STORY_CONFIG: Cache miss, checking database directly", flush=True)
-    
+    print("⚠️ STORY_CONFIG: Cache miss, checking database directly", flush=True)
+
     try:
         # Don't need to get_db again, we already have it
-        db_config = await db.fetch_one(
-            "SELECT * FROM app_model_configs WHERE app_id = $1", app_id
-        )
-        
+        db_config = await db.fetch_one("SELECT * FROM app_model_configs WHERE app_id = $1", app_id)
+
         if db_config:
-            print(f"📊 STORY_CONFIG: Found database config", flush=True)
+            print("📊 STORY_CONFIG: Found database config", flush=True)
             print(f"📊 STORY_CONFIG: DB Provider: {db_config['primary_provider']}", flush=True)
             print(f"📊 STORY_CONFIG: DB Model: {db_config['primary_model_id']}", flush=True)
-            
+
             # Parse and cache the database config
             from shared.json_utils import parse_model_config_field
-            
+
             parsed_config = {
                 "primary_provider": db_config["primary_provider"],
                 "primary_model_id": db_config["primary_model_id"],
-                "primary_parameters": parse_model_config_field(dict(db_config), "primary_parameters") or {"temperature": 0.8, "max_tokens": 2000, "top_p": 0.9},
+                "primary_parameters": parse_model_config_field(
+                    dict(db_config), "primary_parameters"
+                )
+                or {"temperature": 0.8, "max_tokens": 2000, "top_p": 0.9},
             }
-            
+
             # Cache the database config
             await cache.set_model_config(app_id, parsed_config)
             print(f"✅ STORY_CONFIG: Cached database config: {parsed_config}", flush=True)
-            
+
             return parsed_config
-            
+
     except Exception as e:
         print(f"❌ STORY_CONFIG: Database error: {e}", flush=True)
 
     # Fallback to default config
-    print(f"🔄 STORY_CONFIG: Using default config (no cache, no database)", flush=True)
+    print("🔄 STORY_CONFIG: Using default config (no cache, no database)", flush=True)
     default_config = {
         "primary_provider": "anthropic",
         "primary_model_id": "claude-3-5-sonnet-20241022",
@@ -714,12 +713,12 @@ def _build_story_prompt(request: StoryGenerationRequest, user_context: str) -> s
     """Build the LLM prompt for story generation"""
     min_words, max_words = READING_TIME_WORD_TARGETS[request.story_length]
     target_words = (min_words + max_words) // 2
-    
+
     # Convert story length to readable format
     length_descriptions = {
         StoryLength.QUICK: "2-3 minute read (~500 words)",
-        StoryLength.MEDIUM: "5-7 minute read (~1200 words)", 
-        StoryLength.LONG: "8-12 minute read (~2000 words)"
+        StoryLength.MEDIUM: "5-7 minute read (~1200 words)",
+        StoryLength.LONG: "8-12 minute read (~2000 words)",
     }
 
     # Build character descriptions
@@ -730,6 +729,7 @@ def _build_story_prompt(request: StoryGenerationRequest, user_context: str) -> s
             if char.birth_date:
                 # Calculate age from birth date
                 from datetime import date
+
                 birth = date.fromisoformat(char.birth_date)
                 age = (date.today() - birth).days // 365
                 desc += f", {age} years old"
@@ -859,7 +859,10 @@ async def _generate_story_llm(
             print(f"❌ STORY_LLM: Unsupported provider: {provider}", flush=True)
             return None, "", 0, "", model_id, {}, 0.0, 0
 
-        print(f"🔑 STORY_LLM: {provider.upper()} API key configured (length: {len(api_key)})", flush=True)
+        print(
+            f"🔑 STORY_LLM: {provider.upper()} API key configured (length: {len(api_key)})",
+            flush=True,
+        )
 
         # Track request latency
         start_time = time.time()

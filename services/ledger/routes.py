@@ -43,29 +43,26 @@ async def get_action_pricing(action_slug: str, cache: redis.Redis) -> Optional[i
         cached_price = await cache.get(f"action_pricing:{action_slug}")
         if cached_price:
             return int(cached_price)
-        
+
         # Fetch from apps service pricing API
         apps_service_url = os.getenv("APPS_SERVICE_URL", "http://localhost:8003")
-        
+
         async with httpx.AsyncClient() as client:
-            response = await client.get(
-                f"{apps_service_url}/apps/pricing/actions",
-                timeout=5.0
-            )
-            
+            response = await client.get(f"{apps_service_url}/apps/pricing/actions", timeout=5.0)
+
             if response.status_code == 200:
                 pricing_data = response.json()
-                
+
                 # Cache all pricing data for 5 minutes
                 for slug, data in pricing_data.items():
                     await cache.setex(f"action_pricing:{slug}", 300, str(data["dust"]))
-                
+
                 # Return the requested action price
                 if action_slug in pricing_data:
                     return pricing_data[action_slug]["dust"]
-                    
+
         return None  # Action not found or service unavailable
-        
+
     except Exception as e:
         print(f"⚠️ Failed to fetch action pricing for '{action_slug}': {e}", flush=True)
         return None  # Allow consumption with client-provided amount if pricing unavailable
@@ -398,18 +395,17 @@ async def reset_user_grants(
 ):
     """Reset all grants for a user (testing only)"""
     import os
+
     if os.getenv("ENVIRONMENT") != "development":
         raise HTTPException(status_code=403, detail="Only available in development environment")
-    
+
     # Delete all grants for the user
-    result = await db.execute(
-        "DELETE FROM app_grants WHERE user_id = $1", user_id
-    )
-    
+    result = await db.execute("DELETE FROM app_grants WHERE user_id = $1", user_id)
+
     return {
         "success": True,
         "message": f"Reset all grants for user {user_id}",
-        "grants_deleted": result
+        "grants_deleted": result,
     }
 
 
@@ -477,14 +473,13 @@ async def get_app_analytics(
 async def resolve_app_id(app_id_or_slug: str, db: Database, cache: redis.Redis) -> UUID:
     """Resolve app slug to UUID, with Redis caching"""
     from uuid import UUID
-    import json
-    
+
     # Try to parse as UUID first
     try:
         return UUID(app_id_or_slug)
     except ValueError:
         pass
-    
+
     # It's a slug, try cache first
     cache_key = f"app_slug:{app_id_or_slug}"
     try:
@@ -494,29 +489,26 @@ async def resolve_app_id(app_id_or_slug: str, db: Database, cache: redis.Redis) 
             return UUID(cached_id.decode())
     except Exception as e:
         print(f"⚠️ SLUG_CACHE: Cache error: {e}", flush=True)
-    
+
     # Cache miss, query database
     print(f"🔍 SLUG_RESOLVE: Resolving slug '{app_id_or_slug}' to UUID", flush=True)
-    result = await db.fetch_one(
-        "SELECT id FROM apps WHERE slug = $1",
-        app_id_or_slug
-    )
-    
+    result = await db.fetch_one("SELECT id FROM apps WHERE slug = $1", app_id_or_slug)
+
     if not result:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"App with slug '{app_id_or_slug}' not found"
+            detail=f"App with slug '{app_id_or_slug}' not found",
         )
-    
+
     app_uuid = result["id"]
-    
+
     # Cache the result for 5 minutes
     try:
         await cache.setex(cache_key, 300, str(app_uuid))
         print(f"✅ SLUG_CACHE: Cached {app_id_or_slug} -> {app_uuid}", flush=True)
     except Exception as e:
         print(f"⚠️ SLUG_CACHE: Cache set error: {e}", flush=True)
-    
+
     return app_uuid
 
 

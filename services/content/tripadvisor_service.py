@@ -6,8 +6,8 @@ from typing import Optional
 import httpx
 
 # Service URL configuration based on environment
-environment = os.getenv('ENVIRONMENT', 'staging')
-base_url_suffix = 'production' if environment == 'production' else 'staging'
+environment = os.getenv("ENVIRONMENT", "staging")
+base_url_suffix = "production" if environment == "production" else "staging"
 content_url = f"https://fairydust-content-{base_url_suffix}.up.railway.app"
 from models import ActivityHours
 

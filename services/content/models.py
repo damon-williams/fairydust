@@ -75,9 +75,9 @@ class RecipeSyncResponse(BaseModel):
 
 # Story App Models
 class StoryLength(str, Enum):
-    QUICK = "quick"    # 2-3 minute read
-    MEDIUM = "medium"  # 5-7 minute read  
-    LONG = "long"      # 8-12 minute read
+    QUICK = "quick"  # 2-3 minute read
+    MEDIUM = "medium"  # 5-7 minute read
+    LONG = "long"  # 8-12 minute read
 
 
 class TargetAudience(str, Enum):
@@ -281,7 +281,6 @@ class FortuneGenerationResponse(BaseModel):
     model_used: str
     tokens_used: TokenUsage
     cost: float
-    new_dust_balance: int
 
 
 class FortuneHistoryResponse(BaseModel):

@@ -2,15 +2,12 @@
 import json
 import os
 import re
-import time
 import uuid
 from datetime import datetime
 from typing import Optional
 
 import httpx
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
-
-
 from models import (
     DietaryRestriction,
     PersonPreference,
@@ -199,7 +196,10 @@ async def generate_recipe(
             metadata=recipe_metadata,
         )
 
-        print(f"✅ RECIPE: Generated recipe for user {request.user_id} (DUST handled by client)", flush=True)
+        print(
+            f"✅ RECIPE: Generated recipe for user {request.user_id} (DUST handled by client)",
+            flush=True,
+        )
 
         # Build response
         recipe = UserRecipeNew(
@@ -337,7 +337,9 @@ async def get_user_recipes(
                 cook_time_minutes=row["cook_time_minutes"],
                 created_at=row["created_at"],
                 is_favorited=row["is_favorited"],
-                metadata=parse_jsonb_field(row["metadata"], default={}, field_name="recipe_metadata"),
+                metadata=parse_jsonb_field(
+                    row["metadata"], default={}, field_name="recipe_metadata"
+                ),
             )
             recipes.append(recipe)
 
@@ -407,7 +409,9 @@ async def toggle_recipe_favorite(
             cook_time_minutes=result["cook_time_minutes"],
             created_at=result["created_at"],
             is_favorited=result["is_favorited"],
-            metadata=parse_jsonb_field(result["metadata"], default={}, field_name="recipe_metadata"),
+            metadata=parse_jsonb_field(
+                result["metadata"], default={}, field_name="recipe_metadata"
+            ),
         )
 
         print(f"✅ RECIPE: Updated favorite status for recipe {recipe_id}", flush=True)
@@ -670,7 +674,6 @@ async def _get_app_id(db: Database) -> str:
     return str(result["id"])
 
 
-
 async def _check_rate_limit(db: Database, user_id: uuid.UUID) -> bool:
     """Check if user has exceeded rate limit for recipe generation"""
     try:
@@ -776,6 +779,7 @@ async def _get_user_context(
                     if row["birth_date"]:
                         # Calculate age from birth date
                         from datetime import date
+
                         birth = date.fromisoformat(str(row["birth_date"]))
                         age = (date.today() - birth).days // 365
                         person_desc += f", {age} years old"
@@ -841,11 +845,11 @@ async def _get_llm_model_config() -> dict:
     from shared.database import get_db
 
     app_slug = "fairydust-recipe"
-    
+
     # First, get the app UUID from the slug
     db = await get_db()
     app_result = await db.fetch_one("SELECT id FROM apps WHERE slug = $1", app_slug)
-    
+
     if not app_result:
         print(f"❌ RECIPE_CONFIG: App with slug '{app_slug}' not found in database", flush=True)
         # Return default config if app not found
@@ -854,7 +858,7 @@ async def _get_llm_model_config() -> dict:
             "primary_model_id": "claude-3-5-sonnet-20241022",
             "primary_parameters": {"temperature": 0.7, "max_tokens": 1000, "top_p": 0.9},
         }
-    
+
     app_id = str(app_result["id"])
     print(f"🔍 RECIPE_CONFIG: Resolved {app_slug} to UUID {app_id}", flush=True)
 
@@ -872,39 +876,40 @@ async def _get_llm_model_config() -> dict:
         }
 
     # Cache miss - check database directly
-    print(f"⚠️ RECIPE_CONFIG: Cache miss, checking database directly", flush=True)
-    
+    print("⚠️ RECIPE_CONFIG: Cache miss, checking database directly", flush=True)
+
     try:
         # Don't need to get_db again, we already have it
-        db_config = await db.fetch_one(
-            "SELECT * FROM app_model_configs WHERE app_id = $1", app_id
-        )
-        
+        db_config = await db.fetch_one("SELECT * FROM app_model_configs WHERE app_id = $1", app_id)
+
         if db_config:
-            print(f"📊 RECIPE_CONFIG: Found database config", flush=True)
+            print("📊 RECIPE_CONFIG: Found database config", flush=True)
             print(f"📊 RECIPE_CONFIG: DB Provider: {db_config['primary_provider']}", flush=True)
             print(f"📊 RECIPE_CONFIG: DB Model: {db_config['primary_model_id']}", flush=True)
-            
+
             # Parse and cache the database config
             from shared.json_utils import parse_model_config_field
-            
+
             parsed_config = {
                 "primary_provider": db_config["primary_provider"],
                 "primary_model_id": db_config["primary_model_id"],
-                "primary_parameters": parse_model_config_field(dict(db_config), "primary_parameters") or {"temperature": 0.7, "max_tokens": 1000, "top_p": 0.9},
+                "primary_parameters": parse_model_config_field(
+                    dict(db_config), "primary_parameters"
+                )
+                or {"temperature": 0.7, "max_tokens": 1000, "top_p": 0.9},
             }
-            
+
             # Cache the database config
             await cache.set_model_config(app_id, parsed_config)
             print(f"✅ RECIPE_CONFIG: Cached database config: {parsed_config}", flush=True)
-            
+
             return parsed_config
-            
+
     except Exception as e:
         print(f"❌ RECIPE_CONFIG: Database error: {e}", flush=True)
 
     # Fallback to default config
-    print(f"🔄 RECIPE_CONFIG: Using default config (no cache, no database)", flush=True)
+    print("🔄 RECIPE_CONFIG: Using default config (no cache, no database)", flush=True)
     default_config = {
         "primary_provider": "anthropic",
         "primary_model_id": "claude-3-5-sonnet-20241022",

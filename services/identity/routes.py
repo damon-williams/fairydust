@@ -1,8 +1,6 @@
-import json
 import secrets
 import string
 from datetime import datetime
-from typing import Optional
 from uuid import uuid4
 
 from auth import AuthService, TokenData, get_current_user
@@ -337,9 +335,9 @@ async def get_current_user_profile(
 ):
     """Get current user profile"""
     print(f"👤 USER_PROFILE: Getting profile for user {current_user.user_id}", flush=True)
-    
+
     user = await db.fetch_one(
-        """SELECT id, fairyname, email, phone, is_admin, 
+        """SELECT id, fairyname, email, phone, is_admin,
                   first_name, birth_date, is_onboarding_completed, dust_balance, auth_provider,
                   streak_days, last_login_date,
                   created_at, updated_at
@@ -352,21 +350,40 @@ async def get_current_user_profile(
         raise HTTPException(status_code=404, detail="User not found")
 
     # Log the raw database values for debugging
-    print(f"🔍 USER_PROFILE: Raw DB values - is_onboarding_completed: {user.get('is_onboarding_completed')} (type: {type(user.get('is_onboarding_completed'))})", flush=True)
-    print(f"🔍 USER_PROFILE: Raw DB values - is_admin: {user.get('is_admin')} (type: {type(user.get('is_admin'))})", flush=True)
-    
+    print(
+        f"🔍 USER_PROFILE: Raw DB values - is_onboarding_completed: {user.get('is_onboarding_completed')} (type: {type(user.get('is_onboarding_completed'))})",
+        flush=True,
+    )
+    print(
+        f"🔍 USER_PROFILE: Raw DB values - is_admin: {user.get('is_admin')} (type: {type(user.get('is_admin'))})",
+        flush=True,
+    )
+
     user_model = User(**user)
-    
+
     # Log the Pydantic model values for comparison
-    print(f"📝 USER_PROFILE: Pydantic model - is_onboarding_completed: {user_model.is_onboarding_completed} (type: {type(user_model.is_onboarding_completed)})", flush=True)
-    print(f"📝 USER_PROFILE: Pydantic model - is_admin: {user_model.is_admin} (type: {type(user_model.is_admin)})", flush=True)
-    
+    print(
+        f"📝 USER_PROFILE: Pydantic model - is_onboarding_completed: {user_model.is_onboarding_completed} (type: {type(user_model.is_onboarding_completed)})",
+        flush=True,
+    )
+    print(
+        f"📝 USER_PROFILE: Pydantic model - is_admin: {user_model.is_admin} (type: {type(user_model.is_admin)})",
+        flush=True,
+    )
+
     # Log the JSON that will be returned to help debug frontend issues
     import json
+
     user_dict = user_model.model_dump()
-    print(f"🌐 USER_PROFILE: JSON response snippet - is_onboarding_completed: {user_dict.get('is_onboarding_completed')}", flush=True)
-    print(f"🌐 USER_PROFILE: Full JSON response: {json.dumps(user_dict, default=str, indent=2)}", flush=True)
-    
+    print(
+        f"🌐 USER_PROFILE: JSON response snippet - is_onboarding_completed: {user_dict.get('is_onboarding_completed')}",
+        flush=True,
+    )
+    print(
+        f"🌐 USER_PROFILE: Full JSON response: {json.dumps(user_dict, default=str, indent=2)}",
+        flush=True,
+    )
+
     return user_model
 
 
@@ -422,7 +439,10 @@ async def update_user_profile(
         param_count += 1
 
     if update_data.is_onboarding_completed is not None:
-        print(f"🔄 USER_UPDATE: Updating is_onboarding_completed to {update_data.is_onboarding_completed} for user {current_user.user_id}", flush=True)
+        print(
+            f"🔄 USER_UPDATE: Updating is_onboarding_completed to {update_data.is_onboarding_completed} for user {current_user.user_id}",
+            flush=True,
+        )
         updates.append(f"is_onboarding_completed = ${param_count}")
         values.append(update_data.is_onboarding_completed)
         param_count += 1
@@ -443,10 +463,13 @@ async def update_user_profile(
     user = await db.fetch_one(query, *values)
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
-    
+
     # Log the result after update
-    print(f"✅ USER_UPDATE: Updated user {current_user.user_id} - is_onboarding_completed: {user.get('is_onboarding_completed')}", flush=True)
-    
+    print(
+        f"✅ USER_UPDATE: Updated user {current_user.user_id} - is_onboarding_completed: {user.get('is_onboarding_completed')}",
+        flush=True,
+    )
+
     return User(**user)
 
 
@@ -456,13 +479,16 @@ async def test_onboard_route():
     """Test route to verify routing is working"""
     return {"message": "onboard route accessible", "timestamp": "2025-06-29"}
 
+
 @user_router.get("/me/onboard", response_model=OnboardTracking)
 async def get_user_onboard_tracking(
     current_user: TokenData = Depends(get_current_user), db: Database = Depends(get_db)
 ):
     """Get current user's onboard tracking state"""
-    print(f"🔄 ONBOARD_TRACKING: Getting onboard tracking for user {current_user.user_id}", flush=True)
-    
+    print(
+        f"🔄 ONBOARD_TRACKING: Getting onboard tracking for user {current_user.user_id}", flush=True
+    )
+
     tracking = await db.fetch_one(
         "SELECT * FROM user_onboard_tracking WHERE user_id = $1",
         current_user.user_id,
@@ -470,24 +496,29 @@ async def get_user_onboard_tracking(
 
     if not tracking:
         # Create default tracking record if it doesn't exist
-        print(f"📝 ONBOARD_TRACKING: Creating new tracking record for user {current_user.user_id}", flush=True)
+        print(
+            f"📝 ONBOARD_TRACKING: Creating new tracking record for user {current_user.user_id}",
+            flush=True,
+        )
         try:
             tracking = await db.fetch_one(
                 """
-                INSERT INTO user_onboard_tracking (user_id) 
-                VALUES ($1) 
+                INSERT INTO user_onboard_tracking (user_id)
+                VALUES ($1)
                 RETURNING *
                 """,
                 current_user.user_id,
             )
-            print(f"✅ ONBOARD_TRACKING: Created tracking record successfully", flush=True)
+            print("✅ ONBOARD_TRACKING: Created tracking record successfully", flush=True)
         except Exception as e:
             print(f"❌ ONBOARD_TRACKING: Error creating tracking record: {str(e)}", flush=True)
             raise HTTPException(status_code=500, detail="Failed to create onboard tracking record")
     else:
-        print(f"✅ ONBOARD_TRACKING: Found existing tracking record", flush=True)
+        print("✅ ONBOARD_TRACKING: Found existing tracking record", flush=True)
 
-    print(f"📤 ONBOARD_TRACKING: Returning tracking data for user {current_user.user_id}", flush=True)
+    print(
+        f"📤 ONBOARD_TRACKING: Returning tracking data for user {current_user.user_id}", flush=True
+    )
     return OnboardTracking(**tracking)
 
 
@@ -541,9 +572,9 @@ async def update_user_onboard_tracking(
 
     # Use UPSERT (INSERT ... ON CONFLICT) to handle case where record doesn't exist yet
     upsert_query = f"""
-        INSERT INTO user_onboard_tracking (user_id) 
-        VALUES (${param_count}) 
-        ON CONFLICT (user_id) 
+        INSERT INTO user_onboard_tracking (user_id)
+        VALUES (${param_count})
+        ON CONFLICT (user_id)
         DO UPDATE SET {', '.join(updates)}, updated_at = CURRENT_TIMESTAMP
         RETURNING *
     """
@@ -551,7 +582,7 @@ async def update_user_onboard_tracking(
     tracking = await db.fetch_one(upsert_query, *values)
     if not tracking:
         raise HTTPException(status_code=500, detail="Failed to update onboard tracking")
-    
+
     return OnboardTracking(**tracking)
 
 

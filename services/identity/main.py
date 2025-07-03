@@ -19,7 +19,10 @@ from shared.redis_client import close_redis, init_redis
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # Startup
-    print("🚀 IDENTITY SERVICE: Starting with debugging logs for is_onboarding_completed (v2.1.12)", flush=True)
+    print(
+        "🚀 IDENTITY SERVICE: Starting with debugging logs for is_onboarding_completed (v2.1.12)",
+        flush=True,
+    )
     await init_db()
     await init_redis()
     print("✅ IDENTITY SERVICE: Startup complete - ready to serve requests", flush=True)

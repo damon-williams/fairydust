@@ -17,27 +17,29 @@ except ImportError:
 def clear_action_pricing():
     """Delete all rows from the action_pricing table."""
     # Get database URL from environment or use default
-    database_url = os.getenv('DATABASE_URL')
-    
+    database_url = os.getenv("DATABASE_URL")
+
     if not database_url:
         print("DATABASE_URL environment variable not set")
         print("Please set it or pass it as an argument")
-        print("Example: DATABASE_URL=postgresql://user:pass@host:port/dbname python clear_action_pricing_simple.py")
+        print(
+            "Example: DATABASE_URL=postgresql://user:pass@host:port/dbname python clear_action_pricing_simple.py"
+        )
         sys.exit(1)
-    
+
     conn = None
     cursor = None
-    
+
     try:
         # Connect to database
         conn = psycopg2.connect(database_url)
         cursor = conn.cursor()
-        
+
         # Count existing records first
         cursor.execute("SELECT COUNT(*) FROM action_pricing")
         count = cursor.fetchone()[0]
         print(f"Found {count} existing action pricing records")
-        
+
         if count > 0:
             # Delete all records
             cursor.execute("DELETE FROM action_pricing")
@@ -45,12 +47,12 @@ def clear_action_pricing():
             print(f"Successfully deleted all {count} records from action_pricing table")
         else:
             print("action_pricing table is already empty")
-        
+
         # Verify the table is empty
         cursor.execute("SELECT COUNT(*) FROM action_pricing")
         final_count = cursor.fetchone()[0]
         print(f"Verification: action_pricing table now contains {final_count} records")
-        
+
     except Exception as e:
         print(f"Error clearing action_pricing table: {e}")
         if conn:

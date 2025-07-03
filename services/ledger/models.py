@@ -37,18 +37,18 @@ class ConsumeRequest(BaseModel):
         # Accept either UUID format or slug format
         import re
         from uuid import UUID
-        
+
         # Try to parse as UUID first
         try:
             UUID(v)
             return v  # Valid UUID
         except ValueError:
             pass
-        
+
         # Check if it's a valid slug format (alphanumeric with hyphens)
         if re.match(r"^[a-zA-Z0-9][a-zA-Z0-9\-]*[a-zA-Z0-9]$", v) and len(v) <= 255:
             return v  # Valid slug
-        
+
         raise ValueError("app_id must be a valid UUID or slug (e.g., 'fairydust-fortune-teller')")
 
     @validator("idempotency_key")
@@ -80,16 +80,16 @@ class AppInitialGrantRequest(BaseModel):
         # Accept either UUID format or slug format
         import re
         from uuid import UUID
-        
+
         try:
             UUID(v)
             return v  # Valid UUID
         except ValueError:
             pass
-        
+
         if re.match(r"^[a-zA-Z0-9][a-zA-Z0-9\-]*[a-zA-Z0-9]$", v) and len(v) <= 255:
             return v  # Valid slug
-        
+
         raise ValueError("app_id must be a valid UUID or slug")
 
     @validator("idempotency_key")
@@ -113,16 +113,16 @@ class AppStreakGrantRequest(BaseModel):
         # Accept either UUID format or slug format
         import re
         from uuid import UUID
-        
+
         try:
             UUID(v)
             return v  # Valid UUID
         except ValueError:
             pass
-        
+
         if re.match(r"^[a-zA-Z0-9][a-zA-Z0-9\-]*[a-zA-Z0-9]$", v) and len(v) <= 255:
             return v  # Valid slug
-        
+
         raise ValueError("app_id must be a valid UUID or slug")
 
     @validator("idempotency_key")

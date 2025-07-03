@@ -1,14 +1,14 @@
 # services/content/restaurant_routes.py
+# Service URL configuration based on environment
+import os
 import random
 from datetime import datetime, timedelta
 from uuid import UUID, uuid4
 
 import httpx
 
-# Service URL configuration based on environment
-import os
-environment = os.getenv('ENVIRONMENT', 'staging')
-base_url_suffix = 'production' if environment == 'production' else 'staging'
+environment = os.getenv("ENVIRONMENT", "staging")
+base_url_suffix = "production" if environment == "production" else "staging"
 ledger_url = f"https://fairydust-ledger-{base_url_suffix}.up.railway.app"
 identity_url = f"https://fairydust-identity-{base_url_suffix}.up.railway.app"
 from fastapi import APIRouter, Depends, HTTPException

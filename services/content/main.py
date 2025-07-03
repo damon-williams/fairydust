@@ -2,7 +2,6 @@
 import logging
 import os
 import sys
-import time
 
 # Force unbuffered output for Railway
 os.environ["PYTHONUNBUFFERED"] = "1"
@@ -19,21 +18,21 @@ logger = logging.getLogger(__name__)
 
 from contextlib import asynccontextmanager
 
+from activity_routes import router as activity_router
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from fortune_routes import router as fortune_router
+from inspire_routes import router as inspire_router
+from recipe_routes import router as recipe_router
+from restaurant_routes import router as restaurant_router
+from routes import content_router
+from story_routes import router as story_router
 
 # Import modules with minimal logging
 from shared.database import close_db, init_db
 from shared.redis_client import close_redis, init_redis
-from routes import content_router
-from story_routes import router as story_router
-from restaurant_routes import router as restaurant_router
-from activity_routes import router as activity_router
-from inspire_routes import router as inspire_router
-from recipe_routes import router as recipe_router
-from fortune_routes import router as fortune_router
 
 
 @asynccontextmanager

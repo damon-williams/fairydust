@@ -196,8 +196,10 @@ async def get_current_user(
     """Dependency to get current user from JWT token"""
     from shared.redis_client import get_redis
 
-    print(f"🔐 AUTH: get_current_user called with credentials present: {bool(credentials)}", flush=True)
-    
+    print(
+        f"🔐 AUTH: get_current_user called with credentials present: {bool(credentials)}", flush=True
+    )
+
     redis_client = await get_redis()
     auth_service = AuthService(redis_client)
     token_data = await auth_service.decode_token(credentials.credentials)

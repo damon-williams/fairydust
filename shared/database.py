@@ -218,7 +218,7 @@ async def create_tables():
         ALTER TABLE users ADD COLUMN IF NOT EXISTS streak_days INTEGER DEFAULT 0;
         ALTER TABLE users ADD COLUMN IF NOT EXISTS last_login_date TIMESTAMP WITH TIME ZONE;
         ALTER TABLE users ADD COLUMN IF NOT EXISTS is_onboarding_completed BOOLEAN DEFAULT FALSE;
-        
+
         -- Drop old age_range column (replaced with birth_date)
         ALTER TABLE users DROP COLUMN IF EXISTS age_range;
     """
@@ -350,10 +350,10 @@ async def create_tables():
         );
 
         CREATE INDEX IF NOT EXISTS idx_people_in_my_life_user_id ON people_in_my_life(user_id);
-        
+
         -- Add birth_date column to existing people_in_my_life table
         ALTER TABLE people_in_my_life ADD COLUMN IF NOT EXISTS birth_date DATE;
-        
+
         -- Drop old age_range column from people_in_my_life (replaced with birth_date)
         ALTER TABLE people_in_my_life DROP COLUMN IF EXISTS age_range;
     """
@@ -665,12 +665,12 @@ async def create_tables():
         # Check if genre column exists before trying to drop it
         genre_exists = await db.fetch_one(
             """
-            SELECT column_name 
-            FROM information_schema.columns 
+            SELECT column_name
+            FROM information_schema.columns
             WHERE table_name = 'user_stories' AND column_name = 'genre'
             """
         )
-        
+
         if genre_exists:
             await db.execute_schema(
                 """
@@ -689,12 +689,12 @@ async def create_tables():
         # Check if dust_cost column exists before trying to drop it
         dust_cost_exists = await db.fetch_one(
             """
-            SELECT column_name 
-            FROM information_schema.columns 
+            SELECT column_name
+            FROM information_schema.columns
             WHERE table_name = 'user_stories' AND column_name = 'dust_cost'
             """
         )
-        
+
         if dust_cost_exists:
             await db.execute_schema(
                 """
@@ -717,7 +717,7 @@ async def create_tables():
         logger.info("Made target_person_id nullable in fortune_readings table")
     except Exception as e:
         logger.warning(f"Fortune readings target_person_id migration failed: {e}")
-    
+
     # Drop old columns that are no longer needed
     try:
         # Drop age_range from users table if it exists
@@ -730,7 +730,7 @@ async def create_tables():
         logger.info("Dropped age_range and fortune_profile columns from users table")
     except Exception as e:
         logger.warning(f"Failed to drop old columns from users table: {e}")
-    
+
     try:
         # Drop age_range from people_in_my_life table if it exists
         await db.execute_schema(
