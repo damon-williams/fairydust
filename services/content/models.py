@@ -88,7 +88,7 @@ class TargetAudience(str, Enum):
 class StoryCharacter(BaseModel):
     name: str = Field(..., min_length=1, max_length=100)
     relationship: str = Field(..., min_length=1, max_length=100)
-    age_range: Optional[str] = Field(None, pattern="^(child|teen|adult|senior)$")
+    birth_date: Optional[str] = Field(None, pattern=r"^\d{4}-\d{2}-\d{2}$")
     traits: list[str] = Field(default_factory=list, max_items=10)
 
 

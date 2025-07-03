@@ -10,8 +10,6 @@ from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Security
 from fastapi.security import HTTPBearer
 from models import (
     AuthResponse,
-    FortuneProfileRequest,
-    FortuneProfileResponse,
     OAuthCallback,
     OnboardTracking,
     OnboardTrackingUpdate,
@@ -36,27 +34,6 @@ security = HTTPBearer()
 
 # Constants
 FAIRYNAME_LENGTH = 12
-
-# Zodiac data for fortune profiles
-ZODIAC_SIGNS = {
-    1: [("Capricorn", "Earth", "Saturn"), ("Aquarius", "Air", "Uranus")],
-    2: [("Aquarius", "Air", "Uranus"), ("Pisces", "Water", "Neptune")],
-    3: [("Pisces", "Water", "Neptune"), ("Aries", "Fire", "Mars")],
-    4: [("Aries", "Fire", "Mars"), ("Taurus", "Earth", "Venus")],
-    5: [("Taurus", "Earth", "Venus"), ("Gemini", "Air", "Mercury")],
-    6: [("Gemini", "Air", "Mercury"), ("Cancer", "Water", "Moon")],
-    7: [("Cancer", "Water", "Moon"), ("Leo", "Fire", "Sun")],
-    8: [("Leo", "Fire", "Sun"), ("Virgo", "Earth", "Mercury")],
-    9: [("Virgo", "Earth", "Mercury"), ("Libra", "Air", "Venus")],
-    10: [("Libra", "Air", "Venus"), ("Scorpio", "Water", "Mars")],
-    11: [("Scorpio", "Water", "Mars"), ("Sagittarius", "Fire", "Jupiter")],
-    12: [("Sagittarius", "Fire", "Jupiter"), ("Capricorn", "Earth", "Saturn")]
-}
-
-ZODIAC_CUTOFFS = {
-    1: 20, 2: 19, 3: 20, 4: 20, 5: 21, 6: 21,
-    7: 22, 8: 23, 9: 23, 10: 23, 11: 22, 12: 21
-}
 
 # Create routers
 auth_router = APIRouter()
@@ -127,7 +104,7 @@ async def verify_otp(
     identifier_type = "email" if "@" in otp_verify.identifier else "phone"
     user = await db.fetch_one(
         f"""SELECT id, fairyname, email, phone, is_admin,
-                  first_name, age_range, is_onboarding_completed, dust_balance, auth_provider,
+                  first_name, birth_date, is_onboarding_completed, dust_balance, auth_provider,
                   streak_days, last_login_date,
                   created_at, updated_at
            FROM users WHERE {identifier_type} = $1""",
@@ -363,8 +340,8 @@ async def get_current_user_profile(
     
     user = await db.fetch_one(
         """SELECT id, fairyname, email, phone, is_admin, 
-                  first_name, age_range, is_onboarding_completed, dust_balance, auth_provider,
-                  streak_days, last_login_date, fortune_profile,
+                  first_name, birth_date, is_onboarding_completed, dust_balance, auth_provider,
+                  streak_days, last_login_date,
                   created_at, updated_at
            FROM users WHERE id = $1""",
         current_user.user_id,
@@ -374,22 +351,11 @@ async def get_current_user_profile(
         print(f"❌ USER_PROFILE: User {current_user.user_id} not found in database", flush=True)
         raise HTTPException(status_code=404, detail="User not found")
 
-    # Parse JSONB fortune_profile field
-    import json as json_module  # Explicit import to avoid any shadowing issues
-    user_dict = dict(user)
-    if user_dict.get("fortune_profile"):
-        try:
-            user_dict["fortune_profile"] = json_module.loads(user_dict["fortune_profile"])
-        except (json_module.JSONDecodeError, TypeError):
-            user_dict["fortune_profile"] = {}
-    else:
-        user_dict["fortune_profile"] = {}
-
     # Log the raw database values for debugging
     print(f"🔍 USER_PROFILE: Raw DB values - is_onboarding_completed: {user.get('is_onboarding_completed')} (type: {type(user.get('is_onboarding_completed'))})", flush=True)
     print(f"🔍 USER_PROFILE: Raw DB values - is_admin: {user.get('is_admin')} (type: {type(user.get('is_admin'))})", flush=True)
     
-    user_model = User(**user_dict)
+    user_model = User(**user)
     
     # Log the Pydantic model values for comparison
     print(f"📝 USER_PROFILE: Pydantic model - is_onboarding_completed: {user_model.is_onboarding_completed} (type: {type(user_model.is_onboarding_completed)})", flush=True)
@@ -445,9 +411,9 @@ async def update_user_profile(
         values.append(update_data.first_name)
         param_count += 1
 
-    if update_data.age_range is not None:
-        updates.append(f"age_range = ${param_count}")
-        values.append(update_data.age_range)
+    if update_data.birth_date is not None:
+        updates.append(f"birth_date = ${param_count}")
+        values.append(update_data.birth_date)
         param_count += 1
 
     if update_data.is_onboarding_completed is not None:
@@ -603,13 +569,13 @@ async def add_person_to_life(
 
     new_person = await db.fetch_one(
         """
-        INSERT INTO people_in_my_life (user_id, name, age_range, relationship)
+        INSERT INTO people_in_my_life (user_id, name, birth_date, relationship)
         VALUES ($1, $2, $3, $4)
         RETURNING *
         """,
         user_id,
         person.name,
-        person.age_range,
+        person.birth_date,
         person.relationship,
     )
 
@@ -663,9 +629,9 @@ async def update_person_in_my_life(
         values.append(person_update.name)
         param_count += 1
 
-    if person_update.age_range is not None:
-        updates.append(f"age_range = ${param_count}")
-        values.append(person_update.age_range)
+    if person_update.birth_date is not None:
+        updates.append(f"birth_date = ${param_count}")
+        values.append(person_update.birth_date)
         param_count += 1
 
     if person_update.relationship is not None:
@@ -714,115 +680,6 @@ async def remove_person_from_life(
 
 
 # Person profile data endpoints removed - no longer needed
-
-
-# Fortune Profile Helper Functions
-def _calculate_zodiac(birth_date: str) -> tuple[str, str, str]:
-    """Calculate zodiac sign, element, and ruling planet from birth date"""
-    try:
-        birth_date_obj = datetime.strptime(birth_date, "%Y-%m-%d").date()
-        month = birth_date_obj.month
-        day = birth_date_obj.day
-        
-        # Get zodiac sign based on month and day
-        if day <= ZODIAC_CUTOFFS[month]:
-            # First sign of the month
-            sign, element, planet = ZODIAC_SIGNS[month][0]
-        else:
-            # Second sign of the month
-            sign, element, planet = ZODIAC_SIGNS[month][1]
-            
-        return sign, element, planet
-    except Exception as e:
-        print(f"❌ FORTUNE_ZODIAC: Error calculating zodiac: {str(e)}", flush=True)
-        return "Unknown", "Unknown", "Unknown"
-
-
-def _calculate_life_path_number(birth_date: str) -> int:
-    """Calculate life path number from birth date using numerology"""
-    try:
-        # Remove dashes and sum all digits
-        numbers = [int(d) for d in birth_date.replace("-", "")]
-        total = sum(numbers)
-        
-        # Reduce to single digit (except master numbers 11, 22, 33)
-        while total > 9 and total not in [11, 22, 33]:
-            total = sum(int(d) for d in str(total))
-            
-        return total
-    except Exception as e:
-        print(f"❌ FORTUNE_NUMEROLOGY: Error calculating life path: {str(e)}", flush=True)
-        return 1
-
-
-# Fortune Profile Endpoint
-@user_router.patch("/me/fortune-profile", response_model=FortuneProfileResponse)
-async def update_user_fortune_profile(
-    request: FortuneProfileRequest,
-    current_user: TokenData = Depends(get_current_user),
-    db: Database = Depends(get_db),
-):
-    """
-    Update current user's fortune/astrology profile data.
-    """
-    print(f"🔮 FORTUNE_PROFILE: Updating profile for user {current_user.user_id}", flush=True)
-
-    try:
-        import json as json_module  # Explicit import to avoid any shadowing issues
-        
-        # Calculate astrological data
-        zodiac_sign, zodiac_element, ruling_planet = _calculate_zodiac(request.birth_date)
-        life_path_number = _calculate_life_path_number(request.birth_date)
-
-        # Build fortune profile data
-        fortune_profile = {
-            "birth_date": request.birth_date,
-            "birth_time": request.birth_time,
-            "birth_location": request.birth_location,
-            "gender": request.gender,
-            "zodiac_sign": zodiac_sign,
-            "zodiac_element": zodiac_element,
-            "ruling_planet": ruling_planet,
-            "life_path_number": life_path_number,
-        }
-
-        # Update user's fortune profile
-        await db.execute(
-            """
-            UPDATE users 
-            SET fortune_profile = $1::jsonb, updated_at = CURRENT_TIMESTAMP
-            WHERE id = $2
-            """,
-            json_module.dumps(fortune_profile),
-            current_user.user_id,
-        )
-
-        # Fetch updated user data
-        user_result = await db.fetch_one(
-            """
-            SELECT id, fairyname, email, phone, is_admin, first_name, age_range,
-                   is_onboarding_completed, streak_days, last_login_date, auth_provider,
-                   created_at, updated_at, dust_balance, fortune_profile
-            FROM users WHERE id = $1
-            """,
-            current_user.user_id,
-        )
-
-        if not user_result:
-            raise HTTPException(status_code=404, detail="User not found")
-
-        # Format response
-        user_data = {
-            "id": str(user_result["id"]),
-            "fortune_profile": json_module.loads(user_result["fortune_profile"]) if user_result["fortune_profile"] else None,
-        }
-
-        print(f"✅ FORTUNE_PROFILE: Updated profile successfully", flush=True)
-        return FortuneProfileResponse(success=True, user=user_data)
-
-    except Exception as e:
-        print(f"❌ FORTUNE_PROFILE: Error updating profile: {str(e)}", flush=True)
-        raise HTTPException(status_code=500, detail="Failed to update fortune profile")
 
 
 # Local data migration endpoint removed - no longer needed

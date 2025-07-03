@@ -191,7 +191,7 @@ async def create_tables():
             dust_balance INTEGER DEFAULT 0,
             auth_provider VARCHAR(50) NOT NULL,
             first_name VARCHAR(100),
-            age_range VARCHAR(20),
+            birth_date DATE,
             city VARCHAR(100),
             country VARCHAR(100) DEFAULT 'US',
             created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
@@ -210,7 +210,7 @@ async def create_tables():
     await db.execute_schema(
         """
         ALTER TABLE users ADD COLUMN IF NOT EXISTS first_name VARCHAR(100);
-        ALTER TABLE users ADD COLUMN IF NOT EXISTS age_range VARCHAR(20);
+        ALTER TABLE users ADD COLUMN IF NOT EXISTS birth_date DATE;
         ALTER TABLE users ADD COLUMN IF NOT EXISTS city VARCHAR(100);
         ALTER TABLE users ADD COLUMN IF NOT EXISTS country VARCHAR(100) DEFAULT 'US';
         ALTER TABLE users ADD COLUMN IF NOT EXISTS last_profiling_session TIMESTAMP;
@@ -218,7 +218,9 @@ async def create_tables():
         ALTER TABLE users ADD COLUMN IF NOT EXISTS streak_days INTEGER DEFAULT 0;
         ALTER TABLE users ADD COLUMN IF NOT EXISTS last_login_date TIMESTAMP WITH TIME ZONE;
         ALTER TABLE users ADD COLUMN IF NOT EXISTS is_onboarding_completed BOOLEAN DEFAULT FALSE;
-        ALTER TABLE users ADD COLUMN IF NOT EXISTS fortune_profile JSONB DEFAULT '{}';
+        
+        -- Drop old age_range column (replaced with birth_date)
+        ALTER TABLE users DROP COLUMN IF EXISTS age_range;
     """
     )
 
@@ -341,13 +343,16 @@ async def create_tables():
             id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
             user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
             name VARCHAR(100) NOT NULL,
-            age_range VARCHAR(50),
+            birth_date DATE,
             relationship VARCHAR(100),
             created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
             updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
         );
 
         CREATE INDEX IF NOT EXISTS idx_people_in_my_life_user_id ON people_in_my_life(user_id);
+        
+        -- Drop old age_range column from people_in_my_life (replaced with birth_date)
+        ALTER TABLE people_in_my_life DROP COLUMN IF EXISTS age_range;
     """
     )
 
@@ -709,6 +714,30 @@ async def create_tables():
         logger.info("Made target_person_id nullable in fortune_readings table")
     except Exception as e:
         logger.warning(f"Fortune readings target_person_id migration failed: {e}")
+    
+    # Drop old columns that are no longer needed
+    try:
+        # Drop age_range from users table if it exists
+        await db.execute_schema(
+            """
+            ALTER TABLE users DROP COLUMN IF EXISTS age_range;
+            ALTER TABLE users DROP COLUMN IF EXISTS fortune_profile;
+            """
+        )
+        logger.info("Dropped age_range and fortune_profile columns from users table")
+    except Exception as e:
+        logger.warning(f"Failed to drop old columns from users table: {e}")
+    
+    try:
+        # Drop age_range from people_in_my_life table if it exists
+        await db.execute_schema(
+            """
+            ALTER TABLE people_in_my_life DROP COLUMN IF EXISTS age_range;
+            """
+        )
+        logger.info("Dropped age_range column from people_in_my_life table")
+    except Exception as e:
+        logger.warning(f"Failed to drop age_range from people_in_my_life table: {e}")
 
     # Story generation logs table for analytics and debugging
     await db.execute_schema(

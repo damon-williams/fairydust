@@ -819,7 +819,7 @@ async def update_person_fortune_profile(
 
         # Get updated person data
         person_query = """
-            SELECT piml.id, piml.name, piml.relationship, piml.age_range,
+            SELECT piml.id, piml.name, piml.relationship, piml.birth_date,
                    ppd.field_value as fortune_profile
             FROM people_in_my_life piml
             LEFT JOIN person_profile_data ppd ON piml.id = ppd.person_id
@@ -837,7 +837,7 @@ async def update_person_fortune_profile(
             "id": str(person_result["id"]),
             "name": person_result["name"],
             "relationship": person_result["relationship"],
-            "age_range": person_result["age_range"],
+            "birth_date": str(person_result["birth_date"]) if person_result["birth_date"] else None,
             "fortune_profile": json.loads(person_result["fortune_profile"]) if person_result["fortune_profile"] else None,
         }
 

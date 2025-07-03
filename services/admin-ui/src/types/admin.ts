@@ -5,7 +5,7 @@ export interface User {
   phone?: string;
   is_admin: boolean;
   first_name?: string;
-  age_range?: string;
+  birth_date?: string;
   dust_balance: number;
   auth_provider: string;
   streak_days: number;

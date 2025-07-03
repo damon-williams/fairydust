@@ -63,7 +63,7 @@ class UserUpdate(BaseModel):
     email: Optional[EmailStr] = None
     phone: Optional[str] = None
     first_name: Optional[str] = Field(None, max_length=100)
-    age_range: Optional[str] = Field(None, max_length=20)
+    birth_date: Optional[str] = Field(None, pattern=r"^\d{4}-\d{2}-\d{2}$")
     is_onboarding_completed: Optional[bool] = None
 
 
@@ -74,7 +74,7 @@ class User(BaseModel):
     phone: Optional[str] = None
     is_admin: bool = False
     first_name: Optional[str] = None
-    age_range: Optional[str] = None
+    birth_date: Optional[datetime] = None
     is_onboarding_completed: bool = False
     streak_days: int = 0
     last_login_date: Optional[datetime] = None
@@ -82,7 +82,6 @@ class User(BaseModel):
     created_at: datetime
     updated_at: datetime
     dust_balance: int = 0  # Denormalized for performance
-    fortune_profile: Optional[dict] = None  # Fortune/astrology profile data
 
     class Config:
         from_attributes = True
@@ -108,13 +107,13 @@ class TokenData(BaseModel):
 
 class PersonInMyLifeCreate(BaseModel):
     name: str = Field(..., max_length=100)
-    age_range: Optional[str] = Field(None, max_length=50)
+    birth_date: Optional[str] = Field(None, pattern=r"^\d{4}-\d{2}-\d{2}$")
     relationship: Optional[str] = Field(None, max_length=100)
 
 
 class PersonInMyLifeUpdate(BaseModel):
     name: Optional[str] = Field(None, max_length=100)
-    age_range: Optional[str] = Field(None, max_length=50)
+    birth_date: Optional[str] = Field(None, pattern=r"^\d{4}-\d{2}-\d{2}$")
     relationship: Optional[str] = Field(None, max_length=100)
 
 
@@ -122,7 +121,7 @@ class PersonInMyLife(BaseModel):
     id: UUID
     user_id: UUID
     name: str
-    age_range: Optional[str] = None
+    birth_date: Optional[datetime] = None
     relationship: Optional[str] = None
     created_at: datetime
     updated_at: datetime
@@ -158,19 +157,6 @@ class OnboardTrackingUpdate(BaseModel):
     has_seen_inspire_tip: Optional[bool] = None
     has_seen_inspire_result_tip: Optional[bool] = None
     has_seen_onboarding_complete_tip: Optional[bool] = None
-
-
-# Fortune Profile models
-class FortuneProfileRequest(BaseModel):
-    birth_date: str = Field(..., pattern=r"^\d{4}-\d{2}-\d{2}$")
-    birth_time: Optional[str] = Field(None, pattern=r"^\d{2}:\d{2}$")
-    birth_location: Optional[str] = Field(None, max_length=200)
-    gender: Optional[str] = Field(None, max_length=20)
-
-
-class FortuneProfileResponse(BaseModel):
-    success: bool = True
-    user: dict  # Will contain user data with fortune_profile
 
 
 # Response models

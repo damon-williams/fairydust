@@ -476,7 +476,6 @@ async def get_story_config():
                 "teacher",
                 "neighbor",
             ],
-            "age_ranges": ["child", "teen", "adult", "senior"],
             "common_traits": [
                 "brave",
                 "curious",
@@ -562,7 +561,7 @@ async def _get_user_context(db: Database, user_id: uuid.UUID) -> str:
 
         # Get people in my life
         people_query = """
-            SELECT name, relationship, age_range
+            SELECT name, relationship, birth_date
             FROM people_in_my_life
             WHERE user_id = $1
         """
@@ -589,8 +588,12 @@ async def _get_user_context(db: Database, user_id: uuid.UUID) -> str:
             people_list = []
             for row in people_rows:
                 person_desc = f"{row['name']} ({row['relationship']}"
-                if row["age_range"]:
-                    person_desc += f", {row['age_range']}"
+                if row["birth_date"]:
+                    # Calculate age from birth date
+                    from datetime import date
+                    birth = date.fromisoformat(str(row["birth_date"]))
+                    age = (date.today() - birth).days // 365
+                    person_desc += f", {age} years old"
                 person_desc += ")"
                 people_list.append(person_desc)
 
@@ -724,8 +727,12 @@ def _build_story_prompt(request: StoryGenerationRequest, user_context: str) -> s
     if request.characters:
         for char in request.characters:
             desc = f"- {char.name} ({char.relationship}"
-            if char.age_range:
-                desc += f", {char.age_range}"
+            if char.birth_date:
+                # Calculate age from birth date
+                from datetime import date
+                birth = date.fromisoformat(char.birth_date)
+                age = (date.today() - birth).days // 365
+                desc += f", {age} years old"
             desc += ")"
             if char.traits:
                 desc += f", traits: {', '.join(char.traits)}"
