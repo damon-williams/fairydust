@@ -36,7 +36,7 @@ FORTUNE_RATE_LIMIT = 15  # Max 15 readings per hour per user
 FREE_ASTROLOGY_API_KEY = os.getenv(
     "FREE_ASTROLOGY_API_KEY", "UEhzlTAEY72bFez65JR7w51hOiAWwb7l94M6yHyr"
 )
-FREE_ASTROLOGY_API_URL = "https://freeastrologyapi.com"  # Remove 'api.' prefix
+FREE_ASTROLOGY_API_URL = "https://json.freeastrologyapi.com"  # Correct URL from docs
 
 # Zodiac data
 ZODIAC_SIGNS = {
@@ -273,24 +273,30 @@ async def _get_planetary_positions(
         # Convert birth_date to required format
         birth_date_obj = datetime.strptime(birth_date, "%Y-%m-%d")
 
-        # Prepare API request data
+        # Prepare API request data (matching Free Astrology API format)
         api_data = {
             "year": birth_date_obj.year,
             "month": birth_date_obj.month,
             "date": birth_date_obj.day,
-            "hour": 12,  # Default to noon if no time provided
-            "min": 0,
-            "lat": 40.7128,  # Default to NYC coordinates
-            "lon": -74.0060,
-            "tzone": -5.0,  # EST timezone
+            "hours": 12,  # Default to noon if no time provided
+            "minutes": 0,
+            "seconds": 0,
+            "latitude": 40.7128,  # Default to NYC coordinates
+            "longitude": -74.0060,
+            "timezone": -5.0,  # EST timezone
+            "config": {
+                "observation_point": "topocentric",
+                "ayanamsha": "tropical",
+                "language": "en",
+            },
         }
 
         # Use birth_time if provided
         if birth_time:
             try:
                 time_parts = birth_time.split(":")
-                api_data["hour"] = int(time_parts[0])
-                api_data["min"] = int(time_parts[1])
+                api_data["hours"] = int(time_parts[0])
+                api_data["minutes"] = int(time_parts[1])
             except:
                 pass  # Use default time if parsing fails
 
@@ -298,8 +304,9 @@ async def _get_planetary_positions(
         # For now, using default coordinates
 
         async with httpx.AsyncClient() as client:
+            endpoint_url = f"{FREE_ASTROLOGY_API_URL}/western/planets"
             print(
-                f"🌟 ASTROLOGY_API: Making request to {FREE_ASTROLOGY_API_URL}/api/v1/western-horoscope/planets",
+                f"🌟 ASTROLOGY_API: Making request to {endpoint_url}",
                 flush=True,
             )
             print(f"🌟 ASTROLOGY_API: Request data: {api_data}", flush=True)
@@ -309,10 +316,10 @@ async def _get_planetary_positions(
             )
 
             response = await client.post(
-                f"{FREE_ASTROLOGY_API_URL}/api/v1/western-horoscope/planets",
+                endpoint_url,
                 headers={
                     "Content-Type": "application/json",
-                    "Authorization": f"Bearer {FREE_ASTROLOGY_API_KEY}",  # Added auth header
+                    "x-api-key": FREE_ASTROLOGY_API_KEY,  # Correct header format from docs
                 },
                 json=api_data,
                 timeout=10.0,
@@ -343,25 +350,29 @@ def _parse_planetary_data(api_response: dict) -> dict:
         planets = {}
         moon_phase = "Full Moon"
 
-        # Extract planetary positions from API response
-        if "planets" in api_response:
+        # Extract planetary positions from API response (new format)
+        if "output" in api_response and isinstance(api_response["output"], list):
+            planets_data = api_response["output"]
             print(
-                f"🔍 ASTROLOGY_PARSE: Found {len(api_response['planets'])} planets in response",
+                f"🔍 ASTROLOGY_PARSE: Found {len(planets_data)} celestial bodies in response",
                 flush=True,
             )
-            for i, planet_data in enumerate(api_response["planets"]):
-                planet_name = planet_data.get("name", "")
-                planet_sign = planet_data.get("current_sign", "")
-                is_retrograde = planet_data.get("isRetro", False)
+            for i, planet_data in enumerate(planets_data):
+                planet_name = planet_data.get("planet", {}).get("en", "")
+                planet_sign = planet_data.get("zodiac_sign", {}).get("name", {}).get("en", "")
+                is_retrograde = planet_data.get("isRetro", "False")
+
+                # Convert string "True"/"False" to boolean
+                is_retrograde_bool = is_retrograde == "True" or is_retrograde == "true"
 
                 print(
-                    f"🪐 ASTROLOGY_PARSE: Planet {i+1}: {planet_name} in {planet_sign} (retrograde: {is_retrograde})",
+                    f"🪐 ASTROLOGY_PARSE: Planet {i+1}: {planet_name} in {planet_sign} (retrograde: {is_retrograde_bool})",
                     flush=True,
                 )
 
                 planets[planet_name] = {
                     "sign": planet_sign,
-                    "retrograde": is_retrograde,
+                    "retrograde": is_retrograde_bool,
                     "position": planet_data.get("fullDegree", 0),
                 }
 
@@ -371,7 +382,10 @@ def _parse_planetary_data(api_response: dict) -> dict:
                     moon_phase = _calculate_moon_phase(moon_degree)
                     print(f"🌙 ASTROLOGY_PARSE: Moon at {moon_degree}° = {moon_phase}", flush=True)
         else:
-            print("⚠️ ASTROLOGY_PARSE: No 'planets' key in API response", flush=True)
+            print(
+                "⚠️ ASTROLOGY_PARSE: No 'output' key in API response or output is not a list",
+                flush=True,
+            )
 
         print(
             f"✅ ASTROLOGY_PARSE: Parsed {len(planets)} planets, moon phase: {moon_phase}",
