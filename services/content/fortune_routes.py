@@ -8,7 +8,6 @@ from typing import Optional
 import httpx
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from models import (
-    CosmicInfluences,
     FortuneDeleteResponse,
     FortuneErrorResponse,
     FortuneFavoriteRequest,
@@ -19,7 +18,6 @@ from models import (
     FortuneProfileRequest,
     FortuneProfileResponse,
     FortuneReading,
-    LuckyElements,
     ReadingType,
     TokenUsage,
 )
@@ -33,10 +31,6 @@ router = APIRouter()
 
 # Constants
 FORTUNE_RATE_LIMIT = 15  # Max 15 readings per hour per user
-FREE_ASTROLOGY_API_KEY = os.getenv(
-    "FREE_ASTROLOGY_API_KEY", "UEhzlTAEY72bFez65JR7w51hOiAWwb7l94M6yHyr"
-)
-FREE_ASTROLOGY_API_URL = "https://json.freeastrologyapi.com"  # Correct URL from docs
 
 # Zodiac data
 ZODIAC_SIGNS = {
@@ -115,17 +109,11 @@ async def generate_fortune_reading(
         zodiac_sign, zodiac_element, ruling_planet = _calculate_zodiac(request.birth_date)
         life_path_number = _calculate_life_path_number(request.birth_date)
 
-        # Get cosmic influences with real astrological data
-        cosmic_influences = await _get_cosmic_influences(
-            zodiac_sign,
-            life_path_number,
-            request.birth_date,
-            request.birth_time,
-            request.birth_location,
+        # Calculate basic astrological data for prompts
+        print(
+            f"🌟 FORTUNE: Zodiac: {zodiac_sign} ({zodiac_element}), Life Path: {life_path_number}",
+            flush=True,
         )
-
-        # Generate lucky elements
-        lucky_elements = _generate_lucky_elements(zodiac_sign, zodiac_element, life_path_number)
 
         # Generate fortune reading using LLM
         print("🤖 FORTUNE: Starting LLM generation", flush=True)
@@ -142,8 +130,6 @@ async def generate_fortune_reading(
             zodiac_element=zodiac_element,
             ruling_planet=ruling_planet,
             life_path_number=life_path_number,
-            cosmic_influences=cosmic_influences,
-            lucky_elements=lucky_elements,
         )
 
         if not reading_content:
@@ -163,8 +149,6 @@ async def generate_fortune_reading(
                 zodiac_element,
                 ruling_planet,
                 life_path_number,
-                cosmic_influences,
-                lucky_elements,
             )
             prompt_hash = calculate_prompt_hash(full_prompt)
 
@@ -218,8 +202,6 @@ async def generate_fortune_reading(
             reading_type=request.reading_type,
             question=request.question,
             content=reading_content,
-            cosmic_influences=cosmic_influences,
-            lucky_elements=lucky_elements,
             model_used=model_used,
             tokens_used=tokens_used,
             cost=cost,
@@ -234,8 +216,6 @@ async def generate_fortune_reading(
             reading_type=request.reading_type,
             question=request.question,
             target_person_name=request.name,
-            cosmic_influences=cosmic_influences,
-            lucky_elements=lucky_elements,
             created_at=datetime.utcnow(),
             is_favorited=False,
         )
@@ -259,190 +239,6 @@ async def generate_fortune_reading(
 
 
 # Helper functions
-
-
-async def _get_planetary_positions(
-    birth_date: str, birth_time: str = None, birth_location: str = None
-) -> dict:
-    """Get planetary positions from Free Astrology API"""
-    try:
-        # TODO: For dynamic moon phases, we should use current date instead of birth date
-        # For now, using birth date for planetary positions at birth
-        # Consider adding a separate call for current planetary positions
-
-        # Convert birth_date to required format
-        birth_date_obj = datetime.strptime(birth_date, "%Y-%m-%d")
-
-        # Prepare API request data (matching Free Astrology API format)
-        api_data = {
-            "year": birth_date_obj.year,
-            "month": birth_date_obj.month,
-            "date": birth_date_obj.day,
-            "hours": 12,  # Default to noon if no time provided
-            "minutes": 0,
-            "seconds": 0,
-            "latitude": 40.7128,  # Default to NYC coordinates
-            "longitude": -74.0060,
-            "timezone": -5.0,  # EST timezone
-            "config": {
-                "observation_point": "topocentric",
-                "ayanamsha": "tropical",
-                "language": "en",
-            },
-        }
-
-        # Use birth_time if provided
-        if birth_time:
-            try:
-                time_parts = birth_time.split(":")
-                api_data["hours"] = int(time_parts[0])
-                api_data["minutes"] = int(time_parts[1])
-            except:
-                pass  # Use default time if parsing fails
-
-        # Note: birth_location would require geocoding to get lat/lon
-        # For now, using default coordinates
-
-        async with httpx.AsyncClient() as client:
-            endpoint_url = f"{FREE_ASTROLOGY_API_URL}/western/planets"
-            print(
-                f"🌟 ASTROLOGY_API: Making request to {endpoint_url}",
-                flush=True,
-            )
-            print(f"🌟 ASTROLOGY_API: Request data: {api_data}", flush=True)
-            print(
-                f"🌟 ASTROLOGY_API: Using API key: {FREE_ASTROLOGY_API_KEY[:10]}...{FREE_ASTROLOGY_API_KEY[-4:]}",
-                flush=True,
-            )
-
-            response = await client.post(
-                endpoint_url,
-                headers={
-                    "Content-Type": "application/json",
-                    "x-api-key": FREE_ASTROLOGY_API_KEY,  # Correct header format from docs
-                },
-                json=api_data,
-                timeout=10.0,
-            )
-
-            if response.status_code == 200:
-                data = response.json()
-                print("✅ ASTROLOGY_API: Got planetary data successfully", flush=True)
-                print(f"🌟 ASTROLOGY_API: Response preview: {str(data)[:200]}...", flush=True)
-                return _parse_planetary_data(data)
-            else:
-                print(f"❌ ASTROLOGY_API: Error {response.status_code}: {response.text}", flush=True)
-                print(f"❌ ASTROLOGY_API: Full response headers: {response.headers}", flush=True)
-                return {"planets": {}, "moon_phase": "Full Moon"}
-
-    except Exception as e:
-        print(f"❌ ASTROLOGY_API: Exception getting planetary data: {str(e)}", flush=True)
-        return {"planets": {}, "moon_phase": "Full Moon"}
-
-
-def _parse_planetary_data(api_response: dict) -> dict:
-    """Parse Free Astrology API response to extract useful data"""
-    try:
-        print(
-            f"🔍 ASTROLOGY_PARSE: Parsing response with keys: {list(api_response.keys())}",
-            flush=True,
-        )
-        planets = {}
-        moon_phase = "Full Moon"
-
-        # Extract planetary positions from API response (new format)
-        if "output" in api_response and isinstance(api_response["output"], list):
-            planets_data = api_response["output"]
-            print(
-                f"🔍 ASTROLOGY_PARSE: Found {len(planets_data)} celestial bodies in response",
-                flush=True,
-            )
-            for i, planet_data in enumerate(planets_data):
-                planet_name = planet_data.get("planet", {}).get("en", "")
-                planet_sign = planet_data.get("zodiac_sign", {}).get("name", {}).get("en", "")
-                is_retrograde = planet_data.get("isRetro", "False")
-
-                # Convert string "True"/"False" to boolean
-                is_retrograde_bool = is_retrograde == "True" or is_retrograde == "true"
-
-                print(
-                    f"🪐 ASTROLOGY_PARSE: Planet {i+1}: {planet_name} in {planet_sign} (retrograde: {is_retrograde_bool})",
-                    flush=True,
-                )
-
-                planets[planet_name] = {
-                    "sign": planet_sign,
-                    "retrograde": is_retrograde_bool,
-                    "position": planet_data.get("fullDegree", 0),
-                }
-
-                # Special handling for Moon to determine phase
-                if planet_name.lower() == "moon":
-                    moon_degree = planet_data.get("fullDegree", 0)
-                    moon_phase = _calculate_moon_phase(moon_degree)
-                    print(f"🌙 ASTROLOGY_PARSE: Moon at {moon_degree}° = {moon_phase}", flush=True)
-        else:
-            print(
-                "⚠️ ASTROLOGY_PARSE: No 'output' key in API response or output is not a list",
-                flush=True,
-            )
-
-        print(
-            f"✅ ASTROLOGY_PARSE: Parsed {len(planets)} planets, moon phase: {moon_phase}",
-            flush=True,
-        )
-        return {"planets": planets, "moon_phase": moon_phase}
-
-    except Exception as e:
-        print(f"❌ ASTROLOGY_API: Error parsing planetary data: {str(e)}", flush=True)
-        return {"planets": {}, "moon_phase": "Full Moon"}
-
-
-def _determine_strongest_planetary_influence(planets: dict) -> str:
-    """Determine which planet has the strongest current influence"""
-    try:
-        # Priority order for planetary influences in fortune telling
-        priority_planets = ["Sun", "Moon", "Mars", "Venus", "Jupiter", "Saturn", "Mercury"]
-
-        for planet in priority_planets:
-            if planet in planets:
-                planet_data = planets[planet]
-                # Consider retrograde planets as having stronger influence
-                if planet_data.get("retrograde", False):
-                    return f"{planet} (retrograde)"
-                return planet
-
-        # Default fallback
-        return "Jupiter"
-
-    except Exception as e:
-        print(f"❌ ASTROLOGY_API: Error determining strongest influence: {str(e)}", flush=True)
-        return "Jupiter"
-
-
-def _calculate_moon_phase(moon_degree: float) -> str:
-    """Calculate moon phase based on lunar degree position"""
-    try:
-        # Simple moon phase calculation based on degree
-        # This is a simplified approach - real moon phase needs Sun-Moon angle
-        phases = [
-            "New Moon",
-            "Waxing Crescent",
-            "First Quarter",
-            "Waxing Gibbous",
-            "Full Moon",
-            "Waning Gibbous",
-            "Last Quarter",
-            "Waning Crescent",
-        ]
-
-        # Divide 360 degrees by 8 phases
-        phase_index = int(moon_degree / 45) % 8
-        return phases[phase_index]
-
-    except Exception as e:
-        print(f"❌ ASTROLOGY_API: Error calculating moon phase: {str(e)}", flush=True)
-        return "Full Moon"
 
 
 async def _check_rate_limit(db: Database, user_id: uuid.UUID) -> bool:
@@ -516,88 +312,10 @@ def _calculate_life_path_number(birth_date: str) -> int:
         return 1
 
 
-async def _get_cosmic_influences(
-    zodiac_sign: str,
-    life_path_number: int,
-    birth_date: str,
-    birth_time: str = None,
-    birth_location: str = None,
-) -> CosmicInfluences:
-    """Get current cosmic influences using real astrological data"""
-    try:
-        print(
-            f"🌌 COSMIC: Getting cosmic influences for {zodiac_sign}, birth: {birth_date}",
-            flush=True,
-        )
-
-        # Get real planetary positions from Free Astrology API
-        planetary_data = await _get_planetary_positions(birth_date, birth_time, birth_location)
-
-        # Extract moon phase and planetary focus from real data
-        moon_phase = planetary_data.get("moon_phase", "Full Moon")
-        print(f"🌙 COSMIC: Moon phase from API: {moon_phase}", flush=True)
-
-        # Determine strongest planetary influence based on current positions
-        planets = planetary_data.get("planets", {})
-        print(f"🪐 COSMIC: Got {len(planets)} planets from API", flush=True)
-        strongest_planet = _determine_strongest_planetary_influence(planets)
-        print(f"💫 COSMIC: Strongest planetary influence: {strongest_planet}", flush=True)
-
-        planetary_focus = f"{strongest_planet} influences your cosmic energy"
-
-        result = CosmicInfluences(
-            zodiac_sign=zodiac_sign,
-            moon_phase=moon_phase,
-            planetary_focus=planetary_focus,
-            life_path_number=life_path_number,
-        )
-        print(
-            f"✅ COSMIC: Returning cosmic influences with moon: {moon_phase}, planet: {strongest_planet}",
-            flush=True,
-        )
-        return result
-    except Exception as e:
-        print(f"❌ FORTUNE_COSMIC: Error getting cosmic influences: {str(e)}", flush=True)
-        # Fallback to basic data if API fails
-        return CosmicInfluences(
-            zodiac_sign=zodiac_sign,
-            moon_phase="Full Moon",
-            planetary_focus="Jupiter brings good fortune",
-            life_path_number=life_path_number,
-        )
+# Removed cosmic influences - no longer needed for simplified fortune responses
 
 
-def _generate_lucky_elements(
-    zodiac_sign: str, zodiac_element: str, life_path_number: int
-) -> LuckyElements:
-    """Generate lucky elements based on astrological data"""
-    # Element-based lucky colors
-    element_colors = {
-        "Fire": ["Red", "Orange", "Gold", "Crimson"],
-        "Earth": ["Brown", "Green", "Beige", "Forest Green"],
-        "Air": ["Yellow", "Silver", "Light Blue", "White"],
-        "Water": ["Blue", "Purple", "Teal", "Deep Blue"],
-    }
-
-    # Element-based gemstones
-    element_gemstones = {
-        "Fire": ["Ruby", "Carnelian", "Garnet", "Amber"],
-        "Earth": ["Emerald", "Jade", "Peridot", "Moss Agate"],
-        "Air": ["Sapphire", "Aquamarine", "Citrine", "Clear Quartz"],
-        "Water": ["Amethyst", "Moonstone", "Pearl", "Lapis Lazuli"],
-    }
-
-    # Get colors and gemstones for this element
-    colors = element_colors.get(zodiac_element, ["Purple"])
-    gemstones = element_gemstones.get(zodiac_element, ["Amethyst"])
-
-    # Select based on life path number
-    color = colors[life_path_number % len(colors)]
-    gemstone = gemstones[life_path_number % len(gemstones)]
-
-    return LuckyElements(
-        color=color, number=life_path_number, element=zodiac_element, gemstone=gemstone
-    )
+# Removed lucky elements - no longer needed for simplified fortune responses
 
 
 def _build_fortune_prompt(
@@ -606,8 +324,6 @@ def _build_fortune_prompt(
     zodiac_element: str,
     ruling_planet: str,
     life_path_number: int,
-    cosmic_influences: CosmicInfluences,
-    lucky_elements: LuckyElements,
 ) -> str:
     """Build the LLM prompt for fortune generation with distinct formats for different reading types"""
 
@@ -619,8 +335,6 @@ def _build_fortune_prompt(
             zodiac_element,
             ruling_planet,
             life_path_number,
-            cosmic_influences,
-            lucky_elements,
         )
     else:
         return _build_question_fortune_prompt(
@@ -629,8 +343,6 @@ def _build_fortune_prompt(
             zodiac_element,
             ruling_planet,
             life_path_number,
-            cosmic_influences,
-            lucky_elements,
         )
 
 
@@ -640,30 +352,25 @@ def _build_daily_fortune_prompt(
     zodiac_element: str,
     ruling_planet: str,
     life_path_number: int,
-    cosmic_influences: CosmicInfluences,
-    lucky_elements: LuckyElements,
 ) -> str:
     """Build bite-sized daily fortune prompt (30-60 words)"""
 
     prompt = f"""Create a bite-sized daily fortune for {request.name}.
 
 PERSON'S PROFILE:
+- Name: {request.name}
 - Zodiac: {zodiac_sign} ({zodiac_element} element)
 - Life Path: {life_path_number}
-- Today's Moon: {cosmic_influences.moon_phase}
-- Cosmic Focus: {cosmic_influences.planetary_focus}
-- Lucky Color: {lucky_elements.color}
-- Lucky Number: {lucky_elements.number}
 
 DAILY FORTUNE REQUIREMENTS:
 - Length: 30-60 words maximum (bite-sized like a fortune cookie, but slightly longer)
 - Focus on today's energy and opportunities
-- Include one lucky element naturally
 - Be positive, actionable, and specific
 - Sound authentic and personal
 - Skip flowery language - be direct and impactful
+- Reference their {zodiac_sign} nature naturally
 
-Write a concise daily fortune that captures today's cosmic energy for this {zodiac_sign}."""
+Write a concise daily fortune for this {zodiac_sign}."""
 
     return prompt
 
@@ -674,26 +381,16 @@ def _build_question_fortune_prompt(
     zodiac_element: str,
     ruling_planet: str,
     life_path_number: int,
-    cosmic_influences: CosmicInfluences,
-    lucky_elements: LuckyElements,
 ) -> str:
     """Build detailed question response prompt (100-200 words)"""
 
     prompt = f"""Answer this question with mystical wisdom for {request.name}: "{request.question}"
 
-PERSON'S MYSTICAL PROFILE:
+PERSON'S PROFILE:
 - Name: {request.name}
 - Birth Date: {request.birth_date}
 - Zodiac Sign: {zodiac_sign} ({zodiac_element} element, ruled by {ruling_planet})
-- Life Path Number: {life_path_number}
-- Current Moon Phase: {cosmic_influences.moon_phase}
-- Planetary Influence: {cosmic_influences.planetary_focus}
-
-LUCKY ELEMENTS:
-- Color: {lucky_elements.color}
-- Number: {lucky_elements.number}
-- Element: {lucky_elements.element}
-- Gemstone: {lucky_elements.gemstone}"""
+- Life Path Number: {life_path_number}"""
 
     if request.birth_time:
         prompt += f"\n- Birth Time: {request.birth_time}"
@@ -708,8 +405,6 @@ QUESTION RESPONSE REQUIREMENTS:
 - Address their specific question directly
 - Weave in their {zodiac_sign} traits and {zodiac_element} element energy
 - Reference their life path {life_path_number} characteristics
-- Include current cosmic influences ({cosmic_influences.moon_phase}, {cosmic_influences.planetary_focus})
-- Mention lucky elements naturally in your guidance
 - Provide actionable wisdom and specific insights
 - Be mystical yet practical
 
@@ -745,8 +440,6 @@ async def _generate_fortune_llm(
     zodiac_element: str,
     ruling_planet: str,
     life_path_number: int,
-    cosmic_influences: CosmicInfluences,
-    lucky_elements: LuckyElements,
 ) -> tuple[Optional[str], str, str, dict, float, int]:
     """Generate fortune reading using LLM"""
     try:
@@ -757,8 +450,6 @@ async def _generate_fortune_llm(
             zodiac_element,
             ruling_planet,
             life_path_number,
-            cosmic_influences,
-            lucky_elements,
         )
 
         # Get model configuration
@@ -884,8 +575,6 @@ async def _save_fortune_reading(
     reading_type: ReadingType,
     question: Optional[str],
     content: str,
-    cosmic_influences: CosmicInfluences,
-    lucky_elements: LuckyElements,
     model_used: str,
     tokens_used: dict,
     cost: float,
@@ -898,17 +587,14 @@ async def _save_fortune_reading(
             "model_used": model_used,
             "tokens_used": tokens_used.get("total", 0),
             "cost_usd": cost,
-            "cosmic_influences": cosmic_influences.dict(),
-            "lucky_elements": lucky_elements.dict(),
         }
 
         insert_query = """
             INSERT INTO fortune_readings (
                 id, user_id, target_person_id, target_person_name, reading_type,
-                question, content, cosmic_influences, lucky_elements, metadata,
-                created_at, updated_at
+                question, content, metadata, created_at, updated_at
             )
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8::jsonb, $9::jsonb, $10::jsonb,
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8::jsonb,
                     CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
         """
 
@@ -921,8 +607,6 @@ async def _save_fortune_reading(
             reading_type.value,
             question,
             content,
-            json.dumps(cosmic_influences.dict()),
-            json.dumps(lucky_elements.dict()),
             json.dumps(metadata),
         )
 
@@ -960,7 +644,7 @@ async def get_user_fortune_readings(
         # Build query with filters
         base_query = """
             SELECT id, content, reading_type, question, target_person_name,
-                   cosmic_influences, lucky_elements, is_favorited, created_at
+                   is_favorited, created_at
             FROM fortune_readings
             WHERE user_id = $1
         """
@@ -995,18 +679,12 @@ async def get_user_fortune_readings(
         # Build response
         readings = []
         for row in rows:
-            # Parse JSONB fields
-            cosmic_influences = CosmicInfluences(**json.loads(row["cosmic_influences"]))
-            lucky_elements = LuckyElements(**json.loads(row["lucky_elements"]))
-
             reading = FortuneReading(
                 id=row["id"],
                 content=row["content"],
                 reading_type=ReadingType(row["reading_type"]),
                 question=row["question"],
                 target_person_name=row["target_person_name"],
-                cosmic_influences=cosmic_influences,
-                lucky_elements=lucky_elements,
                 created_at=row["created_at"],
                 is_favorited=row["is_favorited"],
             )
@@ -1147,7 +825,7 @@ async def toggle_fortune_reading_favorite(
             SET is_favorited = $1, updated_at = CURRENT_TIMESTAMP
             WHERE id = $2 AND user_id = $3
             RETURNING id, content, reading_type, question, target_person_name,
-                      cosmic_influences, lucky_elements, is_favorited, created_at
+                      is_favorited, created_at
         """
 
         result = await db.fetch_one(update_query, request.is_favorited, reading_id, user_id)
@@ -1155,18 +833,12 @@ async def toggle_fortune_reading_favorite(
         if not result:
             return FortuneErrorResponse(error="Fortune reading not found", reading_id=reading_id)
 
-        # Parse JSONB fields
-        cosmic_influences = CosmicInfluences(**json.loads(result["cosmic_influences"]))
-        lucky_elements = LuckyElements(**json.loads(result["lucky_elements"]))
-
         reading = FortuneReading(
             id=result["id"],
             content=result["content"],
             reading_type=ReadingType(result["reading_type"]),
             question=result["question"],
             target_person_name=result["target_person_name"],
-            cosmic_influences=cosmic_influences,
-            lucky_elements=lucky_elements,
             created_at=result["created_at"],
             is_favorited=result["is_favorited"],
         )

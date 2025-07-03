@@ -257,8 +257,6 @@ class FortuneReading(BaseModel):
     reading_type: ReadingType
     question: Optional[str] = None
     target_person_name: str
-    cosmic_influences: CosmicInfluences
-    lucky_elements: LuckyElements
     created_at: datetime
     is_favorited: bool = False
 
