@@ -418,7 +418,7 @@ Examples of fresh approaches:
 - "Today's rhythm matches your {zodiac_sign} heartbeat..."
 - "The space between thoughts holds your answer..."
 
-Write a completely original fortune that feels personal and surprising."""
+CRITICAL: Return ONLY the fortune text itself. Do not include any explanations, commentary, or analysis about why the fortune is unique or how it avoids clichés. Just the fortune."""
 
     return prompt
 
@@ -506,7 +506,7 @@ STRUCTURAL VARIETY:
 - Mix sentence lengths: short punchy insights with flowing wisdom
 - End with different energies: empowerment, reflection, invitation, certainty
 
-Channel deep wisdom that feels both cosmic and personally relevant to their unique question."""
+CRITICAL OUTPUT INSTRUCTION: Return ONLY the mystical guidance response itself. Do not include any explanations, commentary, analysis, or meta-discussion about the reading. No phrases like "This fortune avoids clichés by..." or "Here's why this is unique...". Just provide the pure fortune response."""
 
     return prompt
 
