@@ -146,7 +146,7 @@ async def verify_otp(
         )
 
     # Calculate and update daily login streak
-    streak_days, last_login_date = await calculate_daily_streak(
+    streak_days, last_login_date, is_bonus_eligible, previous_streak_days = await calculate_daily_streak(
         db, str(user["id"]), user.get("streak_days", 0), user.get("last_login_date")
     )
 
@@ -171,6 +171,9 @@ async def verify_otp(
         token=Token(access_token=access_token, refresh_token=refresh_token, expires_in=3600),
         is_new_user=is_new_user,
         dust_granted=0,  # DUST grants now handled by apps, not identity service
+        is_first_login_today=is_bonus_eligible,
+        streak_bonus_eligible=is_bonus_eligible,
+        previous_streak_days=previous_streak_days,
     )
 
 
@@ -253,7 +256,7 @@ async def oauth_login(
         )
 
     # Calculate and update daily login streak
-    streak_days, last_login_date = await calculate_daily_streak(
+    streak_days, last_login_date, is_bonus_eligible, previous_streak_days = await calculate_daily_streak(
         db, str(user["id"]), user.get("streak_days", 0), user.get("last_login_date")
     )
 
@@ -278,6 +281,9 @@ async def oauth_login(
         token=Token(access_token=access_token, refresh_token=refresh_token, expires_in=3600),
         is_new_user=is_new_user,
         dust_granted=0,  # DUST grants now handled by apps, not identity service
+        is_first_login_today=is_bonus_eligible,
+        streak_bonus_eligible=is_bonus_eligible,
+        previous_streak_days=previous_streak_days,
     )
 
 

@@ -165,3 +165,7 @@ class AuthResponse(BaseModel):
     token: Token
     is_new_user: bool = False
     dust_granted: int = 0
+    # Daily login bonus eligibility info
+    is_first_login_today: bool = False
+    streak_bonus_eligible: bool = False
+    previous_streak_days: int = 0
