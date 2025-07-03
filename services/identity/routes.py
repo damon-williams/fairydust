@@ -413,7 +413,12 @@ async def update_user_profile(
 
     if update_data.birth_date is not None:
         updates.append(f"birth_date = ${param_count}")
-        values.append(update_data.birth_date)
+        # Convert string date to Python date object for PostgreSQL DATE column
+        try:
+            birth_date_obj = datetime.strptime(update_data.birth_date, "%Y-%m-%d").date()
+        except ValueError:
+            raise HTTPException(status_code=400, detail="Invalid birth_date format. Use YYYY-MM-DD")
+        values.append(birth_date_obj)
         param_count += 1
 
     if update_data.is_onboarding_completed is not None:
@@ -567,6 +572,14 @@ async def add_person_to_life(
     if current_user.user_id != user_id and not current_user.is_admin:
         raise HTTPException(status_code=403, detail="Access denied")
 
+    # Convert birth_date string to date object if provided
+    birth_date_obj = None
+    if person.birth_date:
+        try:
+            birth_date_obj = datetime.strptime(person.birth_date, "%Y-%m-%d").date()
+        except ValueError:
+            raise HTTPException(status_code=400, detail="Invalid birth_date format. Use YYYY-MM-DD")
+
     new_person = await db.fetch_one(
         """
         INSERT INTO people_in_my_life (user_id, name, birth_date, relationship)
@@ -575,7 +588,7 @@ async def add_person_to_life(
         """,
         user_id,
         person.name,
-        person.birth_date,
+        birth_date_obj,
         person.relationship,
     )
 
@@ -631,7 +644,12 @@ async def update_person_in_my_life(
 
     if person_update.birth_date is not None:
         updates.append(f"birth_date = ${param_count}")
-        values.append(person_update.birth_date)
+        # Convert string date to Python date object for PostgreSQL DATE column
+        try:
+            birth_date_obj = datetime.strptime(person_update.birth_date, "%Y-%m-%d").date()
+        except ValueError:
+            raise HTTPException(status_code=400, detail="Invalid birth_date format. Use YYYY-MM-DD")
+        values.append(birth_date_obj)
         param_count += 1
 
     if person_update.relationship is not None:
