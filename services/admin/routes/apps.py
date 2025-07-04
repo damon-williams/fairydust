@@ -1,10 +1,29 @@
+import os
 import uuid
+from datetime import datetime, timedelta
 from typing import Optional
 
+import httpx
+import jwt
 from auth import get_current_admin_user
 from fastapi import APIRouter, Depends, HTTPException
 
 from shared.database import Database, get_db
+
+# JWT settings for cross-service authentication
+JWT_SECRET_KEY = os.getenv("JWT_SECRET_KEY", os.getenv("SECRET_KEY", "your-secret-key-here"))
+JWT_ALGORITHM = "HS256"
+ACCESS_TOKEN_EXPIRE_MINUTES = 60
+
+# Service URLs
+# Determine apps service URL based on environment
+environment = os.getenv("ENVIRONMENT", "development")
+if environment == "production":
+    APPS_SERVICE_URL = "https://fairydust-apps-production.up.railway.app"
+elif environment == "staging":
+    APPS_SERVICE_URL = "https://fairydust-apps-staging.up.railway.app"
+else:
+    APPS_SERVICE_URL = os.getenv("APPS_SERVICE_URL", "http://localhost:8003")
 
 apps_router = APIRouter()
 
@@ -23,9 +42,11 @@ async def get_apps_api(
 
     # Build query with optional status filter
     base_query = """
-        SELECT a.*, u.fairyname as builder_name, u.email as builder_email
+        SELECT a.*, u.fairyname as builder_name, u.email as builder_email,
+               amc.primary_model_id, amc.primary_provider
         FROM apps a
         JOIN users u ON a.builder_id = u.id
+        LEFT JOIN app_model_configs amc ON amc.app_id::uuid = a.id
     """
     count_query = "SELECT COUNT(*) as total FROM apps a"
 
@@ -90,9 +111,11 @@ async def update_app_status_api(
     # Return updated app
     app = await db.fetch_one(
         """
-        SELECT a.*, u.fairyname as builder_name, u.email as builder_email
+        SELECT a.*, u.fairyname as builder_name, u.email as builder_email,
+               amc.primary_model_id, amc.primary_provider
         FROM apps a
         JOIN users u ON a.builder_id = u.id
+        LEFT JOIN app_model_configs amc ON amc.app_id::uuid = a.id
         WHERE a.id = $1
         """,
         app_id,
@@ -192,9 +215,11 @@ async def create_app_api(
         # Return created app
         app = await db.fetch_one(
             """
-            SELECT a.*, u.fairyname as builder_name, u.email as builder_email
+            SELECT a.*, u.fairyname as builder_name, u.email as builder_email,
+                   amc.primary_model_id, amc.primary_provider
             FROM apps a
             JOIN users u ON a.builder_id = u.id
+            LEFT JOIN app_model_configs amc ON amc.app_id::uuid = a.id
             WHERE a.id = $1
             """,
             app_id,
@@ -212,6 +237,99 @@ async def create_app_api(
         raise HTTPException(status_code=500, detail="Failed to create app")
 
 
+@apps_router.put("/{app_id}")
+async def update_app_api(
+    app_id: str,
+    app_data: dict,
+    admin_user: dict = Depends(get_current_admin_user),
+    db: Database = Depends(get_db),
+):
+    """Update app via API for React app"""
+    import logging
+
+    logger = logging.getLogger(__name__)
+
+    try:
+        # Log the app update attempt
+        logger.info(f"📝 ADMIN_EDIT: User {admin_user['fairyname']} updating app {app_id}")
+        logger.info(f"📝 ADMIN_EDIT: New app data: {app_data}")
+
+        # Extract data
+        name = app_data.get("name")
+        slug = app_data.get("slug")
+        description = app_data.get("description")
+        category = app_data.get("category")
+        status = app_data.get("status", "active")
+
+        # Validate required fields
+        if not all([name, slug, description, category]):
+            raise HTTPException(status_code=400, detail="Missing required fields")
+
+        # Check if app exists
+        existing_app = await db.fetch_one("SELECT id, slug FROM apps WHERE id = $1", app_id)
+        if not existing_app:
+            raise HTTPException(status_code=404, detail="App not found")
+
+        # Check if slug is taken by another app
+        if existing_app["slug"] != slug:
+            slug_check = await db.fetch_one(
+                "SELECT id FROM apps WHERE slug = $1 AND id != $2", slug, app_id
+            )
+            if slug_check:
+                raise HTTPException(status_code=400, detail="App slug already exists")
+
+        # Convert status to database format
+        db_status = "approved" if status == "active" else "pending"
+        is_active = status == "active"
+
+        # Update the app
+        await db.execute(
+            """
+            UPDATE apps
+            SET name = $1, slug = $2, description = $3, category = $4,
+                status = $5, is_active = $6, updated_at = CURRENT_TIMESTAMP
+            WHERE id = $7
+            """,
+            name,
+            slug,
+            description,
+            category,
+            db_status,
+            is_active,
+            app_id,
+        )
+
+        # Return updated app
+        app = await db.fetch_one(
+            """
+            SELECT a.*, u.fairyname as builder_name, u.email as builder_email,
+                   amc.primary_model_id, amc.primary_provider
+            FROM apps a
+            JOIN users u ON a.builder_id = u.id
+            LEFT JOIN app_model_configs amc ON amc.app_id::uuid = a.id
+            WHERE a.id = $1
+            """,
+            app_id,
+        )
+
+        if app:
+            logger.info(f"✅ ADMIN_EDIT: Successfully updated app {app_id}")
+            logger.info(
+                f"✅ ADMIN_EDIT: Updated app details: name={app['name']}, status={app['status']}"
+            )
+
+        return dict(app)
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        import logging
+
+        logger = logging.getLogger(__name__)
+        logger.error(f"Error updating app via API: {e}")
+        raise HTTPException(status_code=500, detail="Failed to update app")
+
+
 @apps_router.get("/builders")
 async def get_builders_api(
     admin_user: dict = Depends(get_current_admin_user),
@@ -222,3 +340,251 @@ async def get_builders_api(
         "SELECT id, fairyname, email FROM users WHERE is_builder = true ORDER BY fairyname"
     )
     return [dict(builder) for builder in builders]
+
+
+@apps_router.get("/supported-models")
+async def get_supported_models_api(
+    admin_user: dict = Depends(get_current_admin_user),
+):
+    """Get supported LLM models via proxy to apps service"""
+    import os
+
+    try:
+        # Determine apps service URL based on environment
+        environment = os.getenv("ENVIRONMENT", "staging")
+        base_url_suffix = "production" if environment == "production" else "staging"
+        apps_url = f"https://fairydust-apps-{base_url_suffix}.up.railway.app"
+
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            response = await client.get(f"{apps_url}/llm/supported-models")
+
+            if response.status_code == 200:
+                return response.json()
+            else:
+                raise HTTPException(
+                    status_code=response.status_code, detail="Failed to fetch supported models"
+                )
+
+    except Exception as e:
+        import logging
+
+        logger = logging.getLogger(__name__)
+        logger.error(f"Error fetching supported models: {e}")
+        raise HTTPException(status_code=500, detail="Failed to fetch supported models")
+
+
+@apps_router.put("/{app_id}/model-config")
+async def update_app_model_config_api(
+    app_id: str,
+    model_config: dict,
+    admin_user: dict = Depends(get_current_admin_user),
+):
+    """Update app model configuration via proxy to apps service"""
+    import logging
+
+    logger = logging.getLogger(__name__)
+
+    try:
+        # Log the model configuration update attempt
+        logger.info(
+            f"🔧 ADMIN_EDIT: User {admin_user['fairyname']} updating model config for app {app_id}"
+        )
+        logger.info(f"🔧 ADMIN_EDIT: New model config: {model_config}")
+
+        # Determine apps service URL based on environment
+        environment = os.getenv("ENVIRONMENT", "staging")
+        base_url_suffix = "production" if environment == "production" else "staging"
+        apps_url = f"https://fairydust-apps-{base_url_suffix}.up.railway.app"
+        logger.info(f"🔧 ADMIN_EDIT: Sending to apps service: {apps_url}")
+
+        # Create token data for admin user (match auth middleware expectations)
+        token_data = {
+            "sub": str(admin_user["user_id"]),  # Standard JWT claim
+            "user_id": str(admin_user["user_id"]),  # Fallback claim
+            "fairyname": admin_user["fairyname"],
+            "is_admin": True,
+            "exp": datetime.utcnow() + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES),
+            "type": "access",
+        }
+
+        # Create JWT token
+        access_token = jwt.encode(token_data, JWT_SECRET_KEY, algorithm=JWT_ALGORITHM)
+
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            response = await client.put(
+                f"{apps_url}/llm/{app_id}/model-config",
+                json=model_config,
+                headers={
+                    "Content-Type": "application/json",
+                    "Authorization": f"Bearer {access_token}",
+                },
+            )
+
+            if response.status_code == 200:
+                result = response.json()
+                logger.info(f"✅ ADMIN_EDIT: Successfully updated model config for app {app_id}")
+                logger.info(f"✅ ADMIN_EDIT: Apps service response: {result}")
+                return result
+            else:
+                logger.error(
+                    f"❌ ADMIN_EDIT: Apps service error {response.status_code}: {response.text}"
+                )
+                raise HTTPException(
+                    status_code=response.status_code, detail="Failed to update model configuration"
+                )
+
+    except Exception as e:
+        import logging
+
+        logger = logging.getLogger(__name__)
+        logger.error(f"Error updating model config: {e}")
+        raise HTTPException(status_code=500, detail="Failed to update model configuration")
+
+
+@apps_router.post("/{app_id}/model-config/invalidate-cache")
+async def invalidate_model_config_cache_api(
+    app_id: str,
+    admin_user: dict = Depends(get_current_admin_user),
+):
+    """Manually invalidate model configuration cache for debugging"""
+    import logging
+
+    logger = logging.getLogger(__name__)
+
+    try:
+        from shared.app_config_cache import get_app_config_cache
+
+        logger.info(
+            f"🗑️ ADMIN_DEBUG: User {admin_user['fairyname']} manually invalidating cache for app {app_id}"
+        )
+
+        cache = await get_app_config_cache()
+        result = await cache.invalidate_model_config(app_id)
+
+        if result:
+            logger.info(f"✅ ADMIN_DEBUG: Successfully invalidated cache for app {app_id}")
+            return {"message": f"Cache invalidated for app {app_id}", "success": True}
+        else:
+            logger.info(f"⚠️ ADMIN_DEBUG: No cache found to invalidate for app {app_id}")
+            return {"message": f"No cache found for app {app_id}", "success": False}
+
+    except Exception as e:
+        logger.error(f"❌ ADMIN_DEBUG: Error invalidating cache for app {app_id}: {e}")
+        raise HTTPException(status_code=500, detail="Failed to invalidate cache")
+
+
+# ============================================================================
+# ACTION PRICING ROUTES (PROXY TO APPS SERVICE)
+# ============================================================================
+
+
+@apps_router.get("/pricing/actions")
+async def get_action_pricing(
+    admin_user: dict = Depends(get_current_admin_user),
+):
+    """Get action pricing for admin portal"""
+    import logging
+
+    logger = logging.getLogger(__name__)
+    logger.info(f"Fetching action pricing from: {APPS_SERVICE_URL}/admin/pricing/actions")
+
+    # Create JWT token for cross-service auth
+    token_data = {
+        "sub": str(admin_user["user_id"]),
+        "user_id": str(admin_user["user_id"]),
+        "fairyname": admin_user["fairyname"],
+        "is_admin": True,
+    }
+    access_token = jwt.encode(token_data, JWT_SECRET_KEY, algorithm=JWT_ALGORITHM)
+
+    # Proxy request to apps service
+    async with httpx.AsyncClient() as client:
+        response = await client.get(
+            f"{APPS_SERVICE_URL}/admin/pricing/actions",
+            headers={"Authorization": f"Bearer {access_token}"},
+            timeout=30.0,
+        )
+
+        if response.status_code == 200:
+            data = response.json()
+            import logging
+
+            logger = logging.getLogger(__name__)
+            logger.info(f"Action pricing data from apps service: {data}")
+            return data
+        else:
+            import logging
+
+            logger = logging.getLogger(__name__)
+            logger.error(
+                f"Failed to fetch action pricing: {response.status_code} - {response.text}"
+            )
+            raise HTTPException(
+                status_code=response.status_code, detail="Failed to fetch action pricing"
+            )
+
+
+@apps_router.put("/pricing/actions/{action_slug}")
+async def update_action_pricing(
+    action_slug: str,
+    pricing_data: dict,
+    admin_user: dict = Depends(get_current_admin_user),
+):
+    """Update action pricing via proxy to apps service"""
+
+    # Create JWT token for cross-service auth
+    token_data = {
+        "sub": str(admin_user["user_id"]),
+        "user_id": str(admin_user["user_id"]),
+        "fairyname": admin_user["fairyname"],
+        "is_admin": True,
+    }
+    access_token = jwt.encode(token_data, JWT_SECRET_KEY, algorithm=JWT_ALGORITHM)
+
+    # Proxy request to apps service
+    async with httpx.AsyncClient() as client:
+        response = await client.put(
+            f"{APPS_SERVICE_URL}/admin/pricing/actions/{action_slug}",
+            headers={"Authorization": f"Bearer {access_token}", "Content-Type": "application/json"},
+            json=pricing_data,
+            timeout=30.0,
+        )
+
+        if response.status_code == 200:
+            return response.json()
+        else:
+            raise HTTPException(
+                status_code=response.status_code, detail="Failed to update action pricing"
+            )
+
+
+@apps_router.delete("/pricing/actions/{action_slug}")
+async def delete_action_pricing(
+    action_slug: str,
+    admin_user: dict = Depends(get_current_admin_user),
+):
+    """Delete action pricing via proxy to apps service"""
+
+    # Create JWT token for cross-service auth
+    token_data = {
+        "sub": str(admin_user["user_id"]),
+        "user_id": str(admin_user["user_id"]),
+        "fairyname": admin_user["fairyname"],
+        "is_admin": True,
+    }
+    access_token = jwt.encode(token_data, JWT_SECRET_KEY, algorithm=JWT_ALGORITHM)
+
+    # Proxy request to apps service
+    async with httpx.AsyncClient() as client:
+        response = await client.delete(
+            f"{APPS_SERVICE_URL}/admin/pricing/actions/{action_slug}",
+            headers={"Authorization": f"Bearer {access_token}"},
+            timeout=30.0,
+        )
+
+        if response.status_code == 200:
+            return response.json()
+        else:
+            raise HTTPException(
+                status_code=response.status_code, detail="Failed to delete action pricing"
+            )

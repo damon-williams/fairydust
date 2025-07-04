@@ -28,7 +28,7 @@ async def _execute_with_retry(db, query: str, *args, max_retries: int = 2, timeo
 
 async def calculate_daily_streak(
     db, user_id: str, current_streak: int, last_login_date: Optional[datetime]
-) -> tuple[int, datetime]:
+) -> tuple[int, datetime, bool, int]:
     """
     Calculate daily login streak for a user with timeout protection and retry logic.
 
@@ -39,20 +39,23 @@ async def calculate_daily_streak(
         last_login_date: User's last login timestamp
 
     Returns:
-        tuple of (new_streak_days, updated_last_login_date)
+        tuple of (new_streak_days, updated_last_login_date, is_bonus_eligible, previous_streak_days)
 
     Business Rules:
     - Streak resets to 1 if user misses any days (not 0)
     - Maximum streak is 5 days (matches DUST bonus system)
     - UTC-based calculation for global consistency
     - Same-day logins don't change streak
+    - Bonus eligible on: first login ever, consecutive days, or after missed days
     - Includes timeout protection and retry logic
     """
     now = datetime.utcnow()
 
     if not last_login_date:
-        # First login ever
+        # First login ever - eligible for bonus
         new_streak = 1
+        is_bonus_eligible = True
+        previous_streak_days = 0
         try:
             await _execute_with_retry(
                 db,
@@ -69,21 +72,25 @@ async def calculate_daily_streak(
             logger.error(f"Failed to update streak for first-time user {user_id}: {e}")
             # Return calculated values even if DB update fails
             # This allows authentication to proceed
-            return new_streak, now
-        return new_streak, now
+            return new_streak, now, is_bonus_eligible, previous_streak_days
+        return new_streak, now, is_bonus_eligible, previous_streak_days
 
     # Calculate days since last login (UTC-based)
     days_since = (now.date() - last_login_date.date()).days
+    previous_streak_days = current_streak
 
     if days_since == 0:
-        # Same day, return current streak (no database update needed)
-        return current_streak, last_login_date
+        # Same day, return current streak (no database update needed, no bonus)
+        is_bonus_eligible = False
+        return current_streak, last_login_date, is_bonus_eligible, previous_streak_days
     elif days_since == 1:
-        # Consecutive day, increment (cap at 5)
+        # Consecutive day, increment (cap at 5) - eligible for bonus
         new_streak = min(current_streak + 1, 5)
+        is_bonus_eligible = True
     else:
-        # Missed days, reset to 1
+        # Missed days, reset to 1 - eligible for bonus (new streak starts)
         new_streak = 1
+        is_bonus_eligible = True
 
     # Update database with new streak and login date
     try:
@@ -102,6 +109,6 @@ async def calculate_daily_streak(
         logger.error(f"Failed to update streak for user {user_id}: {e}")
         # Return calculated values even if DB update fails
         # This allows authentication to proceed while streak calculation is degraded
-        return new_streak, now
+        return new_streak, now, is_bonus_eligible, previous_streak_days
 
-    return new_streak, now
+    return new_streak, now, is_bonus_eligible, previous_streak_days

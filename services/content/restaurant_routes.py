@@ -1,13 +1,21 @@
 # services/content/restaurant_routes.py
+# Service URL configuration based on environment
+import os
 import random
 from datetime import datetime, timedelta
 from uuid import UUID, uuid4
 
 import httpx
+
+environment = os.getenv("ENVIRONMENT", "staging")
+base_url_suffix = "production" if environment == "production" else "staging"
+ledger_url = f"https://fairydust-ledger-{base_url_suffix}.up.railway.app"
+identity_url = f"https://fairydust-identity-{base_url_suffix}.up.railway.app"
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.security import HTTPBearer
 from google_places_http import get_google_places_http_service
-from google_places_service import get_google_places_service
+
+# from google_places_service import get_google_places_service  # Removed - using HTTP implementation only
 from models import (
     OpenTableInfo,
     PersonRestaurantPreferences,
@@ -327,23 +335,12 @@ async def get_restaurants_from_google_places(
         people_data = []
 
     try:
-        print("🔍 RESTAURANT_DEBUG: Attempting to get Google Places service...")
+        print("🔍 RESTAURANT_DEBUG: Initializing Google Places HTTP service...")
 
-        # Try the googlemaps package first
-        try:
-            print("🔍 RESTAURANT_DEBUG: Attempting googlemaps package initialization...")
-            places_service = get_google_places_service()
-            print(
-                "🔍 RESTAURANT_DEBUG: ✅ Google Places service (googlemaps package) initialized successfully"
-            )
-            use_http_service = False
-        except Exception as e:
-            print(
-                f"🔍 RESTAURANT_DEBUG: googlemaps package failed ({type(e).__name__}: {e}), trying HTTP service..."
-            )
-            places_service = get_google_places_http_service()
-            print("🔍 RESTAURANT_DEBUG: ✅ Google Places HTTP service initialized successfully")
-            use_http_service = True
+        # Use HTTP implementation directly (no googlemaps package dependency)
+        places_service = get_google_places_http_service()
+        print("🔍 RESTAURANT_DEBUG: ✅ Google Places HTTP service initialized successfully")
+        use_http_service = True
 
         # Convert radius from miles (if provided) or use default
         radius_str = preferences.get("default_radius", "10mi")
@@ -700,36 +697,7 @@ async def generate_ai_highlights(
     return highlights[:3]  # Limit to 3 highlights
 
 
-async def consume_dust_for_restaurant_search(user_id: UUID) -> bool:
-    """Consume DUST for restaurant search via Ledger Service"""
-    print(f"🔍 DUST_DEBUG: Attempting to consume 3 DUST for user {user_id}")
-    try:
-        async with httpx.AsyncClient() as client:
-            payload = {
-                "user_id": str(user_id),
-                "amount": 3,
-                "app_id": "fairydust-restaurant",
-                "description": "Restaurant search",
-            }
-            print(f"🔍 DUST_DEBUG: Payload: {payload}")
-
-            response = await client.post(
-                "https://fairydust-ledger-production.up.railway.app/transactions/consume",
-                json=payload,
-                timeout=10.0,
-            )
-            print(f"🔍 DUST_DEBUG: Ledger service response: {response.status_code}")
-
-            if response.status_code != 200:
-                response_text = response.text
-                print(f"🔍 DUST_DEBUG: Error response: {response_text}")
-                return False
-
-            print("🔍 DUST_DEBUG: ✅ DUST consumption successful")
-            return True
-    except Exception as e:
-        print(f"🔍 DUST_DEBUG: ❌ Exception consuming DUST: {e}")
-        return False
+# DUST consumption removed - handled by app client, not content service
 
 
 async def get_people_data(user_id: UUID, selected_people: list[UUID]) -> list[dict]:
@@ -744,7 +712,7 @@ async def get_people_data(user_id: UUID, selected_people: list[UUID]) -> list[di
         print("🔍 PEOPLE_DEBUG: Making request to Identity Service...")
         async with httpx.AsyncClient() as client:
             response = await client.get(
-                f"https://fairydust-identity-production.up.railway.app/users/{user_id}/people",
+                f"{identity_url}/users/{user_id}/people",
                 timeout=10.0,
             )
             print(f"🔍 PEOPLE_DEBUG: Identity Service response: {response.status_code}")
@@ -975,7 +943,7 @@ async def get_restaurant_preferences(
     try:
         async with httpx.AsyncClient() as client:
             response = await client.get(
-                f"https://fairydust-identity-production.up.railway.app/users/{user_id}/people",
+                f"{identity_url}/users/{user_id}/people",
                 timeout=10.0,
             )
             people_data = response.json().get("people", []) if response.status_code == 200 else []
@@ -1052,7 +1020,7 @@ async def update_restaurant_preferences(
                     # Update favorite restaurants
                     if person_pref.favorite_restaurants:
                         await client.put(
-                            f"https://fairydust-identity-production.up.railway.app/users/{user_id}/people/{person_pref.person_id}/profile",
+                            f"{identity_url}/users/{user_id}/people/{person_pref.person_id}/profile",
                             json={
                                 "category": "favorite_restaurants",
                                 "field_name": "restaurants",
@@ -1064,7 +1032,7 @@ async def update_restaurant_preferences(
                     # Update dining notes
                     if person_pref.notes:
                         await client.put(
-                            f"https://fairydust-identity-production.up.railway.app/users/{user_id}/people/{person_pref.person_id}/profile",
+                            f"{identity_url}/users/{user_id}/people/{person_pref.person_id}/profile",
                             json={
                                 "category": "dining_preferences",
                                 "field_name": "notes",

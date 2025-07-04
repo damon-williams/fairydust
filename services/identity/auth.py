@@ -196,25 +196,28 @@ async def get_current_user(
     """Dependency to get current user from JWT token"""
     from shared.redis_client import get_redis
 
+    print(
+        f"🔐 AUTH: get_current_user called with credentials present: {bool(credentials)}", flush=True
+    )
+
     redis_client = await get_redis()
     auth_service = AuthService(redis_client)
     token_data = await auth_service.decode_token(credentials.credentials)
+
+    print(f"🔐 AUTH: Token decoded successfully for user {token_data.user_id}", flush=True)
 
     # Optionally check if token is revoked
     if token_data.user_id:
         is_revoked = await redis_client.get(f"revoked_token:{credentials.credentials}")
         if is_revoked:
+            print(f"🔐 AUTH: Token revoked for user {token_data.user_id}", flush=True)
             raise HTTPException(status_code=401, detail="Token has been revoked")
 
+    print(f"🔐 AUTH: Returning token data for user {token_data.user_id}", flush=True)
     return token_data
 
 
-# Optional: Dependency to require builder role
-async def require_builder(current_user: TokenData = Depends(get_current_user)) -> TokenData:
-    """Require the current user to be a builder"""
-    if not current_user.is_builder:
-        raise HTTPException(status_code=403, detail="Builder access required")
-    return current_user
+# Builder role requirement removed - no longer supported
 
 
 # Admin access dependency

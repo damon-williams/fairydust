@@ -3,6 +3,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Alert, AlertDescription } from '@/components/ui/alert';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { 
   Table,
   TableBody,
@@ -30,8 +31,8 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { App } from '@/types/admin';
-import { MoreHorizontal, CheckCircle, XCircle, Clock, RefreshCw, AlertTriangle, Plus } from 'lucide-react';
+import { App, ActionPricing } from '@/types/admin';
+import { MoreHorizontal, CheckCircle, XCircle, Clock, RefreshCw, AlertTriangle, Plus, Settings, Edit } from 'lucide-react';
 import { formatDistanceToNow } from 'date-fns';
 import { AdminAPI } from '@/lib/admin-api';
 import { toast } from 'sonner';
@@ -40,7 +41,31 @@ export function Apps() {
   const [apps, setApps] = useState<App[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+
+  // Debug logging
+  console.log('🔍 APPS_DEBUG: Apps component loaded with LLM Config and max-w-6xl modal v2.1.7');
+  console.log('🔍 APPS_DEBUG: Build timestamp:', new Date().toISOString());
   const [createDialogOpen, setCreateDialogOpen] = useState(false);
+  const [configureDialogOpen, setConfigureDialogOpen] = useState(false);
+  const [editingApp, setEditingApp] = useState<App | null>(null);
+  const [editingAppData, setEditingAppData] = useState({
+    name: '',
+    slug: '',
+    description: '',
+    category: '',
+    status: 'active',
+  });
+  const [modelConfig, setModelConfig] = useState({
+    primary_provider: '',
+    primary_model_id: '',
+    primary_parameters: {
+      temperature: 0.7,
+      max_tokens: 1000,
+      top_p: 0.9,
+    },
+  });
+  const [supportedModels, setSupportedModels] = useState<any>({});
+  const [savingApp, setSavingApp] = useState(false);
   const [builders, setBuilders] = useState<Array<{ id: string; fairyname: string; email: string }>>([]);
   const [creatingApp, setCreatingApp] = useState(false);
   const [newApp, setNewApp] = useState({
@@ -55,6 +80,13 @@ export function Apps() {
     demo_url: '',
     callback_url: '',
   });
+
+  // Action Pricing state
+  const [actionPricing, setActionPricing] = useState<ActionPricing[]>([]);
+  const [pricingLoading, setPricingLoading] = useState(false);
+  const [editingPricing, setEditingPricing] = useState<ActionPricing | null>(null);
+  const [pricingDialogOpen, setPricingDialogOpen] = useState(false);
+  const [isCreatingAction, setIsCreatingAction] = useState(false);
 
   const loadApps = async () => {
     try {
@@ -77,6 +109,19 @@ export function Apps() {
     } catch (err) {
       console.error('Failed to load builders:', err);
       toast.error('Failed to load builders');
+    }
+  };
+
+  const loadSupportedModels = async () => {
+    try {
+      console.log('🔍 Loading supported models...');
+      const modelsData = await AdminAPI.getSupportedModels();
+      console.log('📊 Received models data:', modelsData);
+      console.log('🔧 Setting supported models:', modelsData.supported_models || {});
+      setSupportedModels(modelsData.supported_models || {});
+    } catch (err) {
+      console.error('Failed to load supported models:', err);
+      toast.error('Failed to load supported models');
     }
   };
 
@@ -107,6 +152,57 @@ export function Apps() {
     }
   };
 
+  const handleConfigureApp = (app: App) => {
+    setEditingApp(app);
+    setEditingAppData({
+      name: app.name,
+      slug: app.slug,
+      description: app.description,
+      category: app.category,
+      status: app.status === 'approved' ? 'active' : 'inactive',
+    });
+    
+    // Set model configuration from app data
+    setModelConfig({
+      primary_provider: app.primary_provider || '',
+      primary_model_id: app.primary_model_id || '',
+      primary_parameters: {
+        temperature: 0.7,
+        max_tokens: 1000,
+        top_p: 0.9,
+      },
+    });
+    
+    setConfigureDialogOpen(true);
+  };
+
+  const handleSaveApp = async () => {
+    if (!editingApp) return;
+    
+    try {
+      setSavingApp(true);
+      
+      // Save app properties
+      const updatedApp = await AdminAPI.updateApp(editingApp.id, editingAppData);
+      
+      // Save model configuration if provider and model are selected
+      if (modelConfig.primary_provider && modelConfig.primary_model_id) {
+        await AdminAPI.updateAppModelConfig(editingApp.id, modelConfig);
+      }
+      
+      // Reload apps to get all updated data including model config
+      await loadApps();
+      
+      setConfigureDialogOpen(false);
+      toast.success('App and model configuration updated successfully');
+    } catch (err) {
+      console.error('Failed to update app:', err);
+      toast.error('Failed to update app');
+    } finally {
+      setSavingApp(false);
+    }
+  };
+
   const categories = [
     { value: 'productivity', label: 'Productivity' },
     { value: 'entertainment', label: 'Entertainment' },
@@ -118,22 +214,59 @@ export function Apps() {
     { value: 'other', label: 'Other' },
   ];
 
+  // Action Pricing functions
+  const loadActionPricing = async () => {
+    try {
+      setPricingLoading(true);
+      const data = await AdminAPI.getActionPricing();
+      console.log('🎯 Action pricing data received:', data);
+      setActionPricing(data);
+    } catch (err) {
+      console.error('Failed to load action pricing:', err);
+      toast.error('Failed to load action pricing');
+    } finally {
+      setPricingLoading(false);
+    }
+  };
+
+  const handleUpdatePricing = async () => {
+    if (!editingPricing) return;
+
+    try {
+      await AdminAPI.updateActionPricing(editingPricing.action_slug, {
+        dust_cost: editingPricing.dust_cost,
+        description: editingPricing.description,
+        is_active: editingPricing.is_active,
+      });
+      
+      toast.success(isCreatingAction ? 'Action created successfully' : 'Pricing updated successfully');
+      setPricingDialogOpen(false);
+      setEditingPricing(null);
+      setIsCreatingAction(false);
+      await loadActionPricing();
+    } catch (err) {
+      console.error('Failed to update pricing:', err);
+      toast.error('Failed to update pricing');
+    }
+  };
+
   useEffect(() => {
     loadApps();
     loadBuilders();
+    loadSupportedModels();
+    loadActionPricing();
   }, []);
 
   const getStatusIcon = (status: string) => {
-    switch (status) {
-      case 'approved':
-        return <CheckCircle className="h-4 w-4 text-green-600" />;
-      case 'pending':
-        return <Clock className="h-4 w-4 text-yellow-600" />;
-      case 'rejected':
-        return <XCircle className="h-4 w-4 text-red-600" />;
-      default:
-        return null;
-    }
+    // Convert old status to new active/inactive model
+    const isActive = status === 'approved';
+    return isActive ? 
+      <CheckCircle className="h-4 w-4 text-green-600" /> : 
+      <XCircle className="h-4 w-4 text-red-600" />;
+  };
+
+  const getStatusDisplay = (status: string) => {
+    return status === 'approved' ? 'active' : 'inactive';
   };
 
   return (
@@ -141,9 +274,19 @@ export function Apps() {
       {/* Header */}
       <div className="flex justify-between items-center">
         <div>
-          <h1 className="text-3xl font-bold text-slate-900">Apps</h1>
-          <p className="text-slate-500">Manage applications and review submissions</p>
+          <h1 className="text-3xl font-bold text-slate-900">Apps & Pricing</h1>
+          <p className="text-slate-500">Manage applications and DUST pricing</p>
         </div>
+      </div>
+
+      <Tabs defaultValue="apps" className="space-y-6">
+        <TabsList>
+          <TabsTrigger value="apps">Apps Management</TabsTrigger>
+          <TabsTrigger value="pricing">Action Pricing</TabsTrigger>
+        </TabsList>
+
+        <TabsContent value="apps" className="space-y-6">
+          <div className="flex justify-end">
         <Dialog open={createDialogOpen} onOpenChange={setCreateDialogOpen}>
           <DialogTrigger asChild>
             <Button>
@@ -311,11 +454,10 @@ export function Apps() {
             <TableHeader>
               <TableRow>
                 <TableHead>App</TableHead>
-                <TableHead>UUID</TableHead>
+                <TableHead>Slug</TableHead>
                 <TableHead>Category</TableHead>
                 <TableHead>Status</TableHead>
-                <TableHead>Created</TableHead>
-                <TableHead>Last Updated</TableHead>
+                <TableHead>Model</TableHead>
                 <TableHead>Actions</TableHead>
               </TableRow>
             </TableHeader>
@@ -338,8 +480,8 @@ export function Apps() {
                     </div>
                   </TableCell>
                   <TableCell>
-                    <div className="text-xs font-mono text-slate-500 max-w-[200px] truncate" title={app.id}>
-                      {app.id}
+                    <div className="text-sm font-mono text-slate-700 max-w-[200px] truncate" title={app.slug}>
+                      {app.slug}
                     </div>
                   </TableCell>
                   <TableCell>
@@ -351,31 +493,37 @@ export function Apps() {
                     <div className="flex items-center space-x-2">
                       {getStatusIcon(app.status)}
                       <Badge 
-                        variant={
-                          app.status === 'approved' ? 'default' :
-                          app.status === 'pending' ? 'secondary' :
-                          'destructive'
-                        }
+                        variant={app.status === 'approved' ? 'default' : 'destructive'}
                         className="capitalize"
                       >
-                        {app.status}
+                        {getStatusDisplay(app.status)}
                       </Badge>
                     </div>
                   </TableCell>
                   <TableCell>
-                    <div className="text-sm text-slate-500">
-                      {formatDistanceToNow(new Date(app.created_at), { addSuffix: true })}
+                    <div className="text-sm">
+                      {app.primary_model_id ? (
+                        <div>
+                          <div className="font-mono text-slate-700">{app.primary_model_id}</div>
+                          <div className="text-xs text-slate-500 capitalize">{app.primary_provider}</div>
+                        </div>
+                      ) : (
+                        <div className="text-slate-400 italic">Not configured</div>
+                      )}
                     </div>
                   </TableCell>
                   <TableCell>
-                    <div className="text-sm text-slate-500">
-                      {formatDistanceToNow(new Date(app.updated_at), { addSuffix: true })}
+                    <div className="flex items-center space-x-2">
+                      <Button 
+                        variant="ghost" 
+                        size="sm"
+                        onClick={() => handleConfigureApp(app)}
+                        className="text-blue-600 hover:text-blue-800"
+                      >
+                        <Settings className="h-4 w-4 mr-1" />
+                        Configure
+                      </Button>
                     </div>
-                  </TableCell>
-                  <TableCell>
-                    <Button variant="ghost" size="sm">
-                      <MoreHorizontal className="h-4 w-4" />
-                    </Button>
                   </TableCell>
                 </TableRow>
               ))}
@@ -384,6 +532,388 @@ export function Apps() {
           )}
         </CardContent>
       </Card>
+
+      {/* Configure App Dialog */}
+      <Dialog open={configureDialogOpen} onOpenChange={setConfigureDialogOpen}>
+        <DialogContent className="max-w-6xl">
+          <DialogHeader>
+            <DialogTitle>Edit App: {editingApp?.name}</DialogTitle>
+            <DialogDescription>
+              Edit app properties, settings, and configuration
+            </DialogDescription>
+          </DialogHeader>
+          <div className="grid grid-cols-2 gap-4 py-4">
+            <div className="space-y-2">
+              <Label htmlFor="edit-name">App Name *</Label>
+              <Input
+                id="edit-name"
+                value={editingAppData.name}
+                onChange={(e) => setEditingAppData(prev => ({ ...prev, name: e.target.value }))}
+                placeholder="e.g., Recipe Generator"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="edit-slug">Slug *</Label>
+              <Input
+                id="edit-slug"
+                value={editingAppData.slug}
+                onChange={(e) => setEditingAppData(prev => ({ ...prev, slug: e.target.value }))}
+                placeholder="e.g., recipe-generator"
+              />
+            </div>
+            <div className="space-y-2 col-span-2">
+              <Label htmlFor="edit-description">Description *</Label>
+              <Textarea
+                id="edit-description"
+                value={editingAppData.description}
+                onChange={(e) => setEditingAppData(prev => ({ ...prev, description: e.target.value }))}
+                placeholder="Describe what your app does..."
+                rows={3}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="edit-category">Category *</Label>
+              <Select value={editingAppData.category} onValueChange={(value) => setEditingAppData(prev => ({ ...prev, category: value }))}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Select category" />
+                </SelectTrigger>
+                <SelectContent>
+                  {categories.map((category) => (
+                    <SelectItem key={category.value} value={category.value}>
+                      {category.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="edit-status">Status *</Label>
+              <Select value={editingAppData.status} onValueChange={(value) => setEditingAppData(prev => ({ ...prev, status: value }))}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Select status" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="active">Active</SelectItem>
+                  <SelectItem value="inactive">Inactive</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            
+            <div className="space-y-2 col-span-2">
+              <Label>LLM Model Configuration</Label>
+              <div className="grid grid-cols-2 gap-4 p-4 bg-slate-50 rounded-lg">
+                <div className="space-y-2">
+                  <Label htmlFor="edit-provider">Provider</Label>
+                  <Select 
+                    value={modelConfig.primary_provider} 
+                    onValueChange={(value) => setModelConfig(prev => ({ 
+                      ...prev, 
+                      primary_provider: value,
+                      primary_model_id: '' // Reset model when provider changes
+                    }))}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select provider" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {Object.keys(supportedModels).map((provider) => (
+                        <SelectItem key={provider} value={provider}>
+                          {provider.charAt(0).toUpperCase() + provider.slice(1)}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                
+                <div className="space-y-2">
+                  <Label htmlFor="edit-model">Model</Label>
+                  <Select 
+                    value={modelConfig.primary_model_id} 
+                    onValueChange={(value) => setModelConfig(prev => ({ ...prev, primary_model_id: value }))}
+                    disabled={!modelConfig.primary_provider}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select model" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {modelConfig.primary_provider && supportedModels[modelConfig.primary_provider] && 
+                        Object.keys(supportedModels[modelConfig.primary_provider]).map((modelId) => (
+                          <SelectItem key={modelId} value={modelId}>
+                            {modelId}
+                          </SelectItem>
+                        ))
+                      }
+                    </SelectContent>
+                  </Select>
+                </div>
+                
+                <div className="space-y-2">
+                  <Label htmlFor="edit-temperature">Temperature</Label>
+                  <Input
+                    id="edit-temperature"
+                    type="number"
+                    min="0"
+                    max="2"
+                    step="0.1"
+                    value={modelConfig.primary_parameters.temperature}
+                    onChange={(e) => setModelConfig(prev => ({
+                      ...prev,
+                      primary_parameters: {
+                        ...prev.primary_parameters,
+                        temperature: parseFloat(e.target.value) || 0.7
+                      }
+                    }))}
+                  />
+                </div>
+                
+                <div className="space-y-2">
+                  <Label htmlFor="edit-max-tokens">Max Tokens</Label>
+                  <Input
+                    id="edit-max-tokens"
+                    type="number"
+                    min="1"
+                    max="4000"
+                    value={modelConfig.primary_parameters.max_tokens}
+                    onChange={(e) => setModelConfig(prev => ({
+                      ...prev,
+                      primary_parameters: {
+                        ...prev.primary_parameters,
+                        max_tokens: parseInt(e.target.value) || 1000
+                      }
+                    }))}
+                  />
+                </div>
+              </div>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setConfigureDialogOpen(false)}>
+              Cancel
+            </Button>
+            <Button 
+              onClick={handleSaveApp}
+              disabled={savingApp || !editingAppData.name || !editingAppData.slug || !editingAppData.description || !editingAppData.category}
+            >
+              {savingApp ? 'Saving...' : 'Save Changes'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+        </TabsContent>
+
+        <TabsContent value="pricing" className="space-y-6">
+          <div className="flex justify-end">
+            <Dialog open={pricingDialogOpen} onOpenChange={(open) => {
+              setPricingDialogOpen(open);
+              if (!open) {
+                setIsCreatingAction(false);
+                setEditingPricing(null);
+              }
+            }}>
+              <DialogTrigger asChild>
+                <Button onClick={() => {
+                  setIsCreatingAction(true);
+                  setEditingPricing({
+                    action_slug: '',
+                    dust_cost: 1,
+                    description: '',
+                    is_active: true,
+                    created_at: '',
+                    updated_at: ''
+                  });
+                }}>
+                  <Plus className="h-4 w-4 mr-2" />
+                  Create Action
+                </Button>
+              </DialogTrigger>
+            </Dialog>
+          </div>
+
+          {/* Action Pricing Table */}
+          <Card>
+            <CardHeader>
+              <CardTitle>Action Pricing ({actionPricing.length})</CardTitle>
+            </CardHeader>
+            <CardContent>
+              {pricingLoading && (
+                <div className="flex items-center justify-center py-8">
+                  <RefreshCw className="h-6 w-6 animate-spin mr-2" />
+                  Loading pricing...
+                </div>
+              )}
+              
+              {!pricingLoading && actionPricing.length === 0 && (
+                <div className="text-center py-8 text-slate-500">
+                  No action pricing found.
+                </div>
+              )}
+              
+              {!pricingLoading && actionPricing.length > 0 && (
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Action Slug</TableHead>
+                      <TableHead>DUST Cost</TableHead>
+                      <TableHead>Description</TableHead>
+                      <TableHead>Status</TableHead>
+                      <TableHead>Last Updated</TableHead>
+                      <TableHead>Actions</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {actionPricing.map((pricing) => (
+                      <TableRow key={pricing.action_slug}>
+                        <TableCell>
+                          <div className="font-mono text-sm">{pricing.action_slug}</div>
+                        </TableCell>
+                        <TableCell>
+                          <Badge variant="outline" className="font-mono">
+                            {pricing.dust_cost} DUST
+                          </Badge>
+                        </TableCell>
+                        <TableCell>
+                          <div className="max-w-xs truncate" title={pricing.description}>
+                            {pricing.description}
+                          </div>
+                        </TableCell>
+                        <TableCell>
+                          <div className="flex items-center space-x-2">
+                            {pricing.is_active ? (
+                              <CheckCircle className="h-4 w-4 text-green-600" />
+                            ) : (
+                              <XCircle className="h-4 w-4 text-red-600" />
+                            )}
+                            <Badge 
+                              variant={pricing.is_active ? 'default' : 'destructive'}
+                              className="capitalize"
+                            >
+                              {pricing.is_active ? 'Active' : 'Inactive'}
+                            </Badge>
+                          </div>
+                        </TableCell>
+                        <TableCell>
+                          <div className="text-sm text-slate-500">
+                            {formatDistanceToNow(new Date(pricing.updated_at), { addSuffix: true })}
+                          </div>
+                        </TableCell>
+                        <TableCell>
+                          <Button 
+                            variant="ghost" 
+                            size="sm"
+                            onClick={() => {
+                              setIsCreatingAction(false);
+                              setEditingPricing(pricing);
+                              setPricingDialogOpen(true);
+                            }}
+                            className="text-blue-600 hover:text-blue-800"
+                          >
+                            <Edit className="h-4 w-4 mr-1" />
+                            Edit
+                          </Button>
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              )}
+            </CardContent>
+          </Card>
+
+          {/* Edit Pricing Dialog */}
+          <Dialog open={pricingDialogOpen} onOpenChange={setPricingDialogOpen}>
+            <DialogContent className="max-w-md">
+              <DialogHeader>
+                <DialogTitle>
+                  {isCreatingAction ? 'Create New Action' : 'Edit Action Pricing'}
+                </DialogTitle>
+                <DialogDescription>
+                  {isCreatingAction 
+                    ? 'Create a new action with DUST pricing'
+                    : `Modify DUST cost and settings for ${editingPricing?.action_slug}`
+                  }
+                </DialogDescription>
+              </DialogHeader>
+              {editingPricing && (
+                <div className="space-y-4 py-4">
+                  {isCreatingAction && (
+                    <div className="space-y-2">
+                      <Label htmlFor="action-slug">Action Slug *</Label>
+                      <Input
+                        id="action-slug"
+                        placeholder="e.g., story-short, recipe-simple"
+                        value={editingPricing.action_slug}
+                        onChange={(e) => setEditingPricing(prev => prev ? {
+                          ...prev,
+                          action_slug: e.target.value
+                        } : null)}
+                      />
+                    </div>
+                  )}
+                  <div className="space-y-2">
+                    <Label htmlFor="dust-cost">DUST Cost</Label>
+                    <Input
+                      id="dust-cost"
+                      type="number"
+                      min="0"
+                      max="100"
+                      value={editingPricing.dust_cost}
+                      onChange={(e) => setEditingPricing(prev => prev ? {
+                        ...prev,
+                        dust_cost: parseInt(e.target.value) || 0
+                      } : null)}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="description">Description</Label>
+                    <Textarea
+                      id="description"
+                      value={editingPricing.description}
+                      onChange={(e) => setEditingPricing(prev => prev ? {
+                        ...prev,
+                        description: e.target.value
+                      } : null)}
+                      rows={3}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="is-active">Status</Label>
+                    <Select 
+                      value={editingPricing.is_active ? 'active' : 'inactive'}
+                      onValueChange={(value) => setEditingPricing(prev => prev ? {
+                        ...prev,
+                        is_active: value === 'active'
+                      } : null)}
+                    >
+                      <SelectTrigger>
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="active">Active</SelectItem>
+                        <SelectItem value="inactive">Inactive</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
+              )}
+              <DialogFooter>
+                <Button variant="outline" onClick={() => {
+                  setPricingDialogOpen(false);
+                  setIsCreatingAction(false);
+                  setEditingPricing(null);
+                }}>
+                  Cancel
+                </Button>
+                <Button 
+                  onClick={handleUpdatePricing}
+                  disabled={!editingPricing?.action_slug}
+                >
+                  {isCreatingAction ? 'Create Action' : 'Save Changes'}
+                </Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
+        </TabsContent>
+      </Tabs>
     </div>
   );
 }

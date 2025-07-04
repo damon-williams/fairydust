@@ -27,7 +27,6 @@ from shared.llm_usage_logger import calculate_prompt_hash, create_request_metada
 router = APIRouter()
 
 # Constants
-INSPIRE_DUST_COST = 2
 INSPIRE_RATE_LIMIT = 10  # Max 10 generations per hour per user
 
 # Category-specific prompts
@@ -50,8 +49,12 @@ async def generate_inspiration(
     Generate a new inspiration using LLM and automatically save it to user's collection.
     """
     import uuid
+
     request_id = str(uuid.uuid4())[:8]
-    print(f"🚀 INSPIRE DEBUG: === NEW REQUEST START [{request_id}] === User: {request.user_id}, Category: {request.category}", flush=True)
+    print(
+        f"🚀 INSPIRE DEBUG: === NEW REQUEST START [{request_id}] === User: {request.user_id}, Category: {request.category}",
+        flush=True,
+    )
     print(f"🌟 INSPIRE: Starting generation for user {request.user_id}", flush=True)
     print(f"📂 INSPIRE: Category: {request.category}", flush=True)
 
@@ -78,14 +81,19 @@ async def generate_inspiration(
 
         # Get user balance for logging purposes only (payment handled by app)
         user_balance = await _get_user_balance(request.user_id, auth_token)
-        print(f"💰 INSPIRE DEBUG: User balance: {user_balance} DUST (payment handled by app)", flush=True)
+        print(
+            f"💰 INSPIRE DEBUG: User balance: {user_balance} DUST (payment handled by app)",
+            flush=True,
+        )
 
         # Get user context for personalization
         user_context = await _get_user_context(db, request.user_id)
         print("👤 INSPIRE: Retrieved user context", flush=True)
 
         # Generate inspiration using LLM
-        print(f"🤖 INSPIRE DEBUG: Starting LLM generation for category: {request.category}", flush=True)
+        print(
+            f"🤖 INSPIRE DEBUG: Starting LLM generation for category: {request.category}", flush=True
+        )
         inspiration_content, model_used, tokens_used, cost = await _generate_inspiration_llm(
             category=request.category,
             used_suggestions=request.used_suggestions,
@@ -93,13 +101,16 @@ async def generate_inspiration(
         )
 
         if not inspiration_content:
-            print(f"❌ INSPIRE DEBUG: LLM generation failed", flush=True)
+            print("❌ INSPIRE DEBUG: LLM generation failed", flush=True)
             return InspirationErrorResponse(
                 error="Failed to generate inspiration. Please try again."
             )
 
         print(f"🤖 INSPIRE DEBUG: Generated inspiration: {inspiration_content[:50]}...", flush=True)
-        print(f"🤖 INSPIRE DEBUG: Model used: {model_used}, LLM cost: ${cost}, Tokens: {tokens_used}", flush=True)
+        print(
+            f"🤖 INSPIRE DEBUG: Model used: {model_used}, LLM cost: ${cost}, Tokens: {tokens_used}",
+            flush=True,
+        )
 
         # Log LLM usage for analytics (background task)
         try:
@@ -128,7 +139,7 @@ async def generate_inspiration(
             await log_llm_usage(
                 user_id=request.user_id,
                 app_id="fairydust-inspire",
-                provider="anthropic",
+                provider=provider,
                 model_id=model_used,
                 prompt_tokens=tokens_used.get("prompt", 0),
                 completion_tokens=tokens_used.get("completion", 0),
@@ -163,7 +174,7 @@ async def generate_inspiration(
 
         # DUST payment is handled by the app before calling this endpoint
         # Content service only handles content generation, not payment
-        print(f"💰 INSPIRE DEBUG: Content generation complete - payment handled by app", flush=True)
+        print("💰 INSPIRE DEBUG: Content generation complete - payment handled by app", flush=True)
         new_balance = user_balance  # Balance unchanged by content service
 
         # Build response
@@ -409,7 +420,7 @@ async def _get_user_balance(user_id: uuid.UUID, auth_token: str) -> int:
     try:
         async with httpx.AsyncClient() as client:
             response = await client.get(
-                f"https://fairydust-ledger-production.up.railway.app/balance/{user_id}",
+                f"{ledger_url}/balance/{user_id}",
                 headers={"Authorization": auth_token},
                 timeout=10.0,
             )
@@ -481,7 +492,7 @@ async def _get_user_context(db: Database, user_id: uuid.UUID) -> str:
 
         # Get people in my life
         people_query = """
-            SELECT name, relationship, age_range
+            SELECT name, relationship, birth_date
             FROM people_in_my_life
             WHERE user_id = $1
         """
@@ -508,8 +519,13 @@ async def _get_user_context(db: Database, user_id: uuid.UUID) -> str:
             people_list = []
             for row in people_rows:
                 person_desc = f"{row['name']} ({row['relationship']}"
-                if row["age_range"]:
-                    person_desc += f", {row['age_range']}"
+                if row["birth_date"]:
+                    # Calculate age from birth date
+                    from datetime import date
+
+                    birth = date.fromisoformat(str(row["birth_date"]))
+                    age = (date.today() - birth).days // 365
+                    person_desc += f", {age} years old"
                 person_desc += ")"
                 people_list.append(person_desc)
 
@@ -526,8 +542,25 @@ async def _get_user_context(db: Database, user_id: uuid.UUID) -> str:
 async def _get_llm_model_config() -> dict:
     """Get LLM configuration for inspire app (with caching)"""
     from shared.app_config_cache import get_app_config_cache
+    from shared.database import get_db
 
-    app_id = "fairydust-inspire"
+    app_slug = "fairydust-inspire"
+
+    # First, get the app UUID from the slug
+    db = await get_db()
+    app_result = await db.fetch_one("SELECT id FROM apps WHERE slug = $1", app_slug)
+
+    if not app_result:
+        print(f"❌ INSPIRE_CONFIG: App with slug '{app_slug}' not found in database", flush=True)
+        # Return default config if app not found
+        return {
+            "primary_provider": "anthropic",
+            "primary_model_id": "claude-3-haiku-20240307",
+            "primary_parameters": {"temperature": 0.8, "max_tokens": 150, "top_p": 0.9},
+        }
+
+    app_id = str(app_result["id"])
+    print(f"🔍 INSPIRE_CONFIG: Resolved {app_slug} to UUID {app_id}", flush=True)
 
     # Try to get from cache first
     cache = await get_app_config_cache()
@@ -542,7 +575,41 @@ async def _get_llm_model_config() -> dict:
             ),
         }
 
-    # Cache miss - use default config and cache it
+    # Cache miss - check database directly
+    print("⚠️ INSPIRE_CONFIG: Cache miss, checking database directly", flush=True)
+
+    try:
+        # Don't need to get_db again, we already have it
+        db_config = await db.fetch_one("SELECT * FROM app_model_configs WHERE app_id = $1", app_id)
+
+        if db_config:
+            print("📊 INSPIRE_CONFIG: Found database config", flush=True)
+            print(f"📊 INSPIRE_CONFIG: DB Provider: {db_config['primary_provider']}", flush=True)
+            print(f"📊 INSPIRE_CONFIG: DB Model: {db_config['primary_model_id']}", flush=True)
+
+            # Parse and cache the database config
+            from shared.json_utils import parse_model_config_field
+
+            parsed_config = {
+                "primary_provider": db_config["primary_provider"],
+                "primary_model_id": db_config["primary_model_id"],
+                "primary_parameters": parse_model_config_field(
+                    dict(db_config), "primary_parameters"
+                )
+                or {"temperature": 0.8, "max_tokens": 150, "top_p": 0.9},
+            }
+
+            # Cache the database config
+            await cache.set_model_config(app_id, parsed_config)
+            print(f"✅ INSPIRE_CONFIG: Cached database config: {parsed_config}", flush=True)
+
+            return parsed_config
+
+    except Exception as e:
+        print(f"❌ INSPIRE_CONFIG: Database error: {e}", flush=True)
+
+    # Fallback to default config
+    print("🔄 INSPIRE_CONFIG: Using default config (no cache, no database)", flush=True)
     default_config = {
         "primary_provider": "anthropic",
         "primary_model_id": "claude-3-haiku-20240307",
@@ -551,23 +618,26 @@ async def _get_llm_model_config() -> dict:
 
     # Cache the default config for future requests
     await cache.set_model_config(app_id, default_config)
+    print(f"✅ INSPIRE_CONFIG: Cached default config: {default_config}", flush=True)
 
     return default_config
 
 
-def _build_inspiration_prompt(category: InspirationCategory, used_suggestions: list[str], user_context: str) -> str:
+def _build_inspiration_prompt(
+    category: InspirationCategory, used_suggestions: list[str], user_context: str
+) -> str:
     """Build the full prompt for inspiration generation"""
     # Build prompt using the same logic as in _generate_inspiration_llm
     base_prompt = CATEGORY_PROMPTS[category]
-    
+
     # Add context and anti-duplication
     context_prompt = f"Context: User is a {user_context}. "
-    
+
     anti_dup_prompt = ""
     if used_suggestions:
         suggestions_text = "\n".join([f"- {s}" for s in used_suggestions[-10:]])
         anti_dup_prompt = f"\n\nAvoid suggesting anything similar to these recent suggestions:\n{suggestions_text}\n\n"
-    
+
     return f"{context_prompt}{base_prompt}{anti_dup_prompt}Respond with just the inspiration text, nothing else."
 
 
@@ -704,7 +774,12 @@ async def _generate_inspiration_llm(
                     flush=True,
                 )
                 # Return default inspiration instead of recursive call
-                return "Stay positive and keep moving forward! ✨", "claude-3-haiku-20240307", {}, 0.0
+                return (
+                    "Stay positive and keep moving forward! ✨",
+                    "claude-3-haiku-20240307",
+                    {},
+                    0.0,
+                )
 
     except Exception as e:
         print(f"❌ INSPIRE_LLM: Error generating inspiration: {str(e)}", flush=True)
@@ -758,8 +833,8 @@ async def _mark_onboarding_completed(db: Database, user_id: uuid.UUID) -> None:
         # Update only if onboarding is not already completed
         await db.execute(
             """
-            UPDATE users 
-            SET is_onboarding_completed = TRUE, updated_at = CURRENT_TIMESTAMP 
+            UPDATE users
+            SET is_onboarding_completed = TRUE, updated_at = CURRENT_TIMESTAMP
             WHERE id = $1 AND is_onboarding_completed = FALSE
             """,
             user_id,

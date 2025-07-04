@@ -69,7 +69,6 @@ export function SystemStatus() {
     { name: 'Apps Service', key: 'apps', description: 'App marketplace and LLM management' },
     { name: 'Content Service', key: 'content', description: 'User-generated content storage' },
     { name: 'Admin Portal', key: 'admin', description: 'Administrative interface' },
-    { name: 'Builder Portal', key: 'builder', description: 'App development interface' },
   ] : [];
 
   const overallStatus = systemHealth ? 

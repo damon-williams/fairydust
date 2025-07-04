@@ -148,8 +148,21 @@ def parse_model_config_field(config_data: dict, field_name: str) -> Any:
     if field_value is None:
         return None
 
-    # Handle specific field types
-    if field_name in ["primary_parameters", "fallback_models", "cost_limits", "feature_flags"]:
+    # Handle specific field types with correct defaults
+    if field_name == "fallback_models":
+        # fallback_models should be a list
+        if isinstance(field_value, list):
+            return field_value
+        elif isinstance(field_value, str):
+            try:
+                parsed = json.loads(field_value)
+                return parsed if isinstance(parsed, list) else []
+            except (json.JSONDecodeError, TypeError):
+                logger.warning(f"Failed to parse JSONB field '{field_name}': {field_value}")
+                return []
+        else:
+            return []
+    elif field_name in ["primary_parameters", "cost_limits", "feature_flags"]:
         return parse_jsonb_field(field_value, default={}, field_name=field_name)
 
     return field_value

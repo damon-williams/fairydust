@@ -211,8 +211,72 @@ async def update_app_model_config(
     # Get current config
     current_config = await db.fetch_one("SELECT * FROM app_model_configs WHERE app_id = $1", app_id)
 
+    # If no configuration exists, create a new one
     if not current_config:
-        raise HTTPException(status_code=404, detail="Model configuration not found")
+        config_id = uuid4()
+        await db.execute(
+            """
+            INSERT INTO app_model_configs (
+                id, app_id, primary_provider, primary_model_id, primary_parameters,
+                fallback_models, cost_limits, feature_flags
+            ) VALUES ($1, $2, $3, $4, $5::jsonb, $6::jsonb, $7::jsonb, $8::jsonb)
+            """,
+            config_id,
+            app_id,
+            config_update.primary_provider.value if config_update.primary_provider else "anthropic",
+            config_update.primary_model_id or "claude-3-5-sonnet-20241022",
+            json.dumps(
+                config_update.primary_parameters.dict(exclude_none=True)
+                if config_update.primary_parameters
+                else {"temperature": 0.7, "max_tokens": 1000, "top_p": 0.9}
+            ),
+            json.dumps(
+                [model.dict(exclude_none=True) for model in config_update.fallback_models]
+                if config_update.fallback_models
+                else []
+            ),
+            json.dumps(
+                config_update.cost_limits.dict(exclude_none=True)
+                if config_update.cost_limits
+                else {}
+            ),
+            json.dumps(config_update.feature_flags.dict() if config_update.feature_flags else {}),
+        )
+
+        # Fetch the created config
+        current_config = await db.fetch_one(
+            "SELECT * FROM app_model_configs WHERE id = $1", config_id
+        )
+
+        # Invalidate cache and return new config
+        from shared.app_config_cache import get_app_config_cache
+        from shared.json_utils import parse_model_config_field
+
+        cache = await get_app_config_cache()
+        await cache.invalidate_model_config(app_id)
+
+        # Parse JSONB fields properly before returning
+        config_dict = dict(current_config)
+
+        # Parse fallback_models - ensure it's a list
+        fallback_models = parse_model_config_field(config_dict, "fallback_models")
+        if isinstance(fallback_models, dict):
+            fallback_models = []  # Default to empty list if dict
+
+        parsed_config = {
+            "id": config_dict["id"],
+            "app_id": str(config_dict["app_id"]),  # Convert UUID to string
+            "primary_provider": config_dict["primary_provider"],
+            "primary_model_id": config_dict["primary_model_id"],
+            "primary_parameters": parse_model_config_field(config_dict, "primary_parameters"),
+            "fallback_models": fallback_models,
+            "cost_limits": parse_model_config_field(config_dict, "cost_limits"),
+            "feature_flags": parse_model_config_field(config_dict, "feature_flags"),
+            "created_at": config_dict["created_at"],
+            "updated_at": config_dict["updated_at"],
+        }
+
+        return AppModelConfig(**parsed_config)
 
     # Build update query dynamically
     update_fields = []
@@ -279,11 +343,33 @@ async def update_app_model_config(
 
     # Invalidate cache after successful update
     from shared.app_config_cache import get_app_config_cache
+    from shared.json_utils import parse_model_config_field
 
     cache = await get_app_config_cache()
     await cache.invalidate_model_config(app_id)
 
-    return AppModelConfig(**updated_config)
+    # Parse JSONB fields properly before returning
+    config_dict = dict(updated_config)
+
+    # Parse fallback_models - ensure it's a list
+    fallback_models = parse_model_config_field(config_dict, "fallback_models")
+    if isinstance(fallback_models, dict):
+        fallback_models = []  # Default to empty list if dict
+
+    parsed_config = {
+        "id": config_dict["id"],
+        "app_id": str(config_dict["app_id"]),  # Convert UUID to string
+        "primary_provider": config_dict["primary_provider"],
+        "primary_model_id": config_dict["primary_model_id"],
+        "primary_parameters": parse_model_config_field(config_dict, "primary_parameters"),
+        "fallback_models": fallback_models,
+        "cost_limits": parse_model_config_field(config_dict, "cost_limits"),
+        "feature_flags": parse_model_config_field(config_dict, "feature_flags"),
+        "created_at": config_dict["created_at"],
+        "updated_at": config_dict["updated_at"],
+    }
+
+    return AppModelConfig(**parsed_config)
 
 
 @llm_router.post("/usage", status_code=status.HTTP_201_CREATED)
@@ -521,3 +607,200 @@ async def get_user_llm_usage(
         period_start=start_date,
         period_end=end_date,
     )
+
+
+# Action-based DUST pricing endpoints
+@app_router.get("/pricing/actions")
+async def get_action_pricing(
+    db: Database = Depends(get_db),
+):
+    """
+    Get action-based DUST pricing for mobile app.
+    Returns pricing for all active action slugs with caching headers.
+    """
+    import logging
+
+    logger = logging.getLogger(__name__)
+    logger.info("🎯 Mobile pricing endpoint called: /apps/pricing/actions")
+
+    try:
+        # Get all active pricing
+        pricing_rows = await db.fetch_all(
+            """
+            SELECT action_slug, dust_cost, description, updated_at
+            FROM action_pricing
+            WHERE is_active = true
+            ORDER BY action_slug
+            """
+        )
+
+        # Format response as expected by mobile app
+        pricing_data = {}
+        for row in pricing_rows:
+            pricing_data[row["action_slug"]] = {
+                "dust": row["dust_cost"],
+                "description": row["description"],
+                "last_updated": row["updated_at"].isoformat() + "Z",
+            }
+
+        logger.info(f"🎯 Returning {len(pricing_data)} pricing entries to mobile app")
+        logger.info(f"🎯 Pricing data: {pricing_data}")
+        return pricing_data
+
+    except Exception as e:
+        import logging
+
+        logger = logging.getLogger(__name__)
+        logger.error(f"Error fetching action pricing: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail={
+                "error": "Failed to retrieve pricing",
+                "code": "PRICING_UNAVAILABLE",
+                "message": "Pricing service temporarily unavailable",
+            },
+        )
+
+
+@app_router.get("/pricing/health")
+async def get_pricing_health():
+    """
+    Health check for pricing service.
+    """
+    import logging
+
+    logger = logging.getLogger(__name__)
+    logger.info("🎯 Pricing health check called: /apps/pricing/health")
+
+    return {
+        "status": "healthy",
+        "timestamp": datetime.utcnow().isoformat() + "Z",
+        "endpoint": "/apps/pricing/health",
+    }
+
+
+# Admin endpoints for managing action pricing
+@admin_router.get("/pricing/actions")
+async def get_admin_action_pricing(
+    admin_user: TokenData = Depends(require_admin),
+    db: Database = Depends(get_db),
+):
+    """
+    Get all action pricing (including inactive) for admin management.
+    """
+    try:
+        pricing_rows = await db.fetch_all(
+            """
+            SELECT action_slug, dust_cost, description, is_active,
+                   created_at, updated_at
+            FROM action_pricing
+            ORDER BY action_slug
+            """
+        )
+
+        return [dict(row) for row in pricing_rows]
+
+    except Exception as e:
+        import logging
+
+        logger = logging.getLogger(__name__)
+        logger.error(f"Error fetching admin action pricing: {e}")
+        raise HTTPException(status_code=500, detail="Failed to retrieve pricing data")
+
+
+@admin_router.put("/pricing/actions/{action_slug}")
+async def update_action_pricing(
+    action_slug: str,
+    pricing_data: dict,
+    admin_user: TokenData = Depends(require_admin),
+    db: Database = Depends(get_db),
+):
+    """
+    Update action pricing. Admin only.
+    """
+    try:
+        dust_cost = pricing_data.get("dust_cost")
+        description = pricing_data.get("description")
+        is_active = pricing_data.get("is_active", True)
+
+        # Validate input
+        if dust_cost is None or dust_cost < 0:
+            raise HTTPException(status_code=400, detail="dust_cost must be >= 0")
+        if not description or len(description.strip()) == 0:
+            raise HTTPException(status_code=400, detail="description is required")
+
+        # Update pricing
+        result = await db.execute(
+            """
+            UPDATE action_pricing
+            SET dust_cost = $1, description = $2, is_active = $3,
+                updated_at = CURRENT_TIMESTAMP
+            WHERE action_slug = $4
+            """,
+            dust_cost,
+            description.strip(),
+            is_active,
+            action_slug,
+        )
+
+        if "UPDATE 0" in result:
+            # Create new action if it doesn't exist
+            await db.execute(
+                """
+                INSERT INTO action_pricing (action_slug, dust_cost, description, is_active)
+                VALUES ($1, $2, $3, $4)
+                """,
+                action_slug,
+                dust_cost,
+                description.strip(),
+                is_active,
+            )
+
+        # Return updated pricing
+        updated_row = await db.fetch_one(
+            """
+            SELECT action_slug, dust_cost, description, is_active,
+                   created_at, updated_at
+            FROM action_pricing
+            WHERE action_slug = $1
+            """,
+            action_slug,
+        )
+
+        return dict(updated_row)
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        import logging
+
+        logger = logging.getLogger(__name__)
+        logger.error(f"Error updating action pricing: {e}")
+        raise HTTPException(status_code=500, detail="Failed to update pricing")
+
+
+@admin_router.delete("/pricing/actions/{action_slug}")
+async def delete_action_pricing(
+    action_slug: str,
+    admin_user: TokenData = Depends(require_admin),
+    db: Database = Depends(get_db),
+):
+    """
+    Delete action pricing. Admin only.
+    """
+    try:
+        result = await db.execute("DELETE FROM action_pricing WHERE action_slug = $1", action_slug)
+
+        if "DELETE 0" in result:
+            raise HTTPException(status_code=404, detail="Action pricing not found")
+
+        return {"message": f"Action pricing for '{action_slug}' deleted successfully"}
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        import logging
+
+        logger = logging.getLogger(__name__)
+        logger.error(f"Error deleting action pricing: {e}")
+        raise HTTPException(status_code=500, detail="Failed to delete pricing")

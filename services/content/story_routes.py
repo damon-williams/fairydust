@@ -9,6 +9,8 @@ from typing import Optional
 
 import httpx
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
+
+# Content service no longer manages DUST - all DUST handling is external
 from models import (
     StoriesListResponse,
     StoryConfigResponse,
@@ -32,17 +34,12 @@ from shared.llm_usage_logger import calculate_prompt_hash, create_request_metada
 
 router = APIRouter()
 
-# Constants - Reading time based
-STORY_DUST_COSTS = {
-    StoryLength.QUICK: 2,   # 2-3 minute read
-    StoryLength.MEDIUM: 4,  # 5-7 minute read  
-    StoryLength.LONG: 6,    # 8-12 minute read
-}
+# Constants - Reading time targets for story generation
 
 READING_TIME_WORD_TARGETS = {
-    StoryLength.QUICK: (400, 600),     # ~2-3 min reading time
+    StoryLength.QUICK: (400, 600),  # ~2-3 min reading time
     StoryLength.MEDIUM: (1000, 1400),  # ~5-7 min reading time
-    StoryLength.LONG: (1600, 2400),    # ~8-12 min reading time
+    StoryLength.LONG: (1600, 2400),  # ~8-12 min reading time
 }
 
 STORY_RATE_LIMIT = 10  # Max 10 stories per hour per user
@@ -70,32 +67,11 @@ async def generate_story(
         return StoryErrorResponse(error="Can only generate stories for yourself")
 
     try:
-        # Extract Authorization header for service-to-service calls
-        auth_token = http_request.headers.get("authorization", "")
-        if not auth_token:
-            return StoryErrorResponse(error="Authorization header required")
-
         # Check rate limiting
         rate_limit_exceeded = await _check_rate_limit(db, request.user_id)
         if rate_limit_exceeded:
             return StoryErrorResponse(
                 error=f"Rate limit exceeded. Maximum {STORY_RATE_LIMIT} stories per hour."
-            )
-
-        # Get DUST cost for story length
-        dust_cost = STORY_DUST_COSTS[request.story_length]
-
-        # Verify user has enough DUST
-        user_balance = await _get_user_balance(request.user_id, auth_token)
-        if user_balance < dust_cost:
-            print(
-                f"💰 STORY: Insufficient DUST balance: {user_balance} < {dust_cost}",
-                flush=True,
-            )
-            return StoryErrorResponse(
-                error="Insufficient DUST balance",
-                current_balance=user_balance,
-                required_amount=dust_cost,
             )
 
         # Get user context for personalization
@@ -112,6 +88,7 @@ async def generate_story(
             tokens_used,
             cost,
             latency_ms,
+            provider_used,
         ) = await _generate_story_llm(
             request=request,
             user_context=user_context,
@@ -145,7 +122,7 @@ async def generate_story(
             await log_llm_usage(
                 user_id=request.user_id,
                 app_id="fairydust-story",
-                provider="anthropic",
+                provider=provider_used,
                 model_id=model_used,
                 prompt_tokens=tokens_used.get("prompt", 0),
                 completion_tokens=tokens_used.get("completion", 0),
@@ -157,7 +134,7 @@ async def generate_story(
                 was_fallback=False,
                 fallback_reason=None,
                 request_metadata=request_metadata,
-                auth_token=auth_token,
+                auth_token=None,  # No auth token needed for LLM logging
             )
         except Exception as e:
             print(f"⚠️ STORY: Failed to log LLM usage: {str(e)}", flush=True)
@@ -177,21 +154,10 @@ async def generate_story(
             model_used=model_used,
             tokens_used=tokens_used,
             cost=cost,
-            dust_cost=dust_cost,
             custom_prompt=request.custom_prompt,
         )
 
-        # Consume DUST after successful generation and saving
-        dust_consumed = await _consume_dust(request.user_id, dust_cost, auth_token, db)
-        if not dust_consumed:
-            print(f"❌ STORY: Failed to consume DUST for user {request.user_id}", flush=True)
-            return StoryErrorResponse(error="Payment processing failed")
-
-        new_balance = user_balance - dust_cost
-        print(
-            f"💰 STORY: Consumed {dust_cost} DUST from user {request.user_id}",
-            flush=True,
-        )
+        print(f"✅ STORY: Generated story for user {request.user_id}", flush=True)
 
         # Build response
         story = UserStoryNew(
@@ -207,7 +173,6 @@ async def generate_story(
             metadata={
                 "characters": [char.dict() for char in request.characters],
                 "custom_prompt": request.custom_prompt,
-                "dust_cost": dust_cost,
             },
         )
 
@@ -220,7 +185,6 @@ async def generate_story(
                 total=tokens_used.get("total", 0),
             ),
             cost=cost,
-            new_dust_balance=new_balance,
         )
 
     except HTTPException:
@@ -482,21 +446,18 @@ async def get_story_config():
                     "value": "quick",
                     "reading_time": "2-3 minutes",
                     "words": "400-600",
-                    "dust": STORY_DUST_COSTS[StoryLength.QUICK],
                 },
                 {
-                    "label": "Medium Story", 
+                    "label": "Medium Story",
                     "value": "medium",
                     "reading_time": "5-7 minutes",
                     "words": "1000-1400",
-                    "dust": STORY_DUST_COSTS[StoryLength.MEDIUM],
                 },
                 {
                     "label": "Long Story",
-                    "value": "long", 
+                    "value": "long",
                     "reading_time": "8-12 minutes",
                     "words": "1600-2400",
-                    "dust": STORY_DUST_COSTS[StoryLength.LONG],
                 },
             ],
             "target_audiences": [audience.value for audience in TargetAudience],
@@ -514,7 +475,6 @@ async def get_story_config():
                 "teacher",
                 "neighbor",
             ],
-            "age_ranges": ["child", "teen", "adult", "senior"],
             "common_traits": [
                 "brave",
                 "curious",
@@ -540,30 +500,6 @@ async def get_story_config():
 
 
 # Helper functions
-async def _get_user_balance(user_id: uuid.UUID, auth_token: str) -> int:
-    """Get user's current DUST balance via Ledger Service"""
-    print(f"🔍 STORY_BALANCE: Checking DUST balance for user {user_id}", flush=True)
-    try:
-        async with httpx.AsyncClient() as client:
-            response = await client.get(
-                f"https://fairydust-ledger-production.up.railway.app/balance/{user_id}",
-                headers={"Authorization": auth_token},
-                timeout=10.0,
-            )
-
-            if response.status_code == 200:
-                balance_data = response.json()
-                balance = balance_data.get("balance", 0)
-                print(f"✅ STORY_BALANCE: User {user_id} has {balance} DUST", flush=True)
-                return balance
-            else:
-                print(f"❌ STORY_BALANCE: Ledger service error: {response.text}", flush=True)
-                return 0
-    except Exception as e:
-        print(f"❌ STORY_BALANCE: Exception getting balance: {str(e)}", flush=True)
-        return 0
-
-
 async def _get_app_id(db: Database) -> str:
     """Get the UUID for the fairydust-story app"""
     result = await db.fetch_one("SELECT id FROM apps WHERE slug = $1", "fairydust-story")
@@ -573,45 +509,6 @@ async def _get_app_id(db: Database) -> str:
             detail="fairydust-story app not found in database. Please create the app first.",
         )
     return str(result["id"])
-
-
-async def _consume_dust(user_id: uuid.UUID, amount: int, auth_token: str, db: Database) -> bool:
-    """Consume DUST for story generation via Ledger Service"""
-    print(f"🔍 STORY_DUST: Attempting to consume {amount} DUST for user {user_id}", flush=True)
-    try:
-        # Get the proper app UUID
-        app_id = await _get_app_id(db)
-
-        # Generate idempotency key to prevent double-charging
-        idempotency_key = f"story_gen_{str(user_id).replace('-', '')[:16]}_{int(time.time())}"
-
-        async with httpx.AsyncClient() as client:
-            payload = {
-                "user_id": str(user_id),
-                "amount": amount,
-                "app_id": app_id,
-                "action": "story_generation",
-                "idempotency_key": idempotency_key,
-                "metadata": {"service": "content", "feature": "story_generation"},
-            }
-
-            response = await client.post(
-                "https://fairydust-ledger-production.up.railway.app/transactions/consume",
-                json=payload,
-                headers={"Authorization": auth_token},
-                timeout=10.0,
-            )
-
-            if response.status_code != 200:
-                response_text = response.text
-                print(f"❌ STORY_DUST: Error response: {response_text}", flush=True)
-                return False
-
-            print("✅ STORY_DUST: DUST consumption successful", flush=True)
-            return True
-    except Exception as e:
-        print(f"❌ STORY_DUST: Exception consuming DUST: {str(e)}", flush=True)
-        return False
 
 
 async def _check_rate_limit(db: Database, user_id: uuid.UUID) -> bool:
@@ -661,7 +558,7 @@ async def _get_user_context(db: Database, user_id: uuid.UUID) -> str:
 
         # Get people in my life
         people_query = """
-            SELECT name, relationship, age_range
+            SELECT name, relationship, birth_date
             FROM people_in_my_life
             WHERE user_id = $1
         """
@@ -688,8 +585,13 @@ async def _get_user_context(db: Database, user_id: uuid.UUID) -> str:
             people_list = []
             for row in people_rows:
                 person_desc = f"{row['name']} ({row['relationship']}"
-                if row["age_range"]:
-                    person_desc += f", {row['age_range']}"
+                if row["birth_date"]:
+                    # Calculate age from birth date
+                    from datetime import date
+
+                    birth = date.fromisoformat(str(row["birth_date"]))
+                    age = (date.today() - birth).days // 365
+                    person_desc += f", {age} years old"
                 person_desc += ")"
                 people_list.append(person_desc)
 
@@ -706,31 +608,91 @@ async def _get_user_context(db: Database, user_id: uuid.UUID) -> str:
 async def _get_llm_model_config() -> dict:
     """Get LLM configuration for story app (with caching)"""
     from shared.app_config_cache import get_app_config_cache
+    from shared.database import get_db
 
-    app_id = "fairydust-story"
+    app_slug = "fairydust-story"
+
+    # First, get the app UUID from the slug
+    db = await get_db()
+    app_result = await db.fetch_one("SELECT id FROM apps WHERE slug = $1", app_slug)
+
+    if not app_result:
+        print(f"❌ STORY_CONFIG: App with slug '{app_slug}' not found in database", flush=True)
+        # Return default config if app not found
+        return {
+            "primary_provider": "anthropic", 
+            "primary_model_id": "claude-3-5-sonnet-20241022",
+            "primary_parameters": {"temperature": 0.8, "max_tokens": 3000, "top_p": 0.9},
+        }
+
+    app_id = str(app_result["id"])
+    print(f"🔍 STORY_CONFIG: Resolved {app_slug} to UUID {app_id}", flush=True)
 
     # Try to get from cache first
     cache = await get_app_config_cache()
     cached_config = await cache.get_model_config(app_id)
 
     if cached_config:
-        return {
+        print("✅ STORY_CONFIG: Found cached config", flush=True)
+        print(f"✅ STORY_CONFIG: Provider: {cached_config.get('primary_provider')}", flush=True)
+        print(f"✅ STORY_CONFIG: Model: {cached_config.get('primary_model_id')}", flush=True)
+        print(f"✅ STORY_CONFIG: Full cached config: {cached_config}", flush=True)
+
+        config = {
             "primary_provider": cached_config.get("primary_provider", "anthropic"),
             "primary_model_id": cached_config.get("primary_model_id", "claude-3-5-sonnet-20241022"),
             "primary_parameters": cached_config.get(
-                "primary_parameters", {"temperature": 0.8, "max_tokens": 2000, "top_p": 0.9}
+                "primary_parameters", {"temperature": 0.8, "max_tokens": 3000, "top_p": 0.9}
             ),
         }
 
-    # Cache miss - use default config and cache it
+        print(f"✅ STORY_CONFIG: Returning config: {config}", flush=True)
+        return config
+
+    # Cache miss - check database directly
+    print("⚠️ STORY_CONFIG: Cache miss, checking database directly", flush=True)
+
+    try:
+        # Don't need to get_db again, we already have it
+        db_config = await db.fetch_one("SELECT * FROM app_model_configs WHERE app_id = $1", app_id)
+
+        if db_config:
+            print("📊 STORY_CONFIG: Found database config", flush=True)
+            print(f"📊 STORY_CONFIG: DB Provider: {db_config['primary_provider']}", flush=True)
+            print(f"📊 STORY_CONFIG: DB Model: {db_config['primary_model_id']}", flush=True)
+
+            # Parse and cache the database config
+            from shared.json_utils import parse_model_config_field
+
+            parsed_config = {
+                "primary_provider": db_config["primary_provider"],
+                "primary_model_id": db_config["primary_model_id"],
+                "primary_parameters": parse_model_config_field(
+                    dict(db_config), "primary_parameters"
+                )
+                or {"temperature": 0.8, "max_tokens": 3000, "top_p": 0.9},
+            }
+
+            # Cache the database config
+            await cache.set_model_config(app_id, parsed_config)
+            print(f"✅ STORY_CONFIG: Cached database config: {parsed_config}", flush=True)
+
+            return parsed_config
+
+    except Exception as e:
+        print(f"❌ STORY_CONFIG: Database error: {e}", flush=True)
+
+    # Fallback to default config
+    print("🔄 STORY_CONFIG: Using default config (no cache, no database)", flush=True)
     default_config = {
         "primary_provider": "anthropic",
         "primary_model_id": "claude-3-5-sonnet-20241022",
-        "primary_parameters": {"temperature": 0.8, "max_tokens": 2000, "top_p": 0.9},
+        "primary_parameters": {"temperature": 0.8, "max_tokens": 3000, "top_p": 0.9},
     }
 
     # Cache the default config for future requests
     await cache.set_model_config(app_id, default_config)
+    print(f"✅ STORY_CONFIG: Cached default config: {default_config}", flush=True)
 
     return default_config
 
@@ -751,12 +713,12 @@ def _build_story_prompt(request: StoryGenerationRequest, user_context: str) -> s
     """Build the LLM prompt for story generation"""
     min_words, max_words = READING_TIME_WORD_TARGETS[request.story_length]
     target_words = (min_words + max_words) // 2
-    
+
     # Convert story length to readable format
     length_descriptions = {
         StoryLength.QUICK: "2-3 minute read (~500 words)",
-        StoryLength.MEDIUM: "5-7 minute read (~1200 words)", 
-        StoryLength.LONG: "8-12 minute read (~2000 words)"
+        StoryLength.MEDIUM: "5-7 minute read (~1200 words)",
+        StoryLength.LONG: "8-12 minute read (~2000 words)",
     }
 
     # Build character descriptions
@@ -764,8 +726,13 @@ def _build_story_prompt(request: StoryGenerationRequest, user_context: str) -> s
     if request.characters:
         for char in request.characters:
             desc = f"- {char.name} ({char.relationship}"
-            if char.age_range:
-                desc += f", {char.age_range}"
+            if char.birth_date:
+                # Calculate age from birth date
+                from datetime import date
+
+                birth = date.fromisoformat(char.birth_date)
+                age = (date.today() - birth).days // 365
+                desc += f", {age} years old"
             desc += ")"
             if char.traits:
                 desc += f", traits: {', '.join(char.traits)}"
@@ -852,14 +819,37 @@ def _extract_title_and_content(generated_text: str) -> tuple[str, str]:
         title = lines[0].strip()
         content = "\n".join(lines[1:]).strip() if len(lines) > 1 else generated_text
 
+    # Clean up title formatting - remove markdown and common formatting issues
+    title = _clean_title_formatting(title)
+
     return title, content
+
+
+def _clean_title_formatting(title: str) -> str:
+    """Clean up title formatting to remove markdown and unwanted formatting"""
+    # Remove markdown bold formatting
+    title = re.sub(r"\*\*(.*?)\*\*", r"\1", title)
+
+    # Remove markdown italic formatting
+    title = re.sub(r"\*(.*?)\*", r"\1", title)
+
+    # Remove any remaining TITLE: prefix that might be embedded
+    title = re.sub(r"^.*?TITLE:\s*", "", title, flags=re.IGNORECASE)
+
+    # Remove leading/trailing quotes
+    title = title.strip("\"'")
+
+    # Remove extra whitespace
+    title = re.sub(r"\s+", " ", title).strip()
+
+    return title
 
 
 async def _generate_story_llm(
     request: StoryGenerationRequest,
     user_context: str,
-) -> tuple[Optional[str], str, int, str, str, dict, float, int]:
-    """Generate story using LLM"""
+) -> tuple[Optional[str], str, int, str, str, dict, float, int, str]:
+    """Generate story using LLM - returns (content, title, word_count, reading_time, model_id, tokens, cost, latency_ms, provider)"""
     try:
         # Get LLM model configuration from database/cache
         model_config = await _get_llm_model_config()
@@ -869,21 +859,47 @@ async def _generate_story_llm(
         parameters = model_config.get("primary_parameters", {})
 
         temperature = parameters.get("temperature", 0.8)
-        max_tokens = parameters.get("max_tokens", 2000)
+        base_max_tokens = parameters.get("max_tokens", 2000)
         top_p = parameters.get("top_p", 0.9)
+        
+        # Adjust max_tokens based on story length to prevent truncation
+        story_length_multipliers = {
+            StoryLength.QUICK: 1.0,    # ~500 words = ~667 tokens
+            StoryLength.MEDIUM: 1.8,   # ~1200 words = ~1600 tokens  
+            StoryLength.LONG: 2.5,     # ~2000 words = ~2667 tokens
+        }
+        
+        max_tokens = int(base_max_tokens * story_length_multipliers.get(request.story_length, 1.0))
+        
+        # Ensure minimum token count and reasonable maximum
+        max_tokens = max(1000, min(max_tokens, 8000))
+        
+        print(f"🔧 STORY_LLM: Adjusted max_tokens to {max_tokens} for {request.story_length.value} story", flush=True)
 
         # Build prompt
         prompt = _build_story_prompt(request, user_context)
 
         print(f"🤖 STORY_LLM: Generating with {provider} model {model_id}", flush=True)
 
-        # Check API key
-        api_key = os.getenv("ANTHROPIC_API_KEY", "")
-        if not api_key:
-            print("❌ STORY_LLM: Missing ANTHROPIC_API_KEY environment variable", flush=True)
+        # Check API key based on provider
+        if provider == "anthropic":
+            api_key = os.getenv("ANTHROPIC_API_KEY", "")
+            if not api_key:
+                print("❌ STORY_LLM: Missing ANTHROPIC_API_KEY environment variable", flush=True)
+                return None, "", 0, "", model_id, {}, 0.0, 0, provider
+        elif provider == "openai":
+            api_key = os.getenv("OPENAI_API_KEY", "")
+            if not api_key:
+                print("❌ STORY_LLM: Missing OPENAI_API_KEY environment variable", flush=True)
+                return None, "", 0, "", model_id, {}, 0.0, 0, provider
+        else:
+            print(f"❌ STORY_LLM: Unsupported provider: {provider}", flush=True)
             return None, "", 0, "", model_id, {}, 0.0, 0
 
-        print(f"🔑 STORY_LLM: API key configured (length: {len(api_key)})", flush=True)
+        print(
+            f"🔑 STORY_LLM: {provider.upper()} API key configured (length: {len(api_key)})",
+            flush=True,
+        )
 
         # Track request latency
         start_time = time.time()
@@ -951,20 +967,98 @@ async def _generate_story_llm(
                     )
 
                 else:
+                    error_detail = response.text
+                    try:
+                        error_json = response.json()
+                        error_detail = error_json.get("error", {}).get("message", response.text)
+                    except:
+                        pass
                     print(
-                        f"❌ STORY_LLM: Anthropic API error {response.status_code}: {response.text}",
+                        f"❌ STORY_LLM: Anthropic API error {response.status_code}: {error_detail}",
                         flush=True,
                     )
                     latency_ms = int((time.time() - start_time) * 1000)
-                    return None, "", 0, "", model_id, {}, 0.0, latency_ms
+                    return None, "", 0, "", model_id, {}, 0.0, latency_ms, provider
+
+            elif provider == "openai":
+                response = await client.post(
+                    "https://api.openai.com/v1/chat/completions",
+                    headers={
+                        "Content-Type": "application/json",
+                        "Authorization": f"Bearer {os.getenv('OPENAI_API_KEY', '')}",
+                    },
+                    json={
+                        "model": model_id,
+                        "max_tokens": max_tokens,
+                        "temperature": temperature,
+                        "top_p": top_p,
+                        "messages": [{"role": "user", "content": prompt}],
+                    },
+                )
+
+                if response.status_code == 200:
+                    result = response.json()
+                    content = result["choices"][0]["message"]["content"].strip()
+
+                    # Calculate tokens and cost
+                    usage = result.get("usage", {})
+                    prompt_tokens = usage.get("prompt_tokens", 0)
+                    completion_tokens = usage.get("completion_tokens", 0)
+                    total_tokens = usage.get("total_tokens", prompt_tokens + completion_tokens)
+
+                    tokens_used = {
+                        "prompt": prompt_tokens,
+                        "completion": completion_tokens,
+                        "total": total_tokens,
+                    }
+
+                    cost = calculate_llm_cost(
+                        provider="openai",
+                        model_id=model_id,
+                        input_tokens=prompt_tokens,
+                        output_tokens=completion_tokens,
+                    )
+
+                    latency_ms = int((time.time() - start_time) * 1000)
+
+                    # Extract title and validate content
+                    title, story_content = _extract_title_and_content(content)
+                    word_count = len(story_content.split())
+                    estimated_reading_time = _calculate_reading_time(word_count)
+
+                    return (
+                        story_content,
+                        title,
+                        word_count,
+                        estimated_reading_time,
+                        model_id,
+                        tokens_used,
+                        cost,
+                        latency_ms,
+                        provider,
+                    )
+
+                else:
+                    error_detail = response.text
+                    try:
+                        error_json = response.json()
+                        error_detail = error_json.get("error", {}).get("message", response.text)
+                    except:
+                        pass
+                    print(
+                        f"❌ STORY_LLM: OpenAI API error {response.status_code}: {error_detail}",
+                        flush=True,
+                    )
+                    latency_ms = int((time.time() - start_time) * 1000)
+                    return None, "", 0, "", model_id, {}, 0.0, latency_ms, provider
 
             else:
                 print(
-                    f"⚠️ STORY_LLM: Unsupported provider {provider}, falling back to Anthropic",
+                    f"❌ STORY_LLM: Unsupported provider {provider}",
                     flush=True,
                 )
-                # Fallback to Anthropic with default model
-                return await _generate_story_llm(request, user_context)
+                latency_ms = int((time.time() - start_time) * 1000)
+                return None, "", 0, "", model_id, {}, 0.0, latency_ms, provider
 
     except Exception as e:
         print(f"❌ STORY_LLM: Error generating story: {str(e)}", flush=True)
@@ -973,7 +1067,7 @@ async def _generate_story_llm(
         import traceback
 
         print(f"❌ STORY_LLM: Traceback: {traceback.format_exc()}", flush=True)
-        return None, "", 0, "", "claude-3-5-sonnet-20241022", {}, 0.0, 0
+        return None, "", 0, "", "claude-3-5-sonnet-20241022", {}, 0.0, 0, "anthropic"
 
 
 async def _save_story(
@@ -989,7 +1083,6 @@ async def _save_story(
     model_used: str,
     tokens_used: dict,
     cost: float,
-    dust_cost: int,
     custom_prompt: Optional[str],
 ) -> uuid.UUID:
     """Save story to database"""
@@ -1003,16 +1096,15 @@ async def _save_story(
             "model_used": model_used,
             "tokens_used": tokens_used.get("total", 0),
             "cost_usd": cost,
-            "dust_cost": dust_cost,
         }
 
         insert_query = """
             INSERT INTO user_stories (
                 id, user_id, title, content, story_length, target_audience,
-                characters_involved, metadata, dust_cost, word_count,
+                characters_involved, metadata, word_count,
                 created_at, updated_at
             )
-            VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb, $8::jsonb, $9, $10,
+            VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb, $8::jsonb, $9,
                     CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
         """
 
@@ -1026,7 +1118,6 @@ async def _save_story(
             target_audience.value,
             json.dumps([char.dict() for char in characters]),
             json.dumps(metadata),
-            dust_cost,
             word_count,
         )
 

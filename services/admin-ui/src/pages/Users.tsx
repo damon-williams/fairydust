@@ -19,6 +19,17 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from '@/components/ui/dialog';
+import { Label } from '@/components/ui/label';
+import { Textarea } from '@/components/ui/textarea';
 import { User } from '@/types/admin';
 import { Search, Filter, Download, MoreHorizontal, RefreshCw, AlertTriangle } from 'lucide-react';
 import { formatDistanceToNow } from 'date-fns';
@@ -34,6 +45,13 @@ export function Users() {
   const [currentPage, setCurrentPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
   const [totalUsers, setTotalUsers] = useState(0);
+  
+  // Grant DUST dialog state
+  const [grantDialogOpen, setGrantDialogOpen] = useState(false);
+  const [selectedUser, setSelectedUser] = useState<User | null>(null);
+  const [grantAmount, setGrantAmount] = useState('');
+  const [grantReason, setGrantReason] = useState('');
+  const [granting, setGranting] = useState(false);
 
   const loadUsers = async (page: number = 1, search?: string) => {
     try {
@@ -61,15 +79,7 @@ export function Users() {
     loadUsers(1, searchTerm || undefined);
   };
 
-  const handleToggleUserStatus = async (userId: string, isActive: boolean) => {
-    try {
-      await AdminAPI.updateUser(userId, { is_active: !isActive });
-      toast.success(`User ${!isActive ? 'activated' : 'deactivated'} successfully`);
-      loadUsers(currentPage, searchTerm || undefined);
-    } catch (err) {
-      toast.error('Failed to update user status');
-    }
-  };
+  // User status toggle removed - is_active field no longer exists
 
   const handleDeleteUser = async (userId: string) => {
     if (!confirm('Are you sure you want to delete this user? This action cannot be undone.')) {
@@ -85,14 +95,50 @@ export function Users() {
     }
   };
 
+  const handleGrantDust = async () => {
+    if (!selectedUser || !grantAmount || !grantReason) {
+      toast.error('Please fill in all fields');
+      return;
+    }
+
+    const amount = parseInt(grantAmount);
+    if (isNaN(amount) || amount <= 0) {
+      toast.error('Please enter a valid amount');
+      return;
+    }
+
+    try {
+      setGranting(true);
+      await AdminAPI.grantDust(selectedUser.id, amount, grantReason);
+      toast.success(`Granted ${amount} DUST to ${selectedUser.fairyname}`);
+      
+      // Reset form and close dialog
+      setGrantDialogOpen(false);
+      setSelectedUser(null);
+      setGrantAmount('');
+      setGrantReason('');
+      
+      // Reload users to show updated balance
+      loadUsers(currentPage, searchTerm || undefined);
+    } catch (err) {
+      toast.error('Failed to grant DUST');
+    } finally {
+      setGranting(false);
+    }
+  };
+
+  const openGrantDialog = (user: User) => {
+    setSelectedUser(user);
+    setGrantDialogOpen(true);
+  };
+
   const filteredUsers = users.filter(user => {
     const matchesSearch = user.fairyname.toLowerCase().includes(searchTerm.toLowerCase()) ||
                          user.email?.toLowerCase().includes(searchTerm.toLowerCase());
     
     const matchesFilter = filterType === 'all' ||
-                         (filterType === 'builders' && user.is_builder) ||
-                         (filterType === 'regular' && !user.is_builder) ||
-                         (filterType === 'admins' && user.is_admin);
+                         (filterType === 'admins' && user.is_admin) ||
+                         (filterType === 'regular' && !user.is_admin);
     
     return matchesSearch && matchesFilter;
   });
@@ -138,7 +184,6 @@ export function Users() {
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">All Users</SelectItem>
-                <SelectItem value="builders">Builders</SelectItem>
                 <SelectItem value="regular">Regular Users</SelectItem>
                 <SelectItem value="admins">Administrators</SelectItem>
               </SelectContent>
@@ -216,10 +261,7 @@ export function Users() {
                       {user.is_admin && (
                         <Badge variant="destructive" className="text-xs">Admin</Badge>
                       )}
-                      {user.is_builder && (
-                        <Badge variant="default" className="text-xs">Builder</Badge>
-                      )}
-                      {!user.is_admin && !user.is_builder && (
+                      {!user.is_admin && (
                         <Badge variant="secondary" className="text-xs">User</Badge>
                       )}
                     </div>
@@ -236,7 +278,11 @@ export function Users() {
                   </TableCell>
                   <TableCell>
                     <div className="flex space-x-2">
-                      <Button variant="outline" size="sm">
+                      <Button 
+                        variant="outline" 
+                        size="sm"
+                        onClick={() => openGrantDialog(user)}
+                      >
                         Grant DUST
                       </Button>
                       <Button variant="ghost" size="sm">
@@ -251,6 +297,63 @@ export function Users() {
           )}
         </CardContent>
       </Card>
+
+      {/* Grant DUST Dialog */}
+      <Dialog open={grantDialogOpen} onOpenChange={setGrantDialogOpen}>
+        <DialogContent className="sm:max-w-[425px]">
+          <DialogHeader>
+            <DialogTitle>Grant DUST</DialogTitle>
+            <DialogDescription>
+              Grant DUST to {selectedUser?.fairyname}. Current balance: {selectedUser?.dust_balance} DUST
+            </DialogDescription>
+          </DialogHeader>
+          <div className="grid gap-4 py-4">
+            <div className="grid grid-cols-4 items-center gap-4">
+              <Label htmlFor="amount" className="text-right">
+                Amount
+              </Label>
+              <Input
+                id="amount"
+                type="number"
+                min="1"
+                max="10000"
+                value={grantAmount}
+                onChange={(e) => setGrantAmount(e.target.value)}
+                className="col-span-3"
+                placeholder="Enter DUST amount"
+              />
+            </div>
+            <div className="grid grid-cols-4 items-center gap-4">
+              <Label htmlFor="reason" className="text-right">
+                Reason
+              </Label>
+              <Textarea
+                id="reason"
+                value={grantReason}
+                onChange={(e) => setGrantReason(e.target.value)}
+                className="col-span-3"
+                placeholder="Enter reason for grant..."
+                rows={3}
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button 
+              variant="outline" 
+              onClick={() => setGrantDialogOpen(false)}
+              disabled={granting}
+            >
+              Cancel
+            </Button>
+            <Button 
+              onClick={handleGrantDust}
+              disabled={granting || !grantAmount || !grantReason}
+            >
+              {granting ? 'Granting...' : 'Grant DUST'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

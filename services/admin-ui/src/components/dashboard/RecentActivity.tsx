@@ -43,8 +43,8 @@ export function RecentActivity({ recentUsers, recentApps }: RecentActivityProps)
                 </div>
                 <div className="text-right">
                   <div className="flex items-center space-x-2">
-                    <Badge variant={user.is_builder ? 'default' : 'secondary'} className="text-xs">
-                      {user.is_builder ? 'Builder' : 'User'}
+                    <Badge variant={user.is_admin ? 'destructive' : 'secondary'} className="text-xs">
+                      {user.is_admin ? 'Admin' : 'User'}
                     </Badge>
                   </div>
                   <p className="text-xs text-slate-500 mt-1">

@@ -1,4 +1,5 @@
 import asyncio
+import os
 
 import httpx
 from auth import get_current_admin_user
@@ -11,12 +12,16 @@ dashboard_router = APIRouter()
 
 async def check_service_health() -> dict:
     """Check health status of all fairydust services"""
+    # Environment-based service URLs
+    environment = os.getenv("ENVIRONMENT", "production")
+    env_suffix = "staging" if environment == "staging" else "production"
+
     services = {
-        "Identity": "https://fairydust-identity-production.up.railway.app/health",
-        "Ledger": "https://fairydust-ledger-production.up.railway.app/health",
-        "Apps": "https://fairydust-apps-production.up.railway.app/health",
-        "Content": "https://fairydust-content-production.up.railway.app/health",
-        "Admin": "https://fairydust-admin-production.up.railway.app/health",
+        "Identity": f"https://fairydust-identity-{env_suffix}.up.railway.app/health",
+        "Ledger": f"https://fairydust-ledger-{env_suffix}.up.railway.app/health",
+        "Apps": f"https://fairydust-apps-{env_suffix}.up.railway.app/health",
+        "Content": f"https://fairydust-content-{env_suffix}.up.railway.app/health",
+        "Admin": f"https://fairydust-admin-{env_suffix}.up.railway.app/health",
     }
 
     async def check_single_service(name: str, url: str) -> tuple[str, bool, str]:
@@ -64,7 +69,7 @@ async def get_dashboard_stats(
     """Get dashboard statistics for React app"""
     total_users = await db.fetch_one("SELECT COUNT(*) as count FROM users WHERE is_active = true")
     total_apps = await db.fetch_one("SELECT COUNT(*) as count FROM apps")
-    pending_apps = await db.fetch_one("SELECT COUNT(*) as count FROM apps WHERE status = 'pending'")
+    # Removed pending_apps query - auto-approval workflow
     total_dust_issued = await db.fetch_one(
         "SELECT COALESCE(SUM(amount), 0) as total FROM dust_transactions WHERE type = 'grant'"
     )
@@ -78,13 +83,13 @@ async def get_dashboard_stats(
         "SELECT COUNT(*) as count FROM users WHERE created_at >= CURRENT_DATE - INTERVAL '7 days'"
     )
     total_dust_consumed = await db.fetch_one(
-        "SELECT COALESCE(SUM(amount), 0) as total FROM dust_transactions WHERE type = 'consumption'"
+        "SELECT COALESCE(SUM(ABS(amount)), 0) as total FROM dust_transactions WHERE type = 'consume'"
     )
     dust_consumed_today = await db.fetch_one(
-        "SELECT COALESCE(SUM(amount), 0) as total FROM dust_transactions WHERE type = 'consumption' AND DATE(created_at) = CURRENT_DATE"
+        "SELECT COALESCE(SUM(ABS(amount)), 0) as total FROM dust_transactions WHERE type = 'consume' AND DATE(created_at) = CURRENT_DATE"
     )
     dust_consumed_week = await db.fetch_one(
-        "SELECT COALESCE(SUM(amount), 0) as total FROM dust_transactions WHERE type = 'consumption' AND created_at >= CURRENT_DATE - INTERVAL '7 days'"
+        "SELECT COALESCE(SUM(ABS(amount)), 0) as total FROM dust_transactions WHERE type = 'consume' AND created_at >= CURRENT_DATE - INTERVAL '7 days'"
     )
     total_transactions = await db.fetch_one("SELECT COUNT(*) as count FROM dust_transactions")
     total_llm_usage = await db.fetch_one("SELECT COUNT(*) as count FROM llm_usage_logs")
@@ -92,7 +97,7 @@ async def get_dashboard_stats(
     return {
         "total_users": total_users["count"],
         "total_apps": total_apps["count"],
-        "pending_apps": pending_apps["count"],
+        # Removed pending_apps - auto-approval workflow
         "total_dust_issued": total_dust_issued["total"],
         "active_users_today": active_users_today["count"],
         "active_users_week": active_users_week["count"],

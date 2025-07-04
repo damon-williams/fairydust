@@ -191,7 +191,7 @@ async def create_tables():
             dust_balance INTEGER DEFAULT 0,
             auth_provider VARCHAR(50) NOT NULL,
             first_name VARCHAR(100),
-            age_range VARCHAR(20),
+            birth_date DATE,
             city VARCHAR(100),
             country VARCHAR(100) DEFAULT 'US',
             created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
@@ -210,7 +210,7 @@ async def create_tables():
     await db.execute_schema(
         """
         ALTER TABLE users ADD COLUMN IF NOT EXISTS first_name VARCHAR(100);
-        ALTER TABLE users ADD COLUMN IF NOT EXISTS age_range VARCHAR(20);
+        ALTER TABLE users ADD COLUMN IF NOT EXISTS birth_date DATE;
         ALTER TABLE users ADD COLUMN IF NOT EXISTS city VARCHAR(100);
         ALTER TABLE users ADD COLUMN IF NOT EXISTS country VARCHAR(100) DEFAULT 'US';
         ALTER TABLE users ADD COLUMN IF NOT EXISTS last_profiling_session TIMESTAMP;
@@ -218,6 +218,9 @@ async def create_tables():
         ALTER TABLE users ADD COLUMN IF NOT EXISTS streak_days INTEGER DEFAULT 0;
         ALTER TABLE users ADD COLUMN IF NOT EXISTS last_login_date TIMESTAMP WITH TIME ZONE;
         ALTER TABLE users ADD COLUMN IF NOT EXISTS is_onboarding_completed BOOLEAN DEFAULT FALSE;
+
+        -- Drop old age_range column (replaced with birth_date)
+        ALTER TABLE users DROP COLUMN IF EXISTS age_range;
     """
     )
 
@@ -340,13 +343,38 @@ async def create_tables():
             id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
             user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
             name VARCHAR(100) NOT NULL,
-            age_range VARCHAR(50),
+            birth_date DATE,
             relationship VARCHAR(100),
             created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
             updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
         );
 
         CREATE INDEX IF NOT EXISTS idx_people_in_my_life_user_id ON people_in_my_life(user_id);
+
+        -- Add birth_date column to existing people_in_my_life table
+        ALTER TABLE people_in_my_life ADD COLUMN IF NOT EXISTS birth_date DATE;
+
+        -- Drop old age_range column from people_in_my_life (replaced with birth_date)
+        ALTER TABLE people_in_my_life DROP COLUMN IF EXISTS age_range;
+    """
+    )
+
+    # User onboard tracking table - app milestones and UI tip tracking
+    await db.execute_schema(
+        """
+        CREATE TABLE IF NOT EXISTS user_onboard_tracking (
+            user_id UUID PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+            has_used_inspire BOOLEAN DEFAULT FALSE,
+            has_completed_first_inspiration BOOLEAN DEFAULT FALSE,
+            onboarding_step VARCHAR(50),
+            has_seen_inspire_tip BOOLEAN DEFAULT FALSE,
+            has_seen_inspire_result_tip BOOLEAN DEFAULT FALSE,
+            has_seen_onboarding_complete_tip BOOLEAN DEFAULT FALSE,
+            created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_user_onboard_tracking_step ON user_onboard_tracking(onboarding_step);
     """
     )
 
@@ -606,7 +634,6 @@ async def create_tables():
             characters_involved JSONB DEFAULT '[]',
             metadata JSONB DEFAULT '{}',
             is_favorited BOOLEAN DEFAULT FALSE,
-            dust_cost INTEGER NOT NULL,
             word_count INTEGER,
             created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
             updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
@@ -638,12 +665,12 @@ async def create_tables():
         # Check if genre column exists before trying to drop it
         genre_exists = await db.fetch_one(
             """
-            SELECT column_name 
-            FROM information_schema.columns 
+            SELECT column_name
+            FROM information_schema.columns
             WHERE table_name = 'user_stories' AND column_name = 'genre'
             """
         )
-        
+
         if genre_exists:
             await db.execute_schema(
                 """
@@ -656,6 +683,64 @@ async def create_tables():
             logger.info("Genre column already removed from user_stories table")
     except Exception as e:
         logger.warning(f"Genre column migration failed: {e}")
+
+    # Remove dust_cost column (content service should not handle DUST)
+    try:
+        # Check if dust_cost column exists before trying to drop it
+        dust_cost_exists = await db.fetch_one(
+            """
+            SELECT column_name
+            FROM information_schema.columns
+            WHERE table_name = 'user_stories' AND column_name = 'dust_cost'
+            """
+        )
+
+        if dust_cost_exists:
+            await db.execute_schema(
+                """
+                ALTER TABLE user_stories DROP COLUMN dust_cost;
+                """
+            )
+            logger.info("Removed dust_cost column from user_stories table")
+        else:
+            logger.info("dust_cost column already removed from user_stories table")
+    except Exception as e:
+        logger.warning(f"dust_cost column migration failed: {e}")
+
+    # Allow target_person_id to be NULL for self-readings
+    try:
+        await db.execute_schema(
+            """
+            ALTER TABLE fortune_readings ALTER COLUMN target_person_id DROP NOT NULL;
+            """
+        )
+        logger.info("Made target_person_id nullable in fortune_readings table")
+    except Exception as e:
+        logger.warning(f"Fortune readings target_person_id migration failed: {e}")
+
+    # Drop old columns that are no longer needed
+    try:
+        # Drop age_range from users table if it exists
+        await db.execute_schema(
+            """
+            ALTER TABLE users DROP COLUMN IF EXISTS age_range;
+            ALTER TABLE users DROP COLUMN IF EXISTS fortune_profile;
+            """
+        )
+        logger.info("Dropped age_range and fortune_profile columns from users table")
+    except Exception as e:
+        logger.warning(f"Failed to drop old columns from users table: {e}")
+
+    try:
+        # Drop age_range from people_in_my_life table if it exists
+        await db.execute_schema(
+            """
+            ALTER TABLE people_in_my_life DROP COLUMN IF EXISTS age_range;
+            """
+        )
+        logger.info("Dropped age_range column from people_in_my_life table")
+    except Exception as e:
+        logger.warning(f"Failed to drop age_range from people_in_my_life table: {e}")
 
     # Story generation logs table for analytics and debugging
     await db.execute_schema(
@@ -874,13 +959,11 @@ async def create_tables():
         CREATE TABLE IF NOT EXISTS fortune_readings (
             id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
             user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-            target_person_id UUID NOT NULL REFERENCES people_in_my_life(id) ON DELETE CASCADE,
+            target_person_id UUID REFERENCES people_in_my_life(id) ON DELETE CASCADE,
             target_person_name VARCHAR(100) NOT NULL,
             reading_type VARCHAR(20) NOT NULL CHECK (reading_type IN ('question', 'daily')),
             question TEXT,
             content TEXT NOT NULL,
-            cosmic_influences JSONB NOT NULL,
-            lucky_elements JSONB NOT NULL,
             metadata JSONB DEFAULT '{}',
             is_favorited BOOLEAN DEFAULT FALSE,
             created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
@@ -893,6 +976,10 @@ async def create_tables():
         CREATE INDEX IF NOT EXISTS idx_fortune_readings_target_person ON fortune_readings(target_person_id);
         CREATE INDEX IF NOT EXISTS idx_fortune_readings_type ON fortune_readings(reading_type);
         CREATE INDEX IF NOT EXISTS idx_fortune_readings_user_type ON fortune_readings(user_id, reading_type, created_at DESC);
+
+        -- Remove cosmic_influences and lucky_elements columns (no longer used)
+        ALTER TABLE fortune_readings DROP COLUMN IF EXISTS cosmic_influences;
+        ALTER TABLE fortune_readings DROP COLUMN IF EXISTS lucky_elements;
     """
     )
 
@@ -1024,6 +1111,46 @@ async def create_tables():
         CREATE INDEX IF NOT EXISTS idx_app_grants_granted_date ON app_grants(granted_date);
         CREATE INDEX IF NOT EXISTS idx_app_grants_type ON app_grants(grant_type);
         CREATE INDEX IF NOT EXISTS idx_app_grants_user_type_date ON app_grants(user_id, grant_type, granted_date);
+    """
+    )
+
+    # Action-based DUST pricing table
+    await db.execute_schema(
+        """
+        CREATE TABLE IF NOT EXISTS action_pricing (
+            action_slug VARCHAR(50) PRIMARY KEY,
+            dust_cost INTEGER NOT NULL CHECK (dust_cost >= 0),
+            description TEXT NOT NULL,
+            is_active BOOLEAN DEFAULT true,
+            created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_action_pricing_active ON action_pricing(is_active);
+    """
+    )
+
+    # Note: Action pricing data should be managed through Admin Portal, not seeded here
+
+    # Custom Characters table for Story app
+    await db.execute_schema(
+        """
+        CREATE TABLE IF NOT EXISTS custom_characters (
+            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            name VARCHAR(50) NOT NULL,
+            description TEXT NOT NULL,
+            character_type VARCHAR(20) NOT NULL DEFAULT 'custom',
+            is_active BOOLEAN DEFAULT TRUE,
+            created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+            
+            -- Unique constraint to prevent duplicate names per user
+            UNIQUE(user_id, name)
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_custom_characters_user_id ON custom_characters(user_id);
+        CREATE INDEX IF NOT EXISTS idx_custom_characters_active ON custom_characters(user_id, is_active);
     """
     )
 

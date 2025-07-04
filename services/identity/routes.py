@@ -1,7 +1,6 @@
-import json
 import secrets
 import string
-from typing import Optional
+from datetime import datetime
 from uuid import uuid4
 
 from auth import AuthService, TokenData, get_current_user
@@ -9,21 +8,17 @@ from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Security
 from fastapi.security import HTTPBearer
 from models import (
     AuthResponse,
-    LocalProfileData,
     OAuthCallback,
+    OnboardTracking,
+    OnboardTrackingUpdate,
     OTPRequest,
     OTPVerify,
     PersonInMyLife,
     PersonInMyLifeCreate,
     PersonInMyLifeUpdate,
-    PersonProfileData,
-    PersonProfileDataCreate,
-    ProfileDataBatch,
     RefreshTokenRequest,
     Token,
     User,
-    UserProfileData,
-    UserPublic,
     UserUpdate,
 )
 
@@ -106,9 +101,9 @@ async def verify_otp(
     # Check if user exists
     identifier_type = "email" if "@" in otp_verify.identifier else "phone"
     user = await db.fetch_one(
-        f"""SELECT id, fairyname, email, phone, avatar_url, is_builder, is_admin, is_active,
-                  is_onboarding_completed, first_name, age_range, city, country, dust_balance, auth_provider,
-                  last_profiling_session, total_profiling_sessions, streak_days, last_login_date,
+        f"""SELECT id, fairyname, email, phone, is_admin,
+                  first_name, birth_date, is_onboarding_completed, dust_balance, auth_provider,
+                  streak_days, last_login_date,
                   created_at, updated_at
            FROM users WHERE {identifier_type} = $1""",
         otp_verify.identifier,
@@ -151,7 +146,12 @@ async def verify_otp(
         )
 
     # Calculate and update daily login streak
-    streak_days, last_login_date = await calculate_daily_streak(
+    (
+        streak_days,
+        last_login_date,
+        is_bonus_eligible,
+        previous_streak_days,
+    ) = await calculate_daily_streak(
         db, str(user["id"]), user.get("streak_days", 0), user.get("last_login_date")
     )
 
@@ -165,7 +165,6 @@ async def verify_otp(
     token_data = {
         "user_id": str(user["id"]),
         "fairyname": user["fairyname"],
-        "is_builder": user["is_builder"],
         "is_admin": user.get("is_admin", False),
     }
 
@@ -177,6 +176,9 @@ async def verify_otp(
         token=Token(access_token=access_token, refresh_token=refresh_token, expires_in=3600),
         is_new_user=is_new_user,
         dust_granted=0,  # DUST grants now handled by apps, not identity service
+        is_first_login_today=is_bonus_eligible,
+        streak_bonus_eligible=is_bonus_eligible,
+        previous_streak_days=previous_streak_days,
     )
 
 
@@ -236,14 +238,13 @@ async def oauth_login(
         # Create user
         user = await db.fetch_one(
             """
-            INSERT INTO users (id, fairyname, email, avatar_url, dust_balance, auth_provider)
-            VALUES ($1, $2, $3, $4, $5, $6)
+            INSERT INTO users (id, fairyname, email, dust_balance, auth_provider)
+            VALUES ($1, $2, $3, $4, $5)
             RETURNING *
             """,
             user_id,
             fairyname,
             user_info.get("email"),
-            user_info.get("picture"),
             0,  # Starting balance is 0, app will handle initial grants
             provider,
         )
@@ -260,7 +261,12 @@ async def oauth_login(
         )
 
     # Calculate and update daily login streak
-    streak_days, last_login_date = await calculate_daily_streak(
+    (
+        streak_days,
+        last_login_date,
+        is_bonus_eligible,
+        previous_streak_days,
+    ) = await calculate_daily_streak(
         db, str(user["id"]), user.get("streak_days", 0), user.get("last_login_date")
     )
 
@@ -274,7 +280,6 @@ async def oauth_login(
     token_data = {
         "user_id": str(user["id"]),
         "fairyname": user["fairyname"],
-        "is_builder": user["is_builder"],
         "is_admin": user.get("is_admin", False),
     }
 
@@ -286,6 +291,9 @@ async def oauth_login(
         token=Token(access_token=access_token, refresh_token=refresh_token, expires_in=3600),
         is_new_user=is_new_user,
         dust_granted=0,  # DUST grants now handled by apps, not identity service
+        is_first_login_today=is_bonus_eligible,
+        streak_bonus_eligible=is_bonus_eligible,
+        previous_streak_days=previous_streak_days,
     )
 
 
@@ -310,7 +318,7 @@ async def refresh_token(
     new_token_data = {
         "user_id": token_data.user_id,
         "fairyname": token_data.fairyname,
-        "is_builder": token_data.is_builder,
+        "is_admin": token_data.is_admin,
     }
 
     new_access_token = await auth_service.create_access_token(new_token_data)
@@ -342,19 +350,57 @@ async def get_current_user_profile(
     current_user: TokenData = Depends(get_current_user), db: Database = Depends(get_db)
 ):
     """Get current user profile"""
+    print(f"👤 USER_PROFILE: Getting profile for user {current_user.user_id}", flush=True)
+
     user = await db.fetch_one(
-        """SELECT id, fairyname, email, phone, avatar_url, is_builder, is_admin, is_active,
-                  is_onboarding_completed, first_name, age_range, city, country, dust_balance, auth_provider,
-                  last_profiling_session, total_profiling_sessions, streak_days, last_login_date,
+        """SELECT id, fairyname, email, phone, is_admin,
+                  first_name, birth_date, is_onboarding_completed, dust_balance, auth_provider,
+                  streak_days, last_login_date,
                   created_at, updated_at
            FROM users WHERE id = $1""",
         current_user.user_id,
     )
 
     if not user:
+        print(f"❌ USER_PROFILE: User {current_user.user_id} not found in database", flush=True)
         raise HTTPException(status_code=404, detail="User not found")
 
-    return User(**user)
+    # Log the raw database values for debugging
+    print(
+        f"🔍 USER_PROFILE: Raw DB values - is_onboarding_completed: {user.get('is_onboarding_completed')} (type: {type(user.get('is_onboarding_completed'))})",
+        flush=True,
+    )
+    print(
+        f"🔍 USER_PROFILE: Raw DB values - is_admin: {user.get('is_admin')} (type: {type(user.get('is_admin'))})",
+        flush=True,
+    )
+
+    user_model = User(**user)
+
+    # Log the Pydantic model values for comparison
+    print(
+        f"📝 USER_PROFILE: Pydantic model - is_onboarding_completed: {user_model.is_onboarding_completed} (type: {type(user_model.is_onboarding_completed)})",
+        flush=True,
+    )
+    print(
+        f"📝 USER_PROFILE: Pydantic model - is_admin: {user_model.is_admin} (type: {type(user_model.is_admin)})",
+        flush=True,
+    )
+
+    # Log the JSON that will be returned to help debug frontend issues
+    import json
+
+    user_dict = user_model.model_dump()
+    print(
+        f"🌐 USER_PROFILE: JSON response snippet - is_onboarding_completed: {user_dict.get('is_onboarding_completed')}",
+        flush=True,
+    )
+    print(
+        f"🌐 USER_PROFILE: Full JSON response: {json.dumps(user_dict, default=str, indent=2)}",
+        flush=True,
+    )
+
+    return user_model
 
 
 @user_router.patch("/me", response_model=User)
@@ -393,29 +439,28 @@ async def update_user_profile(
         values.append(update_data.phone)
         param_count += 1
 
-    if update_data.avatar_url is not None:
-        updates.append(f"avatar_url = ${param_count}")
-        values.append(update_data.avatar_url)
-        param_count += 1
-
     if update_data.first_name is not None:
         updates.append(f"first_name = ${param_count}")
         values.append(update_data.first_name)
         param_count += 1
 
-    if update_data.age_range is not None:
-        updates.append(f"age_range = ${param_count}")
-        values.append(update_data.age_range)
+    if update_data.birth_date is not None:
+        updates.append(f"birth_date = ${param_count}")
+        # Convert string date to Python date object for PostgreSQL DATE column
+        try:
+            birth_date_obj = datetime.strptime(update_data.birth_date, "%Y-%m-%d").date()
+        except ValueError:
+            raise HTTPException(status_code=400, detail="Invalid birth_date format. Use YYYY-MM-DD")
+        values.append(birth_date_obj)
         param_count += 1
 
-    if update_data.city is not None:
-        updates.append(f"city = ${param_count}")
-        values.append(update_data.city)
-        param_count += 1
-
-    if update_data.country is not None:
-        updates.append(f"country = ${param_count}")
-        values.append(update_data.country)
+    if update_data.is_onboarding_completed is not None:
+        print(
+            f"🔄 USER_UPDATE: Updating is_onboarding_completed to {update_data.is_onboarding_completed} for user {current_user.user_id}",
+            flush=True,
+        )
+        updates.append(f"is_onboarding_completed = ${param_count}")
+        values.append(update_data.is_onboarding_completed)
         param_count += 1
 
     if not updates:
@@ -434,119 +479,133 @@ async def update_user_profile(
     user = await db.fetch_one(query, *values)
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
+
+    # Log the result after update
+    print(
+        f"✅ USER_UPDATE: Updated user {current_user.user_id} - is_onboarding_completed: {user.get('is_onboarding_completed')}",
+        flush=True,
+    )
+
     return User(**user)
 
 
-@user_router.get("/{user_id}/public", response_model=UserPublic)
-async def get_user_public_profile(user_id: str, db: Database = Depends(get_db)):
-    """Get public user profile"""
-    user = await db.fetch_one(
-        """
-        SELECT id, fairyname, avatar_url, is_builder, created_at
-        FROM users
-        WHERE id = $1 AND is_active = true
-        """,
-        user_id,
+# Onboard Tracking Routes
+@user_router.get("/me/onboard-test")
+async def test_onboard_route():
+    """Test route to verify routing is working"""
+    return {"message": "onboard route accessible", "timestamp": "2025-06-29"}
+
+
+@user_router.get("/me/onboard", response_model=OnboardTracking)
+async def get_user_onboard_tracking(
+    current_user: TokenData = Depends(get_current_user), db: Database = Depends(get_db)
+):
+    """Get current user's onboard tracking state"""
+    print(
+        f"🔄 ONBOARD_TRACKING: Getting onboard tracking for user {current_user.user_id}", flush=True
     )
 
-    if not user:
-        raise HTTPException(status_code=404, detail="User not found")
+    tracking = await db.fetch_one(
+        "SELECT * FROM user_onboard_tracking WHERE user_id = $1",
+        current_user.user_id,
+    )
 
-    return UserPublic(**user)
+    if not tracking:
+        # Create default tracking record if it doesn't exist
+        print(
+            f"📝 ONBOARD_TRACKING: Creating new tracking record for user {current_user.user_id}",
+            flush=True,
+        )
+        try:
+            tracking = await db.fetch_one(
+                """
+                INSERT INTO user_onboard_tracking (user_id)
+                VALUES ($1)
+                RETURNING *
+                """,
+                current_user.user_id,
+            )
+            print("✅ ONBOARD_TRACKING: Created tracking record successfully", flush=True)
+        except Exception as e:
+            print(f"❌ ONBOARD_TRACKING: Error creating tracking record: {str(e)}", flush=True)
+            raise HTTPException(status_code=500, detail="Failed to create onboard tracking record")
+    else:
+        print("✅ ONBOARD_TRACKING: Found existing tracking record", flush=True)
+
+    print(
+        f"📤 ONBOARD_TRACKING: Returning tracking data for user {current_user.user_id}", flush=True
+    )
+    return OnboardTracking(**tracking)
+
+
+@user_router.patch("/me/onboard", response_model=OnboardTracking)
+async def update_user_onboard_tracking(
+    update_data: OnboardTrackingUpdate,
+    current_user: TokenData = Depends(get_current_user),
+    db: Database = Depends(get_db),
+):
+    """Update current user's onboard tracking state"""
+    # Build update query dynamically
+    updates = []
+    values = []
+    param_count = 1
+
+    if update_data.has_used_inspire is not None:
+        updates.append(f"has_used_inspire = ${param_count}")
+        values.append(update_data.has_used_inspire)
+        param_count += 1
+
+    if update_data.has_completed_first_inspiration is not None:
+        updates.append(f"has_completed_first_inspiration = ${param_count}")
+        values.append(update_data.has_completed_first_inspiration)
+        param_count += 1
+
+    if update_data.onboarding_step is not None:
+        updates.append(f"onboarding_step = ${param_count}")
+        values.append(update_data.onboarding_step)
+        param_count += 1
+
+    if update_data.has_seen_inspire_tip is not None:
+        updates.append(f"has_seen_inspire_tip = ${param_count}")
+        values.append(update_data.has_seen_inspire_tip)
+        param_count += 1
+
+    if update_data.has_seen_inspire_result_tip is not None:
+        updates.append(f"has_seen_inspire_result_tip = ${param_count}")
+        values.append(update_data.has_seen_inspire_result_tip)
+        param_count += 1
+
+    if update_data.has_seen_onboarding_complete_tip is not None:
+        updates.append(f"has_seen_onboarding_complete_tip = ${param_count}")
+        values.append(update_data.has_seen_onboarding_complete_tip)
+        param_count += 1
+
+    if not updates:
+        raise HTTPException(status_code=400, detail="No fields to update")
+
+    # Add user_id as last parameter
+    values.append(current_user.user_id)
+
+    # Use UPSERT (INSERT ... ON CONFLICT) to handle case where record doesn't exist yet
+    upsert_query = f"""
+        INSERT INTO user_onboard_tracking (user_id)
+        VALUES (${param_count})
+        ON CONFLICT (user_id)
+        DO UPDATE SET {', '.join(updates)}, updated_at = CURRENT_TIMESTAMP
+        RETURNING *
+    """
+
+    tracking = await db.fetch_one(upsert_query, *values)
+    if not tracking:
+        raise HTTPException(status_code=500, detail="Failed to update onboard tracking")
+
+    return OnboardTracking(**tracking)
 
 
 # Progressive Profiling Routes
 
 
-@user_router.get("/{user_id}/profile-data", response_model=list[UserProfileData])
-async def get_user_profile_data(
-    user_id: str,
-    current_user: TokenData = Depends(get_current_user),
-    db: Database = Depends(get_db),
-    category: Optional[str] = None,
-):
-    """Get user's profile data"""
-    # Users can only access their own profile data
-    if current_user.user_id != user_id and not current_user.is_admin:
-        raise HTTPException(status_code=403, detail="Access denied")
-
-    query = "SELECT * FROM user_profile_data WHERE user_id = $1"
-    params = [user_id]
-
-    if category:
-        query += " AND category = $2"
-        params.append(category)
-
-    query += " ORDER BY updated_at DESC"
-
-    profile_data = await db.fetch_all(query, *params)
-    return [UserProfileData(**data) for data in profile_data]
-
-
-@user_router.patch("/{user_id}/profile-data", response_model=list[UserProfileData])
-async def update_user_profile_data(
-    user_id: str,
-    profile_batch: ProfileDataBatch,
-    current_user: TokenData = Depends(get_current_user),
-    db: Database = Depends(get_db),
-):
-    """Update user profile data (batch operation)"""
-    # Users can only update their own profile data
-    if current_user.user_id != user_id and not current_user.is_admin:
-        raise HTTPException(status_code=403, detail="Access denied")
-
-    updated_data = []
-
-    for profile_data in profile_batch.profile_data:
-        # Serialize field_value for JSONB storage
-        field_value_json = json.dumps(profile_data.field_value)
-
-        # Check if field exists
-        existing = await db.fetch_one(
-            "SELECT id FROM user_profile_data WHERE user_id = $1 AND field_name = $2",
-            user_id,
-            profile_data.field_name,
-        )
-
-        if existing:
-            # Update existing
-            updated = await db.fetch_one(
-                """
-                UPDATE user_profile_data
-                SET field_value = $1::jsonb, confidence_score = $2, source = $3,
-                    app_context = $4, category = $5, updated_at = CURRENT_TIMESTAMP
-                WHERE user_id = $6 AND field_name = $7
-                RETURNING *
-                """,
-                field_value_json,
-                profile_data.confidence_score,
-                profile_data.source,
-                profile_data.app_context,
-                profile_data.category,
-                user_id,
-                profile_data.field_name,
-            )
-        else:
-            # Create new
-            updated = await db.fetch_one(
-                """
-                INSERT INTO user_profile_data
-                (user_id, category, field_name, field_value, confidence_score, source, app_context)
-                VALUES ($1, $2, $3, $4::jsonb, $5, $6, $7)
-                RETURNING *
-                """,
-                user_id,
-                profile_data.category,
-                profile_data.field_name,
-                field_value_json,
-                profile_data.confidence_score,
-                profile_data.source,
-                profile_data.app_context,
-            )
-
-        updated_data.append(UserProfileData(**updated))
-
-    return updated_data
+# Public profile and profile data endpoints removed - no longer needed
 
 
 @user_router.post("/{user_id}/people", response_model=PersonInMyLife)
@@ -560,15 +619,23 @@ async def add_person_to_life(
     if current_user.user_id != user_id and not current_user.is_admin:
         raise HTTPException(status_code=403, detail="Access denied")
 
+    # Convert birth_date string to date object if provided
+    birth_date_obj = None
+    if person.birth_date:
+        try:
+            birth_date_obj = datetime.strptime(person.birth_date, "%Y-%m-%d").date()
+        except ValueError:
+            raise HTTPException(status_code=400, detail="Invalid birth_date format. Use YYYY-MM-DD")
+
     new_person = await db.fetch_one(
         """
-        INSERT INTO people_in_my_life (user_id, name, age_range, relationship)
+        INSERT INTO people_in_my_life (user_id, name, birth_date, relationship)
         VALUES ($1, $2, $3, $4)
         RETURNING *
         """,
         user_id,
         person.name,
-        person.age_range,
+        birth_date_obj,
         person.relationship,
     )
 
@@ -622,9 +689,14 @@ async def update_person_in_my_life(
         values.append(person_update.name)
         param_count += 1
 
-    if person_update.age_range is not None:
-        updates.append(f"age_range = ${param_count}")
-        values.append(person_update.age_range)
+    if person_update.birth_date is not None:
+        updates.append(f"birth_date = ${param_count}")
+        # Convert string date to Python date object for PostgreSQL DATE column
+        try:
+            birth_date_obj = datetime.strptime(person_update.birth_date, "%Y-%m-%d").date()
+        except ValueError:
+            raise HTTPException(status_code=400, detail="Invalid birth_date format. Use YYYY-MM-DD")
+        values.append(birth_date_obj)
         param_count += 1
 
     if person_update.relationship is not None:
@@ -672,228 +744,7 @@ async def remove_person_from_life(
     return {"message": "Person removed successfully"}
 
 
-@user_router.post("/{user_id}/people/{person_id}/profile-data", response_model=PersonProfileData)
-async def add_person_profile_data(
-    user_id: str,
-    person_id: str,
-    profile_data: PersonProfileDataCreate,
-    current_user: TokenData = Depends(get_current_user),
-    db: Database = Depends(get_db),
-):
-    """Add profile data for person in user's life"""
-    if current_user.user_id != user_id and not current_user.is_admin:
-        raise HTTPException(status_code=403, detail="Access denied")
-
-    # Verify person belongs to user
-    person = await db.fetch_one(
-        "SELECT id FROM people_in_my_life WHERE id = $1 AND user_id = $2", person_id, user_id
-    )
-
-    if not person:
-        raise HTTPException(status_code=404, detail="Person not found")
-
-    # Serialize field_value for JSONB storage
-    field_value_json = json.dumps(profile_data.field_value)
-
-    # Upsert person profile data
-    existing = await db.fetch_one(
-        "SELECT id FROM person_profile_data WHERE person_id = $1 AND field_name = $2",
-        person_id,
-        profile_data.field_name,
-    )
-
-    if existing:
-        updated = await db.fetch_one(
-            """
-            UPDATE person_profile_data
-            SET field_value = $1::jsonb, confidence_score = $2, source = $3,
-                category = $4, updated_at = CURRENT_TIMESTAMP
-            WHERE person_id = $5 AND field_name = $6
-            RETURNING *
-            """,
-            field_value_json,
-            profile_data.confidence_score,
-            profile_data.source,
-            profile_data.category,
-            person_id,
-            profile_data.field_name,
-        )
-    else:
-        updated = await db.fetch_one(
-            """
-            INSERT INTO person_profile_data
-            (person_id, user_id, category, field_name, field_value, confidence_score, source)
-            VALUES ($1, $2, $3, $4, $5::jsonb, $6, $7)
-            RETURNING *
-            """,
-            person_id,
-            user_id,
-            profile_data.category,
-            profile_data.field_name,
-            field_value_json,
-            profile_data.confidence_score,
-            profile_data.source,
-        )
-
-    return PersonProfileData(**updated)
+# Person profile data endpoints removed - no longer needed
 
 
-@user_router.get(
-    "/{user_id}/people/{person_id}/profile-data", response_model=list[PersonProfileData]
-)
-async def get_person_profile_data(
-    user_id: str,
-    person_id: str,
-    current_user: TokenData = Depends(get_current_user),
-    db: Database = Depends(get_db),
-):
-    """Get profile data for person in user's life"""
-    if current_user.user_id != user_id and not current_user.is_admin:
-        raise HTTPException(status_code=403, detail="Access denied")
-
-    # Verify person belongs to user
-    person = await db.fetch_one(
-        "SELECT id FROM people_in_my_life WHERE id = $1 AND user_id = $2", person_id, user_id
-    )
-
-    if not person:
-        raise HTTPException(status_code=404, detail="Person not found")
-
-    profile_data = await db.fetch_all(
-        "SELECT * FROM person_profile_data WHERE person_id = $1 ORDER BY updated_at DESC", person_id
-    )
-
-    return [PersonProfileData(**data) for data in profile_data]
-
-
-@user_router.post("/{user_id}/migrate-local-data")
-async def migrate_local_data(
-    user_id: str,
-    local_data: LocalProfileData,
-    current_user: TokenData = Depends(get_current_user),
-    db: Database = Depends(get_db),
-):
-    """Migrate local profile data to backend"""
-    if current_user.user_id != user_id and not current_user.is_admin:
-        raise HTTPException(status_code=403, detail="Access denied")
-
-    migrated_items = {"profile_fields": 0, "people": 0}
-
-    profile = local_data.profile
-
-    # Helper function to convert age to age_range
-    def age_to_range(age):
-        if age <= 2:
-            return "infant"
-        elif age <= 5:
-            return "toddler"
-        elif age <= 12:
-            return "child"
-        elif age <= 17:
-            return "teen"
-        elif age <= 25:
-            return "young_adult"
-        elif age <= 40:
-            return "adult"
-        elif age <= 60:
-            return "middle_aged"
-        else:
-            return "senior"
-
-    # Update basic profile fields that go in users table
-    basic_fields = ["first_name", "age_range", "city", "country"]
-    user_updates = {}
-    for field in basic_fields:
-        if field in profile:
-            user_updates[field] = profile[field]
-
-    if user_updates:
-        update_parts = []
-        values = []
-        param_count = 1
-
-        for field, value in user_updates.items():
-            update_parts.append(f"{field} = ${param_count}")
-            values.append(value)
-            param_count += 1
-
-        values.append(user_id)
-
-        await db.execute(
-            f"""
-            UPDATE users
-            SET {', '.join(update_parts)}, updated_at = CURRENT_TIMESTAMP
-            WHERE id = ${param_count}
-            """,
-            *values,
-        )
-
-    # Migrate progressive profiling fields
-    profile_field_mapping = {
-        "interests": ("interests", "interests"),
-        "dietary_preferences": ("cooking", "dietary_preferences"),
-        "cooking_skill_level": ("cooking", "cooking_skill_level"),
-        "lifestyle_goals": ("goals", "lifestyle_goals"),
-        "personality_traits": ("personality", "personality_traits"),
-        "adventure_level": ("personality", "adventure_level"),
-        "creativity_level": ("personality", "creativity_level"),
-        "social_preference": ("personality", "social_preference"),
-    }
-
-    for field_name, (category, profile_field) in profile_field_mapping.items():
-        if field_name in profile:
-            # Serialize field_value for JSONB and upsert profile data
-            field_value_json = json.dumps(profile[field_name])
-            await db.execute(
-                """
-                INSERT INTO user_profile_data
-                (user_id, category, field_name, field_value, source)
-                VALUES ($1, $2, $3, $4::jsonb, 'migration')
-                ON CONFLICT (user_id, field_name)
-                DO UPDATE SET
-                    field_value = EXCLUDED.field_value,
-                    source = 'migration',
-                    updated_at = CURRENT_TIMESTAMP
-                """,
-                user_id,
-                category,
-                profile_field,
-                field_value_json,
-            )
-            migrated_items["profile_fields"] += 1
-
-    # Migrate people in my life
-    for person_data in local_data.people_in_my_life:
-        name = person_data.get("name")
-        age = person_data.get("age")
-        relationship = person_data.get("relationship")
-
-        if not name:
-            continue
-
-        # Convert age to age_range
-        age_range = age_to_range(age) if age else None
-
-        # Check if person already exists
-        existing_person = await db.fetch_one(
-            "SELECT id FROM people_in_my_life WHERE user_id = $1 AND name = $2", user_id, name
-        )
-
-        if not existing_person:
-            await db.execute(
-                """
-                INSERT INTO people_in_my_life (user_id, name, age_range, relationship)
-                VALUES ($1, $2, $3, $4)
-                """,
-                user_id,
-                name,
-                age_range,
-                relationship,
-            )
-            migrated_items["people"] += 1
-
-    return {
-        "success": True,
-        "migrated": migrated_items,
-        "message": f"Successfully migrated {sum(migrated_items.values())} items",
-    }
+# Local data migration endpoint removed - no longer needed

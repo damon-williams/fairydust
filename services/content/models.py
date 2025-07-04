@@ -75,9 +75,9 @@ class RecipeSyncResponse(BaseModel):
 
 # Story App Models
 class StoryLength(str, Enum):
-    QUICK = "quick"    # 2-3 minute read
-    MEDIUM = "medium"  # 5-7 minute read  
-    LONG = "long"      # 8-12 minute read
+    QUICK = "quick"  # 2-3 minute read
+    MEDIUM = "medium"  # 5-7 minute read
+    LONG = "long"  # 8-12 minute read
 
 
 class TargetAudience(str, Enum):
@@ -88,7 +88,7 @@ class TargetAudience(str, Enum):
 class StoryCharacter(BaseModel):
     name: str = Field(..., min_length=1, max_length=100)
     relationship: str = Field(..., min_length=1, max_length=100)
-    age_range: Optional[str] = Field(None, pattern="^(child|teen|adult|senior)$")
+    birth_date: Optional[str] = Field(None, pattern=r"^\d{4}-\d{2}-\d{2}$")
     traits: list[str] = Field(default_factory=list, max_items=10)
 
 
@@ -124,7 +124,6 @@ class UserStory(BaseModel):
     characters_involved: list[StoryCharacter]
     metadata: dict
     is_favorited: bool
-    dust_cost: int
     word_count: Optional[int]
     created_at: datetime
     updated_at: datetime
@@ -197,7 +196,6 @@ class StoryGenerationResponseNew(BaseModel):
     model_used: str
     tokens_used: TokenUsage
     cost: float
-    new_dust_balance: int
 
     class Config:
         protected_namespaces = ()
@@ -228,8 +226,6 @@ class StoryConfigResponse(BaseModel):
 class StoryErrorResponse(BaseModel):
     success: bool = False
     error: str
-    current_balance: Optional[int] = None
-    required_amount: Optional[int] = None
     valid_genres: Optional[list[str]] = None
     valid_lengths: Optional[list[dict]] = None
     story_id: Optional[UUID] = None
@@ -260,16 +256,15 @@ class FortuneReading(BaseModel):
     content: str
     reading_type: ReadingType
     question: Optional[str] = None
+    target_person_id: Optional[UUID] = None  # None for self-readings, UUID for others
     target_person_name: str
-    cosmic_influences: CosmicInfluences
-    lucky_elements: LuckyElements
     created_at: datetime
     is_favorited: bool = False
 
 
 class FortuneGenerationRequest(BaseModel):
     user_id: UUID
-    target_person_id: UUID
+    target_person_id: Optional[UUID] = None  # NULL for self-readings
     reading_type: ReadingType
     question: Optional[str] = Field(None, max_length=500)
     birth_date: str = Field(..., pattern=r"^\d{4}-\d{2}-\d{2}$")
@@ -285,7 +280,6 @@ class FortuneGenerationResponse(BaseModel):
     model_used: str
     tokens_used: TokenUsage
     cost: float
-    new_dust_balance: int
 
 
 class FortuneHistoryResponse(BaseModel):
@@ -625,8 +619,26 @@ class RecipesListResponse(BaseModel):
     favorites_count: int
 
 
+class RecipeAdjustRequest(BaseModel):
+    user_id: UUID
+    recipe_id: UUID
+    adjustment_instructions: str = Field(..., min_length=1, max_length=1000)
+
+
 class RecipeFavoriteRequest(BaseModel):
     is_favorited: bool
+
+
+class RecipeAdjustResponse(BaseModel):
+    success: bool = True
+    recipe: UserRecipeNew
+    model_used: str
+    tokens_used: TokenUsage
+    cost: float
+    adjustments_applied: str
+
+    class Config:
+        protected_namespaces = ()
 
 
 class RecipeFavoriteResponse(BaseModel):
@@ -672,6 +684,57 @@ class RecipeErrorResponse(BaseModel):
     min_servings: Optional[int] = None
     max_servings: Optional[int] = None
     recipe_id: Optional[UUID] = None
+
+
+# Custom Character Models
+class CustomCharacterCreate(BaseModel):
+    name: str = Field(..., min_length=1, max_length=50)
+    description: str = Field(..., min_length=1, max_length=1000)
+    character_type: str = Field("custom", max_length=20)
+
+
+class CustomCharacterUpdate(BaseModel):
+    name: Optional[str] = Field(None, min_length=1, max_length=50)
+    description: Optional[str] = Field(None, min_length=1, max_length=1000)
+    character_type: Optional[str] = Field(None, max_length=20)
+    is_active: Optional[bool] = None
+
+
+class CustomCharacter(BaseModel):
+    id: UUID
+    user_id: UUID
+    name: str
+    description: str
+    character_type: str
+    is_active: bool
+    created_at: datetime
+    updated_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+class CustomCharactersResponse(BaseModel):
+    success: bool = True
+    characters: list[CustomCharacter]
+    total_count: int
+
+
+class CustomCharacterResponse(BaseModel):
+    success: bool = True
+    character: CustomCharacter
+
+
+class CustomCharacterDeleteResponse(BaseModel):
+    success: bool = True
+    message: str = "Character deleted successfully"
+
+
+class CustomCharacterErrorResponse(BaseModel):
+    success: bool = False
+    error: str
+    error_code: Optional[str] = None
+    character_id: Optional[UUID] = None
 
 
 # Error Response Model

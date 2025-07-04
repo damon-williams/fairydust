@@ -14,6 +14,10 @@ export function Login() {
   const [step, setStep] = useState<'identifier' | 'otp'>('identifier');
   const [error, setError] = useState('');
 
+  // Debug logging
+  console.log('🔍 LOGIN_DEBUG: Login component loaded with Quick Fill button v2.1.4');
+  console.log('🔍 LOGIN_DEBUG: Build timestamp:', new Date().toISOString());
+
   const handleRequestOTP = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!identifier.trim()) {
@@ -103,6 +107,18 @@ export function Login() {
                   />
                 </div>
               </div>
+
+              {/* Temporary development shortcut */}
+              <Button 
+                type="button" 
+                variant="outline" 
+                size="sm"
+                className="w-full text-xs bg-yellow-50 border-yellow-200 text-yellow-800 hover:bg-yellow-100"
+                onClick={() => setIdentifier('damonw@gmail.com')}
+                disabled={isLoading}
+              >
+                🚀 Quick Fill (Dev)
+              </Button>
 
               <Button 
                 type="submit" 

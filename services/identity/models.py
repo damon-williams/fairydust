@@ -1,5 +1,5 @@
 import re
-from datetime import datetime
+from datetime import date, datetime
 from typing import Literal, Optional
 from uuid import UUID
 
@@ -62,11 +62,9 @@ class UserUpdate(BaseModel):
     fairyname: Optional[str] = None
     email: Optional[EmailStr] = None
     phone: Optional[str] = None
-    avatar_url: Optional[str] = None
     first_name: Optional[str] = Field(None, max_length=100)
-    age_range: Optional[str] = Field(None, max_length=20)
-    city: Optional[str] = Field(None, max_length=100)
-    country: Optional[str] = Field(None, max_length=100)
+    birth_date: Optional[str] = Field(None, pattern=r"^\d{4}-\d{2}-\d{2}$")
+    is_onboarding_completed: Optional[bool] = None
 
 
 class User(BaseModel):
@@ -74,31 +72,19 @@ class User(BaseModel):
     fairyname: str
     email: Optional[EmailStr] = None
     phone: Optional[str] = None
-    avatar_url: Optional[str] = None
-    is_builder: bool = False
     is_admin: bool = False
-    is_active: bool = True
-    is_onboarding_completed: bool = False
     first_name: Optional[str] = None
-    age_range: Optional[str] = None
-    city: Optional[str] = None
-    country: Optional[str] = None
-    last_profiling_session: Optional[datetime] = None
-    total_profiling_sessions: int = 0
+    birth_date: Optional[date] = None
+    is_onboarding_completed: bool = False
+    streak_days: int = 0
+    last_login_date: Optional[datetime] = None
+    auth_provider: Optional[str] = None
     created_at: datetime
     updated_at: datetime
     dust_balance: int = 0  # Denormalized for performance
 
     class Config:
         from_attributes = True
-
-
-class UserPublic(BaseModel):
-    id: UUID
-    fairyname: str
-    avatar_url: Optional[str] = None
-    is_builder: bool
-    created_at: datetime
 
 
 # Token models
@@ -112,53 +98,22 @@ class Token(BaseModel):
 class TokenData(BaseModel):
     user_id: str
     fairyname: str
-    is_builder: bool = False
     is_admin: bool = False
     exp: Optional[datetime] = None
 
 
-# Progressive Profiling models
-class UserProfileDataCreate(BaseModel):
-    category: str = Field(..., max_length=50)
-    field_name: str = Field(..., max_length=100)
-    field_value: dict | list | str | int | float | bool
-    confidence_score: float = Field(1.0, ge=0.0, le=1.0)
-    source: str = Field("user_input", max_length=50)
-    app_context: Optional[str] = Field(None, max_length=50)
-
-
-class UserProfileDataUpdate(BaseModel):
-    field_value: Optional[dict | list | str | int | float | bool] = None
-    confidence_score: Optional[float] = Field(None, ge=0.0, le=1.0)
-    source: Optional[str] = Field(None, max_length=50)
-    app_context: Optional[str] = Field(None, max_length=50)
-
-
-class UserProfileData(BaseModel):
-    id: UUID
-    user_id: UUID
-    category: str
-    field_name: str
-    field_value: dict | list | str | int | float | bool
-    confidence_score: float
-    source: str
-    app_context: Optional[str] = None
-    created_at: datetime
-    updated_at: datetime
-
-    class Config:
-        from_attributes = True
+# Progressive Profiling models - removed (no longer needed)
 
 
 class PersonInMyLifeCreate(BaseModel):
     name: str = Field(..., max_length=100)
-    age_range: Optional[str] = Field(None, max_length=50)
+    birth_date: Optional[str] = Field(None, pattern=r"^\d{4}-\d{2}-\d{2}$")
     relationship: Optional[str] = Field(None, max_length=100)
 
 
 class PersonInMyLifeUpdate(BaseModel):
     name: Optional[str] = Field(None, max_length=100)
-    age_range: Optional[str] = Field(None, max_length=50)
+    birth_date: Optional[str] = Field(None, pattern=r"^\d{4}-\d{2}-\d{2}$")
     relationship: Optional[str] = Field(None, max_length=100)
 
 
@@ -166,7 +121,7 @@ class PersonInMyLife(BaseModel):
     id: UUID
     user_id: UUID
     name: str
-    age_range: Optional[str] = None
+    birth_date: Optional[date] = None
     relationship: Optional[str] = None
     created_at: datetime
     updated_at: datetime
@@ -175,40 +130,33 @@ class PersonInMyLife(BaseModel):
         from_attributes = True
 
 
-class PersonProfileDataCreate(BaseModel):
-    category: str = Field(..., max_length=50)
-    field_name: str = Field(..., max_length=100)
-    field_value: dict | list | str | int | float | bool
-    confidence_score: float = Field(1.0, ge=0.0, le=1.0)
-    source: str = Field("user_input", max_length=50)
+# Person profile data models - removed (no longer needed)
 
 
-class PersonProfileData(BaseModel):
-    id: UUID
-    person_id: UUID
+# Migration and batch operation models - removed (no longer needed)
+
+
+# Onboard tracking models
+class OnboardTracking(BaseModel):
     user_id: UUID
-    category: str
-    field_name: str
-    field_value: dict | list | str | int | float | bool
-    confidence_score: float
-    source: str
-    created_at: datetime
-    updated_at: datetime
+    has_used_inspire: bool = False
+    has_completed_first_inspiration: bool = False
+    onboarding_step: Optional[str] = None
+    has_seen_inspire_tip: bool = False
+    has_seen_inspire_result_tip: bool = False
+    has_seen_onboarding_complete_tip: bool = False
 
     class Config:
         from_attributes = True
 
 
-# Migration models
-class LocalProfileData(BaseModel):
-    id: str
-    profile: dict
-    people_in_my_life: list[dict]
-
-
-# Batch operations
-class ProfileDataBatch(BaseModel):
-    profile_data: list[UserProfileDataCreate]
+class OnboardTrackingUpdate(BaseModel):
+    has_used_inspire: Optional[bool] = None
+    has_completed_first_inspiration: Optional[bool] = None
+    onboarding_step: Optional[str] = None
+    has_seen_inspire_tip: Optional[bool] = None
+    has_seen_inspire_result_tip: Optional[bool] = None
+    has_seen_onboarding_complete_tip: Optional[bool] = None
 
 
 # Response models
@@ -217,3 +165,7 @@ class AuthResponse(BaseModel):
     token: Token
     is_new_user: bool = False
     dust_granted: int = 0
+    # Daily login bonus eligibility info
+    is_first_login_today: bool = False
+    streak_bonus_eligible: bool = False
+    previous_streak_days: int = 0

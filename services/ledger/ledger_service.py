@@ -513,6 +513,7 @@ class LedgerService:
 
         # No daily streak limits - allow multiple streak bonuses per day
         from datetime import date
+
         today = date.today()
 
         # Idempotency check removed for testing - allow duplicate requests

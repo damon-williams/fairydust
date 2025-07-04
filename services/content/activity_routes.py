@@ -29,8 +29,6 @@ if not TRIPADVISOR_API_KEY:
 
 tripadvisor_service = TripAdvisorService(TRIPADVISOR_API_KEY)
 
-ACTIVITY_DUST_COST = 3
-
 
 @router.post("/activity/search", response_model=ActivitySearchResponse)
 async def search_activities(
@@ -63,17 +61,7 @@ async def search_activities(
         if not auth_token:
             raise HTTPException(status_code=401, detail="Authorization header required")
 
-        # Verify user has enough DUST
-        user_balance = await _get_user_balance(request.user_id, auth_token)
-        if user_balance < ACTIVITY_DUST_COST:
-            print(
-                f"💰 ACTIVITY_SEARCH: Insufficient DUST balance: {user_balance} < {ACTIVITY_DUST_COST}",
-                flush=True,
-            )
-            raise HTTPException(
-                status_code=402,
-                detail=f"Insufficient DUST balance. Need {ACTIVITY_DUST_COST} DUST, have {user_balance}",
-            )
+        # Content service no longer manages DUST - handled externally
 
         # Get people information for AI context
         people_info = await _get_people_info(db, request.user_id, request.selected_people)
@@ -118,15 +106,8 @@ async def search_activities(
             flush=True,
         )
 
-        # Consume DUST after successful search
-        dust_consumed = await _consume_dust(request.user_id, ACTIVITY_DUST_COST, auth_token, db)
-        if not dust_consumed:
-            print(
-                f"❌ ACTIVITY_SEARCH: Failed to consume DUST for user {request.user_id}", flush=True
-            )
-            raise HTTPException(status_code=402, detail="Payment processing failed")
         print(
-            f"💰 ACTIVITY_SEARCH: Consumed {ACTIVITY_DUST_COST} DUST from user {request.user_id}",
+            f"✅ ACTIVITY_SEARCH: Generated activities for user {request.user_id} (DUST handled by client)",
             flush=True,
         )
 
@@ -180,7 +161,7 @@ async def _get_user_balance(user_id: uuid.UUID, auth_token: str) -> int:
     try:
         async with httpx.AsyncClient() as client:
             response = await client.get(
-                f"https://fairydust-ledger-production.up.railway.app/balance/{user_id}",
+                f"{ledger_url}/balance/{user_id}",
                 headers={"Authorization": auth_token},
                 timeout=10.0,
             )
@@ -211,49 +192,6 @@ async def _get_app_id(db: Database) -> str:
             detail="fairydust-activity app not found in database. Please create the app first.",
         )
     return str(result["id"])
-
-
-async def _consume_dust(user_id: uuid.UUID, amount: int, auth_token: str, db: Database) -> bool:
-    """Consume DUST for activity search via Ledger Service"""
-    print(f"🔍 ACTIVITY_DUST: Attempting to consume {amount} DUST for user {user_id}", flush=True)
-    try:
-        # Get the proper app UUID
-        app_id = await _get_app_id(db)
-
-        # Generate idempotency key to prevent double-charging
-        import time
-
-        idempotency_key = f"activity_search_{str(user_id).replace('-', '')[:16]}_{int(time.time())}"
-
-        async with httpx.AsyncClient() as client:
-            payload = {
-                "user_id": str(user_id),
-                "amount": amount,
-                "app_id": app_id,  # Now using proper UUID
-                "action": "activity_search",  # Required field
-                "idempotency_key": idempotency_key,  # Required field
-                "metadata": {"service": "content", "feature": "activity_search"},
-            }
-            print(f"🔍 ACTIVITY_DUST: Payload: {payload}", flush=True)
-
-            response = await client.post(
-                "https://fairydust-ledger-production.up.railway.app/transactions/consume",
-                json=payload,
-                headers={"Authorization": auth_token},
-                timeout=10.0,
-            )
-            print(f"🔍 ACTIVITY_DUST: Ledger service response: {response.status_code}", flush=True)
-
-            if response.status_code != 200:
-                response_text = response.text
-                print(f"❌ ACTIVITY_DUST: Error response: {response_text}", flush=True)
-                return False
-
-            print("✅ ACTIVITY_DUST: DUST consumption successful", flush=True)
-            return True
-    except Exception as e:
-        print(f"❌ ACTIVITY_DUST: Exception consuming DUST: {str(e)}", flush=True)
-        return False
 
 
 async def _get_people_info(
@@ -437,8 +375,22 @@ Respond with exactly {len(activities)} entries in this JSON format:
                         "messages": [{"role": "user", "content": prompt}],
                     },
                 )
+            elif provider == "openai":
+                response = await client.post(
+                    "https://api.openai.com/v1/chat/completions",
+                    headers={
+                        "Content-Type": "application/json",
+                        "Authorization": f"Bearer {os.getenv('OPENAI_API_KEY', '')}",
+                    },
+                    json={
+                        "model": model_id,
+                        "max_tokens": parameters.get("max_tokens", 1000),
+                        "temperature": parameters.get("temperature", 0.7),
+                        "top_p": parameters.get("top_p", 0.9),
+                        "messages": [{"role": "user", "content": prompt}],
+                    },
+                )
             else:
-                # Add OpenAI support if needed
                 print(
                     f"⚠️ ACTIVITY_AI: Unsupported provider {provider}, falling back to Anthropic",
                     flush=True,
@@ -459,15 +411,28 @@ Respond with exactly {len(activities)} entries in this JSON format:
 
             if response.status_code == 200:
                 result = response.json()
-                content = result["content"][0]["text"]
 
-                # Calculate tokens and cost for logging
-                usage = result.get("usage", {})
-                prompt_tokens = usage.get("input_tokens", 0)
-                completion_tokens = usage.get("output_tokens", 0)
+                # Handle different response formats based on provider
+                if provider == "anthropic":
+                    content = result["content"][0]["text"]
+                    usage = result.get("usage", {})
+                    prompt_tokens = usage.get("input_tokens", 0)
+                    completion_tokens = usage.get("output_tokens", 0)
+                elif provider == "openai":
+                    content = result["choices"][0]["message"]["content"]
+                    usage = result.get("usage", {})
+                    prompt_tokens = usage.get("prompt_tokens", 0)
+                    completion_tokens = usage.get("completion_tokens", 0)
+                else:
+                    # Fallback case
+                    content = result["content"][0]["text"]
+                    usage = result.get("usage", {})
+                    prompt_tokens = usage.get("input_tokens", 0)
+                    completion_tokens = usage.get("output_tokens", 0)
+
                 total_tokens = prompt_tokens + completion_tokens
 
-                cost = calculate_llm_cost("anthropic", model_id, prompt_tokens, completion_tokens)
+                cost = calculate_llm_cost(provider, model_id, prompt_tokens, completion_tokens)
 
                 # Log LLM usage (don't block on logging failures)
                 try:
@@ -483,7 +448,7 @@ Respond with exactly {len(activities)} entries in this JSON format:
                     await log_llm_usage(
                         user_id=user_id,
                         app_id="fairydust-activity",
-                        provider="anthropic",
+                        provider=provider,
                         model_id=model_id,
                         prompt_tokens=prompt_tokens,
                         completion_tokens=completion_tokens,
