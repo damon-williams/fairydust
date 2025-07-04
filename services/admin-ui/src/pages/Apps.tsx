@@ -233,11 +233,21 @@ export function Apps() {
     if (!editingPricing) return;
 
     try {
-      await AdminAPI.updateActionPricing(editingPricing.action_slug, {
+      console.log('🎯 Action pricing operation:', isCreatingAction ? 'CREATE' : 'UPDATE', editingPricing);
+      
+      const pricingData = {
         dust_cost: editingPricing.dust_cost,
         description: editingPricing.description,
         is_active: editingPricing.is_active,
-      });
+      };
+      
+      if (isCreatingAction) {
+        // Use POST for creating new actions
+        await AdminAPI.createActionPricing(editingPricing.action_slug, pricingData);
+      } else {
+        // Use PUT for updating existing actions
+        await AdminAPI.updateActionPricing(editingPricing.action_slug, pricingData);
+      }
       
       toast.success(isCreatingAction ? 'Action created successfully' : 'Pricing updated successfully');
       setPricingDialogOpen(false);
@@ -246,7 +256,7 @@ export function Apps() {
       await loadActionPricing();
     } catch (err) {
       console.error('Failed to update pricing:', err);
-      toast.error('Failed to update pricing');
+      toast.error(isCreatingAction ? 'Failed to create action' : 'Failed to update pricing');
     }
   };
 
