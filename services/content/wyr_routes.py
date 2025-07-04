@@ -582,6 +582,103 @@ async def _get_user_age_context(db: Database, user_id: uuid.UUID) -> str:
         return "general audience"
 
 
+async def _get_wyr_llm_model_config() -> dict:
+    """Get LLM configuration for Would You Rather app (with caching)"""
+    from shared.app_config_cache import get_app_config_cache
+    from shared.database import get_db
+
+    app_slug = "fairydust-would-you-rather"
+
+    # First, get the app UUID from the slug
+    db = await get_db()
+    app_result = await db.fetch_one("SELECT id FROM apps WHERE slug = $1", app_slug)
+
+    if not app_result:
+        print(f"❌ WYR_CONFIG: App not found for slug: {app_slug}", flush=True)
+        return {
+            "primary_provider": "anthropic",
+            "primary_model_id": "claude-3-5-sonnet-20241022",
+            "primary_parameters": {"temperature": 0.7, "max_tokens": 1000, "top_p": 0.9},
+        }
+
+    app_id = str(app_result["id"])
+    print(f"📊 WYR_CONFIG: Found app ID: {app_id}", flush=True)
+
+    # Try to get cached config first
+    try:
+        cache = await get_app_config_cache()
+    except Exception as e:
+        print(f"❌ WYR_CONFIG: Cache unavailable: {e}", flush=True)
+        cache = None
+
+    if cache:
+        cached_config = await cache.get_model_config(app_id)
+
+        if cached_config:
+            print("✅ WYR_CONFIG: Found cached config", flush=True)
+            print(f"✅ WYR_CONFIG: Provider: {cached_config.get('primary_provider')}", flush=True)
+            print(f"✅ WYR_CONFIG: Model: {cached_config.get('primary_model_id')}", flush=True)
+
+            config = {
+                "primary_provider": cached_config.get("primary_provider", "anthropic"),
+                "primary_model_id": cached_config.get("primary_model_id", "claude-3-5-sonnet-20241022"),
+                "primary_parameters": cached_config.get(
+                    "primary_parameters", {"temperature": 0.7, "max_tokens": 1000, "top_p": 0.9}
+                ),
+            }
+
+            print(f"✅ WYR_CONFIG: Returning cached config: {config}", flush=True)
+            return config
+
+    # Cache miss - check database directly
+    print("⚠️ WYR_CONFIG: Cache miss, checking database directly", flush=True)
+
+    try:
+        db_config = await db.fetch_one("SELECT * FROM app_model_configs WHERE app_id = $1", app_id)
+
+        if db_config:
+            print("📊 WYR_CONFIG: Found database config", flush=True)
+            print(f"📊 WYR_CONFIG: DB Provider: {db_config['primary_provider']}", flush=True)
+            print(f"📊 WYR_CONFIG: DB Model: {db_config['primary_model_id']}", flush=True)
+
+            # Parse and cache the database config
+            from shared.json_utils import parse_model_config_field
+
+            parsed_config = {
+                "primary_provider": db_config["primary_provider"],
+                "primary_model_id": db_config["primary_model_id"],
+                "primary_parameters": parse_model_config_field(
+                    dict(db_config), "primary_parameters"
+                )
+                or {"temperature": 0.7, "max_tokens": 1000, "top_p": 0.9},
+            }
+
+            # Cache the database config
+            if cache:
+                await cache.set_model_config(app_id, parsed_config)
+                print(f"✅ WYR_CONFIG: Cached database config: {parsed_config}", flush=True)
+
+            return parsed_config
+
+    except Exception as e:
+        print(f"❌ WYR_CONFIG: Database error: {e}", flush=True)
+
+    # Fallback to default config
+    print("🔄 WYR_CONFIG: Using default config (no cache, no database)", flush=True)
+    default_config = {
+        "primary_provider": "anthropic",
+        "primary_model_id": "claude-3-5-sonnet-20241022",
+        "primary_parameters": {"temperature": 0.7, "max_tokens": 1000, "top_p": 0.9},
+    }
+
+    # Cache the default config
+    if cache:
+        await cache.set_model_config(app_id, default_config)
+        print(f"✅ WYR_CONFIG: Cached default config: {default_config}", flush=True)
+
+    return default_config
+
+
 async def _generate_questions_llm(
     game_length: GameLength,
     category: GameCategory,
@@ -597,47 +694,90 @@ async def _generate_questions_llm(
         # Build prompt
         prompt = _build_questions_prompt(game_length, category, custom_request, age_context)
 
-        # Make LLM API call
-        provider = "anthropic"
-        model_id = "claude-3-5-sonnet-20241022"
+        # Get LLM model configuration from database/cache
+        model_config = await _get_wyr_llm_model_config()
+
+        provider = model_config.get("primary_provider", "anthropic")
+        model_id = model_config.get("primary_model_id", "claude-3-5-sonnet-20241022")
+        parameters = model_config.get("primary_parameters", {})
         
-        api_key = os.getenv("ANTHROPIC_API_KEY", "")
-        if not api_key:
-            print("❌ WYR_LLM: Missing ANTHROPIC_API_KEY", flush=True)
-            return [], provider, model_id, {}, 0.0, 0
+        temperature = parameters.get("temperature", 0.7)
+        max_tokens = parameters.get("max_tokens", 1000)
+        top_p = parameters.get("top_p", 0.9)
+
+        print(f"🔧 WYR_LLM: Using provider: {provider}, model: {model_id}", flush=True)
+        print(f"🔧 WYR_LLM: Parameters - temp: {temperature}, max_tokens: {max_tokens}, top_p: {top_p}", flush=True)
 
         start_time = datetime.now()
-        async with httpx.AsyncClient(timeout=30.0) as client:
-            response = await client.post(
-                "https://api.anthropic.com/v1/messages",
-                headers={
-                    "Content-Type": "application/json",
-                    "x-api-key": api_key,
-                    "anthropic-version": "2023-06-01",
-                },
-                json={
-                    "model": model_id,
-                    "max_tokens": 3000,
-                    "temperature": 0.8,
-                    "messages": [{"role": "user", "content": prompt}],
-                },
-            )
+        
+        if provider.lower() == "openai":
+            # OpenAI API call
+            api_key = os.getenv("OPENAI_API_KEY", "")
+            if not api_key:
+                print("❌ WYR_LLM: Missing OPENAI_API_KEY", flush=True)
+                return [], provider, model_id, {}, 0.0, 0
+
+            async with httpx.AsyncClient(timeout=30.0) as client:
+                response = await client.post(
+                    "https://api.openai.com/v1/chat/completions",
+                    headers={
+                        "Content-Type": "application/json",
+                        "Authorization": f"Bearer {api_key}",
+                    },
+                    json={
+                        "model": model_id,
+                        "max_tokens": max_tokens,
+                        "temperature": temperature,
+                        "top_p": top_p,
+                        "messages": [{"role": "user", "content": prompt}],
+                    },
+                )
+        else:
+            # Anthropic API call (default)
+            api_key = os.getenv("ANTHROPIC_API_KEY", "")
+            if not api_key:
+                print("❌ WYR_LLM: Missing ANTHROPIC_API_KEY", flush=True)
+                return [], provider, model_id, {}, 0.0, 0
+
+            async with httpx.AsyncClient(timeout=30.0) as client:
+                response = await client.post(
+                    "https://api.anthropic.com/v1/messages",
+                    headers={
+                        "Content-Type": "application/json",
+                        "x-api-key": api_key,
+                        "anthropic-version": "2023-06-01",
+                    },
+                    json={
+                        "model": model_id,
+                        "max_tokens": max_tokens,
+                        "temperature": temperature,
+                        "messages": [{"role": "user", "content": prompt}],
+                    },
+                )
 
         latency_ms = int((datetime.now() - start_time).total_seconds() * 1000)
 
         if response.status_code == 200:
             result = response.json()
-            content = result["content"][0]["text"].strip()
+            
+            # Parse content based on provider
+            if provider.lower() == "openai":
+                content = result["choices"][0]["message"]["content"].strip()
+                usage = result.get("usage", {})
+                prompt_tokens = usage.get("prompt_tokens", 0)
+                completion_tokens = usage.get("completion_tokens", 0)
+                total_tokens = usage.get("total_tokens", 0)
+            else:
+                # Anthropic format
+                content = result["content"][0]["text"].strip()
+                usage = result.get("usage", {})
+                prompt_tokens = usage.get("input_tokens", 0)
+                completion_tokens = usage.get("output_tokens", 0)
+                total_tokens = prompt_tokens + completion_tokens
 
             # Parse questions from response
             questions = _parse_questions_response(content, category)
             
-            # Calculate cost
-            usage = result.get("usage", {})
-            prompt_tokens = usage.get("input_tokens", 0)
-            completion_tokens = usage.get("output_tokens", 0)
-            total_tokens = prompt_tokens + completion_tokens
-
             tokens_used = {
                 "prompt": prompt_tokens,
                 "completion": completion_tokens,
