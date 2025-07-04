@@ -1132,4 +1132,26 @@ async def create_tables():
 
     # Note: Action pricing data should be managed through Admin Portal, not seeded here
 
+    # Custom Characters table for Story app
+    await db.execute_schema(
+        """
+        CREATE TABLE IF NOT EXISTS custom_characters (
+            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            name VARCHAR(50) NOT NULL,
+            description TEXT NOT NULL,
+            character_type VARCHAR(20) NOT NULL DEFAULT 'custom',
+            is_active BOOLEAN DEFAULT TRUE,
+            created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+            
+            -- Unique constraint to prevent duplicate names per user
+            UNIQUE(user_id, name)
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_custom_characters_user_id ON custom_characters(user_id);
+        CREATE INDEX IF NOT EXISTS idx_custom_characters_active ON custom_characters(user_id, is_active);
+    """
+    )
+
     logger.info("Database schema creation/update completed successfully")

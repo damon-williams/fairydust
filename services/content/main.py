@@ -19,6 +19,7 @@ logger = logging.getLogger(__name__)
 from contextlib import asynccontextmanager
 
 from activity_routes import router as activity_router
+from character_routes import router as character_router
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
@@ -96,6 +97,7 @@ endpoint_limits = {
     "/apps/recipe/generate": 50 * 1024,  # 50KB for recipe generation requests
     "/apps/story/generate": 50 * 1024,  # 50KB for story generation requests
     "/apps/fortune-teller/generate": 50 * 1024,  # 50KB for fortune generation requests
+    "/users/*/characters": 10 * 1024,  # 10KB for character management requests
 }
 
 add_middleware_to_app(
@@ -124,6 +126,7 @@ app.include_router(activity_router, tags=["activities"])
 app.include_router(inspire_router, tags=["inspire"])
 app.include_router(recipe_router, tags=["recipes-new"])
 app.include_router(fortune_router, tags=["fortune-teller"])
+app.include_router(character_router, tags=["characters"])
 
 
 @app.get("/")

@@ -686,6 +686,57 @@ class RecipeErrorResponse(BaseModel):
     recipe_id: Optional[UUID] = None
 
 
+# Custom Character Models
+class CustomCharacterCreate(BaseModel):
+    name: str = Field(..., min_length=1, max_length=50)
+    description: str = Field(..., min_length=1, max_length=1000)
+    character_type: str = Field("custom", max_length=20)
+
+
+class CustomCharacterUpdate(BaseModel):
+    name: Optional[str] = Field(None, min_length=1, max_length=50)
+    description: Optional[str] = Field(None, min_length=1, max_length=1000)
+    character_type: Optional[str] = Field(None, max_length=20)
+    is_active: Optional[bool] = None
+
+
+class CustomCharacter(BaseModel):
+    id: UUID
+    user_id: UUID
+    name: str
+    description: str
+    character_type: str
+    is_active: bool
+    created_at: datetime
+    updated_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+class CustomCharactersResponse(BaseModel):
+    success: bool = True
+    characters: list[CustomCharacter]
+    total_count: int
+
+
+class CustomCharacterResponse(BaseModel):
+    success: bool = True
+    character: CustomCharacter
+
+
+class CustomCharacterDeleteResponse(BaseModel):
+    success: bool = True
+    message: str = "Character deleted successfully"
+
+
+class CustomCharacterErrorResponse(BaseModel):
+    success: bool = False
+    error: str
+    error_code: Optional[str] = None
+    character_id: Optional[UUID] = None
+
+
 # Error Response Model
 class ErrorResponse(BaseModel):
     error: dict
