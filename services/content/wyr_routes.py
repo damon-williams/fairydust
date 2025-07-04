@@ -196,18 +196,16 @@ async def save_answer_progress(
         # Get existing session
         session_data = await _get_session(db, session_id, current_user.user_id)
         if not session_data:
-            return WyrGameErrorResponse(
-                error="Session not found or access denied",
-                error_code="INVALID_SESSION",
-                session_id=session_id
+            raise HTTPException(
+                status_code=404,
+                detail="Session not found or access denied"
             )
 
         # Check if session is already completed
         if session_data["status"] == "completed":
-            return WyrGameErrorResponse(
-                error="Cannot modify completed session",
-                error_code="SESSION_COMPLETED",
-                session_id=session_id
+            raise HTTPException(
+                status_code=400,
+                detail="Cannot modify completed session"
             )
 
         # Parse existing data
@@ -217,9 +215,9 @@ async def save_answer_progress(
         # Validate question exists
         question_exists = any(q.get("id") == str(request.question_id) for q in existing_questions)
         if not question_exists:
-            return WyrGameErrorResponse(
-                error="Invalid question ID",
-                error_code="INVALID_QUESTION"
+            raise HTTPException(
+                status_code=400,
+                detail="Invalid question ID"
             )
 
         # Update or add answer
@@ -258,9 +256,9 @@ async def save_answer_progress(
         )
 
         if not updated_session:
-            return WyrGameErrorResponse(
-                error="Failed to update session",
-                error_code="UPDATE_FAILED"
+            raise HTTPException(
+                status_code=500,
+                detail="Failed to update session"
             )
 
         # Build response
@@ -271,9 +269,9 @@ async def save_answer_progress(
 
     except Exception as e:
         print(f"❌ WYR: Error updating progress: {str(e)}", flush=True)
-        return WyrGameErrorResponse(
-            error="Failed to save progress",
-            error_code="INTERNAL_ERROR"
+        raise HTTPException(
+            status_code=500,
+            detail="Failed to save progress"
         )
 
 
@@ -291,10 +289,9 @@ async def complete_game_session(
         # Get existing session
         session_data = await _get_session(db, session_id, current_user.user_id)
         if not session_data:
-            return WyrGameErrorResponse(
-                error="Session not found or access denied",
-                error_code="INVALID_SESSION",
-                session_id=session_id
+            raise HTTPException(
+                status_code=404,
+                detail="Session not found or access denied"
             )
 
         # Check if already completed
@@ -331,9 +328,9 @@ async def complete_game_session(
         )
 
         if not completed_session:
-            return WyrGameErrorResponse(
-                error="Failed to complete session",
-                error_code="UPDATE_FAILED"
+            raise HTTPException(
+                status_code=500,
+                detail="Failed to complete session"
             )
 
         session = await _build_session_response(completed_session)
@@ -343,9 +340,9 @@ async def complete_game_session(
 
     except Exception as e:
         print(f"❌ WYR: Error completing session: {str(e)}", flush=True)
-        return WyrGameErrorResponse(
-            error="Failed to complete session",
-            error_code="INTERNAL_ERROR"
+        raise HTTPException(
+            status_code=500,
+            detail="Failed to complete session"
         )
 
 
@@ -363,9 +360,9 @@ async def get_user_sessions(
 
     # Verify user can only access their own sessions
     if current_user.user_id != str(user_id):
-        return WyrGameErrorResponse(
-            error="Can only access your own sessions",
-            error_code="FORBIDDEN"
+        raise HTTPException(
+            status_code=403,
+            detail="Can only access your own sessions"
         )
 
     try:
@@ -436,9 +433,9 @@ async def get_user_sessions(
 
     except Exception as e:
         print(f"❌ WYR: Error getting sessions: {str(e)}", flush=True)
-        return WyrGameErrorResponse(
-            error="Failed to retrieve sessions",
-            error_code="INTERNAL_ERROR"
+        raise HTTPException(
+            status_code=500,
+            detail="Failed to retrieve sessions"
         )
 
 
@@ -454,10 +451,9 @@ async def get_single_session(
     try:
         session_data = await _get_session(db, session_id, current_user.user_id)
         if not session_data:
-            return WyrGameErrorResponse(
-                error="Session not found or access denied",
-                error_code="INVALID_SESSION",
-                session_id=session_id
+            raise HTTPException(
+                status_code=404,
+                detail="Session not found or access denied"
             )
 
         session = await _build_session_response(session_data)
@@ -465,9 +461,9 @@ async def get_single_session(
 
     except Exception as e:
         print(f"❌ WYR: Error getting session: {str(e)}", flush=True)
-        return WyrGameErrorResponse(
-            error="Failed to retrieve session",
-            error_code="INTERNAL_ERROR"
+        raise HTTPException(
+            status_code=500,
+            detail="Failed to retrieve session"
         )
 
 
@@ -484,10 +480,9 @@ async def delete_session(
         # Verify session exists and belongs to user
         session_data = await _get_session(db, session_id, current_user.user_id)
         if not session_data:
-            return WyrGameErrorResponse(
-                error="Session not found or access denied",
-                error_code="INVALID_SESSION",
-                session_id=session_id
+            raise HTTPException(
+                status_code=404,
+                detail="Session not found or access denied"
             )
 
         # Delete session
@@ -499,9 +494,9 @@ async def delete_session(
         result = await db.execute(delete_query, session_id, uuid.UUID(current_user.user_id))
 
         if "DELETE 0" in result:
-            return WyrGameErrorResponse(
-                error="Failed to delete session",
-                error_code="DELETE_FAILED"
+            raise HTTPException(
+                status_code=500,
+                detail="Failed to delete session"
             )
 
         print(f"✅ WYR: Deleted session {session_id}", flush=True)
@@ -509,9 +504,9 @@ async def delete_session(
 
     except Exception as e:
         print(f"❌ WYR: Error deleting session: {str(e)}", flush=True)
-        return WyrGameErrorResponse(
-            error="Failed to delete session",
-            error_code="INTERNAL_ERROR"
+        raise HTTPException(
+            status_code=500,
+            detail="Failed to delete session"
         )
 
 
