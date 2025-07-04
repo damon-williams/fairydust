@@ -325,7 +325,7 @@ async def complete_game_session(
         completed_session = await db.fetch_one(
             complete_query,
             summary,
-            json.dumps([answer.dict() for answer in request.final_answers]),
+            json.dumps([answer.model_dump(mode='json') for answer in request.final_answers]),
             session_id,
             uuid.UUID(current_user.user_id),
         )
@@ -777,7 +777,8 @@ async def _save_game_session(
                     CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
         """
 
-        questions_json = json.dumps([q.dict() for q in questions])
+        # Convert questions to JSON, ensuring UUIDs are properly serialized
+        questions_json = json.dumps([q.model_dump(mode='json') for q in questions])
 
         await db.execute(
             insert_query,
