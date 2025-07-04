@@ -3,15 +3,18 @@ import hashlib
 import os
 from typing import Any
 
+# DEPRECATED: This module is no longer used. Use google_places_http.py instead.
+# The googlemaps package dependency has been removed to simplify deployment.
+
 try:
     import googlemaps
 
     GOOGLEMAPS_AVAILABLE = True
-    print("🔍 GOOGLE_PLACES_DEBUG: ✅ googlemaps package imported successfully")
+    # Removed debug print to reduce log noise
 except ImportError as e:
     GOOGLEMAPS_AVAILABLE = False
     googlemaps = None
-    print(f"🔍 GOOGLE_PLACES_DEBUG: ❌ googlemaps package not available: {e}")
+    # Removed error print - this is expected behavior now
 
 
 class GooglePlacesService:

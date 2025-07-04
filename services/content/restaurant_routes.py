@@ -14,7 +14,7 @@ identity_url = f"https://fairydust-identity-{base_url_suffix}.up.railway.app"
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.security import HTTPBearer
 from google_places_http import get_google_places_http_service
-from google_places_service import get_google_places_service
+# from google_places_service import get_google_places_service  # Removed - using HTTP implementation only
 from models import (
     OpenTableInfo,
     PersonRestaurantPreferences,
@@ -334,23 +334,12 @@ async def get_restaurants_from_google_places(
         people_data = []
 
     try:
-        print("🔍 RESTAURANT_DEBUG: Attempting to get Google Places service...")
-
-        # Try the googlemaps package first
-        try:
-            print("🔍 RESTAURANT_DEBUG: Attempting googlemaps package initialization...")
-            places_service = get_google_places_service()
-            print(
-                "🔍 RESTAURANT_DEBUG: ✅ Google Places service (googlemaps package) initialized successfully"
-            )
-            use_http_service = False
-        except Exception as e:
-            print(
-                f"🔍 RESTAURANT_DEBUG: googlemaps package failed ({type(e).__name__}: {e}), trying HTTP service..."
-            )
-            places_service = get_google_places_http_service()
-            print("🔍 RESTAURANT_DEBUG: ✅ Google Places HTTP service initialized successfully")
-            use_http_service = True
+        print("🔍 RESTAURANT_DEBUG: Initializing Google Places HTTP service...")
+        
+        # Use HTTP implementation directly (no googlemaps package dependency)
+        places_service = get_google_places_http_service()
+        print("🔍 RESTAURANT_DEBUG: ✅ Google Places HTTP service initialized successfully")
+        use_http_service = True
 
         # Convert radius from miles (if provided) or use default
         radius_str = preferences.get("default_radius", "10mi")
