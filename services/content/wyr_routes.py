@@ -7,7 +7,7 @@ from datetime import datetime
 from typing import Optional
 
 import httpx
-from fastapi import APIRouter, Depends, Path, Query, Request
+from fastapi import APIRouter, Depends, HTTPException, Path, Query, Request
 from models import (
     AnswerObject,
     GameCategory,
@@ -68,20 +68,20 @@ async def start_new_game_session(
             f"🚨 WYR: User {current_user.user_id} attempted to create game for different user {request.user_id}",
             flush=True,
         )
-        return WyrGameErrorResponse(error="Can only create games for yourself")
+        raise HTTPException(status_code=403, detail="Can only create games for yourself")
 
     try:
         # Extract Authorization header for service-to-service calls
         auth_token = http_request.headers.get("authorization", "")
         if not auth_token:
-            return WyrGameErrorResponse(error="Authorization header required")
+            raise HTTPException(status_code=401, detail="Authorization header required")
 
         # Check rate limiting
         rate_limit_exceeded = await _check_rate_limit(db, request.user_id)
         if rate_limit_exceeded:
-            return WyrGameErrorResponse(
-                error=f"Rate limit exceeded. Maximum {WYR_RATE_LIMIT} games per hour.",
-                error_code="RATE_LIMITED"
+            raise HTTPException(
+                status_code=429, 
+                detail=f"Rate limit exceeded. Maximum {WYR_RATE_LIMIT} games per hour."
             )
 
         # Generate questions using LLM
@@ -103,9 +103,9 @@ async def start_new_game_session(
 
         if not questions:
             print("❌ WYR: Question generation failed", flush=True)
-            return WyrGameErrorResponse(
-                error="Failed to generate questions. Please try again.",
-                error_code="GENERATION_FAILED"
+            raise HTTPException(
+                status_code=500, 
+                detail="Failed to generate questions. Please try again."
             )
 
         print(f"✅ WYR: Generated {len(questions)} questions", flush=True)
@@ -176,9 +176,9 @@ async def start_new_game_session(
 
     except Exception as e:
         print(f"❌ WYR: Unexpected error: {str(e)}", flush=True)
-        return WyrGameErrorResponse(
-            error="Internal server error during game creation",
-            error_code="INTERNAL_ERROR"
+        raise HTTPException(
+            status_code=500,
+            detail="Internal server error during game creation"
         )
 
 
