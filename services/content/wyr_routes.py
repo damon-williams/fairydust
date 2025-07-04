@@ -818,7 +818,7 @@ def _build_questions_prompt(
         GameCategory.MIX_IT_UP: "A random mix from all categories for variety",
     }
 
-    base_prompt = f"""Create exactly {game_length} "Would You Rather" questions for a {age_context} audience.
+    base_prompt = f"""Create exactly {game_length.value} "Would You Rather" questions for a {age_context} audience.
 
 CATEGORY: {category_descriptions.get(category, category.value)}"""
 
@@ -830,8 +830,8 @@ CUSTOM THEME: {custom_request}"""
         base_prompt += f"""
 
 VARIETY REQUIREMENT: Since this is "Mix It Up", include questions from different categories:
-- {game_length // 3} thought-provoking questions
-- {game_length // 3} funny/silly questions  
+- {game_length.value // 3} thought-provoking questions
+- {game_length.value // 3} funny/silly questions  
 - Remaining questions from other categories (relationships, fantasy, pop culture, etc.)"""
 
     base_prompt += f"""
@@ -859,7 +859,7 @@ EXAMPLES of good "Would You Rather" questions:
 - "Would you rather have the ability to fly but only 3 feet off the ground, or be invisible but only when no one is looking?"
 - "Would you rather always know when someone is lying but never be able to prove it, or never know when someone is lying but always trust people?"
 
-Generate exactly {game_length} creative, engaging questions now:"""
+Generate exactly {game_length.value} creative, engaging questions now:"""
 
     return base_prompt
 
