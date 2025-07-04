@@ -1440,12 +1440,21 @@ async def _adjust_recipe_llm(
     adjustment_instructions: str,
     user_context: str,
 ) -> tuple[
-    Optional[str], Optional[str], Optional[int], Optional[int], Optional[int], str, dict, float, str
+    Optional[str],
+    Optional[str],
+    Optional[int],
+    Optional[int],
+    Optional[int],
+    str,
+    dict,
+    float,
+    int,
+    str,
 ]:
     """
     Adjust an existing recipe using LLM based on user instructions.
 
-    Returns: (title, content, servings, prep_time, cook_time, model_used, tokens_used, cost, provider_used)
+    Returns: (content, title, servings, prep_time, cook_time, model_used, tokens_used, cost, latency_ms, provider_used)
     """
     try:
         # Get LLM model configuration from database/cache
@@ -1536,7 +1545,7 @@ IMPORTANT:
 
                 if response.status_code != 200:
                     print(f"❌ RECIPE_ADJUST_LLM: Anthropic API error: {response.text}", flush=True)
-                    return None, None, None, None, None, model_id, {}, 0.0, provider
+                    return None, None, None, None, None, model_id, {}, 0.0, latency_ms, provider
 
                 result = response.json()
                 content = result["content"][0]["text"]
@@ -1569,7 +1578,7 @@ IMPORTANT:
 
                 if response.status_code != 200:
                     print(f"❌ RECIPE_ADJUST_LLM: OpenAI API error: {response.text}", flush=True)
-                    return None, None, None, None, None, model_id, {}, 0.0, provider
+                    return None, None, None, None, None, model_id, {}, 0.0, latency_ms, provider
 
                 result = response.json()
                 content = result["choices"][0]["message"]["content"]
@@ -1583,14 +1592,14 @@ IMPORTANT:
                 }
             else:
                 print(f"❌ RECIPE_ADJUST_LLM: Unsupported provider: {provider}", flush=True)
-                return None, None, None, None, None, model_id, {}, 0.0, provider
+                return None, None, None, None, None, model_id, {}, 0.0, 0, provider
 
         # Calculate cost using shared pricing utility
         cost = calculate_llm_cost(
             provider=provider,
             model_id=model_id,
-            prompt_tokens=tokens_used.get("prompt", 0),
-            completion_tokens=tokens_used.get("completion", 0),
+            input_tokens=tokens_used.get("prompt", 0),
+            output_tokens=tokens_used.get("completion", 0),
         )
 
         print(
@@ -1607,8 +1616,19 @@ IMPORTANT:
         if servings is None:
             servings = original_servings
 
-        return title, content, servings, prep_time, cook_time, model_id, tokens_used, cost, provider
+        return (
+            content,
+            title,
+            servings,
+            prep_time,
+            cook_time,
+            model_id,
+            tokens_used,
+            cost,
+            latency_ms,
+            provider,
+        )
 
     except Exception as e:
         print(f"❌ RECIPE_ADJUST_LLM: Error adjusting recipe: {str(e)}", flush=True)
-        return None, None, None, None, None, "unknown", {}, 0.0, "unknown"
+        return None, None, None, None, None, "unknown", {}, 0.0, 0, "unknown"
