@@ -232,12 +232,23 @@ export function Apps() {
   const handleUpdatePricing = async () => {
     if (!editingPricing) return;
 
+    // Client-side validation
+    if (!editingPricing.action_slug?.trim()) {
+      toast.error('Action slug is required');
+      return;
+    }
+    
+    if (!editingPricing.description?.trim()) {
+      toast.error('Description is required');
+      return;
+    }
+
     try {
       console.log('🎯 Action pricing operation:', isCreatingAction ? 'CREATE' : 'UPDATE', editingPricing);
       
       const pricingData = {
         dust_cost: editingPricing.dust_cost,
-        description: editingPricing.description,
+        description: editingPricing.description.trim(),
         is_active: editingPricing.is_active,
       };
       
@@ -874,7 +885,7 @@ export function Apps() {
                     />
                   </div>
                   <div className="space-y-2">
-                    <Label htmlFor="description">Description</Label>
+                    <Label htmlFor="description">Description *</Label>
                     <Textarea
                       id="description"
                       value={editingPricing.description}
@@ -882,7 +893,9 @@ export function Apps() {
                         ...prev,
                         description: e.target.value
                       } : null)}
+                      placeholder="Describe what this action does (e.g., 'Generate a Would You Rather question')"
                       rows={3}
+                      required
                     />
                   </div>
                   <div className="space-y-2">
@@ -915,7 +928,7 @@ export function Apps() {
                 </Button>
                 <Button 
                   onClick={handleUpdatePricing}
-                  disabled={!editingPricing?.action_slug}
+                  disabled={!editingPricing?.action_slug || !editingPricing?.description?.trim()}
                 >
                   {isCreatingAction ? 'Create Action' : 'Save Changes'}
                 </Button>
