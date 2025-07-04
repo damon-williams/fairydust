@@ -11,6 +11,8 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from models import (
     DietaryRestriction,
     PersonPreference,
+    RecipeAdjustRequest,
+    RecipeAdjustResponse,
     RecipeComplexity,
     RecipeDeleteResponse,
     RecipeErrorResponse,
@@ -233,6 +235,180 @@ async def generate_recipe(
         print(f"❌ RECIPE: Unexpected error: {str(e)}", flush=True)
         print(f"❌ RECIPE: Error type: {type(e).__name__}", flush=True)
         return RecipeErrorResponse(error="Internal server error during recipe generation")
+
+
+@router.post("/apps/recipe/adjust")
+async def adjust_recipe(
+    request: RecipeAdjustRequest,
+    current_user: TokenData = Depends(get_current_user),
+    db: Database = Depends(get_db),
+):
+    """
+    Adjust an existing recipe based on user instructions and replace the original.
+    """
+    print(
+        f"🍳 RECIPE_ADJUST: Adjusting recipe {request.recipe_id} for user {request.user_id}",
+        flush=True,
+    )
+
+    # Verify user can only adjust their own recipes
+    if current_user.user_id != str(request.user_id):
+        print(
+            f"🚨 RECIPE_ADJUST: User {current_user.user_id} attempted to adjust recipe for different user {request.user_id}",
+            flush=True,
+        )
+        return RecipeErrorResponse(error="Can only adjust your own recipes")
+
+    try:
+        # Check rate limiting (same as generation)
+        rate_limit_exceeded = await _check_rate_limit(db, request.user_id)
+        if rate_limit_exceeded:
+            return RecipeErrorResponse(
+                error=f"Rate limit exceeded. Maximum {RECIPE_RATE_LIMIT} recipe operations per hour."
+            )
+
+        # Retrieve the original recipe
+        original_recipe = await db.fetch_one(
+            """
+            SELECT id, title, content, complexity, servings, prep_time_minutes,
+                   cook_time_minutes, metadata, created_at, is_favorited
+            FROM user_recipes
+            WHERE id = $1 AND user_id = $2
+            """,
+            request.recipe_id,
+            request.user_id,
+        )
+
+        if not original_recipe:
+            return RecipeErrorResponse(error="Recipe not found")
+
+        print(f"📖 RECIPE_ADJUST: Found original recipe: {original_recipe['title']}", flush=True)
+
+        # Get user context for personalization
+        user_context = await _get_user_context(db, request.user_id, [])
+        print("👤 RECIPE_ADJUST: Retrieved user context", flush=True)
+
+        # Apply adjustments using LLM
+        (
+            adjusted_content,
+            adjusted_title,
+            adjusted_servings,
+            adjusted_prep_time,
+            adjusted_cook_time,
+            model_used,
+            tokens_used,
+            cost,
+            latency_ms,
+            provider_used,
+        ) = await _adjust_recipe_llm(
+            original_recipe=original_recipe,
+            adjustment_instructions=request.adjustment_instructions,
+            user_context=user_context,
+        )
+
+        if not adjusted_content:
+            return RecipeErrorResponse(error="Failed to adjust recipe. Please try again.")
+
+        print(f"🤖 RECIPE_ADJUST: Adjusted recipe: {adjusted_title}", flush=True)
+
+        # Log LLM usage for analytics
+        try:
+            prompt_hash = calculate_prompt_hash(f"recipe_adjust:{request.adjustment_instructions}")
+            request_metadata = create_request_metadata(
+                action="recipe_adjustment",
+                parameters={
+                    "original_recipe_id": str(request.recipe_id),
+                    "adjustment_length": len(request.adjustment_instructions),
+                },
+                user_context=user_context if user_context != "general user" else None,
+                session_id=None,
+            )
+
+            await log_llm_usage(
+                user_id=request.user_id,
+                app_id="fairydust-recipe",
+                provider=provider_used,
+                model_id=model_used,
+                prompt_tokens=tokens_used.get("prompt", 0),
+                completion_tokens=tokens_used.get("completion", 0),
+                total_tokens=tokens_used.get("total", 0),
+                cost_usd=cost,
+                latency_ms=latency_ms,
+                prompt_hash=prompt_hash,
+                finish_reason="stop",
+                was_fallback=False,
+                fallback_reason=None,
+                request_metadata=request_metadata,
+                auth_token=None,
+            )
+        except Exception as e:
+            print(f"⚠️ RECIPE_ADJUST: Failed to log LLM usage: {str(e)}", flush=True)
+
+        # Update the original recipe in database (replace, don't create new)
+        updated_metadata = parse_jsonb_field(original_recipe, "metadata") or {}
+        updated_metadata.update(
+            {
+                "last_adjustment": {
+                    "instructions": request.adjustment_instructions,
+                    "adjusted_at": datetime.utcnow().isoformat(),
+                    "model_used": model_used,
+                    "tokens_used": tokens_used.get("total", 0),
+                    "cost_usd": cost,
+                }
+            }
+        )
+
+        await db.execute(
+            """
+            UPDATE user_recipes
+            SET title = $1, content = $2, servings = $3, prep_time_minutes = $4,
+                cook_time_minutes = $5, metadata = $6::jsonb, updated_at = CURRENT_TIMESTAMP
+            WHERE id = $7 AND user_id = $8
+            """,
+            adjusted_title,
+            adjusted_content,
+            adjusted_servings,
+            adjusted_prep_time,
+            adjusted_cook_time,
+            json.dumps(updated_metadata),
+            request.recipe_id,
+            request.user_id,
+        )
+
+        print(f"✅ RECIPE_ADJUST: Updated recipe {request.recipe_id}", flush=True)
+
+        # Build response with adjusted recipe
+        adjusted_recipe = UserRecipeNew(
+            id=request.recipe_id,
+            title=adjusted_title,
+            content=adjusted_content,
+            complexity=RecipeComplexity(original_recipe["complexity"]),
+            servings=adjusted_servings,
+            prep_time_minutes=adjusted_prep_time,
+            cook_time_minutes=adjusted_cook_time,
+            created_at=original_recipe["created_at"],
+            is_favorited=original_recipe["is_favorited"],
+            metadata=updated_metadata,
+        )
+
+        return RecipeAdjustResponse(
+            recipe=adjusted_recipe,
+            model_used=model_used,
+            tokens_used=TokenUsage(
+                prompt=tokens_used.get("prompt", 0),
+                completion=tokens_used.get("completion", 0),
+                total=tokens_used.get("total", 0),
+            ),
+            cost=cost,
+            adjustments_applied=request.adjustment_instructions,
+        )
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"❌ RECIPE_ADJUST: Unexpected error: {str(e)}", flush=True)
+        print(f"❌ RECIPE_ADJUST: Error type: {type(e).__name__}", flush=True)
+        return RecipeErrorResponse(error="Internal server error during recipe adjustment")
 
 
 @router.get("/users/{user_id}/recipes")
@@ -1176,6 +1352,35 @@ def _extract_time(content: str, time_type: str) -> Optional[int]:
         return None
 
 
+def _parse_recipe_response(
+    content: str, dish: Optional[str] = None
+) -> tuple[Optional[str], Optional[int], Optional[int], Optional[int]]:
+    """
+    Parse recipe response to extract structured data.
+
+    Returns: (title, servings, prep_time, cook_time)
+    """
+    try:
+        # Extract title
+        title = _extract_recipe_title(content, dish)
+
+        # Extract servings
+        servings = None
+        servings_match = re.search(r"\*\*Servings:\*\*\s*(\d+)", content, re.IGNORECASE)
+        if servings_match:
+            servings = int(servings_match.group(1))
+
+        # Extract prep and cook times
+        prep_time = _extract_time(content, "Prep Time:")
+        cook_time = _extract_time(content, "Cook Time:")
+
+        return title, servings, prep_time, cook_time
+
+    except Exception as e:
+        print(f"⚠️ RECIPE_PARSE: Error parsing recipe response: {str(e)}", flush=True)
+        return dish.title() if dish else "Recipe", None, None, None
+
+
 async def _save_recipe(
     db: Database,
     user_id: uuid.UUID,
@@ -1228,3 +1433,182 @@ async def _save_recipe(
     except Exception as e:
         print(f"❌ RECIPE_SAVE: Error saving recipe: {str(e)}", flush=True)
         raise HTTPException(status_code=500, detail="Failed to save recipe")
+
+
+async def _adjust_recipe_llm(
+    original_recipe: dict,
+    adjustment_instructions: str,
+    user_context: str,
+) -> tuple[
+    Optional[str], Optional[str], Optional[int], Optional[int], Optional[int], str, dict, float, str
+]:
+    """
+    Adjust an existing recipe using LLM based on user instructions.
+
+    Returns: (title, content, servings, prep_time, cook_time, model_used, tokens_used, cost, provider_used)
+    """
+    try:
+        # Get LLM model configuration from database/cache
+        model_config = await _get_llm_model_config()
+
+        provider = model_config.get("primary_provider", "anthropic")
+        model_id = model_config.get("primary_model_id", "claude-3-5-sonnet-20241022")
+        parameters = model_config.get("primary_parameters", {})
+
+        temperature = parameters.get("temperature", 0.7)
+        max_tokens = parameters.get("max_tokens", 1000)
+        top_p = parameters.get("top_p", 0.9)
+
+        # Extract original recipe details
+        original_title = original_recipe.get("title", "Recipe")
+        original_content = original_recipe.get("content", "")
+        original_servings = original_recipe.get("servings", 4)
+
+        # Build adjustment prompt
+        personalization_text = (
+            f"\nPersonalization context: {user_context}" if user_context != "general user" else ""
+        )
+
+        prompt = f"""You are helping adjust a recipe based on user instructions. Here is the original recipe:
+
+ORIGINAL RECIPE:
+{original_content}
+
+ADJUSTMENT INSTRUCTIONS:
+{adjustment_instructions}{personalization_text}
+
+Please provide the adjusted recipe in this exact format:
+
+🍽️ **Recipe Name**
+
+**Prep Time:** X minutes
+**Cook Time:** X minutes
+**Servings:** X
+
+**Ingredients:**
+• List ingredients with amounts for the servings
+• Use bullet points with exact amounts
+• Scale ingredients appropriately for the serving size
+
+**Instructions:**
+1. Step-by-step instructions
+2. Clear and easy to follow
+3. Include cooking times and temperatures
+
+**Nutritional Info:** Per serving - XXX calories | Protein: XXg | Carbs: XXg | Fat: XXg | Fiber: XXg
+
+**Cooking Tip:**
+One helpful tip for success with this recipe.
+
+IMPORTANT:
+- Apply the requested adjustments thoughtfully
+- Maintain the recipe format exactly as shown
+- Always include the Nutritional Info section with estimated values
+- If changing servings, scale all ingredients proportionally
+- Keep the overall structure and style of the original recipe"""
+
+        print(f"🤖 RECIPE_ADJUST_LLM: Adjusting with {provider} model {model_id}", flush=True)
+
+        # Make API call based on provider
+        import time
+
+        start_time = time.time()
+
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            if provider == "anthropic":
+                response = await client.post(
+                    "https://api.anthropic.com/v1/messages",
+                    headers={
+                        "Content-Type": "application/json",
+                        "x-api-key": os.getenv("ANTHROPIC_API_KEY", ""),
+                        "anthropic-version": "2023-06-01",
+                    },
+                    json={
+                        "model": model_id,
+                        "max_tokens": max_tokens,
+                        "temperature": temperature,
+                        "top_p": top_p,
+                        "messages": [{"role": "user", "content": prompt}],
+                    },
+                )
+
+                latency_ms = int((time.time() - start_time) * 1000)
+
+                if response.status_code != 200:
+                    print(f"❌ RECIPE_ADJUST_LLM: Anthropic API error: {response.text}", flush=True)
+                    return None, None, None, None, None, model_id, {}, 0.0, provider
+
+                result = response.json()
+                content = result["content"][0]["text"]
+
+                # Extract token usage
+                usage = result.get("usage", {})
+                tokens_used = {
+                    "prompt": usage.get("input_tokens", 0),
+                    "completion": usage.get("output_tokens", 0),
+                    "total": usage.get("input_tokens", 0) + usage.get("output_tokens", 0),
+                }
+
+            elif provider == "openai":
+                response = await client.post(
+                    "https://api.openai.com/v1/chat/completions",
+                    headers={
+                        "Content-Type": "application/json",
+                        "Authorization": f"Bearer {os.getenv('OPENAI_API_KEY', '')}",
+                    },
+                    json={
+                        "model": model_id,
+                        "messages": [{"role": "user", "content": prompt}],
+                        "temperature": temperature,
+                        "max_tokens": max_tokens,
+                        "top_p": top_p,
+                    },
+                )
+
+                latency_ms = int((time.time() - start_time) * 1000)
+
+                if response.status_code != 200:
+                    print(f"❌ RECIPE_ADJUST_LLM: OpenAI API error: {response.text}", flush=True)
+                    return None, None, None, None, None, model_id, {}, 0.0, provider
+
+                result = response.json()
+                content = result["choices"][0]["message"]["content"]
+
+                # Extract token usage
+                usage = result.get("usage", {})
+                tokens_used = {
+                    "prompt": usage.get("prompt_tokens", 0),
+                    "completion": usage.get("completion_tokens", 0),
+                    "total": usage.get("total_tokens", 0),
+                }
+            else:
+                print(f"❌ RECIPE_ADJUST_LLM: Unsupported provider: {provider}", flush=True)
+                return None, None, None, None, None, model_id, {}, 0.0, provider
+
+        # Calculate cost using shared pricing utility
+        cost = calculate_llm_cost(
+            provider=provider,
+            model_id=model_id,
+            prompt_tokens=tokens_used.get("prompt", 0),
+            completion_tokens=tokens_used.get("completion", 0),
+        )
+
+        print(
+            f"🤖 RECIPE_ADJUST_LLM: Generated adjusted recipe with {tokens_used.get('total', 0)} tokens",
+            flush=True,
+        )
+
+        # Parse the response to extract structured data
+        title, servings, prep_time, cook_time = _parse_recipe_response(content)
+
+        # If we couldn't parse, use original values as fallback
+        if not title:
+            title = original_title
+        if servings is None:
+            servings = original_servings
+
+        return title, content, servings, prep_time, cook_time, model_id, tokens_used, cost, provider
+
+    except Exception as e:
+        print(f"❌ RECIPE_ADJUST_LLM: Error adjusting recipe: {str(e)}", flush=True)
+        return None, None, None, None, None, "unknown", {}, 0.0, "unknown"

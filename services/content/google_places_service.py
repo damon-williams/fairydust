@@ -11,7 +11,7 @@ try:
 
     GOOGLEMAPS_AVAILABLE = True
     # Removed debug print to reduce log noise
-except ImportError as e:
+except ImportError:
     GOOGLEMAPS_AVAILABLE = False
     googlemaps = None
     # Removed error print - this is expected behavior now

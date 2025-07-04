@@ -357,19 +357,19 @@ def _build_daily_fortune_prompt(
     """Build bite-sized daily fortune prompt (30-60 words)"""
 
     import random
-    
+
     # Vary the fortune style randomly for more variety
     styles = [
         "mystical and intuitive",
-        "practical and grounded", 
+        "practical and grounded",
         "playful and energetic",
         "wise and reflective",
         "bold and encouraging",
         "gentle and nurturing",
         "direct and confident",
-        "poetic and inspiring"
+        "poetic and inspiring",
     ]
-    
+
     approaches = [
         "focus on an unexpected opportunity",
         "highlight a personal strength to embrace",
@@ -378,9 +378,9 @@ def _build_daily_fortune_prompt(
         "point to a connection worth nurturing",
         "encourage a creative breakthrough",
         "warn of a gentle challenge to overcome",
-        "illuminate a moment of clarity ahead"
+        "illuminate a moment of clarity ahead",
     ]
-    
+
     tones = [
         "like a trusted friend giving advice",
         "like ancient wisdom speaking directly to them",
@@ -389,9 +389,9 @@ def _build_daily_fortune_prompt(
         "like their higher self offering guidance",
         "like a whisper from their intuition",
         "like the voice of their {zodiac_element} element",
-        "like {ruling_planet} speaking through the stars"
+        "like {ruling_planet} speaking through the stars",
     ]
-    
+
     selected_style = random.choice(styles)
     selected_approach = random.choice(approaches)
     selected_tone = random.choice(tones)
@@ -400,7 +400,7 @@ def _build_daily_fortune_prompt(
 
 CREATIVE DIRECTION:
 - Style: {selected_style}
-- Approach: {selected_approach}  
+- Approach: {selected_approach}
 - Tone: {selected_tone}
 - Element energy: {zodiac_element}
 
@@ -434,41 +434,41 @@ def _build_question_fortune_prompt(
     """Build detailed question response prompt (100-200 words)"""
 
     import random
-    
+
     # Add variety to question responses too
     response_styles = [
         "like a wise oracle revealing hidden truths",
-        "like a cosmic counselor offering deep insight", 
+        "like a cosmic counselor offering deep insight",
         "like ancient wisdom filtered through modern understanding",
         "like their spirit guides speaking through the stars",
         "like the universe answering through elemental wisdom",
         "like a mystical mentor who sees their soul clearly",
         "like cosmic forces aligning to offer guidance",
-        "like their higher self speaking from the future"
+        "like their higher self speaking from the future",
     ]
-    
+
     structural_approaches = [
         "Start with what their {zodiac_element} element reveals, then dive deeper",
-        "Begin with their life path {life_path_number} lesson, then apply it specifically", 
+        "Begin with their life path {life_path_number} lesson, then apply it specifically",
         "Open with a cosmic truth, then make it personal and actionable",
         "Start with their {zodiac_sign} strength, then address the challenge",
         "Begin with the energy around them now, then reveal the path forward",
         "Open with what {ruling_planet} is teaching them, then offer practical steps",
         "Start with a deeper truth about their question, then illuminate options",
-        "Begin with their soul's perspective, then bridge to everyday reality"
+        "Begin with their soul's perspective, then bridge to everyday reality",
     ]
-    
+
     wisdom_angles = [
         "Focus on the hidden opportunity within their question",
         "Reveal the spiritual lesson their situation is teaching",
         "Illuminate the timing and cosmic patterns at play",
-        "Explore how their past experiences inform this moment", 
+        "Explore how their past experiences inform this moment",
         "Examine the relationship dynamics and energy flows",
         "Uncover the fear or limiting belief that needs releasing",
         "Highlight their intuitive knowing they may be ignoring",
-        "Show how this situation serves their highest growth"
+        "Show how this situation serves their highest growth",
     ]
-    
+
     selected_style = random.choice(response_styles)
     selected_structure = random.choice(structural_approaches)
     selected_angle = random.choice(wisdom_angles)
@@ -803,9 +803,7 @@ async def get_user_fortune_readings(
         return FortuneErrorResponse(error="Failed to retrieve fortune readings")
 
 
-@router.patch(
-    "/users/{user_id}/people/{person_id}/fortune-profile"
-)
+@router.patch("/users/{user_id}/people/{person_id}/fortune-profile")
 async def update_person_fortune_profile(
     user_id: uuid.UUID,
     person_id: uuid.UUID,

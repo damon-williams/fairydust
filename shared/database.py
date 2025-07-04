@@ -976,7 +976,7 @@ async def create_tables():
         CREATE INDEX IF NOT EXISTS idx_fortune_readings_target_person ON fortune_readings(target_person_id);
         CREATE INDEX IF NOT EXISTS idx_fortune_readings_type ON fortune_readings(reading_type);
         CREATE INDEX IF NOT EXISTS idx_fortune_readings_user_type ON fortune_readings(user_id, reading_type, created_at DESC);
-        
+
         -- Remove cosmic_influences and lucky_elements columns (no longer used)
         ALTER TABLE fortune_readings DROP COLUMN IF EXISTS cosmic_influences;
         ALTER TABLE fortune_readings DROP COLUMN IF EXISTS lucky_elements;

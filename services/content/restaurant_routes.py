@@ -14,6 +14,7 @@ identity_url = f"https://fairydust-identity-{base_url_suffix}.up.railway.app"
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.security import HTTPBearer
 from google_places_http import get_google_places_http_service
+
 # from google_places_service import get_google_places_service  # Removed - using HTTP implementation only
 from models import (
     OpenTableInfo,
@@ -335,7 +336,7 @@ async def get_restaurants_from_google_places(
 
     try:
         print("🔍 RESTAURANT_DEBUG: Initializing Google Places HTTP service...")
-        
+
         # Use HTTP implementation directly (no googlemaps package dependency)
         places_service = get_google_places_http_service()
         print("🔍 RESTAURANT_DEBUG: ✅ Google Places HTTP service initialized successfully")

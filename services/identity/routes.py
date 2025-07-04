@@ -146,7 +146,12 @@ async def verify_otp(
         )
 
     # Calculate and update daily login streak
-    streak_days, last_login_date, is_bonus_eligible, previous_streak_days = await calculate_daily_streak(
+    (
+        streak_days,
+        last_login_date,
+        is_bonus_eligible,
+        previous_streak_days,
+    ) = await calculate_daily_streak(
         db, str(user["id"]), user.get("streak_days", 0), user.get("last_login_date")
     )
 
@@ -256,7 +261,12 @@ async def oauth_login(
         )
 
     # Calculate and update daily login streak
-    streak_days, last_login_date, is_bonus_eligible, previous_streak_days = await calculate_daily_streak(
+    (
+        streak_days,
+        last_login_date,
+        is_bonus_eligible,
+        previous_streak_days,
+    ) = await calculate_daily_streak(
         db, str(user["id"]), user.get("streak_days", 0), user.get("last_login_date")
     )
 

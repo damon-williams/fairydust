@@ -619,8 +619,26 @@ class RecipesListResponse(BaseModel):
     favorites_count: int
 
 
+class RecipeAdjustRequest(BaseModel):
+    user_id: UUID
+    recipe_id: UUID
+    adjustment_instructions: str = Field(..., min_length=1, max_length=1000)
+
+
 class RecipeFavoriteRequest(BaseModel):
     is_favorited: bool
+
+
+class RecipeAdjustResponse(BaseModel):
+    success: bool = True
+    recipe: UserRecipeNew
+    model_used: str
+    tokens_used: TokenUsage
+    cost: float
+    adjustments_applied: str
+
+    class Config:
+        protected_namespaces = ()
 
 
 class RecipeFavoriteResponse(BaseModel):

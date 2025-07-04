@@ -828,20 +828,20 @@ def _extract_title_and_content(generated_text: str) -> tuple[str, str]:
 def _clean_title_formatting(title: str) -> str:
     """Clean up title formatting to remove markdown and unwanted formatting"""
     # Remove markdown bold formatting
-    title = re.sub(r'\*\*(.*?)\*\*', r'\1', title)
-    
+    title = re.sub(r"\*\*(.*?)\*\*", r"\1", title)
+
     # Remove markdown italic formatting
-    title = re.sub(r'\*(.*?)\*', r'\1', title)
-    
+    title = re.sub(r"\*(.*?)\*", r"\1", title)
+
     # Remove any remaining TITLE: prefix that might be embedded
-    title = re.sub(r'^.*?TITLE:\s*', '', title, flags=re.IGNORECASE)
-    
+    title = re.sub(r"^.*?TITLE:\s*", "", title, flags=re.IGNORECASE)
+
     # Remove leading/trailing quotes
-    title = title.strip('"\'')
-    
+    title = title.strip("\"'")
+
     # Remove extra whitespace
-    title = re.sub(r'\s+', ' ', title).strip()
-    
+    title = re.sub(r"\s+", " ", title).strip()
+
     return title
 
 
