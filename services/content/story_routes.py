@@ -620,9 +620,9 @@ async def _get_llm_model_config() -> dict:
         print(f"❌ STORY_CONFIG: App with slug '{app_slug}' not found in database", flush=True)
         # Return default config if app not found
         return {
-            "primary_provider": "anthropic",
+            "primary_provider": "anthropic", 
             "primary_model_id": "claude-3-5-sonnet-20241022",
-            "primary_parameters": {"temperature": 0.8, "max_tokens": 2000, "top_p": 0.9},
+            "primary_parameters": {"temperature": 0.8, "max_tokens": 3000, "top_p": 0.9},
         }
 
     app_id = str(app_result["id"])
@@ -642,7 +642,7 @@ async def _get_llm_model_config() -> dict:
             "primary_provider": cached_config.get("primary_provider", "anthropic"),
             "primary_model_id": cached_config.get("primary_model_id", "claude-3-5-sonnet-20241022"),
             "primary_parameters": cached_config.get(
-                "primary_parameters", {"temperature": 0.8, "max_tokens": 2000, "top_p": 0.9}
+                "primary_parameters", {"temperature": 0.8, "max_tokens": 3000, "top_p": 0.9}
             ),
         }
 
@@ -670,7 +670,7 @@ async def _get_llm_model_config() -> dict:
                 "primary_parameters": parse_model_config_field(
                     dict(db_config), "primary_parameters"
                 )
-                or {"temperature": 0.8, "max_tokens": 2000, "top_p": 0.9},
+                or {"temperature": 0.8, "max_tokens": 3000, "top_p": 0.9},
             }
 
             # Cache the database config
@@ -687,7 +687,7 @@ async def _get_llm_model_config() -> dict:
     default_config = {
         "primary_provider": "anthropic",
         "primary_model_id": "claude-3-5-sonnet-20241022",
-        "primary_parameters": {"temperature": 0.8, "max_tokens": 2000, "top_p": 0.9},
+        "primary_parameters": {"temperature": 0.8, "max_tokens": 3000, "top_p": 0.9},
     }
 
     # Cache the default config for future requests
@@ -859,8 +859,22 @@ async def _generate_story_llm(
         parameters = model_config.get("primary_parameters", {})
 
         temperature = parameters.get("temperature", 0.8)
-        max_tokens = parameters.get("max_tokens", 2000)
+        base_max_tokens = parameters.get("max_tokens", 2000)
         top_p = parameters.get("top_p", 0.9)
+        
+        # Adjust max_tokens based on story length to prevent truncation
+        story_length_multipliers = {
+            StoryLength.QUICK: 1.0,    # ~500 words = ~667 tokens
+            StoryLength.MEDIUM: 1.8,   # ~1200 words = ~1600 tokens  
+            StoryLength.LONG: 2.5,     # ~2000 words = ~2667 tokens
+        }
+        
+        max_tokens = int(base_max_tokens * story_length_multipliers.get(request.story_length, 1.0))
+        
+        # Ensure minimum token count and reasonable maximum
+        max_tokens = max(1000, min(max_tokens, 8000))
+        
+        print(f"🔧 STORY_LLM: Adjusted max_tokens to {max_tokens} for {request.story_length.value} story", flush=True)
 
         # Build prompt
         prompt = _build_story_prompt(request, user_context)
