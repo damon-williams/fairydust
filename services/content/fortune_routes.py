@@ -64,7 +64,7 @@ ZODIAC_CUTOFFS = {
 }
 
 
-@router.post("/apps/fortune-teller/generate", response_model=FortuneGenerationResponse)
+@router.post("/apps/fortune-teller/generate")
 async def generate_fortune_reading(
     request: FortuneGenerationRequest,
     http_request: Request,
@@ -717,7 +717,7 @@ async def _save_fortune_reading(
         raise HTTPException(status_code=500, detail="Failed to save fortune reading")
 
 
-@router.get("/users/{user_id}/fortune-readings", response_model=FortuneHistoryResponse)
+@router.get("/users/{user_id}/fortune-readings")
 async def get_user_fortune_readings(
     user_id: uuid.UUID,
     current_user: TokenData = Depends(get_current_user),
@@ -804,7 +804,7 @@ async def get_user_fortune_readings(
 
 
 @router.patch(
-    "/users/{user_id}/people/{person_id}/fortune-profile", response_model=FortuneProfileResponse
+    "/users/{user_id}/people/{person_id}/fortune-profile"
 )
 async def update_person_fortune_profile(
     user_id: uuid.UUID,
@@ -893,7 +893,6 @@ async def update_person_fortune_profile(
 
 @router.post(
     "/users/{user_id}/fortune-readings/{reading_id}/favorite",
-    response_model=FortuneFavoriteResponse,
 )
 async def toggle_fortune_reading_favorite(
     user_id: uuid.UUID,
@@ -955,7 +954,6 @@ async def toggle_fortune_reading_favorite(
 
 @router.delete(
     "/users/{user_id}/fortune-readings/{reading_id}",
-    response_model=FortuneDeleteResponse,
 )
 async def delete_fortune_reading(
     user_id: uuid.UUID,
