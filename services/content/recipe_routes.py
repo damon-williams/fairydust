@@ -370,7 +370,7 @@ async def adjust_recipe(
             adjusted_servings,
             adjusted_prep_time,
             adjusted_cook_time,
-            json.dumps(updated_metadata),
+            json.dumps(updated_metadata, default=str),
             request.recipe_id,
             request.user_id,
         )
