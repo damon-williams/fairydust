@@ -524,6 +524,48 @@ async def get_action_pricing(
             )
 
 
+@apps_router.post("/pricing/actions/{action_slug}")
+async def create_action_pricing(
+    action_slug: str,
+    pricing_data: dict,
+    admin_user: dict = Depends(get_current_admin_user),
+):
+    """Create action pricing via proxy to apps service"""
+    import logging
+
+    logger = logging.getLogger(__name__)
+    logger.info(f"Creating action pricing for slug: {action_slug}")
+    logger.info(f"Pricing data: {pricing_data}")
+
+    # Create JWT token for cross-service auth
+    token_data = {
+        "sub": str(admin_user["user_id"]),
+        "user_id": str(admin_user["user_id"]),
+        "fairyname": admin_user["fairyname"],
+        "is_admin": True,
+    }
+    access_token = jwt.encode(token_data, JWT_SECRET_KEY, algorithm=JWT_ALGORITHM)
+
+    # Proxy request to apps service
+    async with httpx.AsyncClient() as client:
+        response = await client.post(
+            f"{APPS_SERVICE_URL}/admin/pricing/actions/{action_slug}",
+            headers={"Authorization": f"Bearer {access_token}", "Content-Type": "application/json"},
+            json=pricing_data,
+            timeout=30.0,
+        )
+
+        if response.status_code == 200:
+            result = response.json()
+            logger.info(f"✅ Successfully created action pricing for {action_slug}")
+            return result
+        else:
+            logger.error(f"❌ Failed to create action pricing: {response.status_code} - {response.text}")
+            raise HTTPException(
+                status_code=response.status_code, detail="Failed to create action pricing"
+            )
+
+
 @apps_router.put("/pricing/actions/{action_slug}")
 async def update_action_pricing(
     action_slug: str,

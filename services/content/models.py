@@ -737,6 +737,110 @@ class CustomCharacterErrorResponse(BaseModel):
     character_id: Optional[UUID] = None
 
 
+# Would You Rather Game Models
+class GameLength(int, Enum):
+    SHORT = 5
+    MEDIUM = 10
+    LONG = 20
+
+
+class GameCategory(str, Enum):
+    THOUGHT_PROVOKING = "thought-provoking"
+    FUNNY_SILLY = "funny-silly" 
+    FAMILY_FRIENDLY = "family-friendly"
+    WORK_CAREER = "work-career"
+    RELATIONSHIPS_LOVE = "relationships-love"
+    FANTASY_SUPERPOWERS = "fantasy-superpowers"
+    POP_CULTURE = "pop-culture"
+    TRAVEL_ADVENTURE = "travel-adventure"
+    MIX_IT_UP = "mix-it-up"
+
+
+class GameStatus(str, Enum):
+    IN_PROGRESS = "in_progress"
+    COMPLETED = "completed"
+
+
+class QuestionObject(BaseModel):
+    id: UUID
+    question_number: int = Field(..., ge=1, le=20)
+    option_a: str = Field(..., min_length=1, max_length=500)
+    option_b: str = Field(..., min_length=1, max_length=500)
+    category: str
+
+
+class AnswerObject(BaseModel):
+    question_id: UUID
+    chosen_option: Optional[str] = Field(None, pattern=r"^[ab]$")
+    answered_at: Optional[datetime] = None
+
+
+class WyrGameSessionCreate(BaseModel):
+    user_id: UUID
+    game_length: GameLength
+    category: GameCategory
+    custom_request: Optional[str] = Field(None, max_length=1000)
+
+
+class WyrGameSessionProgress(BaseModel):
+    question_id: UUID
+    chosen_option: str = Field(..., pattern=r"^[ab]$")
+    current_question: int = Field(..., ge=1, le=20)
+
+
+class WyrGameSessionComplete(BaseModel):
+    final_answers: list[AnswerObject]
+
+
+class WyrGameSession(BaseModel):
+    session_id: UUID
+    user_id: UUID
+    game_length: int
+    category: str
+    custom_request: Optional[str] = None
+    status: GameStatus
+    current_question: int
+    started_at: datetime
+    completed_at: Optional[datetime] = None
+    questions: list[QuestionObject]
+    answers: list[AnswerObject]
+    summary: Optional[str] = None
+
+    class Config:
+        from_attributes = True
+
+
+class WyrGameSessionResponse(BaseModel):
+    success: bool = True
+    session: WyrGameSession
+
+
+class WyrGameSessionsResponse(BaseModel):
+    success: bool = True
+    sessions: list[WyrGameSession]
+    total_count: int
+    in_progress_count: int
+    completed_count: int
+
+
+class WyrGameCompleteResponse(BaseModel):
+    success: bool = True
+    session: WyrGameSession
+    summary: str
+
+
+class WyrGameDeleteResponse(BaseModel):
+    success: bool = True
+    message: str = "Session deleted successfully"
+
+
+class WyrGameErrorResponse(BaseModel):
+    success: bool = False
+    error: str
+    error_code: Optional[str] = None
+    session_id: Optional[UUID] = None
+
+
 # Error Response Model
 class ErrorResponse(BaseModel):
     error: dict

@@ -30,6 +30,7 @@ from recipe_routes import router as recipe_router
 from restaurant_routes import router as restaurant_router
 from routes import content_router
 from story_routes import router as story_router
+from wyr_routes import router as wyr_router
 
 # Import modules with minimal logging
 from shared.database import close_db, init_db
@@ -98,6 +99,7 @@ endpoint_limits = {
     "/apps/story/generate": 50 * 1024,  # 50KB for story generation requests
     "/apps/fortune-teller/generate": 50 * 1024,  # 50KB for fortune generation requests
     "/users/*/characters": 10 * 1024,  # 10KB for character management requests
+    "/apps/would-you-rather/*": 20 * 1024,  # 20KB for would-you-rather requests
 }
 
 add_middleware_to_app(
@@ -127,6 +129,7 @@ app.include_router(inspire_router, tags=["inspire"])
 app.include_router(recipe_router, tags=["recipes-new"])
 app.include_router(fortune_router, tags=["fortune-teller"])
 app.include_router(character_router, tags=["characters"])
+app.include_router(wyr_router, tags=["would-you-rather"])
 
 
 @app.get("/")

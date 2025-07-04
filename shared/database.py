@@ -1154,4 +1154,30 @@ async def create_tables():
     """
     )
 
+    # Would You Rather game tables
+    await db.execute_schema(
+        """
+        CREATE TABLE IF NOT EXISTS wyr_game_sessions (
+            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            game_length INTEGER NOT NULL CHECK (game_length IN (5, 10, 20)),
+            category VARCHAR(50) NOT NULL,
+            custom_request TEXT,
+            status VARCHAR(20) NOT NULL DEFAULT 'in_progress' CHECK (status IN ('in_progress', 'completed')),
+            current_question INTEGER DEFAULT 1,
+            started_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+            completed_at TIMESTAMP WITH TIME ZONE,
+            summary TEXT,
+            questions JSONB NOT NULL DEFAULT '[]',
+            answers JSONB NOT NULL DEFAULT '[]',
+            created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_wyr_sessions_user_id ON wyr_game_sessions(user_id);
+        CREATE INDEX IF NOT EXISTS idx_wyr_sessions_status ON wyr_game_sessions(user_id, status);
+        CREATE INDEX IF NOT EXISTS idx_wyr_sessions_created ON wyr_game_sessions(created_at DESC);
+    """
+    )
+
     logger.info("Database schema creation/update completed successfully")
