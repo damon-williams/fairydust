@@ -310,6 +310,8 @@ async def complete_game_session(
             questions=safe_json_parse(session_data["questions"], default=[], expected_type=list),
             answers=request.final_answers,
             category=session_data["category"],
+            user_id=uuid.UUID(current_user.user_id),
+            db=db,
         )
 
         # Update session as completed
@@ -1043,11 +1045,16 @@ async def _generate_personality_analysis(
     questions: list[dict],
     answers: list[AnswerObject],
     category: str,
+    user_id: uuid.UUID,
+    db: Database,
 ) -> str:
     """Generate personality analysis based on user's answers"""
     try:
+        # Get user age context for appropriate language
+        age_context = await _get_user_age_context(db, user_id)
+        
         # Build analysis prompt
-        prompt = _build_analysis_prompt(questions, answers, category)
+        prompt = _build_analysis_prompt(questions, answers, category, age_context)
 
         # Make LLM API call
         api_key = os.getenv("ANTHROPIC_API_KEY", "")
@@ -1083,7 +1090,7 @@ async def _generate_personality_analysis(
         return "Analysis temporarily unavailable"
 
 
-def _build_analysis_prompt(questions: list[dict], answers: list[AnswerObject], category: str) -> str:
+def _build_analysis_prompt(questions: list[dict], answers: list[AnswerObject], category: str, age_context: str) -> str:
     """Build prompt for personality analysis"""
     
     # Create answer mapping
@@ -1106,7 +1113,26 @@ def _build_analysis_prompt(questions: list[dict], answers: list[AnswerObject], c
 
     qa_string = "\n\n".join(qa_text)
 
-    prompt = f"""Analyze this person's personality based on their "Would You Rather" choices in the {category} category.
+    # Check if this is for a child or family-friendly content
+    is_child_friendly = category == "family-friendly" or "children" in age_context.lower()
+    
+    if is_child_friendly:
+        prompt = f"""Look at these fun "Would You Rather" choices and write something nice about this person!
+
+THEIR CHOICES:
+{qa_string}
+
+Write a short, happy message (about 100 words, 2-3 sentences) that:
+- Says nice things about their choices
+- Uses simple words kids can understand  
+- Makes them feel good about themselves
+- Talks about what kind of person they are
+
+Write like you're talking to a friend. Use words like "awesome", "cool", "amazing". Make it fun and positive!
+
+IMPORTANT: Keep it short and sweet. Use easy words. Make them smile!"""
+    else:
+        prompt = f"""Analyze this person's personality based on their "Would You Rather" choices in the {category} category.
 
 THEIR CHOICES:
 {qa_string}
