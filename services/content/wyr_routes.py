@@ -871,7 +871,7 @@ QUALITY REQUIREMENTS:
 - Avoid offensive, inappropriate, or insensitive content
 - Make dilemmas meaningful and engaging
 
-FORMAT: Return as a JSON array of objects with this exact structure:
+FORMAT: Return ONLY a valid JSON array of objects with this exact structure (no other text):
 [
   {{
     "question_number": 1,
@@ -898,7 +898,9 @@ EXAMPLES of good "Would You Rather" questions:"""
 - "Would you rather always know when someone is lying but never be able to prove it, or never know when someone is lying but always trust people?"
 """
 
-    base_prompt += f"""Generate exactly {game_length.value} creative, engaging questions now:"""
+    base_prompt += f"""Generate exactly {game_length.value} creative, engaging questions now.
+
+IMPORTANT: Return ONLY the JSON array, no explanations, no additional text."""
 
     return base_prompt
 
@@ -909,10 +911,30 @@ def _parse_questions_response(content: str, category: GameCategory) -> list[Ques
         # Try to extract JSON from response
         import re
         
-        # Look for JSON array in the response
+        # Debug: Print the actual response content
+        print(f"🔍 WYR_PARSE: OpenAI response content: {content[:500]}...", flush=True)
+        
+        # Look for JSON array in the response - try multiple patterns
+        json_match = None
+        
+        # Pattern 1: Direct JSON array
         json_match = re.search(r'\[.*\]', content, re.DOTALL)
+        
+        # Pattern 2: JSON in markdown code blocks
+        if not json_match:
+            json_match = re.search(r'```(?:json)?\s*(\[.*?\])\s*```', content, re.DOTALL)
+            if json_match:
+                json_match = type('Match', (), {'group': lambda: json_match.group(1)})()
+        
+        # Pattern 3: JSON after some introductory text
+        if not json_match:
+            json_match = re.search(r'(?:here|questions|array).*?(\[.*\])', content, re.DOTALL | re.IGNORECASE)
+            if json_match:
+                json_match = type('Match', (), {'group': lambda: json_match.group(1)})()
+        
         if not json_match:
             print("❌ WYR_PARSE: No JSON array found in response", flush=True)
+            print(f"🔍 WYR_PARSE: Full response was: {content}", flush=True)
             return []
 
         questions_data = json.loads(json_match.group())
