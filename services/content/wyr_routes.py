@@ -297,8 +297,10 @@ async def complete_game_session(
         # Check if already completed
         if session_data["status"] == "completed":
             session = await _build_session_response(session_data)
+            # Scrub completed session to only show chosen options
+            scrubbed_session = _scrub_completed_session(session)
             return WyrGameCompleteResponse(
-                session=session,
+                session=scrubbed_session,
                 summary=session_data["summary"] or "Analysis not available"
             )
 
@@ -334,9 +336,12 @@ async def complete_game_session(
             )
 
         session = await _build_session_response(completed_session)
+        
+        # Scrub questions to only show chosen options
+        scrubbed_session = _scrub_completed_session(session)
         print(f"✅ WYR: Completed session {session_id}", flush=True)
 
-        return WyrGameCompleteResponse(session=session, summary=summary)
+        return WyrGameCompleteResponse(session=scrubbed_session, summary=summary)
 
     except Exception as e:
         print(f"❌ WYR: Error completing session: {str(e)}", flush=True)
@@ -420,6 +425,11 @@ async def get_user_sessions(
         sessions = []
         for row in rows:
             session = await _build_session_response(row)
+            
+            # Scrub completed sessions to only show chosen options
+            if session.status == GameStatus.COMPLETED:
+                session = _scrub_completed_session(session)
+                
             sessions.append(session)
 
         print(f"✅ WYR: Returning {len(sessions)} sessions", flush=True)
@@ -457,6 +467,11 @@ async def get_single_session(
             )
 
         session = await _build_session_response(session_data)
+        
+        # Scrub completed sessions to only show chosen options
+        if session.status == GameStatus.COMPLETED:
+            session = _scrub_completed_session(session)
+            
         return WyrGameSessionResponse(session=session)
 
     except Exception as e:
@@ -1082,3 +1097,68 @@ Write as if you're a wise friend who knows them well. Be specific about what the
 IMPORTANT: Return ONLY the personality analysis text. No explanations, no meta-commentary, just the analysis itself."""
 
     return prompt
+
+
+def _scrub_completed_session(session: WyrGameSession) -> WyrGameSession:
+    """
+    Scrub completed session to only show chosen option text, not both options.
+    This prevents clients from seeing both A and B options in the final response.
+    """
+    try:
+        # Create answer mapping for quick lookup
+        answer_map = {str(answer.question_id): answer.chosen_option for answer in session.answers}
+        
+        # Create new questions list with only chosen option text
+        scrubbed_questions = []
+        for question in session.questions:
+            chosen_option = answer_map.get(str(question.id))
+            
+            if chosen_option == "a":
+                # User chose option A, only show option A text
+                scrubbed_question = QuestionObject(
+                    id=question.id,
+                    question_number=question.question_number,
+                    option_a=question.option_a,  # Show chosen text
+                    option_b="",  # Hide unchosen option
+                    category=question.category,
+                )
+            elif chosen_option == "b":
+                # User chose option B, only show option B text  
+                scrubbed_question = QuestionObject(
+                    id=question.id,
+                    question_number=question.question_number,
+                    option_a="",  # Hide unchosen option
+                    option_b=question.option_b,  # Show chosen text
+                    category=question.category,
+                )
+            else:
+                # No answer recorded, hide both options
+                scrubbed_question = QuestionObject(
+                    id=question.id,
+                    question_number=question.question_number,
+                    option_a="",
+                    option_b="",
+                    category=question.category,
+                )
+            
+            scrubbed_questions.append(scrubbed_question)
+        
+        # Return new session with scrubbed questions
+        return WyrGameSession(
+            session_id=session.session_id,
+            user_id=session.user_id,
+            game_length=session.game_length,
+            category=session.category,
+            custom_request=session.custom_request,
+            status=session.status,
+            current_question=session.current_question,
+            started_at=session.started_at,
+            completed_at=session.completed_at,
+            questions=scrubbed_questions,  # Use scrubbed questions
+            answers=session.answers,  # Keep original answers
+            summary=session.summary,
+        )
+        
+    except Exception as e:
+        print(f"⚠️ WYR_SCRUB: Error scrubbing session, returning original: {str(e)}", flush=True)
+        return session  # Return original session if scrubbing fails
