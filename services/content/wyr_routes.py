@@ -819,7 +819,7 @@ def _build_questions_prompt(
     category_descriptions = {
         GameCategory.THOUGHT_PROVOKING: "Deep philosophical questions that make you think about values, morality, and life choices",
         GameCategory.FUNNY_SILLY: "Lighthearted, humorous questions that are entertaining and playful",
-        GameCategory.FAMILY_FRIENDLY: "Questions appropriate for all ages that bring families together",
+        GameCategory.FAMILY_FRIENDLY: "Simple, wholesome questions using easy words that children can understand and families can enjoy together",
         GameCategory.WORK_CAREER: "Professional scenarios and career-related dilemmas",
         GameCategory.RELATIONSHIPS_LOVE: "Questions about friendship, romance, and human connections",
         GameCategory.FANTASY_SUPERPOWERS: "Magical abilities, fictional scenarios, and superhero choices",
@@ -846,7 +846,21 @@ VARIETY REQUIREMENT: Since this is "Mix It Up", include questions from different
 
     base_prompt += f"""
 
-AGE APPROPRIATENESS: Content must be suitable for {age_context}
+AGE APPROPRIATENESS: Content must be suitable for {age_context}"""
+
+    # Add specific child-friendly guidance for family-friendly category or young audiences
+    if category == GameCategory.FAMILY_FRIENDLY or "children" in age_context.lower():
+        base_prompt += """
+
+CHILD-FRIENDLY REQUIREMENTS:
+- Use simple, everyday words a 6-year-old can understand
+- Focus on fun, innocent choices (animals, food, toys, games, colors)
+- Avoid complex concepts, adult themes, or anything scary
+- Make questions about things kids enjoy and relate to
+- Examples: "pizza or ice cream", "cats or dogs", "playground or pool"
+- NO adult concepts like money, work, relationships, or complex scenarios"""
+
+    base_prompt += """
 
 QUALITY REQUIREMENTS:
 - Each question should present two genuinely difficult choices
@@ -865,11 +879,24 @@ FORMAT: Return as a JSON array of objects with this exact structure:
   }}
 ]
 
-EXAMPLES of good "Would You Rather" questions:
+EXAMPLES of good "Would You Rather" questions:"""
+
+    # Add age-appropriate examples
+    if category == GameCategory.FAMILY_FRIENDLY or "children" in age_context.lower():
+        base_prompt += """
+- "Would you rather have a pet dragon or a pet unicorn?"
+- "Would you rather eat ice cream for breakfast or cookies for dinner?"
+- "Would you rather be able to talk to animals or make toys come to life?"
+- "Would you rather live in a treehouse or a castle made of candy?"
+- "Would you rather have super speed or super strength?"
+"""
+    else:
+        base_prompt += """
 - "Would you rather have the ability to fly but only 3 feet off the ground, or be invisible but only when no one is looking?"
 - "Would you rather always know when someone is lying but never be able to prove it, or never know when someone is lying but always trust people?"
+"""
 
-Generate exactly {game_length.value} creative, engaging questions now:"""
+    base_prompt += f"""Generate exactly {game_length.value} creative, engaging questions now:"""
 
     return base_prompt
 
