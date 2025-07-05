@@ -716,6 +716,9 @@ async def _generate_questions_llm(
         temperature = parameters.get("temperature", 0.7)
         max_tokens = parameters.get("max_tokens", 1000)
         top_p = parameters.get("top_p", 0.9)
+        
+        # Ensure sufficient tokens for question generation (max 10 questions now)
+        max_tokens = max(max_tokens, 1500)  # Sufficient for up to 10 questions
 
         print(f"🔧 WYR_LLM: Using provider: {provider}, model: {model_id}", flush=True)
         print(f"🔧 WYR_LLM: Parameters - temp: {temperature}, max_tokens: {max_tokens}, top_p: {top_p}", flush=True)
@@ -798,7 +801,14 @@ async def _generate_questions_llm(
 
             cost = calculate_llm_cost(provider, model_id, prompt_tokens, completion_tokens)
 
-            print(f"✅ WYR_LLM: Generated {len(questions)} questions", flush=True)
+            print(f"✅ WYR_LLM: Generated {len(questions)} questions (expected {game_length.value})", flush=True)
+            
+            # Check if we got enough complete questions
+            if len(questions) < game_length.value:
+                print(f"⚠️ WYR_LLM: Insufficient questions - got {len(questions)}, expected {game_length.value}", flush=True)
+                print(f"⚠️ WYR_LLM: This may be due to token limit ({max_tokens}) or response truncation", flush=True)
+                # Still return what we got rather than failing completely
+            
             return questions, provider, model_id, tokens_used, cost, latency_ms
 
         else:
@@ -941,15 +951,24 @@ def _parse_questions_response(content: str, category: GameCategory) -> list[Ques
         questions = []
 
         for i, q_data in enumerate(questions_data):
+            # Check for incomplete questions (empty or very short options)
+            option_a = q_data.get("option_a", "").strip()
+            option_b = q_data.get("option_b", "").strip()
+            
+            if not option_a or not option_b or len(option_a) < 10 or len(option_b) < 10:
+                print(f"⚠️ WYR_PARSE: Incomplete question {i+1}: A='{option_a}', B='{option_b}'", flush=True)
+                continue  # Skip incomplete questions
+            
             question = QuestionObject(
                 id=uuid.uuid4(),
                 question_number=q_data.get("question_number", i + 1),
-                option_a=q_data.get("option_a", ""),
-                option_b=q_data.get("option_b", ""),
+                option_a=option_a,
+                option_b=option_b,
                 category=q_data.get("category", category.value),
             )
             questions.append(question)
 
+        print(f"✅ WYR_PARSE: Successfully parsed {len(questions)} complete questions", flush=True)
         return questions
 
     except Exception as e:

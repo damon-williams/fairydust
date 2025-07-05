@@ -740,8 +740,8 @@ class CustomCharacterErrorResponse(BaseModel):
 # Would You Rather Game Models
 class GameLength(int, Enum):
     SHORT = 5
-    MEDIUM = 10
-    LONG = 20
+    MEDIUM = 8
+    LONG = 10
 
 
 class GameCategory(str, Enum):
