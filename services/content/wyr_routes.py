@@ -28,7 +28,7 @@ from models import (
 
 from shared.auth_middleware import TokenData, get_current_user
 from shared.database import Database, get_db
-from shared.json_utils import parse_jsonb_field
+from shared.json_utils import parse_jsonb_field, safe_json_parse
 from shared.llm_pricing import calculate_llm_cost
 from shared.llm_usage_logger import calculate_prompt_hash, create_request_metadata, log_llm_usage
 
@@ -209,8 +209,8 @@ async def save_answer_progress(
             )
 
         # Parse existing data
-        existing_questions = parse_jsonb_field(session_data["questions"], default=[])
-        existing_answers = parse_jsonb_field(session_data["answers"], default=[])
+        existing_questions = safe_json_parse(session_data["questions"], default=[], expected_type=list)
+        existing_answers = safe_json_parse(session_data["answers"], default=[], expected_type=list)
 
         # Validate question exists
         question_exists = any(q.get("id") == str(request.question_id) for q in existing_questions)
@@ -305,7 +305,7 @@ async def complete_game_session(
         # Generate personality analysis
         print("🧠 WYR: Generating personality analysis", flush=True)
         summary = await _generate_personality_analysis(
-            questions=parse_jsonb_field(session_data["questions"], default=[]),
+            questions=safe_json_parse(session_data["questions"], default=[], expected_type=list),
             answers=request.final_answers,
             category=session_data["category"],
         )
@@ -954,8 +954,8 @@ async def _get_session(db: Database, session_id: uuid.UUID, user_id: str) -> Opt
 async def _build_session_response(session_data: dict) -> WyrGameSession:
     """Build WyrGameSession response from database data"""
     try:
-        questions_data = parse_jsonb_field(session_data["questions"], default=[])
-        answers_data = parse_jsonb_field(session_data["answers"], default=[])
+        questions_data = safe_json_parse(session_data["questions"], default=[], expected_type=list)
+        answers_data = safe_json_parse(session_data["answers"], default=[], expected_type=list)
 
         questions = [
             QuestionObject(
