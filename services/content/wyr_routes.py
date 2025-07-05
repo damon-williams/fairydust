@@ -1037,7 +1037,7 @@ async def _generate_personality_analysis(
                 },
                 json={
                     "model": "claude-3-5-sonnet-20241022",
-                    "max_tokens": 500,
+                    "max_tokens": 250,
                     "temperature": 0.7,
                     "messages": [{"role": "user", "content": prompt}],
                 },
@@ -1084,17 +1084,14 @@ def _build_analysis_prompt(questions: list[dict], answers: list[AnswerObject], c
 THEIR CHOICES:
 {qa_string}
 
-Create a fun, engaging personality analysis (200-300 words) that:
-- Identifies patterns in their decision-making
-- Highlights interesting personality traits
-- Keeps a positive, encouraging tone
-- Avoids psychological jargon
-- Feels personal and insightful
-- Is entertaining to read
+Create a concise personality analysis (120-150 words, maximum 3 paragraphs) that:
+- Identifies key patterns in their choices
+- Highlights 2-3 main personality traits
+- Feels personal and encouraging
 
-Write as if you're a wise friend who knows them well. Be specific about what their choices reveal, not generic.
+Write like a wise friend. Be specific, not generic. Keep it punchy and fun.
 
-IMPORTANT: Return ONLY the personality analysis text. No explanations, no meta-commentary, just the analysis itself."""
+IMPORTANT: Maximum 3 paragraphs. Return ONLY the analysis text, no explanations."""
 
     return prompt
 
