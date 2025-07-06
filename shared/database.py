@@ -838,9 +838,8 @@ async def create_tables():
         await db.execute_schema(
             """
             INSERT INTO apps (
-                id, builder_id, name, slug, description, icon_url, dust_per_use,
-                status, category, website_url, demo_url, callback_url,
-                is_active, admin_notes, created_at, updated_at
+                id, builder_id, name, slug, description, icon_url,
+                status, category, is_active, created_at, updated_at
             )
             SELECT
                 gen_random_uuid(),
@@ -849,14 +848,9 @@ async def create_tables():
                 'fairydust-restaurant',
                 'Find restaurants based on your group''s preferences',
                 NULL,
-                3,
                 'approved',
                 'lifestyle',
-                NULL,
-                NULL,
-                NULL,
                 true,
-                'Auto-created for mobile app implementation',
                 CURRENT_TIMESTAMP,
                 CURRENT_TIMESTAMP
             WHERE NOT EXISTS (
@@ -872,9 +866,8 @@ async def create_tables():
         await db.execute_schema(
             """
             INSERT INTO apps (
-                id, builder_id, name, slug, description, icon_url, dust_per_use,
-                status, category, website_url, demo_url, callback_url,
-                is_active, admin_notes, created_at, updated_at
+                id, builder_id, name, slug, description, icon_url,
+                status, category, is_active, created_at, updated_at
             )
             SELECT
                 gen_random_uuid(),
@@ -883,14 +876,9 @@ async def create_tables():
                 'fairydust-activity',
                 'Discover personalized activities and attractions based on your location and preferences',
                 NULL,
-                3,
                 'approved',
                 'lifestyle',
-                NULL,
-                NULL,
-                NULL,
                 true,
-                'Auto-created for mobile app implementation',
                 CURRENT_TIMESTAMP,
                 CURRENT_TIMESTAMP
             WHERE NOT EXISTS (
@@ -932,9 +920,8 @@ async def create_tables():
         await db.execute_schema(
             """
             INSERT INTO apps (
-                id, builder_id, name, slug, description, icon_url, dust_per_use,
-                status, category, website_url, demo_url, callback_url,
-                is_active, admin_notes, created_at, updated_at
+                id, builder_id, name, slug, description, icon_url,
+                status, category, is_active, created_at, updated_at
             )
             SELECT
                 gen_random_uuid(),
@@ -943,14 +930,9 @@ async def create_tables():
                 'fairydust-inspire',
                 'Get personalized inspirations and challenges for daily motivation',
                 NULL,
-                2,
                 'approved',
                 'lifestyle',
-                NULL,
-                NULL,
-                NULL,
                 true,
-                'Auto-created for mobile app implementation',
                 CURRENT_TIMESTAMP,
                 CURRENT_TIMESTAMP
             WHERE NOT EXISTS (
@@ -996,9 +978,8 @@ async def create_tables():
         await db.execute_schema(
             """
             INSERT INTO apps (
-                id, builder_id, name, slug, description, icon_url, dust_per_use,
-                status, category, website_url, demo_url, callback_url,
-                is_active, admin_notes, created_at, updated_at
+                id, builder_id, name, slug, description, icon_url,
+                status, category, is_active, created_at, updated_at
             )
             SELECT
                 gen_random_uuid(),
@@ -1007,14 +988,9 @@ async def create_tables():
                 'fairydust-fortune-teller',
                 'Get personalized mystical guidance and fortune readings based on astrology and numerology',
                 NULL,
-                3,
                 'approved',
                 'lifestyle',
-                NULL,
-                NULL,
-                NULL,
                 true,
-                'Auto-created for mobile app implementation',
                 CURRENT_TIMESTAMP,
                 CURRENT_TIMESTAMP
             WHERE NOT EXISTS (
@@ -1065,9 +1041,8 @@ async def create_tables():
         await db.execute_schema(
             """
             INSERT INTO apps (
-                id, builder_id, name, slug, description, icon_url, dust_per_use,
-                status, category, website_url, demo_url, callback_url,
-                is_active, admin_notes, created_at, updated_at
+                id, builder_id, name, slug, description, icon_url,
+                status, category, is_active, created_at, updated_at
             )
             SELECT
                 gen_random_uuid(),
@@ -1076,14 +1051,9 @@ async def create_tables():
                 'fairydust-recipe',
                 'Generate personalized recipes based on dietary preferences and group needs',
                 NULL,
-                3,
                 'approved',
                 'lifestyle',
-                NULL,
-                NULL,
-                NULL,
                 true,
-                'Auto-created for mobile app implementation',
                 CURRENT_TIMESTAMP,
                 CURRENT_TIMESTAMP
             WHERE NOT EXISTS (
