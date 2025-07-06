@@ -213,14 +213,16 @@ async def create_tables():
         ALTER TABLE users ADD COLUMN IF NOT EXISTS birth_date DATE;
         ALTER TABLE users ADD COLUMN IF NOT EXISTS city VARCHAR(100);
         ALTER TABLE users ADD COLUMN IF NOT EXISTS country VARCHAR(100) DEFAULT 'US';
-        ALTER TABLE users ADD COLUMN IF NOT EXISTS last_profiling_session TIMESTAMP;
-        ALTER TABLE users ADD COLUMN IF NOT EXISTS total_profiling_sessions INTEGER DEFAULT 0;
         ALTER TABLE users ADD COLUMN IF NOT EXISTS streak_days INTEGER DEFAULT 0;
         ALTER TABLE users ADD COLUMN IF NOT EXISTS last_login_date TIMESTAMP WITH TIME ZONE;
         ALTER TABLE users ADD COLUMN IF NOT EXISTS is_onboarding_completed BOOLEAN DEFAULT FALSE;
 
         -- Drop old age_range column (replaced with birth_date)
         ALTER TABLE users DROP COLUMN IF EXISTS age_range;
+        
+        -- Drop old profiling columns (no longer used)
+        ALTER TABLE users DROP COLUMN IF EXISTS last_profiling_session;
+        ALTER TABLE users DROP COLUMN IF EXISTS total_profiling_sessions;
     """
     )
 
