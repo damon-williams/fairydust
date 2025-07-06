@@ -495,7 +495,7 @@ async def get_promotional_codes(
 
 @referrals_router.post("/promotional-codes-debug")
 async def debug_promotional_code_create(request: Request):
-    """Debug endpoint to see raw request data"""
+    """Debug endpoint to see raw request data and attempt validation"""
     import logging
     logger = logging.getLogger(__name__)
     
@@ -504,13 +504,25 @@ async def debug_promotional_code_create(request: Request):
         import json
         raw_data = json.loads(body) if body else {}
         logger.info(f"Debug - Raw request body: {raw_data}")
-        return {"received_data": raw_data}
+        logger.info(f"Debug - Request headers: {dict(request.headers)}")
+        
+        # Try to validate the data manually
+        try:
+            from models import PromotionalReferralCodeCreate
+            validated_data = PromotionalReferralCodeCreate(**raw_data)
+            logger.info(f"Debug - Validation successful: {validated_data}")
+            return {"received_data": raw_data, "validation": "success", "parsed_data": validated_data.dict()}
+        except Exception as validation_error:
+            logger.error(f"Debug - Validation failed: {validation_error}")
+            return {"received_data": raw_data, "validation": "failed", "error": str(validation_error)}
+            
     except Exception as e:
         logger.error(f"Debug - Could not parse request body: {e}")
         return {"error": str(e)}
 
 @referrals_router.post("/promotional-codes", response_model=PromotionalReferralCode)
 async def create_promotional_code(
+    request: Request,
     code_create: PromotionalReferralCodeCreate,
     admin_user: dict = Depends(get_current_admin_user),
     db: Database = Depends(get_db),
@@ -518,8 +530,16 @@ async def create_promotional_code(
     """Create a new promotional referral code"""
     import logging
     logger = logging.getLogger(__name__)
-    logger.info(f"Creating promotional code with data: {code_create}")
-    logger.info(f"Raw data types: code={type(code_create.code)}, description={type(code_create.description)}, dust_bonus={type(code_create.dust_bonus)}, max_uses={type(code_create.max_uses)}, expires_at={type(code_create.expires_at)}")
+    
+    # Log raw request details
+    logger.info(f"Promotional code creation request from {request.client}")
+    logger.info(f"Request headers: {dict(request.headers)}")
+    
+    # Log the parsed data
+    logger.info(f"Successfully parsed promotional code data: {code_create}")
+    logger.info(f"Data types: code={type(code_create.code)}, description={type(code_create.description)}, dust_bonus={type(code_create.dust_bonus)}, max_uses={type(code_create.max_uses)}, expires_at={type(code_create.expires_at)}")
+    logger.info(f"Expires at value: {code_create.expires_at}")
+    logger.info(f"Admin user: {admin_user.get('fairyname', 'Unknown')} (ID: {admin_user.get('id', 'Unknown')})")
     # Check if code already exists
     existing_code = await db.fetch_one(
         "SELECT id FROM promotional_referral_codes WHERE code = $1",

@@ -3,7 +3,7 @@ from datetime import datetime
 from typing import Optional
 from uuid import UUID
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, validator
 
 
 # Referral configuration models
@@ -108,6 +108,38 @@ class PromotionalReferralCodeCreate(BaseModel):
     dust_bonus: int = Field(..., ge=1, le=1000, description="DUST bonus for users who redeem this code")
     max_uses: Optional[int] = Field(None, ge=1, le=100000, description="Maximum number of uses (unlimited if None)")
     expires_at: datetime = Field(..., description="When the code expires")
+    
+    @validator('expires_at', pre=True)
+    def validate_expires_at(cls, v):
+        if isinstance(v, str):
+            try:
+                # Try to parse various datetime formats
+                from datetime import datetime
+                import re
+                
+                # Remove any trailing 'Z' and handle timezone
+                v = v.replace('Z', '+00:00')
+                
+                # Handle datetime-local format (no timezone)
+                if re.match(r'^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$', v):
+                    v += ':00'  # Add seconds if missing
+                    # Assume local timezone (UTC for now)
+                    return datetime.fromisoformat(v).replace(tzinfo=None)
+                
+                # Handle full ISO format
+                if 'T' in v:
+                    # Remove timezone info for now to match datetime type
+                    v = v.split('+')[0].split('Z')[0]
+                    if '.' in v:
+                        return datetime.fromisoformat(v.split('.')[0])
+                    return datetime.fromisoformat(v)
+                    
+                # Fallback to default parsing
+                return datetime.fromisoformat(v)
+            except ValueError as e:
+                raise ValueError(f"Invalid datetime format: {v}. Expected ISO format like '2024-07-06T15:30:00'")
+        
+        return v
 
 
 class PromotionalReferralCodeUpdate(BaseModel):
