@@ -232,7 +232,13 @@ export function Referrals() {
 
   const handleCreatePromoCode = async () => {
     try {
-      await AdminAPI.createPromotionalCode(newPromoCode);
+      // Convert datetime-local format to ISO datetime for backend
+      const promoCodeData = {
+        ...newPromoCode,
+        expires_at: new Date(newPromoCode.expires_at).toISOString()
+      };
+      
+      await AdminAPI.createPromotionalCode(promoCodeData);
       setPromoCodeDialog(false);
       toast.success('Promotional code created successfully');
       setNewPromoCode({
@@ -783,7 +789,7 @@ export function Referrals() {
                           min="1"
                           max="1000"
                           value={newPromoCode.dust_bonus}
-                          onChange={(e) => setNewPromoCode({ ...newPromoCode, dust_bonus: parseInt(e.target.value) || 0 })}
+                          onChange={(e) => setNewPromoCode({ ...newPromoCode, dust_bonus: parseInt(e.target.value) || 10 })}
                         />
                       </div>
                       <div>
