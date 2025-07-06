@@ -96,6 +96,7 @@ export function Referrals() {
   const [promoCodesError, setPromoCodesError] = useState<string | null>(null);
   const [promoCodesPage, setPromoCodesPage] = useState(1);
   const [promoCodesStatusFilter, setPromoCodesStatusFilter] = useState<string>('all');
+  const [promoCodeValidation, setPromoCodeValidation] = useState<{[key: string]: string}>({});
   const [newPromoCode, setNewPromoCode] = useState<PromotionalReferralCodeCreate>({
     code: '',
     description: '',
@@ -230,41 +231,55 @@ export function Referrals() {
     setConfig({ ...config, milestone_rewards: newMilestones });
   };
 
-  const handleCreatePromoCode = async () => {
-    try {
-      // Validate required fields
-      if (!newPromoCode.code || newPromoCode.code.length < 3) {
-        toast.error('Code must be at least 3 characters long');
-        return;
-      }
-      
-      if (!newPromoCode.description || newPromoCode.description.length < 1) {
-        toast.error('Description is required');
-        return;
-      }
-      
-      if (!newPromoCode.dust_bonus || newPromoCode.dust_bonus < 1 || newPromoCode.dust_bonus > 1000) {
-        toast.error('DUST bonus must be between 1 and 1000');
-        return;
-      }
-      
-      if (!newPromoCode.expires_at) {
-        toast.error('Expiration date is required');
-        return;
-      }
-      
-      // Convert datetime-local format to ISO datetime for backend
+  const validatePromoCode = () => {
+    const errors: {[key: string]: string} = {};
+
+    if (!newPromoCode.code || newPromoCode.code.length < 3) {
+      errors.code = 'Code must be at least 3 characters long';
+    } else if (newPromoCode.code.length > 20) {
+      errors.code = 'Code must be 20 characters or less';
+    }
+    
+    if (!newPromoCode.description || newPromoCode.description.length < 1) {
+      errors.description = 'Description is required';
+    } else if (newPromoCode.description.length > 500) {
+      errors.description = 'Description must be 500 characters or less';
+    }
+    
+    if (!newPromoCode.dust_bonus || newPromoCode.dust_bonus < 1 || newPromoCode.dust_bonus > 1000) {
+      errors.dust_bonus = 'DUST bonus must be between 1 and 1000';
+    }
+    
+    if (!newPromoCode.expires_at) {
+      errors.expires_at = 'Expiration date is required';
+    } else {
       const expirationDate = new Date(newPromoCode.expires_at);
       if (isNaN(expirationDate.getTime())) {
-        toast.error('Invalid expiration date');
+        errors.expires_at = 'Invalid expiration date';
+      } else if (expirationDate <= new Date()) {
+        errors.expires_at = 'Expiration date must be in the future';
+      }
+    }
+
+    if (newPromoCode.max_uses && (newPromoCode.max_uses < 1 || newPromoCode.max_uses > 100000)) {
+      errors.max_uses = 'Max uses must be between 1 and 100,000';
+    }
+
+    setPromoCodeValidation(errors);
+    return Object.keys(errors).length === 0;
+  };
+
+  const handleCreatePromoCode = async () => {
+    try {
+      // Validate and show inline errors
+      if (!validatePromoCode()) {
         return;
       }
       
-      if (expirationDate <= new Date()) {
-        toast.error('Expiration date must be in the future');
-        return;
-      }
+      // Clear validation errors on successful validation
+      setPromoCodeValidation({});
       
+      const expirationDate = new Date(newPromoCode.expires_at);
       const promoCodeData = {
         ...newPromoCode,
         expires_at: expirationDate.toISOString()
@@ -275,6 +290,7 @@ export function Referrals() {
       await AdminAPI.createPromotionalCode(promoCodeData);
       setPromoCodeDialog(false);
       toast.success('Promotional code created successfully');
+      setPromoCodeValidation({});
       setNewPromoCode({
         code: '',
         description: '',
@@ -781,7 +797,12 @@ export function Referrals() {
                     Create and manage one-off promotional referral codes
                   </p>
                 </div>
-                <Dialog open={promoCodeDialog} onOpenChange={setPromoCodeDialog}>
+                <Dialog open={promoCodeDialog} onOpenChange={(open) => {
+                  setPromoCodeDialog(open);
+                  if (!open) {
+                    setPromoCodeValidation({});
+                  }
+                }}>
                   <DialogTrigger asChild>
                     <Button>
                       <Plus className="h-4 w-4 mr-2" />
@@ -797,26 +818,42 @@ export function Referrals() {
                     </DialogHeader>
                     <div className="space-y-4">
                       <div>
-                        <Label htmlFor="promo-code">Code</Label>
+                        <Label htmlFor="promo-code">
+                          Code <span className="text-red-500">*</span>
+                        </Label>
                         <Input
                           id="promo-code"
                           value={newPromoCode.code}
                           onChange={(e) => setNewPromoCode({ ...newPromoCode, code: e.target.value.toUpperCase() })}
                           placeholder="PROMO2024"
                           maxLength={20}
+                          required
+                          className={promoCodeValidation.code ? 'border-red-500' : ''}
                         />
+                        {promoCodeValidation.code && (
+                          <p className="text-sm text-red-500 mt-1">{promoCodeValidation.code}</p>
+                        )}
                       </div>
                       <div>
-                        <Label htmlFor="promo-description">Description</Label>
+                        <Label htmlFor="promo-description">
+                          Description <span className="text-red-500">*</span>
+                        </Label>
                         <Textarea
                           id="promo-description"
                           value={newPromoCode.description}
                           onChange={(e) => setNewPromoCode({ ...newPromoCode, description: e.target.value })}
                           placeholder="Special promotion for new users"
+                          required
+                          className={promoCodeValidation.description ? 'border-red-500' : ''}
                         />
+                        {promoCodeValidation.description && (
+                          <p className="text-sm text-red-500 mt-1">{promoCodeValidation.description}</p>
+                        )}
                       </div>
                       <div>
-                        <Label htmlFor="promo-dust">DUST Bonus</Label>
+                        <Label htmlFor="promo-dust">
+                          DUST Bonus <span className="text-red-500">*</span>
+                        </Label>
                         <Input
                           id="promo-dust"
                           type="number"
@@ -824,7 +861,12 @@ export function Referrals() {
                           max="1000"
                           value={newPromoCode.dust_bonus}
                           onChange={(e) => setNewPromoCode({ ...newPromoCode, dust_bonus: parseInt(e.target.value) || 10 })}
+                          required
+                          className={promoCodeValidation.dust_bonus ? 'border-red-500' : ''}
                         />
+                        {promoCodeValidation.dust_bonus && (
+                          <p className="text-sm text-red-500 mt-1">{promoCodeValidation.dust_bonus}</p>
+                        )}
                       </div>
                       <div>
                         <Label htmlFor="promo-max-uses">Max Uses (Optional)</Label>
@@ -838,16 +880,27 @@ export function Referrals() {
                             max_uses: e.target.value ? parseInt(e.target.value) : undefined 
                           })}
                           placeholder="Leave empty for unlimited"
+                          className={promoCodeValidation.max_uses ? 'border-red-500' : ''}
                         />
+                        {promoCodeValidation.max_uses && (
+                          <p className="text-sm text-red-500 mt-1">{promoCodeValidation.max_uses}</p>
+                        )}
                       </div>
                       <div>
-                        <Label htmlFor="promo-expires">Expires At</Label>
+                        <Label htmlFor="promo-expires">
+                          Expires At <span className="text-red-500">*</span>
+                        </Label>
                         <Input
                           id="promo-expires"
                           type="datetime-local"
                           value={newPromoCode.expires_at}
                           onChange={(e) => setNewPromoCode({ ...newPromoCode, expires_at: e.target.value })}
+                          required
+                          className={promoCodeValidation.expires_at ? 'border-red-500' : ''}
                         />
+                        {promoCodeValidation.expires_at && (
+                          <p className="text-sm text-red-500 mt-1">{promoCodeValidation.expires_at}</p>
+                        )}
                       </div>
                     </div>
                     <DialogFooter>
