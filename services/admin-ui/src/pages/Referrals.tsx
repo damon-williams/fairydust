@@ -77,6 +77,7 @@ export function Referrals() {
   // Codes state
   const [codes, setCodes] = useState<ReferralCodesResponse | null>(null);
   const [codesLoading, setCodesLoading] = useState(false);
+  const [codesError, setCodesError] = useState<string | null>(null);
   const [codesPage, setCodesPage] = useState(1);
   const [codesFilter, setCodesFilter] = useState<string>('');
   const [codesStatusFilter, setCodesStatusFilter] = useState<string>('');
@@ -92,6 +93,7 @@ export function Referrals() {
   const [promoCodeDialog, setPromoCodeDialog] = useState(false);
   const [promoCodes, setPromoCodes] = useState<PromotionalReferralCodesResponse | null>(null);
   const [promoCodesLoading, setPromoCodesLoading] = useState(false);
+  const [promoCodesError, setPromoCodesError] = useState<string | null>(null);
   const [promoCodesPage, setPromoCodesPage] = useState(1);
   const [promoCodesStatusFilter, setPromoCodesStatusFilter] = useState<string>('');
   const [newPromoCode, setNewPromoCode] = useState<PromotionalReferralCodeCreate>({
@@ -131,6 +133,7 @@ export function Referrals() {
   const loadCodes = async () => {
     try {
       setCodesLoading(true);
+      setCodesError(null);
       const data = await AdminAPI.getReferralCodes({
         page: codesPage,
         limit: 50,
@@ -140,6 +143,7 @@ export function Referrals() {
       setCodes(data);
     } catch (err) {
       console.error('Failed to load referral codes:', err);
+      setCodesError(err instanceof Error ? err.message : 'Failed to load referral codes');
       toast.error('Failed to load referral codes');
     } finally {
       setCodesLoading(false);
@@ -166,6 +170,7 @@ export function Referrals() {
   const loadPromoCodes = async () => {
     try {
       setPromoCodesLoading(true);
+      setPromoCodesError(null);
       const data = await AdminAPI.getPromotionalCodes({
         page: promoCodesPage,
         limit: 50,
@@ -174,6 +179,7 @@ export function Referrals() {
       setPromoCodes(data);
     } catch (err) {
       console.error('Failed to load promotional codes:', err);
+      setPromoCodesError(err instanceof Error ? err.message : 'Failed to load promotional codes');
       toast.error('Failed to load promotional codes');
     } finally {
       setPromoCodesLoading(false);
@@ -523,7 +529,7 @@ export function Referrals() {
                   <RefreshCw className="h-6 w-6 animate-spin mr-2" />
                   Loading codes...
                 </div>
-              ) : codes && codes.codes.length > 0 ? (
+              ) : codes && codes.codes && codes.codes.length > 0 ? (
                 <>
                   <Table>
                     <TableHeader>
@@ -588,7 +594,15 @@ export function Referrals() {
                 </>
               ) : (
                 <div className="text-center py-8 text-slate-500">
-                  No referral codes found
+                  {codesError ? (
+                    <div>
+                      <AlertTriangle className="h-12 w-12 mx-auto mb-4 text-red-300" />
+                      <p>Failed to load referral codes</p>
+                      <p className="text-sm text-red-400 mt-2">{codesError}</p>
+                    </div>
+                  ) : (
+                    'No referral codes found'
+                  )}
                 </div>
               )}
             </CardContent>
@@ -829,7 +843,7 @@ export function Referrals() {
                   <RefreshCw className="h-6 w-6 animate-spin mr-2" />
                   Loading promotional codes...
                 </div>
-              ) : promoCodes && promoCodes.codes.length > 0 ? (
+              ) : promoCodes && promoCodes.codes && promoCodes.codes.length > 0 ? (
                 <>
                   <Table>
                     <TableHeader>
@@ -920,8 +934,18 @@ export function Referrals() {
                 </>
               ) : (
                 <div className="text-center py-8 text-slate-500">
-                  <Gift className="h-12 w-12 mx-auto mb-4 text-slate-300" />
-                  No promotional codes found
+                  {promoCodesError ? (
+                    <div>
+                      <AlertTriangle className="h-12 w-12 mx-auto mb-4 text-red-300" />
+                      <p>Failed to load promotional codes</p>
+                      <p className="text-sm text-red-400 mt-2">{promoCodesError}</p>
+                    </div>
+                  ) : (
+                    <div>
+                      <Gift className="h-12 w-12 mx-auto mb-4 text-slate-300" />
+                      <p>No promotional codes found</p>
+                    </div>
+                  )}
                 </div>
               )}
             </CardContent>
