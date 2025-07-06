@@ -35,10 +35,17 @@ async def get_referral_config(
     if not config_data:
         raise HTTPException(status_code=404, detail="Referral configuration not found")
     
+    import json
+    
+    # Parse milestone_rewards if it's a string
+    milestone_rewards = config_data["milestone_rewards"]
+    if isinstance(milestone_rewards, str):
+        milestone_rewards = json.loads(milestone_rewards)
+    
     return ReferralConfig(
         referee_bonus=config_data["referee_bonus"],
         referrer_bonus=config_data["referrer_bonus"],
-        milestone_rewards=config_data["milestone_rewards"],
+        milestone_rewards=milestone_rewards,
         code_expiry_days=config_data["code_expiry_days"],
         max_referrals_per_user=config_data["max_referrals_per_user"],
         system_enabled=config_data["system_enabled"],
@@ -99,10 +106,15 @@ async def update_referral_config(
     
     if not update_fields:
         # No updates, return current config
+        # Parse milestone_rewards if it's a string
+        milestone_rewards = current_config_data["milestone_rewards"]
+        if isinstance(milestone_rewards, str):
+            milestone_rewards = json.loads(milestone_rewards)
+            
         return ReferralConfig(
             referee_bonus=current_config_data["referee_bonus"],
             referrer_bonus=current_config_data["referrer_bonus"],
-            milestone_rewards=current_config_data["milestone_rewards"],
+            milestone_rewards=milestone_rewards,
             code_expiry_days=current_config_data["code_expiry_days"],
             max_referrals_per_user=current_config_data["max_referrals_per_user"],
             system_enabled=current_config_data["system_enabled"],
@@ -126,10 +138,15 @@ async def update_referral_config(
         "SELECT * FROM referral_system_config WHERE id = 1"
     )
     
+    # Parse milestone_rewards if it's a string
+    milestone_rewards = updated_config_data["milestone_rewards"]
+    if isinstance(milestone_rewards, str):
+        milestone_rewards = json.loads(milestone_rewards)
+    
     return ReferralConfig(
         referee_bonus=updated_config_data["referee_bonus"],
         referrer_bonus=updated_config_data["referrer_bonus"],
-        milestone_rewards=updated_config_data["milestone_rewards"],
+        milestone_rewards=milestone_rewards,
         code_expiry_days=updated_config_data["code_expiry_days"],
         max_referrals_per_user=updated_config_data["max_referrals_per_user"],
         system_enabled=updated_config_data["system_enabled"],
