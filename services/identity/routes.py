@@ -26,7 +26,7 @@ from shared.database import Database, get_db
 from shared.email_service import send_otp_email
 from shared.redis_client import get_redis
 from shared.sms_service import send_otp_sms
-from shared.streak_utils import calculate_daily_streak
+from shared.streak_utils import calculate_daily_streak_for_auth
 
 security = HTTPBearer()
 
@@ -151,15 +151,12 @@ async def verify_otp(
         last_login_date,
         is_bonus_eligible,
         previous_streak_days,
-    ) = await calculate_daily_streak(
+    ) = await calculate_daily_streak_for_auth(
         db, str(user["id"]), user.get("streak_days", 0), user.get("last_login_date")
     )
 
-    # Update user dict with new streak info (avoid redundant DB query)
-    user_dict = dict(user)
-    user_dict["streak_days"] = streak_days
-    user_dict["last_login_date"] = last_login_date
-    user = user_dict
+    # Note: Database is NOT updated in auth - only calculated for response
+    # DUST grant endpoint will handle actual database updates
 
     # Create tokens
     token_data = {
@@ -177,7 +174,7 @@ async def verify_otp(
         is_new_user=is_new_user,
         dust_granted=0,  # DUST grants now handled by apps, not identity service
         is_first_login_today=is_bonus_eligible,
-        streak_bonus_eligible=is_bonus_eligible,
+        streak_bonus_eligible=not is_new_user and is_bonus_eligible and user.get("is_onboarding_completed", False),
         previous_streak_days=previous_streak_days,
     )
 
@@ -266,15 +263,12 @@ async def oauth_login(
         last_login_date,
         is_bonus_eligible,
         previous_streak_days,
-    ) = await calculate_daily_streak(
+    ) = await calculate_daily_streak_for_auth(
         db, str(user["id"]), user.get("streak_days", 0), user.get("last_login_date")
     )
 
-    # Update user dict with new streak info (avoid redundant DB query)
-    user_dict = dict(user)
-    user_dict["streak_days"] = streak_days
-    user_dict["last_login_date"] = last_login_date
-    user = user_dict
+    # Note: Database is NOT updated in auth - only calculated for response
+    # DUST grant endpoint will handle actual database updates
 
     # Create tokens
     token_data = {
@@ -292,7 +286,7 @@ async def oauth_login(
         is_new_user=is_new_user,
         dust_granted=0,  # DUST grants now handled by apps, not identity service
         is_first_login_today=is_bonus_eligible,
-        streak_bonus_eligible=is_bonus_eligible,
+        streak_bonus_eligible=not is_new_user and is_bonus_eligible and user.get("is_onboarding_completed", False),
         previous_streak_days=previous_streak_days,
     )
 
