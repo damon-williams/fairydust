@@ -520,6 +520,16 @@ async def debug_promotional_code_create(request: Request):
         logger.error(f"Debug - Could not parse request body: {e}")
         return {"error": str(e)}
 
+@referrals_router.get("/test-admin-user")
+async def test_admin_user(admin_user: dict = Depends(get_current_admin_user)):
+    """Test endpoint to see admin user structure"""
+    return {
+        "admin_user_keys": list(admin_user.keys()),
+        "admin_user_data": admin_user,
+        "has_id": "id" in admin_user,
+        "has_user_id": "user_id" in admin_user
+    }
+
 @referrals_router.post("/promotional-codes", response_model=PromotionalReferralCode)
 async def create_promotional_code(
     request: Request,
@@ -531,15 +541,18 @@ async def create_promotional_code(
     import logging
     logger = logging.getLogger(__name__)
     
-    # Log raw request details
-    logger.info(f"Promotional code creation request from {request.client}")
-    logger.info(f"Request headers: {dict(request.headers)}")
+    # Log everything for debugging
+    logger.info(f"=== PROMOTIONAL CODE CREATION DEBUG ===")
+    logger.info(f"Admin user structure: {admin_user}")
+    logger.info(f"Admin user keys: {list(admin_user.keys())}")
+    logger.info(f"Code data: {code_create}")
     
-    # Log the parsed data
-    logger.info(f"Successfully parsed promotional code data: {code_create}")
-    logger.info(f"Data types: code={type(code_create.code)}, description={type(code_create.description)}, dust_bonus={type(code_create.dust_bonus)}, max_uses={type(code_create.max_uses)}, expires_at={type(code_create.expires_at)}")
-    logger.info(f"Expires at value: {code_create.expires_at}")
-    logger.info(f"Admin user: {admin_user.get('fairyname', 'Unknown')} (ID: {admin_user.get('id', 'Unknown')})")
+    # Verify admin user has the right structure
+    if "user_id" not in admin_user:
+        logger.error(f"CRITICAL: admin_user missing 'user_id' key. Keys: {list(admin_user.keys())}")
+        raise HTTPException(status_code=500, detail=f"Admin user malformed: {list(admin_user.keys())}")
+    
+    logger.info(f"Using admin_user['user_id']: {admin_user['user_id']}")
     # Check if code already exists
     existing_code = await db.fetch_one(
         "SELECT id FROM promotional_referral_codes WHERE code = $1",
@@ -561,7 +574,7 @@ async def create_promotional_code(
         code_create.description,
         code_create.dust_bonus,
         code_create.max_uses,
-        admin_user["id"],
+        admin_user["user_id"],
         code_create.expires_at,
     )
     
