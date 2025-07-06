@@ -90,21 +90,50 @@ async def generate_inspiration(
         user_context = await _get_user_context(db, request.user_id)
         print("👤 INSPIRE: Retrieved user context", flush=True)
 
-        # Generate inspiration using LLM
+        # Get user's recent inspirations to avoid duplicates
+        recent_inspirations = await _get_recent_inspirations(db, request.user_id, request.category)
+        print(f"🔍 INSPIRE: Found {len(recent_inspirations)} recent inspirations to avoid", flush=True)
+
+        # Generate inspiration using LLM with enhanced duplicate prevention and retry logic
         print(
             f"🤖 INSPIRE DEBUG: Starting LLM generation for category: {request.category}", flush=True
         )
-        inspiration_content, model_used, tokens_used, cost = await _generate_inspiration_llm(
-            category=request.category,
-            used_suggestions=request.used_suggestions,
-            user_context=user_context,
-        )
+        
+        max_retries = 3
+        inspiration_content = None
+        model_used = None
+        tokens_used = {}
+        total_cost = 0.0
+        
+        for attempt in range(max_retries):
+            print(f"🔄 INSPIRE DEBUG: Generation attempt {attempt + 1}/{max_retries}", flush=True)
+            
+            content, model, tokens, cost = await _generate_inspiration_llm(
+                category=request.category,
+                used_suggestions=request.used_suggestions,
+                user_context=user_context,
+                recent_inspirations=recent_inspirations,
+            )
+            
+            total_cost += cost
+            if content:  # Success - no duplicate detected
+                inspiration_content = content
+                model_used = model
+                tokens_used = tokens
+                break
+            else:
+                print(f"⚠️ INSPIRE DEBUG: Attempt {attempt + 1} failed (duplicate or error)", flush=True)
+                if attempt < max_retries - 1:
+                    print("🔄 INSPIRE DEBUG: Retrying with more specific anti-duplicate instructions...", flush=True)
 
         if not inspiration_content:
-            print("❌ INSPIRE DEBUG: LLM generation failed", flush=True)
+            print("❌ INSPIRE DEBUG: All generation attempts failed", flush=True)
             return InspirationErrorResponse(
-                error="Failed to generate inspiration. Please try again."
+                error="Failed to generate unique inspiration. Please try again."
             )
+        
+        # Use total cost from all attempts
+        cost = total_cost
 
         print(f"🤖 INSPIRE DEBUG: Generated inspiration: {inspiration_content[:50]}...", flush=True)
         print(
@@ -478,6 +507,65 @@ async def _check_rate_limit(db: Database, user_id: uuid.UUID) -> bool:
         return False
 
 
+async def _get_recent_inspirations(db: Database, user_id: uuid.UUID, category: InspirationCategory) -> list[str]:
+    """Get user's recent inspirations to avoid duplicates"""
+    try:
+        # Get recent inspirations from the same category (last 30 days)
+        query = """
+            SELECT content
+            FROM user_inspirations
+            WHERE user_id = $1 
+            AND category = $2
+            AND deleted_at IS NULL
+            AND created_at > NOW() - INTERVAL '30 days'
+            ORDER BY created_at DESC
+            LIMIT 20
+        """
+        
+        rows = await db.fetch_all(query, user_id, category.value)
+        recent_content = [row["content"] for row in rows]
+        
+        print(f"🔍 INSPIRE_RECENT: Found {len(recent_content)} recent inspirations for {category.value}", flush=True)
+        return recent_content
+        
+    except Exception as e:
+        print(f"⚠️ INSPIRE_RECENT: Error getting recent inspirations: {str(e)}", flush=True)
+        return []
+
+
+def _is_duplicate_content(new_content: str, previous_content: list[str]) -> bool:
+    """Check if new content is too similar to previous content"""
+    if not previous_content or not new_content:
+        return False
+        
+    new_content_lower = new_content.lower().strip()
+    
+    for prev_content in previous_content:
+        prev_content_lower = prev_content.lower().strip()
+        
+        # Check for exact matches
+        if new_content_lower == prev_content_lower:
+            return True
+            
+        # Check for very high similarity (90%+ word overlap)
+        new_words = set(new_content_lower.split())
+        prev_words = set(prev_content_lower.split())
+        
+        if len(new_words) > 0 and len(prev_words) > 0:
+            overlap = len(new_words.intersection(prev_words))
+            similarity = overlap / max(len(new_words), len(prev_words))
+            
+            if similarity > 0.9:  # 90% similarity threshold
+                return True
+                
+        # Check for substring matches (one is contained in the other)
+        if len(new_content_lower) > 10 and len(prev_content_lower) > 10:
+            if new_content_lower in prev_content_lower or prev_content_lower in new_content_lower:
+                return True
+    
+    return False
+
+
 async def _get_user_context(db: Database, user_id: uuid.UUID) -> str:
     """Get user context for personalization"""
     try:
@@ -630,13 +718,13 @@ def _build_inspiration_prompt(
     # Build prompt using the same logic as in _generate_inspiration_llm
     base_prompt = CATEGORY_PROMPTS[category]
 
-    # Add context and anti-duplication
+    # Add context and anti-duplication (note: this function doesn't have access to database content)
     context_prompt = f"Context: User is a {user_context}. "
 
     anti_dup_prompt = ""
     if used_suggestions:
         suggestions_text = "\n".join([f"- {s}" for s in used_suggestions[-10:]])
-        anti_dup_prompt = f"\n\nAvoid suggesting anything similar to these recent suggestions:\n{suggestions_text}\n\n"
+        anti_dup_prompt = f"\n\nIMPORTANT: Avoid generating anything identical or very similar to these previous inspirations:\n{suggestions_text}\n\nGenerate something completely fresh and unique.\n\n"
 
     return f"{context_prompt}{base_prompt}{anti_dup_prompt}Respond with just the inspiration text, nothing else."
 
@@ -645,6 +733,7 @@ async def _generate_inspiration_llm(
     category: InspirationCategory,
     used_suggestions: list[str],
     user_context: str,
+    recent_inspirations: list[str] = None,
 ) -> tuple[Optional[str], str, dict, float]:
     """Generate inspiration using LLM"""
     try:
@@ -662,13 +751,23 @@ async def _generate_inspiration_llm(
         # Build prompt
         base_prompt = CATEGORY_PROMPTS[category]
 
-        # Add context and anti-duplication
+        # Add context and enhanced anti-duplication
         context_prompt = f"Context: User is a {user_context}. "
 
         anti_dup_prompt = ""
+        
+        # Combine recent database content with used_suggestions for comprehensive duplicate prevention
+        all_previous_content = []
+        if recent_inspirations:
+            all_previous_content.extend(recent_inspirations)
         if used_suggestions:
-            suggestions_text = "\n".join([f"- {s}" for s in used_suggestions[-10:]])
-            anti_dup_prompt = f"\n\nAvoid suggesting anything similar to these recent suggestions:\n{suggestions_text}\n\n"
+            all_previous_content.extend(used_suggestions)
+            
+        if all_previous_content:
+            # Use the most recent 15 items to avoid overly long prompts
+            recent_items = list(set(all_previous_content))[-15:]  # Remove duplicates and limit
+            suggestions_text = "\n".join([f"- {s}" for s in recent_items])
+            anti_dup_prompt = f"\n\nIMPORTANT: Avoid generating anything identical or very similar to these previous inspirations:\n{suggestions_text}\n\nGenerate something completely fresh and unique.\n\n"
 
         full_prompt = f"{context_prompt}{base_prompt}{anti_dup_prompt}Respond with just the inspiration text, nothing else."
 
@@ -713,6 +812,13 @@ async def _generate_inspiration_llm(
                         "anthropic", model_id, prompt_tokens, completion_tokens
                     )
 
+                    # Check for duplicates before returning
+                    if _is_duplicate_content(content, all_previous_content):
+                        print(f"⚠️ INSPIRE_LLM: Generated content is too similar to previous inspiration", flush=True)
+                        print(f"🔄 INSPIRE_LLM: Generated: {content[:50]}...", flush=True)
+                        # Return None to trigger retry at higher level
+                        return None, model_id, tokens_used, cost
+                    
                     print("✅ INSPIRE_LLM: Generated inspiration successfully", flush=True)
                     return content, model_id, tokens_used, cost
 
@@ -758,6 +864,13 @@ async def _generate_inspiration_llm(
                     # Calculate cost using shared pricing module
                     cost = calculate_llm_cost("openai", model_id, prompt_tokens, completion_tokens)
 
+                    # Check for duplicates before returning
+                    if _is_duplicate_content(content, all_previous_content):
+                        print(f"⚠️ INSPIRE_LLM: Generated content is too similar to previous inspiration", flush=True)
+                        print(f"🔄 INSPIRE_LLM: Generated: {content[:50]}...", flush=True)
+                        # Return None to trigger retry at higher level
+                        return None, model_id, tokens_used, cost
+                    
                     print("✅ INSPIRE_LLM: Generated inspiration successfully", flush=True)
                     return content, model_id, tokens_used, cost
 
