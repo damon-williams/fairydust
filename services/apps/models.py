@@ -180,3 +180,50 @@ class LLMUsageStats(BaseModel):
     model_breakdown: dict[str, dict[str, int | float]]
     period_start: datetime
     period_end: datetime
+
+
+# Referral models
+class ReferralValidateRequest(BaseModel):
+    referral_code: str = Field(..., min_length=6, max_length=10)
+
+
+class ReferralValidateResponse(BaseModel):
+    valid: bool
+    expired: bool
+    referrer_user_id: Optional[UUID] = None
+    referrer_name: Optional[str] = None
+    referee_bonus: int
+    referrer_bonus: int
+
+
+class ReferralCompleteRequest(BaseModel):
+    referral_code: str = Field(..., min_length=6, max_length=10)
+    referee_user_id: UUID
+
+
+class ReferralCompleteResponse(BaseModel):
+    success: bool
+    referrer_user_id: UUID
+    referee_bonus_granted: int
+    referrer_bonus_granted: int
+    milestone_bonus: int = 0
+
+
+class RecentReferral(BaseModel):
+    id: UUID
+    referee_name: str
+    completed_at: datetime
+    dust_earned: int
+
+
+class MilestoneReward(BaseModel):
+    referral_count: int
+    bonus_amount: int
+
+
+class ReferralStatsResponse(BaseModel):
+    has_referral_code: bool
+    successful_referrals: int
+    total_dust_earned: int
+    next_milestone: Optional[MilestoneReward] = None
+    recent_referrals: list[RecentReferral]

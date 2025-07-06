@@ -18,6 +18,7 @@ from models import (
     GrantRequest,
     PurchaseRequest,
     RefundRequest,
+    ReferralRewardGrantRequest,
     TransactionList,
     TransactionResponse,
     TransactionType,
@@ -604,4 +605,52 @@ async def grant_streak_bonus(
         amount=request.amount,
         streak_days=request.streak_days,
         idempotency_key=request.idempotency_key,
+    )
+
+
+@grants_router.post("/referral-reward", response_model=TransactionResponse)
+async def grant_referral_reward(
+    request: ReferralRewardGrantRequest,
+    current_user: TokenData = Depends(get_current_user),
+    ledger: LedgerService = Depends(get_ledger_service),
+    db: Database = Depends(get_db),
+    cache: redis.Redis = Depends(get_redis),
+):
+    """Grant DUST for referral rewards"""
+
+    # Get fairydust-invite app UUID
+    invite_app_uuid = await resolve_app_id("fairydust-invite", db, cache)
+    print(f"🎁 REFERRAL_REWARD: Using fairydust-invite app UUID {invite_app_uuid}", flush=True)
+
+    # Validate the invite app exists
+    app_validation = await validate_app(invite_app_uuid)
+
+    if not app_validation["is_valid"]:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Invite app not found")
+
+    if not app_validation["is_active"]:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN, detail="Invite app is not active"
+        )
+
+    # Create transaction description based on reward reason
+    reason_descriptions = {
+        "referral_bonus": f"Referral bonus for successful invite",
+        "referee_bonus": f"Welcome bonus for using referral code",
+        "milestone_bonus": f"Milestone bonus for {request.amount} DUST achievement",
+    }
+    
+    description = reason_descriptions.get(request.reason, f"Referral reward: {request.reason}")
+
+    # Grant the referral reward using the standard grant mechanism
+    return await ledger.grant_dust(
+        user_id=request.user_id,
+        amount=request.amount,
+        description=description,
+        app_id=invite_app_uuid,
+        idempotency_key=request.idempotency_key,
+        metadata={
+            "reward_type": request.reason,
+            "referral_id": str(request.referral_id),
+        },
     )

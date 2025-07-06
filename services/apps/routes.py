@@ -13,6 +13,12 @@ from models import (
     AppValidation,
     LLMUsageLogCreate,
     LLMUsageStats,
+    RecentReferral,
+    ReferralCompleteRequest,
+    ReferralCompleteResponse,
+    ReferralStatsResponse,
+    ReferralValidateRequest,
+    ReferralValidateResponse,
 )
 
 from shared.auth_middleware import TokenData, get_current_user, require_admin
@@ -22,6 +28,7 @@ from shared.database import Database, get_db
 app_router = APIRouter()
 admin_router = APIRouter()
 marketplace_router = APIRouter()
+referral_router = APIRouter()
 
 # ============================================================================
 # BASIC APP ROUTES
@@ -1181,3 +1188,226 @@ async def delete_action_pricing(
         logger = logging.getLogger(__name__)
         logger.error(f"Error deleting action pricing: {e}")
         raise HTTPException(status_code=500, detail="Failed to delete pricing")
+
+
+# ============================================================================
+# REFERRAL ROUTES
+# ============================================================================
+
+@referral_router.post("/validate", response_model=ReferralValidateResponse)
+async def validate_referral_code(
+    request: ReferralValidateRequest,
+    db: Database = Depends(get_db),
+):
+    """Validate referral code during DUST claiming"""
+    # Get referral code details with user info
+    code_data = await db.fetch_one(
+        """
+        SELECT rc.*, u.fairyname 
+        FROM referral_codes rc
+        JOIN users u ON rc.user_id = u.id
+        WHERE rc.referral_code = $1
+        """,
+        request.referral_code,
+    )
+
+    # Default bonus amounts (will be configurable via admin later)
+    referee_bonus = 15
+    referrer_bonus = 15
+
+    if not code_data:
+        return ReferralValidateResponse(
+            valid=False,
+            expired=False,
+            referee_bonus=referee_bonus,
+            referrer_bonus=referrer_bonus,
+        )
+
+    # Check if code is expired
+    now = datetime.now()
+    is_expired = code_data["expires_at"] < now
+    is_active = code_data["is_active"]
+
+    if not is_active or is_expired:
+        return ReferralValidateResponse(
+            valid=False,
+            expired=is_expired,
+            referee_bonus=referee_bonus,
+            referrer_bonus=referrer_bonus,
+        )
+
+    return ReferralValidateResponse(
+        valid=True,
+        expired=False,
+        referrer_user_id=code_data["user_id"],
+        referrer_name=code_data["fairyname"],
+        referee_bonus=referee_bonus,
+        referrer_bonus=referrer_bonus,
+    )
+
+
+@referral_router.post("/complete", response_model=ReferralCompleteResponse)
+async def complete_referral(
+    request: ReferralCompleteRequest,
+    db: Database = Depends(get_db),
+):
+    """Complete referral when code is redeemed"""
+    # Validate referral code exists and is active
+    code_data = await db.fetch_one(
+        """
+        SELECT rc.*, u.fairyname 
+        FROM referral_codes rc
+        JOIN users u ON rc.user_id = u.id
+        WHERE rc.referral_code = $1 AND rc.is_active = true AND rc.expires_at > CURRENT_TIMESTAMP
+        """,
+        request.referral_code,
+    )
+
+    if not code_data:
+        raise HTTPException(status_code=400, detail="Invalid or expired referral code")
+
+    referrer_user_id = code_data["user_id"]
+
+    # Check if referee is trying to use their own code
+    if str(referrer_user_id) == str(request.referee_user_id):
+        raise HTTPException(status_code=400, detail="Cannot use your own referral code")
+
+    # Check if referee has already used any referral code
+    existing_redemption = await db.fetch_one(
+        "SELECT id FROM referral_redemptions WHERE referee_user_id = $1",
+        request.referee_user_id,
+    )
+
+    if existing_redemption:
+        raise HTTPException(status_code=400, detail="You have already used a referral code")
+
+    # Check referrer hasn't exceeded max referrals (100 for now, configurable later)
+    referral_count = await db.fetch_one(
+        "SELECT COUNT(*) as count FROM referral_redemptions WHERE referrer_user_id = $1",
+        referrer_user_id,
+    )
+
+    max_referrals = 100  # Configurable via admin later
+    if referral_count["count"] >= max_referrals:
+        raise HTTPException(status_code=400, detail="Referrer has reached maximum referral limit")
+
+    # Default bonus amounts (configurable via admin later)
+    referee_bonus = 15
+    referrer_bonus = 15
+
+    # Check for milestone bonus
+    milestone_bonus = 0
+    current_referrals = referral_count["count"] + 1  # After this redemption
+
+    # Milestone rewards: 5 referrals = 25 DUST, 10 referrals = 50 DUST
+    milestone_thresholds = {5: 25, 10: 50}
+    if current_referrals in milestone_thresholds:
+        milestone_bonus = milestone_thresholds[current_referrals]
+
+    # Create redemption record
+    redemption = await db.fetch_one(
+        """
+        INSERT INTO referral_redemptions (
+            referral_code, referrer_user_id, referee_user_id,
+            referee_bonus, referrer_bonus, milestone_bonus
+        )
+        VALUES ($1, $2, $3, $4, $5, $6)
+        RETURNING id
+        """,
+        request.referral_code,
+        referrer_user_id,
+        request.referee_user_id,
+        referee_bonus,
+        referrer_bonus,
+        milestone_bonus,
+    )
+
+    # Here we would trigger DUST grants via the ledger service
+    # For now, just return the response
+    return ReferralCompleteResponse(
+        success=True,
+        referrer_user_id=referrer_user_id,
+        referee_bonus_granted=referee_bonus,
+        referrer_bonus_granted=referrer_bonus,
+        milestone_bonus=milestone_bonus,
+    )
+
+
+@referral_router.get("/user/{user_id}", response_model=ReferralStatsResponse)
+async def get_user_referral_stats(
+    user_id: UUID,
+    current_user: TokenData = Depends(get_current_user),
+    db: Database = Depends(get_db),
+):
+    """Get user's referral statistics"""
+    if str(current_user.user_id) != str(user_id) and not current_user.is_admin:
+        raise HTTPException(status_code=403, detail="Access denied")
+
+    # Check if user has an active referral code
+    has_code = await db.fetch_one(
+        """
+        SELECT id FROM referral_codes 
+        WHERE user_id = $1 AND is_active = true AND expires_at > CURRENT_TIMESTAMP
+        """,
+        user_id,
+    )
+
+    # Get successful referrals count and total DUST earned
+    referral_stats = await db.fetch_one(
+        """
+        SELECT 
+            COUNT(*) as successful_referrals,
+            COALESCE(SUM(referrer_bonus + milestone_bonus), 0) as total_dust_earned
+        FROM referral_redemptions 
+        WHERE referrer_user_id = $1
+        """,
+        user_id,
+    )
+
+    successful_referrals = referral_stats["successful_referrals"] or 0
+    total_dust_earned = referral_stats["total_dust_earned"] or 0
+
+    # Determine next milestone
+    next_milestone = None
+    milestones = [5, 10, 20, 50, 100]  # Configurable via admin later
+    milestone_rewards = {5: 25, 10: 50, 20: 100, 50: 250, 100: 500}
+
+    for milestone in milestones:
+        if successful_referrals < milestone:
+            next_milestone = {
+                "referral_count": milestone,
+                "bonus_amount": milestone_rewards.get(milestone, 0),
+            }
+            break
+
+    # Get recent referrals (last 5)
+    recent_referrals_data = await db.fetch_all(
+        """
+        SELECT rr.id, u.fairyname as referee_name, rr.redeemed_at, 
+               (rr.referrer_bonus + rr.milestone_bonus) as dust_earned
+        FROM referral_redemptions rr
+        JOIN users u ON rr.referee_user_id = u.id
+        WHERE rr.referrer_user_id = $1
+        ORDER BY rr.redeemed_at DESC
+        LIMIT 5
+        """,
+        user_id,
+    )
+
+    recent_referrals = [
+        RecentReferral(
+            id=r["id"],
+            referee_name=r["referee_name"],
+            completed_at=r["redeemed_at"],
+            dust_earned=r["dust_earned"],
+        )
+        for r in recent_referrals_data
+    ]
+
+    return ReferralStatsResponse(
+        has_referral_code=bool(has_code),
+        successful_referrals=successful_referrals,
+        total_dust_earned=total_dust_earned,
+        next_milestone=next_milestone,
+        recent_referrals=recent_referrals,
+    )

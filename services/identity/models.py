@@ -159,6 +159,16 @@ class OnboardTrackingUpdate(BaseModel):
     has_seen_onboarding_complete_tip: Optional[bool] = None
 
 
+# Referral models
+class ReferralCodeResponse(BaseModel):
+    referral_code: str
+    created_at: datetime
+    expires_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
 # Response models
 class AuthResponse(BaseModel):
     user: User

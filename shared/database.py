@@ -1188,4 +1188,70 @@ async def create_tables():
     """
     )
 
+    # Referral System Tables
+    await db.execute_schema(
+        """
+        CREATE TABLE IF NOT EXISTS referral_codes (
+            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            referral_code VARCHAR(10) UNIQUE NOT NULL,
+            created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+            expires_at TIMESTAMP WITH TIME ZONE NOT NULL,
+            is_active BOOLEAN DEFAULT true
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_referral_codes_code ON referral_codes(referral_code);
+        CREATE INDEX IF NOT EXISTS idx_referral_codes_user ON referral_codes(user_id);
+        CREATE INDEX IF NOT EXISTS idx_referral_codes_active ON referral_codes(is_active, expires_at);
+    """
+    )
+
+    await db.execute_schema(
+        """
+        CREATE TABLE IF NOT EXISTS referral_redemptions (
+            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            referral_code VARCHAR(10) NOT NULL,
+            referrer_user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            referee_user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            redeemed_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+            referee_bonus INTEGER NOT NULL,
+            referrer_bonus INTEGER NOT NULL,
+            milestone_bonus INTEGER DEFAULT 0
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_referral_redemptions_referrer ON referral_redemptions(referrer_user_id);
+        CREATE INDEX IF NOT EXISTS idx_referral_redemptions_referee ON referral_redemptions(referee_user_id);
+        CREATE INDEX IF NOT EXISTS idx_referral_redemptions_code ON referral_redemptions(referral_code);
+        CREATE INDEX IF NOT EXISTS idx_referral_redemptions_redeemed ON referral_redemptions(redeemed_at DESC);
+    """
+    )
+
+    # Insert fairydust-invite app if it doesn't exist
+    try:
+        await db.execute_schema(
+            """
+            INSERT INTO apps (
+                id, builder_id, name, slug, description, icon_url,
+                status, category, is_active, created_at, updated_at
+            )
+            SELECT
+                gen_random_uuid(),
+                (SELECT id FROM users WHERE is_builder = true LIMIT 1),
+                'Friend Invitations',
+                'fairydust-invite',
+                'Invite friends to fairydust and earn DUST rewards together',
+                NULL,
+                'approved',
+                'social',
+                true,
+                CURRENT_TIMESTAMP,
+                CURRENT_TIMESTAMP
+            WHERE NOT EXISTS (
+                SELECT 1 FROM apps WHERE slug = 'fairydust-invite'
+            );
+        """
+        )
+    except Exception as e:
+        logger.warning(f"Invite app creation failed (may already exist): {e}")
+
     logger.info("Database schema creation/update completed successfully")

@@ -16,6 +16,7 @@ from models import (
     PersonInMyLife,
     PersonInMyLifeCreate,
     PersonInMyLifeUpdate,
+    ReferralCodeResponse,
     RefreshTokenRequest,
     Token,
     User,
@@ -88,6 +89,13 @@ def generate_fairyname() -> str:
     suffix = "".join(secrets.choice(string.digits) for _ in range(4))
 
     return f"{adj}{noun}{suffix}"
+
+
+def generate_referral_code() -> str:
+    """Generate a unique referral code for users"""
+    # Use "FAIRY" prefix followed by 3 random digits
+    code = "FAIRY" + "".join(secrets.choice(string.digits) for _ in range(3))
+    return code
 
 
 # Authentication Routes
@@ -769,6 +777,98 @@ async def remove_person_from_life(
 
 
 # Person profile data endpoints removed - no longer needed
+
+
+# Referral Code Routes
+@user_router.post("/{user_id}/referral-code", response_model=ReferralCodeResponse)
+async def create_referral_code(
+    user_id: str,
+    current_user: TokenData = Depends(get_current_user),
+    db: Database = Depends(get_db),
+):
+    """Generate new referral code for user"""
+    if current_user.user_id != user_id and not current_user.is_admin:
+        raise HTTPException(status_code=403, detail="Access denied")
+
+    # Check if user already has an active referral code
+    existing_code = await db.fetch_one(
+        """
+        SELECT * FROM referral_codes 
+        WHERE user_id = $1 AND is_active = true AND expires_at > CURRENT_TIMESTAMP
+        """,
+        user_id,
+    )
+
+    if existing_code:
+        return ReferralCodeResponse(**existing_code)
+
+    # Deactivate any existing codes for this user
+    await db.execute(
+        "UPDATE referral_codes SET is_active = false WHERE user_id = $1",
+        user_id,
+    )
+
+    # Generate new unique code
+    max_retries = 10
+    for _ in range(max_retries):
+        code = generate_referral_code()
+        
+        # Check if code already exists
+        existing = await db.fetch_one(
+            "SELECT id FROM referral_codes WHERE referral_code = $1", code
+        )
+        
+        if not existing:
+            break
+    else:
+        # If we couldn't find unique code after 10 tries, add timestamp
+        import time
+        code = f"FAIRY{int(time.time() % 1000):03d}"
+
+    # Set expiry to 30 days from now (configurable later via admin)
+    from datetime import timedelta
+    expires_at = datetime.now() + timedelta(days=30)
+
+    # Create new referral code
+    new_code = await db.fetch_one(
+        """
+        INSERT INTO referral_codes (user_id, referral_code, expires_at)
+        VALUES ($1, $2, $3)
+        RETURNING *
+        """,
+        user_id,
+        code,
+        expires_at,
+    )
+
+    return ReferralCodeResponse(**new_code)
+
+
+@user_router.get("/{user_id}/referral-code", response_model=ReferralCodeResponse)
+async def get_referral_code(
+    user_id: str,
+    current_user: TokenData = Depends(get_current_user),
+    db: Database = Depends(get_db),
+):
+    """Get user's active referral code"""
+    if current_user.user_id != user_id and not current_user.is_admin:
+        raise HTTPException(status_code=403, detail="Access denied")
+
+    # Get active referral code
+    code = await db.fetch_one(
+        """
+        SELECT * FROM referral_codes 
+        WHERE user_id = $1 AND is_active = true AND expires_at > CURRENT_TIMESTAMP
+        ORDER BY created_at DESC
+        LIMIT 1
+        """,
+        user_id,
+    )
+
+    if not code:
+        raise HTTPException(status_code=404, detail="No active referral code found")
+
+    return ReferralCodeResponse(**code)
 
 
 # Local data migration endpoint removed - no longer needed

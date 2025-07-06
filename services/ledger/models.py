@@ -134,6 +134,29 @@ class AppStreakGrantRequest(BaseModel):
         return v
 
 
+class ReferralRewardGrantRequest(BaseModel):
+    user_id: UUID
+    amount: int = Field(..., ge=1, le=100, description="Referral reward amount")
+    reason: str = Field(..., description="Type of referral reward: referral_bonus|referee_bonus|milestone_bonus")
+    referral_id: UUID = Field(..., description="Referral redemption ID for tracking")
+    idempotency_key: str = Field(..., min_length=1, max_length=128)
+
+    @validator("reason")
+    def validate_reason(cls, v):
+        allowed_reasons = ["referral_bonus", "referee_bonus", "milestone_bonus"]
+        if v not in allowed_reasons:
+            raise ValueError(f"Reason must be one of: {', '.join(allowed_reasons)}")
+        return v
+
+    @validator("idempotency_key")
+    def validate_idempotency_key(cls, v):
+        import re
+
+        if not re.match(r"^[a-zA-Z0-9_\-:]+$", v):
+            raise ValueError("Idempotency key must be alphanumeric with -_: allowed")
+        return v
+
+
 class RefundRequest(BaseModel):
     transaction_id: UUID
     reason: str = Field(..., min_length=1, max_length=255)
