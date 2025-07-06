@@ -40,18 +40,48 @@ user_router = APIRouter()
 
 def generate_fairyname() -> str:
     """Generate a unique fairyname for new users"""
-    # Combine adjectives and nouns for whimsical names
+    # Expanded whimsical word lists for more variety
     adjectives = [
-        "crystal",
-        "lunar",
-        "stellar",
-        "mystic",
-        "cosmic",
-        "ethereal",
-        "radiant",
-        "twilight",
+        # Mystical/Magic
+        "crystal", "lunar", "stellar", "mystic", "cosmic", "ethereal", "radiant", "twilight",
+        "enchanted", "magical", "celestial", "divine", "arcane", "mystical", "sacred", "ethereal",
+        "luminous", "shimmering", "iridescent", "opalescent", "glowing", "sparkling",
+        
+        # Nature/Elements
+        "golden", "silver", "emerald", "sapphire", "ruby", "diamond", "amber", "pearl",
+        "forest", "ocean", "mountain", "desert", "winter", "spring", "summer", "autumn",
+        "stormy", "sunny", "cloudy", "misty", "frosty", "dewy", "breezy", "gentle",
+        
+        # Emotions/Qualities  
+        "serene", "peaceful", "joyful", "cheerful", "brave", "kind", "wise", "clever",
+        "swift", "graceful", "elegant", "charming", "vibrant", "lively", "spirited", "bold",
+        "dreamy", "whimsical", "playful", "curious", "adventurous", "creative", "artistic",
+        
+        # Fantasy/Ethereal
+        "fairy", "sprite", "pixie", "angel", "phoenix", "dragon", "unicorn", "pegasus",
+        "starlight", "moonbeam", "sunray", "rainbow", "aurora", "nebula", "comet", "galaxy"
     ]
-    nouns = ["spark", "dream", "wish", "star", "moon", "light", "dawn", "dusk"]
+    
+    nouns = [
+        # Natural elements
+        "spark", "dream", "wish", "star", "moon", "light", "dawn", "dusk",
+        "flame", "ember", "glow", "shine", "beam", "ray", "gleam", "shimmer",
+        "breeze", "whisper", "echo", "song", "melody", "harmony", "rhythm", "dance",
+        
+        # Magical/Fantasy
+        "wand", "spell", "charm", "potion", "crystal", "gem", "jewel", "treasure",
+        "feather", "wing", "flight", "soar", "glide", "float", "drift", "flow",
+        "blossom", "petal", "bloom", "garden", "meadow", "grove", "haven", "sanctuary",
+        
+        # Abstract concepts
+        "spirit", "soul", "heart", "mind", "essence", "aura", "vibe", "energy",
+        "journey", "quest", "adventure", "discovery", "wonder", "mystery", "secret", "riddle",
+        "joy", "bliss", "peace", "calm", "zen", "balance", "harmony", "grace",
+        
+        # Celestial
+        "nova", "quasar", "orbit", "cosmos", "void", "infinity", "eternity", "horizon",
+        "eclipse", "solstice", "equinox", "constellation", "meteorite", "asteroid", "planet"
+    ]
 
     adj = secrets.choice(adjectives)
     noun = secrets.choice(nouns)
