@@ -4,6 +4,7 @@ from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 
+from auth import get_current_admin_user
 from models import (
     ReferralConfig,
     ReferralConfigUpdate,
@@ -11,7 +12,6 @@ from models import (
     ReferralRedemptionsResponse,
     ReferralSystemStats,
 )
-from shared.auth_middleware import TokenData, require_admin
 from shared.database import Database, get_db
 
 referrals_router = APIRouter()
@@ -19,7 +19,7 @@ referrals_router = APIRouter()
 
 @referrals_router.get("/config", response_model=ReferralConfig)
 async def get_referral_config(
-    admin_user: TokenData = Depends(require_admin),
+    admin_user: dict = Depends(get_current_admin_user),
     db: Database = Depends(get_db),
 ):
     """Get current referral system configuration"""
@@ -42,7 +42,7 @@ async def get_referral_config(
 @referrals_router.put("/config", response_model=ReferralConfig)
 async def update_referral_config(
     config_update: ReferralConfigUpdate,
-    admin_user: TokenData = Depends(require_admin),
+    admin_user: dict = Depends(get_current_admin_user),
     db: Database = Depends(get_db),
 ):
     """Update referral system configuration"""
@@ -79,7 +79,7 @@ async def update_referral_config(
 
 @referrals_router.get("/stats", response_model=ReferralSystemStats)
 async def get_referral_system_stats(
-    admin_user: TokenData = Depends(require_admin),
+    admin_user: dict = Depends(get_current_admin_user),
     db: Database = Depends(get_db),
 ):
     """Get system-wide referral statistics"""
@@ -189,7 +189,7 @@ async def get_referral_codes(
     limit: int = Query(50, ge=1, le=100),
     status: Optional[str] = Query(None, regex="^(active|expired|inactive)$"),
     user_search: Optional[str] = Query(None, min_length=1),
-    admin_user: TokenData = Depends(require_admin),
+    admin_user: dict = Depends(get_current_admin_user),
     db: Database = Depends(get_db),
 ):
     """View all referral codes with pagination"""
@@ -274,7 +274,7 @@ async def get_referral_redemptions(
     page: int = Query(1, ge=1),
     limit: int = Query(50, ge=1, le=100),
     date_from: Optional[str] = Query(None, regex=r"^\d{4}-\d{2}-\d{2}$"),
-    admin_user: TokenData = Depends(require_admin),
+    admin_user: dict = Depends(get_current_admin_user),
     db: Database = Depends(get_db),
 ):
     """View all referral redemptions"""
