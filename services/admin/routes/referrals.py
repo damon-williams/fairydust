@@ -510,7 +510,7 @@ async def create_promotional_code(
         raise HTTPException(status_code=400, detail="Promotional code already exists")
 
     # Insert new promotional code
-    code_id = await db.fetch_val(
+    result = await db.fetch_one(
         """
         INSERT INTO promotional_referral_codes (
             code, description, dust_bonus, max_uses, created_by, expires_at
@@ -524,6 +524,11 @@ async def create_promotional_code(
         admin_user["id"],
         code_create.expires_at,
     )
+    
+    if not result:
+        raise HTTPException(status_code=500, detail="Failed to create promotional code")
+    
+    code_id = result["id"]
 
     # Fetch the created code
     created_code = await db.fetch_one(
