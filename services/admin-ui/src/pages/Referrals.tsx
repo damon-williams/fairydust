@@ -80,7 +80,7 @@ export function Referrals() {
   const [codesError, setCodesError] = useState<string | null>(null);
   const [codesPage, setCodesPage] = useState(1);
   const [codesFilter, setCodesFilter] = useState<string>('');
-  const [codesStatusFilter, setCodesStatusFilter] = useState<string>('');
+  const [codesStatusFilter, setCodesStatusFilter] = useState<string>('all');
   const [codesSearch, setCodesSearch] = useState<string>('');
   
   // Redemptions state
@@ -95,7 +95,7 @@ export function Referrals() {
   const [promoCodesLoading, setPromoCodesLoading] = useState(false);
   const [promoCodesError, setPromoCodesError] = useState<string | null>(null);
   const [promoCodesPage, setPromoCodesPage] = useState(1);
-  const [promoCodesStatusFilter, setPromoCodesStatusFilter] = useState<string>('');
+  const [promoCodesStatusFilter, setPromoCodesStatusFilter] = useState<string>('all');
   const [newPromoCode, setNewPromoCode] = useState<PromotionalReferralCodeCreate>({
     code: '',
     description: '',
@@ -137,7 +137,7 @@ export function Referrals() {
       const data = await AdminAPI.getReferralCodes({
         page: codesPage,
         limit: 50,
-        status: codesStatusFilter || undefined,
+        status: codesStatusFilter && codesStatusFilter !== 'all' ? codesStatusFilter : undefined,
         user_search: codesSearch || undefined,
       });
       setCodes(data);
@@ -174,7 +174,7 @@ export function Referrals() {
       const data = await AdminAPI.getPromotionalCodes({
         page: promoCodesPage,
         limit: 50,
-        status: (promoCodesStatusFilter as 'active' | 'expired' | 'inactive') || undefined,
+        status: promoCodesStatusFilter && promoCodesStatusFilter !== 'all' ? (promoCodesStatusFilter as 'active' | 'expired' | 'inactive') : undefined,
       });
       setPromoCodes(data);
     } catch (err) {
@@ -505,7 +505,7 @@ export function Referrals() {
                       <SelectValue placeholder="All" />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="">All</SelectItem>
+                      <SelectItem value="all">All</SelectItem>
                       <SelectItem value="active">Active</SelectItem>
                       <SelectItem value="expired">Expired</SelectItem>
                       <SelectItem value="inactive">Inactive</SelectItem>
@@ -830,7 +830,7 @@ export function Referrals() {
                     <SelectValue placeholder="Filter by status" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="">All Statuses</SelectItem>
+                    <SelectItem value="all">All Statuses</SelectItem>
                     <SelectItem value="active">Active</SelectItem>
                     <SelectItem value="expired">Expired</SelectItem>
                     <SelectItem value="inactive">Inactive</SelectItem>
