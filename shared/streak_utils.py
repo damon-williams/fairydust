@@ -40,11 +40,12 @@ async def calculate_daily_streak_for_auth(
         last_login_date: User's last login timestamp
 
     Returns:
-        tuple of (calculated_streak_days, current_time, is_bonus_eligible, previous_streak_days)
+        tuple of (calculated_streak_days, current_time, is_bonus_eligible, current_streak_day)
 
     Business Rules:
-    - Streak resets to 1 if user misses any days (not 0)
-    - Maximum streak is 5 days (matches DUST bonus system)
+    - Streak continues indefinitely with 5-day reward cycle
+    - current_streak_day = ((total_streak_days - 1) % 5) + 1
+    - Streak resets to 1 if user misses any days
     - UTC-based calculation for global consistency
     - Same-day logins don't change streak
     - Bonus eligible on: first login ever, consecutive days, or after missed days
@@ -56,29 +57,32 @@ async def calculate_daily_streak_for_auth(
         # First login ever - eligible for bonus
         new_streak = 1
         is_bonus_eligible = True
-        previous_streak_days = 0
+        current_streak_day = 1
         # NO DATABASE UPDATE - return calculated values only
-        return new_streak, now, is_bonus_eligible, previous_streak_days
+        return new_streak, now, is_bonus_eligible, current_streak_day
 
     # Calculate days since last login (UTC-based)
     days_since = (now.date() - last_login_date.date()).days
-    previous_streak_days = current_streak
 
     if days_since == 0:
         # Same day, return current streak (no bonus)
         is_bonus_eligible = False
-        return current_streak, last_login_date, is_bonus_eligible, previous_streak_days
+        current_streak_day = ((current_streak - 1) % 5) + 1
+        return current_streak, last_login_date, is_bonus_eligible, current_streak_day
     elif days_since == 1:
-        # Consecutive day, increment (cap at 5) - eligible for bonus
-        new_streak = min(current_streak + 1, 5)
+        # Consecutive day, increment (no cap - infinite streak) - eligible for bonus
+        new_streak = current_streak + 1
         is_bonus_eligible = True
     else:
         # Missed days, reset to 1 - eligible for bonus (new streak starts)
         new_streak = 1
         is_bonus_eligible = True
 
+    # Calculate current streak day in 5-day cycle
+    current_streak_day = ((new_streak - 1) % 5) + 1
+
     # NO DATABASE UPDATE - return calculated values only
-    return new_streak, now, is_bonus_eligible, previous_streak_days
+    return new_streak, now, is_bonus_eligible, current_streak_day
 
 
 async def update_daily_streak_for_grant(
@@ -96,6 +100,11 @@ async def update_daily_streak_for_grant(
 
     Returns:
         tuple of (new_streak_days, updated_last_login_date)
+        
+    Business Rules:
+    - Streak continues indefinitely (no cap at 5)
+    - Streak resets to 1 if user misses any days
+    - Updates database with new values
     """
     now = datetime.utcnow()
 
@@ -122,8 +131,8 @@ async def update_daily_streak_for_grant(
         # Same day, no update needed
         return current_streak, last_login_date
     elif days_since == 1:
-        # Consecutive day, increment (cap at 5)
-        new_streak = min(current_streak + 1, 5)
+        # Consecutive day, increment (no cap - infinite streak)
+        new_streak = current_streak + 1
     else:
         # Missed days, reset to 1
         new_streak = 1

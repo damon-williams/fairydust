@@ -168,4 +168,4 @@ class AuthResponse(BaseModel):
     # Daily login bonus eligibility info
     is_first_login_today: bool = False
     streak_bonus_eligible: bool = False
-    previous_streak_days: int = 0
+    current_streak_day: int = 1
