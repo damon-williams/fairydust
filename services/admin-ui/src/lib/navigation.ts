@@ -4,7 +4,8 @@ import {
   Smartphone,
   Brain,
   Activity,
-  Settings
+  Settings,
+  UserPlus
 } from 'lucide-react';
 
 export interface NavigationItem {
@@ -37,6 +38,11 @@ export const navigation: NavigationItem[] = [
     name: 'LLM Analytics',
     href: '/admin/llm',
     icon: Brain,
+  },
+  {
+    name: 'Referrals',
+    href: '/admin/referrals',
+    icon: UserPlus,
   },
   {
     name: 'System Status',

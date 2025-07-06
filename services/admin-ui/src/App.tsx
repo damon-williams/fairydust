@@ -4,6 +4,7 @@ import { Dashboard } from '@/pages/Dashboard';
 import { Users } from '@/pages/Users';
 import { Apps } from '@/pages/Apps';
 import { LLM } from '@/pages/LLM';
+import { Referrals } from '@/pages/Referrals';
 import { SystemStatus } from '@/pages/SystemStatus';
 import { Toaster } from '@/components/ui/sonner';
 import { AuthProvider } from '@/contexts/AuthContext';
@@ -27,6 +28,7 @@ function App() {
                     <Route path="users" element={<Users />} />
                     <Route path="apps" element={<Apps />} />
                     <Route path="llm" element={<LLM />} />
+                    <Route path="referrals" element={<Referrals />} />
                     <Route path="system" element={<SystemStatus />} />
                     <Route path="settings" element={
                       <div className="flex items-center justify-center h-64">

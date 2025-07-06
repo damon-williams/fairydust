@@ -96,3 +96,75 @@ export interface ActionPricing {
   created_at: string;
   updated_at: string;
 }
+
+// Referral system types
+export interface MilestoneReward {
+  referral_count: number;
+  bonus_amount: number;
+}
+
+export interface ReferralConfig {
+  referee_bonus: number;
+  referrer_bonus: number;
+  milestone_rewards: MilestoneReward[];
+  code_expiry_days: number;
+  max_referrals_per_user: number;
+  system_enabled: boolean;
+}
+
+export interface TopReferrer {
+  user_id: string;
+  fairyname: string;
+  successful_referrals: number;
+  total_dust_earned: number;
+}
+
+export interface DailyStat {
+  date: string;
+  codes_created: number;
+  successful_referrals: number;
+  dust_granted: number;
+}
+
+export interface ReferralSystemStats {
+  total_codes_created: number;
+  total_successful_referrals: number;
+  conversion_rate: number;
+  total_dust_granted: number;
+  top_referrers: TopReferrer[];
+  daily_stats: DailyStat[];
+}
+
+export interface ReferralCodeDisplay {
+  referral_code: string;
+  user_id: string;
+  user_name: string;
+  created_at: string;
+  status: 'active' | 'expired' | 'inactive';
+  successful_referrals: number;
+}
+
+export interface ReferralCodesResponse {
+  codes: ReferralCodeDisplay[];
+  total: number;
+  page: number;
+  page_size: number;
+  has_more: boolean;
+}
+
+export interface ReferralRedemptionDisplay {
+  referral_code: string;
+  referrer_name: string;
+  referee_name: string;
+  redeemed_at: string;
+  referee_bonus: number;
+  referrer_bonus: number;
+}
+
+export interface ReferralRedemptionsResponse {
+  redemptions: ReferralRedemptionDisplay[];
+  total: number;
+  page: number;
+  page_size: number;
+  has_more: boolean;
+}
