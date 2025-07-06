@@ -63,10 +63,6 @@ async def get_users_json(
                 "country": user["country"],
                 "dust_balance": user["dust_balance"],
                 "auth_provider": user["auth_provider"] or "email",
-                "last_profiling_session": user["last_profiling_session"].isoformat()
-                if user["last_profiling_session"]
-                else None,
-                "total_profiling_sessions": user["total_profiling_sessions"] or 0,
                 "streak_days": user["streak_days"] or 0,
                 "last_login_date": user["last_login_date"].isoformat()
                 if user["last_login_date"]
