@@ -232,11 +232,45 @@ export function Referrals() {
 
   const handleCreatePromoCode = async () => {
     try {
+      // Validate required fields
+      if (!newPromoCode.code || newPromoCode.code.length < 3) {
+        toast.error('Code must be at least 3 characters long');
+        return;
+      }
+      
+      if (!newPromoCode.description || newPromoCode.description.length < 1) {
+        toast.error('Description is required');
+        return;
+      }
+      
+      if (!newPromoCode.dust_bonus || newPromoCode.dust_bonus < 1 || newPromoCode.dust_bonus > 1000) {
+        toast.error('DUST bonus must be between 1 and 1000');
+        return;
+      }
+      
+      if (!newPromoCode.expires_at) {
+        toast.error('Expiration date is required');
+        return;
+      }
+      
       // Convert datetime-local format to ISO datetime for backend
+      const expirationDate = new Date(newPromoCode.expires_at);
+      if (isNaN(expirationDate.getTime())) {
+        toast.error('Invalid expiration date');
+        return;
+      }
+      
+      if (expirationDate <= new Date()) {
+        toast.error('Expiration date must be in the future');
+        return;
+      }
+      
       const promoCodeData = {
         ...newPromoCode,
-        expires_at: new Date(newPromoCode.expires_at).toISOString()
+        expires_at: expirationDate.toISOString()
       };
+      
+      console.log('Sending promotional code data:', promoCodeData);
       
       await AdminAPI.createPromotionalCode(promoCodeData);
       setPromoCodeDialog(false);
