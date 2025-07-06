@@ -24,8 +24,7 @@ async def get_users_json(
     base_query = """
         SELECT id, fairyname, email, phone, is_builder, is_admin, is_active,
                dust_balance, created_at, updated_at, auth_provider, city, country,
-               streak_days, avatar_url, first_name, birth_date,
-               last_profiling_session, total_profiling_sessions, last_login_date
+               streak_days, avatar_url, first_name, birth_date, last_login_date
         FROM users
     """
     count_query = "SELECT COUNT(*) as total FROM users"

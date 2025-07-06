@@ -135,7 +135,7 @@ async def get_recent_users(
     """Get recent users for React app"""
     recent_users = await db.fetch_all(
         """SELECT id, fairyname, email, phone, is_builder, is_admin, is_active,
-                  dust_balance, auth_provider, total_profiling_sessions, streak_days,
+                  dust_balance, auth_provider, streak_days,
                   created_at, updated_at
            FROM users WHERE is_active = true
            ORDER BY created_at DESC LIMIT 10"""
