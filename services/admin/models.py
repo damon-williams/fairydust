@@ -86,3 +86,58 @@ class ReferralRedemptionsResponse(BaseModel):
     page: int
     page_size: int
     has_more: bool
+
+
+# Promotional referral code models
+class PromotionalReferralCode(BaseModel):
+    id: UUID
+    code: str
+    description: str
+    dust_bonus: int
+    max_uses: Optional[int] = None
+    current_uses: int = 0
+    created_by: UUID
+    created_at: datetime
+    expires_at: datetime
+    is_active: bool
+
+
+class PromotionalReferralCodeCreate(BaseModel):
+    code: str = Field(..., min_length=3, max_length=20, description="Promotional code")
+    description: str = Field(..., min_length=1, max_length=500, description="Description of the promotion")
+    dust_bonus: int = Field(..., ge=1, le=1000, description="DUST bonus for users who redeem this code")
+    max_uses: Optional[int] = Field(None, ge=1, le=100000, description="Maximum number of uses (unlimited if None)")
+    expires_at: datetime = Field(..., description="When the code expires")
+
+
+class PromotionalReferralCodeUpdate(BaseModel):
+    description: Optional[str] = Field(None, min_length=1, max_length=500)
+    dust_bonus: Optional[int] = Field(None, ge=1, le=1000)
+    max_uses: Optional[int] = Field(None, ge=1, le=100000)
+    expires_at: Optional[datetime] = None
+    is_active: Optional[bool] = None
+
+
+class PromotionalReferralCodesResponse(BaseModel):
+    codes: list[PromotionalReferralCode]
+    total: int
+    page: int
+    page_size: int
+    has_more: bool
+
+
+class PromotionalReferralRedemption(BaseModel):
+    id: UUID
+    promotional_code: str
+    user_id: UUID
+    user_name: str
+    dust_bonus: int
+    redeemed_at: datetime
+
+
+class PromotionalReferralRedemptionsResponse(BaseModel):
+    redemptions: list[PromotionalReferralRedemption]
+    total: int
+    page: int
+    page_size: int
+    has_more: bool

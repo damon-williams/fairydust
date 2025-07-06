@@ -168,3 +168,50 @@ export interface ReferralRedemptionsResponse {
   page_size: number;
   has_more: boolean;
 }
+
+// Promotional referral code types
+export interface PromotionalReferralCode {
+  id: string;
+  code: string;
+  description: string;
+  dust_bonus: number;
+  max_uses?: number;
+  current_uses: number;
+  created_by: string;
+  created_at: string;
+  expires_at: string;
+  is_active: boolean;
+}
+
+export interface PromotionalReferralCodeCreate {
+  code: string;
+  description: string;
+  dust_bonus: number;
+  max_uses?: number;
+  expires_at: string;
+}
+
+export interface PromotionalReferralCodesResponse {
+  codes: PromotionalReferralCode[];
+  total: number;
+  page: number;
+  page_size: number;
+  has_more: boolean;
+}
+
+export interface PromotionalReferralRedemption {
+  id: string;
+  promotional_code: string;
+  user_id: string;
+  user_name: string;
+  dust_bonus: number;
+  redeemed_at: string;
+}
+
+export interface PromotionalReferralRedemptionsResponse {
+  redemptions: PromotionalReferralRedemption[];
+  total: number;
+  page: number;
+  page_size: number;
+  has_more: boolean;
+}

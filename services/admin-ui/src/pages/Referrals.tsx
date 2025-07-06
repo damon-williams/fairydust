@@ -37,7 +37,10 @@ import {
   ReferralSystemStats, 
   ReferralCodesResponse, 
   ReferralRedemptionsResponse,
-  MilestoneReward
+  MilestoneReward,
+  PromotionalReferralCode,
+  PromotionalReferralCodeCreate,
+  PromotionalReferralCodesResponse
 } from '@/types/admin';
 import { 
   RefreshCw, 
@@ -84,6 +87,20 @@ export function Referrals() {
   const [redemptionsLoading, setRedemptionsLoading] = useState(false);
   const [redemptionsPage, setRedemptionsPage] = useState(1);
   const [redemptionsDateFrom, setRedemptionsDateFrom] = useState<string>('');
+
+  // Promotional codes state
+  const [promoCodeDialog, setPromoCodeDialog] = useState(false);
+  const [promoCodes, setPromoCodes] = useState<PromotionalReferralCodesResponse | null>(null);
+  const [promoCodesLoading, setPromoCodesLoading] = useState(false);
+  const [promoCodesPage, setPromoCodesPage] = useState(1);
+  const [promoCodesStatusFilter, setPromoCodesStatusFilter] = useState<string>('');
+  const [newPromoCode, setNewPromoCode] = useState<PromotionalReferralCodeCreate>({
+    code: '',
+    description: '',
+    dust_bonus: 10,
+    max_uses: undefined,
+    expires_at: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().slice(0, 16),
+  });
 
   const loadConfig = async () => {
     try {
@@ -146,6 +163,23 @@ export function Referrals() {
     }
   };
 
+  const loadPromoCodes = async () => {
+    try {
+      setPromoCodesLoading(true);
+      const data = await AdminAPI.getPromotionalCodes({
+        page: promoCodesPage,
+        limit: 50,
+        status: (promoCodesStatusFilter as 'active' | 'expired' | 'inactive') || undefined,
+      });
+      setPromoCodes(data);
+    } catch (err) {
+      console.error('Failed to load promotional codes:', err);
+      toast.error('Failed to load promotional codes');
+    } finally {
+      setPromoCodesLoading(false);
+    }
+  };
+
   const handleUpdateConfig = async () => {
     if (!config) return;
     
@@ -190,12 +224,31 @@ export function Referrals() {
     setConfig({ ...config, milestone_rewards: newMilestones });
   };
 
+  const handleCreatePromoCode = async () => {
+    try {
+      await AdminAPI.createPromotionalCode(newPromoCode);
+      setPromoCodeDialog(false);
+      toast.success('Promotional code created successfully');
+      setNewPromoCode({
+        code: '',
+        description: '',
+        dust_bonus: 10,
+        max_uses: undefined,
+        expires_at: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().slice(0, 16),
+      });
+      await loadPromoCodes();
+    } catch (err) {
+      console.error('Failed to create promotional code:', err);
+      toast.error('Failed to create promotional code');
+    }
+  };
+
   useEffect(() => {
     const loadAll = async () => {
       setLoading(true);
       setError(null);
       try {
-        await Promise.all([loadConfig(), loadStats(), loadCodes(), loadRedemptions()]);
+        await Promise.all([loadConfig(), loadStats(), loadCodes(), loadRedemptions(), loadPromoCodes()]);
       } catch (err) {
         setError('Failed to load referral data');
       } finally {
@@ -219,6 +272,13 @@ export function Referrals() {
       loadRedemptions();
     }
   }, [redemptionsPage, redemptionsDateFrom]);
+
+  // Reload promotional codes when filters change
+  useEffect(() => {
+    if (!loading) {
+      loadPromoCodes();
+    }
+  }, [promoCodesPage, promoCodesStatusFilter]);
 
   const getStatusIcon = (status: string) => {
     switch (status) {
@@ -364,6 +424,7 @@ export function Referrals() {
         <TabsList>
           <TabsTrigger value="overview">Overview</TabsTrigger>
           <TabsTrigger value="codes">Referral Codes</TabsTrigger>
+          <TabsTrigger value="promotional">Promotional Codes</TabsTrigger>
           <TabsTrigger value="redemptions">Redemptions</TabsTrigger>
           <TabsTrigger value="analytics">Analytics</TabsTrigger>
         </TabsList>
@@ -645,6 +706,217 @@ export function Referrals() {
                 <BarChart3 className="h-12 w-12 mx-auto mb-4 text-slate-300" />
                 Analytics charts coming soon...
               </div>
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        <TabsContent value="promotional" className="space-y-6">
+          <Card>
+            <CardHeader>
+              <div className="flex justify-between items-center">
+                <div>
+                  <CardTitle>Promotional Codes</CardTitle>
+                  <p className="text-sm text-muted-foreground mt-1">
+                    Create and manage one-off promotional referral codes
+                  </p>
+                </div>
+                <Dialog open={promoCodeDialog} onOpenChange={setPromoCodeDialog}>
+                  <DialogTrigger asChild>
+                    <Button>
+                      <Plus className="h-4 w-4 mr-2" />
+                      Create Code
+                    </Button>
+                  </DialogTrigger>
+                  <DialogContent>
+                    <DialogHeader>
+                      <DialogTitle>Create Promotional Code</DialogTitle>
+                      <DialogDescription>
+                        Create a new promotional referral code for special campaigns
+                      </DialogDescription>
+                    </DialogHeader>
+                    <div className="space-y-4">
+                      <div>
+                        <Label htmlFor="promo-code">Code</Label>
+                        <Input
+                          id="promo-code"
+                          value={newPromoCode.code}
+                          onChange={(e) => setNewPromoCode({ ...newPromoCode, code: e.target.value.toUpperCase() })}
+                          placeholder="PROMO2024"
+                          maxLength={20}
+                        />
+                      </div>
+                      <div>
+                        <Label htmlFor="promo-description">Description</Label>
+                        <Textarea
+                          id="promo-description"
+                          value={newPromoCode.description}
+                          onChange={(e) => setNewPromoCode({ ...newPromoCode, description: e.target.value })}
+                          placeholder="Special promotion for new users"
+                        />
+                      </div>
+                      <div>
+                        <Label htmlFor="promo-dust">DUST Bonus</Label>
+                        <Input
+                          id="promo-dust"
+                          type="number"
+                          min="1"
+                          max="1000"
+                          value={newPromoCode.dust_bonus}
+                          onChange={(e) => setNewPromoCode({ ...newPromoCode, dust_bonus: parseInt(e.target.value) || 0 })}
+                        />
+                      </div>
+                      <div>
+                        <Label htmlFor="promo-max-uses">Max Uses (Optional)</Label>
+                        <Input
+                          id="promo-max-uses"
+                          type="number"
+                          min="1"
+                          value={newPromoCode.max_uses || ''}
+                          onChange={(e) => setNewPromoCode({ 
+                            ...newPromoCode, 
+                            max_uses: e.target.value ? parseInt(e.target.value) : undefined 
+                          })}
+                          placeholder="Leave empty for unlimited"
+                        />
+                      </div>
+                      <div>
+                        <Label htmlFor="promo-expires">Expires At</Label>
+                        <Input
+                          id="promo-expires"
+                          type="datetime-local"
+                          value={newPromoCode.expires_at}
+                          onChange={(e) => setNewPromoCode({ ...newPromoCode, expires_at: e.target.value })}
+                        />
+                      </div>
+                    </div>
+                    <DialogFooter>
+                      <Button variant="outline" onClick={() => setPromoCodeDialog(false)}>
+                        Cancel
+                      </Button>
+                      <Button onClick={handleCreatePromoCode}>
+                        Create Code
+                      </Button>
+                    </DialogFooter>
+                  </DialogContent>
+                </Dialog>
+              </div>
+            </CardHeader>
+            <CardContent>
+              {/* Filters */}
+              <div className="flex space-x-4 mb-6">
+                <Select value={promoCodesStatusFilter} onValueChange={setPromoCodesStatusFilter}>
+                  <SelectTrigger className="w-48">
+                    <SelectValue placeholder="Filter by status" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="">All Statuses</SelectItem>
+                    <SelectItem value="active">Active</SelectItem>
+                    <SelectItem value="expired">Expired</SelectItem>
+                    <SelectItem value="inactive">Inactive</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
+              {promoCodesLoading ? (
+                <div className="flex items-center justify-center py-8">
+                  <RefreshCw className="h-6 w-6 animate-spin mr-2" />
+                  Loading promotional codes...
+                </div>
+              ) : promoCodes && promoCodes.codes.length > 0 ? (
+                <>
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Code</TableHead>
+                        <TableHead>Description</TableHead>
+                        <TableHead>DUST Bonus</TableHead>
+                        <TableHead>Usage</TableHead>
+                        <TableHead>Status</TableHead>
+                        <TableHead>Expires</TableHead>
+                        <TableHead>Actions</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {promoCodes.codes.map((code) => (
+                        <TableRow key={code.id}>
+                          <TableCell className="font-mono font-medium">{code.code}</TableCell>
+                          <TableCell>{code.description}</TableCell>
+                          <TableCell>
+                            <Badge variant="secondary">{code.dust_bonus} DUST</Badge>
+                          </TableCell>
+                          <TableCell>
+                            {code.current_uses}{code.max_uses ? ` / ${code.max_uses}` : ' / ∞'}
+                          </TableCell>
+                          <TableCell>
+                            <Badge 
+                              variant={
+                                !code.is_active ? 'destructive' :
+                                new Date(code.expires_at) < new Date() ? 'secondary' :
+                                'default'
+                              }
+                            >
+                              {!code.is_active ? 'Inactive' :
+                               new Date(code.expires_at) < new Date() ? 'Expired' :
+                               'Active'}
+                            </Badge>
+                          </TableCell>
+                          <TableCell>
+                            {format(new Date(code.expires_at), 'MMM d, yyyy')}
+                          </TableCell>
+                          <TableCell>
+                            <Button 
+                              variant="destructive" 
+                              size="sm"
+                              onClick={async () => {
+                                try {
+                                  await AdminAPI.deletePromotionalCode(code.id);
+                                  toast.success('Promotional code deleted');
+                                  await loadPromoCodes();
+                                } catch (err) {
+                                  console.error('Failed to delete code:', err);
+                                  toast.error('Failed to delete promotional code');
+                                }
+                              }}
+                            >
+                              Delete
+                            </Button>
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                  
+                  {/* Pagination */}
+                  <div className="flex items-center justify-between mt-4">
+                    <div className="text-sm text-muted-foreground">
+                      Showing {((promoCodesPage - 1) * 50) + 1} to {Math.min(promoCodesPage * 50, promoCodes.total)} of {promoCodes.total} codes
+                    </div>
+                    <div className="flex space-x-2">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => setPromoCodesPage(p => Math.max(1, p - 1))}
+                        disabled={promoCodesPage <= 1}
+                      >
+                        Previous
+                      </Button>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => setPromoCodesPage(p => p + 1)}
+                        disabled={!promoCodes.has_more}
+                      >
+                        Next
+                      </Button>
+                    </div>
+                  </div>
+                </>
+              ) : (
+                <div className="text-center py-8 text-slate-500">
+                  <Gift className="h-12 w-12 mx-auto mb-4 text-slate-300" />
+                  No promotional codes found
+                </div>
+              )}
             </CardContent>
           </Card>
         </TabsContent>

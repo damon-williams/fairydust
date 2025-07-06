@@ -13,6 +13,10 @@ from models import (
     AppValidation,
     LLMUsageLogCreate,
     LLMUsageStats,
+    PromotionalReferralRedeemRequest,
+    PromotionalReferralRedeemResponse,
+    PromotionalReferralValidateRequest,
+    PromotionalReferralValidateResponse,
     RecentReferral,
     ReferralCompleteRequest,
     ReferralCompleteResponse,
@@ -1411,4 +1415,196 @@ async def get_user_referral_stats(
         total_dust_earned=total_dust_earned,
         next_milestone=next_milestone,
         recent_referrals=recent_referrals,
+    )
+
+
+# ============================================================================
+# PROMOTIONAL REFERRAL ROUTES
+# ============================================================================
+
+
+@referral_router.post("/promotional/validate", response_model=PromotionalReferralValidateResponse)
+async def validate_promotional_referral_code(
+    request: PromotionalReferralValidateRequest,
+    current_user: TokenData = Depends(get_current_user),
+    db: Database = Depends(get_db),
+):
+    """Validate a promotional referral code"""
+    # Get promotional code details
+    code_data = await db.fetch_one(
+        """
+        SELECT id, code, description, dust_bonus, max_uses, current_uses, expires_at, is_active
+        FROM promotional_referral_codes
+        WHERE code = $1
+        """,
+        request.promotional_code.upper(),
+    )
+
+    if not code_data:
+        return PromotionalReferralValidateResponse(
+            valid=False,
+            expired=False,
+            max_uses_reached=False,
+            already_redeemed=False,
+            dust_bonus=0,
+            description="",
+        )
+
+    # Check if code is expired
+    from datetime import timezone
+    now = datetime.now(timezone.utc)
+    is_expired = code_data["expires_at"] < now
+    is_active = code_data["is_active"]
+
+    # Check if max uses reached
+    max_uses_reached = False
+    if code_data["max_uses"] is not None:
+        max_uses_reached = code_data["current_uses"] >= code_data["max_uses"]
+
+    # Check if user already redeemed this code
+    already_redeemed = False
+    existing_redemption = await db.fetch_one(
+        """
+        SELECT id FROM promotional_referral_redemptions
+        WHERE promotional_code = $1 AND user_id = $2
+        """,
+        request.promotional_code.upper(),
+        current_user.user_id,
+    )
+    
+    if existing_redemption:
+        already_redeemed = True
+
+    if not is_active or is_expired or max_uses_reached or already_redeemed:
+        return PromotionalReferralValidateResponse(
+            valid=False,
+            expired=is_expired,
+            max_uses_reached=max_uses_reached,
+            already_redeemed=already_redeemed,
+            dust_bonus=code_data["dust_bonus"],
+            description=code_data["description"],
+        )
+
+    return PromotionalReferralValidateResponse(
+        valid=True,
+        expired=False,
+        max_uses_reached=False,
+        already_redeemed=False,
+        dust_bonus=code_data["dust_bonus"],
+        description=code_data["description"],
+    )
+
+
+@referral_router.post("/promotional/redeem", response_model=PromotionalReferralRedeemResponse)
+async def redeem_promotional_referral_code(
+    request: PromotionalReferralRedeemRequest,
+    db: Database = Depends(get_db),
+):
+    """Redeem a promotional referral code for DUST bonus"""
+    # Validate promotional code exists and is active
+    code_data = await db.fetch_one(
+        """
+        SELECT id, code, description, dust_bonus, max_uses, current_uses, expires_at, is_active
+        FROM promotional_referral_codes
+        WHERE code = $1 AND is_active = true
+        """,
+        request.promotional_code.upper(),
+    )
+
+    if not code_data:
+        raise HTTPException(status_code=400, detail="Invalid promotional code")
+
+    # Check if code is expired
+    from datetime import timezone
+    now = datetime.now(timezone.utc)
+    if code_data["expires_at"] < now:
+        raise HTTPException(status_code=400, detail="Promotional code has expired")
+
+    # Check if max uses reached
+    if code_data["max_uses"] is not None and code_data["current_uses"] >= code_data["max_uses"]:
+        raise HTTPException(status_code=400, detail="Promotional code has reached maximum uses")
+
+    # Check if user already redeemed this code
+    existing_redemption = await db.fetch_one(
+        """
+        SELECT id FROM promotional_referral_redemptions
+        WHERE promotional_code = $1 AND user_id = $2
+        """,
+        request.promotional_code.upper(),
+        request.user_id,
+    )
+    
+    if existing_redemption:
+        raise HTTPException(status_code=400, detail="You have already redeemed this promotional code")
+
+    # Start transaction for atomic operations
+    async with db.pool.acquire() as conn:
+        async with conn.transaction():
+            # Record the redemption
+            await conn.execute(
+                """
+                INSERT INTO promotional_referral_redemptions (
+                    promotional_code, user_id, dust_bonus
+                ) VALUES ($1, $2, $3)
+                """,
+                request.promotional_code.upper(),
+                request.user_id,
+                code_data["dust_bonus"],
+            )
+
+            # Update usage count
+            await conn.execute(
+                """
+                UPDATE promotional_referral_codes
+                SET current_uses = current_uses + 1
+                WHERE id = $1
+                """,
+                code_data["id"],
+            )
+
+            # Grant DUST to user via ledger service
+            import httpx
+            import os
+
+            environment = os.getenv("ENVIRONMENT", "staging")
+            base_url_suffix = "production" if environment == "production" else "staging"
+            ledger_url = f"https://fairydust-ledger-{base_url_suffix}.up.railway.app"
+
+            try:
+                async with httpx.AsyncClient() as client:
+                    ledger_response = await client.post(
+                        f"{ledger_url}/dust/grant",
+                        json={
+                            "user_id": str(request.user_id),
+                            "amount": code_data["dust_bonus"],
+                            "reason": f"Promotional code redemption: {request.promotional_code.upper()}",
+                            "metadata": {
+                                "promotional_code": request.promotional_code.upper(),
+                                "description": code_data["description"],
+                            },
+                        },
+                        timeout=10.0,
+                    )
+                    
+                    if ledger_response.status_code != 200:
+                        raise HTTPException(
+                            status_code=500,
+                            detail=f"Failed to grant DUST bonus: {ledger_response.text}",
+                        )
+
+            except httpx.TimeoutException:
+                raise HTTPException(
+                    status_code=500,
+                    detail="Timeout while granting DUST bonus",
+                )
+            except Exception as e:
+                raise HTTPException(
+                    status_code=500,
+                    detail=f"Failed to grant DUST bonus: {str(e)}",
+                )
+
+    return PromotionalReferralRedeemResponse(
+        success=True,
+        dust_bonus_granted=code_data["dust_bonus"],
+        description=code_data["description"],
     )

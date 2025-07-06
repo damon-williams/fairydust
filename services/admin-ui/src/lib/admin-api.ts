@@ -8,7 +8,11 @@ import {
   ReferralConfig,
   ReferralSystemStats,
   ReferralCodesResponse,
-  ReferralRedemptionsResponse
+  ReferralRedemptionsResponse,
+  PromotionalReferralCode,
+  PromotionalReferralCodeCreate,
+  PromotionalReferralCodesResponse,
+  PromotionalReferralRedemptionsResponse
 } from '@/types/admin';
 
 const API_BASE = window.location.origin;
@@ -655,6 +659,123 @@ export class AdminAPI {
       throw new Error('Failed to fetch referral redemptions');
     } catch (error) {
       console.error('Failed to get referral redemptions:', error);
+      throw error;
+    }
+  }
+
+  // Promotional Referral Code APIs
+  static async getPromotionalCodes(params?: {
+    page?: number;
+    limit?: number;
+    status?: 'active' | 'expired' | 'inactive';
+  }): Promise<PromotionalReferralCodesResponse> {
+    try {
+      const queryParams = new URLSearchParams();
+      if (params?.page) queryParams.append('page', params.page.toString());
+      if (params?.limit) queryParams.append('limit', params.limit.toString());
+      if (params?.status) queryParams.append('status', params.status);
+
+      const response = await fetch(`${API_BASE}/admin/referrals/promotional-codes?${queryParams}`, {
+        credentials: 'include',
+      });
+      
+      if (response.ok) {
+        return await response.json();
+      }
+      
+      throw new Error('Failed to fetch promotional codes');
+    } catch (error) {
+      console.error('Failed to get promotional codes:', error);
+      throw error;
+    }
+  }
+
+  static async createPromotionalCode(data: PromotionalReferralCodeCreate): Promise<PromotionalReferralCode> {
+    try {
+      const response = await fetch(`${API_BASE}/admin/referrals/promotional-codes`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        credentials: 'include',
+        body: JSON.stringify(data),
+      });
+      
+      if (response.ok) {
+        return await response.json();
+      }
+      
+      throw new Error('Failed to create promotional code');
+    } catch (error) {
+      console.error('Failed to create promotional code:', error);
+      throw error;
+    }
+  }
+
+  static async updatePromotionalCode(
+    codeId: string, 
+    data: Partial<PromotionalReferralCodeCreate>
+  ): Promise<PromotionalReferralCode> {
+    try {
+      const response = await fetch(`${API_BASE}/admin/referrals/promotional-codes/${codeId}`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        credentials: 'include',
+        body: JSON.stringify(data),
+      });
+      
+      if (response.ok) {
+        return await response.json();
+      }
+      
+      throw new Error('Failed to update promotional code');
+    } catch (error) {
+      console.error('Failed to update promotional code:', error);
+      throw error;
+    }
+  }
+
+  static async deletePromotionalCode(codeId: string): Promise<void> {
+    try {
+      const response = await fetch(`${API_BASE}/admin/referrals/promotional-codes/${codeId}`, {
+        method: 'DELETE',
+        credentials: 'include',
+      });
+      
+      if (!response.ok) {
+        throw new Error('Failed to delete promotional code');
+      }
+    } catch (error) {
+      console.error('Failed to delete promotional code:', error);
+      throw error;
+    }
+  }
+
+  static async getPromotionalCodeRedemptions(
+    codeId: string,
+    params?: { page?: number; limit?: number }
+  ): Promise<PromotionalReferralRedemptionsResponse> {
+    try {
+      const queryParams = new URLSearchParams();
+      if (params?.page) queryParams.append('page', params.page.toString());
+      if (params?.limit) queryParams.append('limit', params.limit.toString());
+
+      const response = await fetch(
+        `${API_BASE}/admin/referrals/promotional-codes/${codeId}/redemptions?${queryParams}`, 
+        {
+          credentials: 'include',
+        }
+      );
+      
+      if (response.ok) {
+        return await response.json();
+      }
+      
+      throw new Error('Failed to fetch promotional code redemptions');
+    } catch (error) {
+      console.error('Failed to get promotional code redemptions:', error);
       throw error;
     }
   }

@@ -1226,6 +1226,46 @@ async def create_tables():
     """
     )
 
+    # Promotional Referral Codes table
+    await db.execute_schema(
+        """
+        CREATE TABLE IF NOT EXISTS promotional_referral_codes (
+            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            code VARCHAR(20) UNIQUE NOT NULL,
+            description TEXT NOT NULL,
+            dust_bonus INTEGER NOT NULL,
+            max_uses INTEGER,
+            current_uses INTEGER DEFAULT 0,
+            created_by UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+            expires_at TIMESTAMP WITH TIME ZONE NOT NULL,
+            is_active BOOLEAN DEFAULT true
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_promotional_codes_code ON promotional_referral_codes(code);
+        CREATE INDEX IF NOT EXISTS idx_promotional_codes_active ON promotional_referral_codes(is_active, expires_at);
+        CREATE INDEX IF NOT EXISTS idx_promotional_codes_usage ON promotional_referral_codes(current_uses, max_uses);
+    """
+    )
+
+    # Promotional Referral Redemptions table
+    await db.execute_schema(
+        """
+        CREATE TABLE IF NOT EXISTS promotional_referral_redemptions (
+            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            promotional_code VARCHAR(20) NOT NULL,
+            user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            dust_bonus INTEGER NOT NULL,
+            redeemed_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE(promotional_code, user_id)
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_promotional_redemptions_code ON promotional_referral_redemptions(promotional_code);
+        CREATE INDEX IF NOT EXISTS idx_promotional_redemptions_user ON promotional_referral_redemptions(user_id);
+        CREATE INDEX IF NOT EXISTS idx_promotional_redemptions_redeemed ON promotional_referral_redemptions(redeemed_at DESC);
+    """
+    )
+
     # Insert fairydust-invite app if it doesn't exist
     try:
         await db.execute_schema(

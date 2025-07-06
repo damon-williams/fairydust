@@ -209,6 +209,31 @@ class ReferralCompleteResponse(BaseModel):
     milestone_bonus: int = 0
 
 
+# Promotional referral code models
+class PromotionalReferralValidateRequest(BaseModel):
+    promotional_code: str = Field(..., min_length=3, max_length=20)
+
+
+class PromotionalReferralValidateResponse(BaseModel):
+    valid: bool
+    expired: bool
+    max_uses_reached: bool
+    already_redeemed: bool
+    dust_bonus: int
+    description: str
+
+
+class PromotionalReferralRedeemRequest(BaseModel):
+    promotional_code: str = Field(..., min_length=3, max_length=20)
+    user_id: UUID
+
+
+class PromotionalReferralRedeemResponse(BaseModel):
+    success: bool
+    dust_bonus_granted: int
+    description: str
+
+
 class RecentReferral(BaseModel):
     id: UUID
     referee_name: str

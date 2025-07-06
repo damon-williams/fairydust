@@ -11,6 +11,11 @@ from models import (
     ReferralCodesResponse,
     ReferralRedemptionsResponse,
     ReferralSystemStats,
+    PromotionalReferralCode,
+    PromotionalReferralCodeCreate,
+    PromotionalReferralCodeUpdate,
+    PromotionalReferralCodesResponse,
+    PromotionalReferralRedemptionsResponse,
 )
 from shared.database import Database, get_db
 
@@ -334,6 +339,315 @@ async def get_referral_redemptions(
     ]
 
     return ReferralRedemptionsResponse(
+        redemptions=redemptions,
+        total=total,
+        page=page,
+        page_size=limit,
+        has_more=(offset + limit) < total,
+    )
+
+
+# Promotional referral codes endpoints
+@referrals_router.get("/promotional-codes", response_model=PromotionalReferralCodesResponse)
+async def get_promotional_codes(
+    page: int = Query(1, ge=1),
+    limit: int = Query(50, ge=1, le=100),
+    status: Optional[str] = Query(None, regex="^(active|expired|inactive)$"),
+    admin_user: dict = Depends(get_current_admin_user),
+    db: Database = Depends(get_db),
+):
+    """View all promotional referral codes with pagination"""
+    offset = (page - 1) * limit
+
+    # Build WHERE conditions
+    where_conditions = []
+    params = []
+    param_count = 1
+
+    if status:
+        if status == "active":
+            where_conditions.append("is_active = true AND expires_at > CURRENT_TIMESTAMP")
+        elif status == "expired":
+            where_conditions.append("expires_at <= CURRENT_TIMESTAMP")
+        elif status == "inactive":
+            where_conditions.append("is_active = false")
+
+    where_clause = "WHERE " + " AND ".join(where_conditions) if where_conditions else ""
+
+    # Get total count
+    total_query = f"""
+        SELECT COUNT(*) as total
+        FROM promotional_referral_codes
+        {where_clause}
+    """
+    total_result = await db.fetch_one(total_query, *params)
+    total = total_result["total"]
+
+    # Get codes with pagination
+    codes_query = f"""
+        SELECT 
+            id, code, description, dust_bonus, max_uses, current_uses,
+            created_by, created_at, expires_at, is_active
+        FROM promotional_referral_codes
+        {where_clause}
+        ORDER BY created_at DESC
+        LIMIT ${param_count} OFFSET ${param_count + 1}
+    """
+    params.extend([limit, offset])
+
+    codes_data = await db.fetch_all(codes_query, *params)
+
+    codes = [
+        PromotionalReferralCode(
+            id=r["id"],
+            code=r["code"],
+            description=r["description"],
+            dust_bonus=r["dust_bonus"],
+            max_uses=r["max_uses"],
+            current_uses=r["current_uses"],
+            created_by=r["created_by"],
+            created_at=r["created_at"],
+            expires_at=r["expires_at"],
+            is_active=r["is_active"],
+        )
+        for r in codes_data
+    ]
+
+    return PromotionalReferralCodesResponse(
+        codes=codes,
+        total=total,
+        page=page,
+        page_size=limit,
+        has_more=(offset + limit) < total,
+    )
+
+
+@referrals_router.post("/promotional-codes", response_model=PromotionalReferralCode)
+async def create_promotional_code(
+    code_create: PromotionalReferralCodeCreate,
+    admin_user: dict = Depends(get_current_admin_user),
+    db: Database = Depends(get_db),
+):
+    """Create a new promotional referral code"""
+    # Check if code already exists
+    existing_code = await db.fetch_one(
+        "SELECT id FROM promotional_referral_codes WHERE code = $1",
+        code_create.code.upper(),
+    )
+    
+    if existing_code:
+        raise HTTPException(status_code=400, detail="Promotional code already exists")
+
+    # Insert new promotional code
+    code_id = await db.fetch_val(
+        """
+        INSERT INTO promotional_referral_codes (
+            code, description, dust_bonus, max_uses, created_by, expires_at
+        ) VALUES ($1, $2, $3, $4, $5, $6)
+        RETURNING id
+        """,
+        code_create.code.upper(),
+        code_create.description,
+        code_create.dust_bonus,
+        code_create.max_uses,
+        admin_user["id"],
+        code_create.expires_at,
+    )
+
+    # Fetch the created code
+    created_code = await db.fetch_one(
+        """
+        SELECT id, code, description, dust_bonus, max_uses, current_uses,
+               created_by, created_at, expires_at, is_active
+        FROM promotional_referral_codes
+        WHERE id = $1
+        """,
+        code_id,
+    )
+
+    return PromotionalReferralCode(
+        id=created_code["id"],
+        code=created_code["code"],
+        description=created_code["description"],
+        dust_bonus=created_code["dust_bonus"],
+        max_uses=created_code["max_uses"],
+        current_uses=created_code["current_uses"],
+        created_by=created_code["created_by"],
+        created_at=created_code["created_at"],
+        expires_at=created_code["expires_at"],
+        is_active=created_code["is_active"],
+    )
+
+
+@referrals_router.put("/promotional-codes/{code_id}", response_model=PromotionalReferralCode)
+async def update_promotional_code(
+    code_id: str,
+    code_update: PromotionalReferralCodeUpdate,
+    admin_user: dict = Depends(get_current_admin_user),
+    db: Database = Depends(get_db),
+):
+    """Update a promotional referral code"""
+    # Check if code exists
+    existing_code = await db.fetch_one(
+        "SELECT * FROM promotional_referral_codes WHERE id = $1",
+        code_id,
+    )
+    
+    if not existing_code:
+        raise HTTPException(status_code=404, detail="Promotional code not found")
+
+    # Build update query
+    update_fields = []
+    params = []
+    param_count = 1
+
+    if code_update.description is not None:
+        update_fields.append(f"description = ${param_count}")
+        params.append(code_update.description)
+        param_count += 1
+
+    if code_update.dust_bonus is not None:
+        update_fields.append(f"dust_bonus = ${param_count}")
+        params.append(code_update.dust_bonus)
+        param_count += 1
+
+    if code_update.max_uses is not None:
+        update_fields.append(f"max_uses = ${param_count}")
+        params.append(code_update.max_uses)
+        param_count += 1
+
+    if code_update.expires_at is not None:
+        update_fields.append(f"expires_at = ${param_count}")
+        params.append(code_update.expires_at)
+        param_count += 1
+
+    if code_update.is_active is not None:
+        update_fields.append(f"is_active = ${param_count}")
+        params.append(code_update.is_active)
+        param_count += 1
+
+    if not update_fields:
+        raise HTTPException(status_code=400, detail="No fields to update")
+
+    # Update the code
+    params.append(code_id)
+    await db.execute(
+        f"""
+        UPDATE promotional_referral_codes
+        SET {', '.join(update_fields)}
+        WHERE id = ${param_count}
+        """,
+        *params,
+    )
+
+    # Fetch the updated code
+    updated_code = await db.fetch_one(
+        """
+        SELECT id, code, description, dust_bonus, max_uses, current_uses,
+               created_by, created_at, expires_at, is_active
+        FROM promotional_referral_codes
+        WHERE id = $1
+        """,
+        code_id,
+    )
+
+    return PromotionalReferralCode(
+        id=updated_code["id"],
+        code=updated_code["code"],
+        description=updated_code["description"],
+        dust_bonus=updated_code["dust_bonus"],
+        max_uses=updated_code["max_uses"],
+        current_uses=updated_code["current_uses"],
+        created_by=updated_code["created_by"],
+        created_at=updated_code["created_at"],
+        expires_at=updated_code["expires_at"],
+        is_active=updated_code["is_active"],
+    )
+
+
+@referrals_router.delete("/promotional-codes/{code_id}")
+async def delete_promotional_code(
+    code_id: str,
+    admin_user: dict = Depends(get_current_admin_user),
+    db: Database = Depends(get_db),
+):
+    """Delete a promotional referral code"""
+    # Check if code exists
+    existing_code = await db.fetch_one(
+        "SELECT id FROM promotional_referral_codes WHERE id = $1",
+        code_id,
+    )
+    
+    if not existing_code:
+        raise HTTPException(status_code=404, detail="Promotional code not found")
+
+    # Delete the code
+    await db.execute(
+        "DELETE FROM promotional_referral_codes WHERE id = $1",
+        code_id,
+    )
+
+    return {"message": "Promotional code deleted successfully"}
+
+
+@referrals_router.get("/promotional-codes/{code_id}/redemptions", response_model=PromotionalReferralRedemptionsResponse)
+async def get_promotional_code_redemptions(
+    code_id: str,
+    page: int = Query(1, ge=1),
+    limit: int = Query(50, ge=1, le=100),
+    admin_user: dict = Depends(get_current_admin_user),
+    db: Database = Depends(get_db),
+):
+    """View redemptions for a specific promotional code"""
+    offset = (page - 1) * limit
+
+    # Get the promotional code
+    promo_code = await db.fetch_one(
+        "SELECT code FROM promotional_referral_codes WHERE id = $1",
+        code_id,
+    )
+    
+    if not promo_code:
+        raise HTTPException(status_code=404, detail="Promotional code not found")
+
+    # Get total count
+    total_result = await db.fetch_one(
+        "SELECT COUNT(*) as total FROM promotional_referral_redemptions WHERE promotional_code = $1",
+        promo_code["code"],
+    )
+    total = total_result["total"]
+
+    # Get redemptions with pagination
+    redemptions_query = """
+        SELECT 
+            prr.id,
+            prr.promotional_code,
+            prr.user_id,
+            u.fairyname as user_name,
+            prr.dust_bonus,
+            prr.redeemed_at
+        FROM promotional_referral_redemptions prr
+        JOIN users u ON prr.user_id = u.id
+        WHERE prr.promotional_code = $1
+        ORDER BY prr.redeemed_at DESC
+        LIMIT $2 OFFSET $3
+    """
+    
+    redemptions_data = await db.fetch_all(redemptions_query, promo_code["code"], limit, offset)
+
+    redemptions = [
+        {
+            "id": r["id"],
+            "promotional_code": r["promotional_code"],
+            "user_id": r["user_id"],
+            "user_name": r["user_name"],
+            "dust_bonus": r["dust_bonus"],
+            "redeemed_at": r["redeemed_at"],
+        }
+        for r in redemptions_data
+    ]
+
+    return PromotionalReferralRedemptionsResponse(
         redemptions=redemptions,
         total=total,
         page=page,
