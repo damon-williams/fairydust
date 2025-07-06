@@ -248,8 +248,15 @@ export function Referrals() {
       setLoading(true);
       setError(null);
       try {
-        await Promise.all([loadConfig(), loadStats(), loadCodes(), loadRedemptions(), loadPromoCodes()]);
+        // Load essential data first
+        await Promise.all([loadConfig(), loadStats()]);
+        
+        // Load tab data separately to prevent tab loading errors from breaking the page
+        loadCodes().catch(err => console.error('Failed to load codes:', err));
+        loadRedemptions().catch(err => console.error('Failed to load redemptions:', err));
+        loadPromoCodes().catch(err => console.error('Failed to load promo codes:', err));
       } catch (err) {
+        console.error('Failed to load essential referral data:', err);
         setError('Failed to load referral data');
       } finally {
         setLoading(false);

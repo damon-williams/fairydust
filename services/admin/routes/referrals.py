@@ -28,19 +28,20 @@ async def get_referral_config(
     db: Database = Depends(get_db),
 ):
     """Get current referral system configuration"""
-    # For now, return hardcoded defaults
-    # In production, these would be stored in a database table
+    config_data = await db.fetch_one(
+        "SELECT * FROM referral_system_config WHERE id = 1"
+    )
+    
+    if not config_data:
+        raise HTTPException(status_code=404, detail="Referral configuration not found")
+    
     return ReferralConfig(
-        referee_bonus=15,
-        referrer_bonus=15,
-        milestone_rewards=[
-            {"referral_count": 5, "bonus_amount": 25},
-            {"referral_count": 10, "bonus_amount": 50},
-            {"referral_count": 20, "bonus_amount": 100},
-        ],
-        code_expiry_days=30,
-        max_referrals_per_user=100,
-        system_enabled=True,
+        referee_bonus=config_data["referee_bonus"],
+        referrer_bonus=config_data["referrer_bonus"],
+        milestone_rewards=config_data["milestone_rewards"],
+        code_expiry_days=config_data["code_expiry_days"],
+        max_referrals_per_user=config_data["max_referrals_per_user"],
+        system_enabled=config_data["system_enabled"],
     )
 
 
@@ -51,35 +52,88 @@ async def update_referral_config(
     db: Database = Depends(get_db),
 ):
     """Update referral system configuration"""
-    # For now, just return the updated config
-    # In production, this would save to database
-    current_config = ReferralConfig(
-        referee_bonus=15,
-        referrer_bonus=15,
-        milestone_rewards=[
-            {"referral_count": 5, "bonus_amount": 25},
-            {"referral_count": 10, "bonus_amount": 50},
-        ],
-        code_expiry_days=30,
-        max_referrals_per_user=100,
-        system_enabled=True,
+    import json
+    
+    # Get current configuration
+    current_config_data = await db.fetch_one(
+        "SELECT * FROM referral_system_config WHERE id = 1"
     )
-
-    # Apply updates
+    
+    if not current_config_data:
+        raise HTTPException(status_code=404, detail="Referral configuration not found")
+    
+    # Build update query
+    update_fields = []
+    params = []
+    param_count = 1
+    
     if config_update.referee_bonus is not None:
-        current_config.referee_bonus = config_update.referee_bonus
+        update_fields.append(f"referee_bonus = ${param_count}")
+        params.append(config_update.referee_bonus)
+        param_count += 1
+        
     if config_update.referrer_bonus is not None:
-        current_config.referrer_bonus = config_update.referrer_bonus
+        update_fields.append(f"referrer_bonus = ${param_count}")
+        params.append(config_update.referrer_bonus)
+        param_count += 1
+        
     if config_update.milestone_rewards is not None:
-        current_config.milestone_rewards = config_update.milestone_rewards
+        update_fields.append(f"milestone_rewards = ${param_count}")
+        params.append(json.dumps(config_update.milestone_rewards))
+        param_count += 1
+        
     if config_update.code_expiry_days is not None:
-        current_config.code_expiry_days = config_update.code_expiry_days
+        update_fields.append(f"code_expiry_days = ${param_count}")
+        params.append(config_update.code_expiry_days)
+        param_count += 1
+        
     if config_update.max_referrals_per_user is not None:
-        current_config.max_referrals_per_user = config_update.max_referrals_per_user
+        update_fields.append(f"max_referrals_per_user = ${param_count}")
+        params.append(config_update.max_referrals_per_user)
+        param_count += 1
+        
     if config_update.system_enabled is not None:
-        current_config.system_enabled = config_update.system_enabled
-
-    return current_config
+        update_fields.append(f"system_enabled = ${param_count}")
+        params.append(config_update.system_enabled)
+        param_count += 1
+    
+    if not update_fields:
+        # No updates, return current config
+        return ReferralConfig(
+            referee_bonus=current_config_data["referee_bonus"],
+            referrer_bonus=current_config_data["referrer_bonus"],
+            milestone_rewards=current_config_data["milestone_rewards"],
+            code_expiry_days=current_config_data["code_expiry_days"],
+            max_referrals_per_user=current_config_data["max_referrals_per_user"],
+            system_enabled=current_config_data["system_enabled"],
+        )
+    
+    # Update configuration
+    update_fields.append(f"updated_at = CURRENT_TIMESTAMP")
+    params.append(1)  # WHERE id = 1
+    
+    await db.execute(
+        f"""
+        UPDATE referral_system_config 
+        SET {', '.join(update_fields)} 
+        WHERE id = ${param_count}
+        """,
+        *params
+    )
+    
+    # Return updated configuration
+    updated_config_data = await db.fetch_one(
+        "SELECT * FROM referral_system_config WHERE id = 1"
+    )
+    
+    return ReferralConfig(
+        referee_bonus=updated_config_data["referee_bonus"],
+        referrer_bonus=updated_config_data["referrer_bonus"],
+        milestone_rewards=updated_config_data["milestone_rewards"],
+        code_expiry_days=updated_config_data["code_expiry_days"],
+        max_referrals_per_user=updated_config_data["max_referrals_per_user"],
+        system_enabled=updated_config_data["system_enabled"],
+    )
 
 
 @referrals_router.get("/stats", response_model=ReferralSystemStats)

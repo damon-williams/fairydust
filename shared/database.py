@@ -1266,6 +1266,26 @@ async def create_tables():
     """
     )
 
+    # Referral System Configuration table
+    await db.execute_schema(
+        """
+        CREATE TABLE IF NOT EXISTS referral_system_config (
+            id INTEGER PRIMARY KEY DEFAULT 1,
+            referee_bonus INTEGER NOT NULL DEFAULT 15,
+            referrer_bonus INTEGER NOT NULL DEFAULT 15,
+            milestone_rewards JSONB NOT NULL DEFAULT '[{"referral_count": 5, "bonus_amount": 25}, {"referral_count": 10, "bonus_amount": 50}]'::jsonb,
+            code_expiry_days INTEGER NOT NULL DEFAULT 30,
+            max_referrals_per_user INTEGER NOT NULL DEFAULT 100,
+            system_enabled BOOLEAN NOT NULL DEFAULT true,
+            created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+        );
+
+        -- Insert default configuration if none exists
+        INSERT INTO referral_system_config (id) VALUES (1) ON CONFLICT (id) DO NOTHING;
+    """
+    )
+
     # Insert fairydust-invite app if it doesn't exist
     try:
         await db.execute_schema(
