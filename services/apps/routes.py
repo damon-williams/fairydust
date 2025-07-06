@@ -80,7 +80,6 @@ async def validate_app(app_id: UUID, db: Database = Depends(get_db)):
             app_id=app_id,
             is_valid=False,
             is_active=False,
-            dust_per_use=0,
             name="",
             builder_id=UUID("00000000-0000-0000-0000-000000000000"),
         )

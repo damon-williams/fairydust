@@ -32,9 +32,6 @@ class AppCreate(BaseModel):
     description: str = Field(..., min_length=1, max_length=1000)
     icon_url: Optional[str] = None
     category: AppCategory
-    website_url: Optional[str] = None
-    demo_url: Optional[str] = None
-    callback_url: Optional[str] = None
 
 
 class App(BaseModel):
@@ -45,12 +42,8 @@ class App(BaseModel):
     description: str
     icon_url: Optional[str]
     category: AppCategory
-    website_url: Optional[str]
-    demo_url: Optional[str]
-    callback_url: Optional[str]
     status: AppStatus
     is_active: bool
-    admin_notes: Optional[str]
     created_at: datetime
     updated_at: datetime
 

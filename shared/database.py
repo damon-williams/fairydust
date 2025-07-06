@@ -276,14 +276,9 @@ async def create_tables():
             slug VARCHAR(255) UNIQUE NOT NULL,
             description TEXT NOT NULL,
             icon_url TEXT,
-            dust_per_use INTEGER NOT NULL DEFAULT 5,
             status VARCHAR(50) NOT NULL DEFAULT 'pending',
             category VARCHAR(100) NOT NULL,
-            website_url TEXT,
-            demo_url TEXT,
-            callback_url TEXT,
             is_active BOOLEAN DEFAULT FALSE,
-            admin_notes TEXT,
             created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
             updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
         );
@@ -292,6 +287,17 @@ async def create_tables():
         CREATE INDEX IF NOT EXISTS idx_apps_slug ON apps(slug);
         CREATE INDEX IF NOT EXISTS idx_apps_status ON apps(status);
         CREATE INDEX IF NOT EXISTS idx_apps_category ON apps(category);
+        
+        -- Remove unused columns from apps table
+        ALTER TABLE apps DROP COLUMN IF EXISTS dust_per_use;
+        ALTER TABLE apps DROP COLUMN IF EXISTS website_url;
+        ALTER TABLE apps DROP COLUMN IF EXISTS demo_url;
+        ALTER TABLE apps DROP COLUMN IF EXISTS callback_url;
+        ALTER TABLE apps DROP COLUMN IF EXISTS admin_notes;
+        ALTER TABLE apps DROP COLUMN IF EXISTS is_approved;
+        ALTER TABLE apps DROP COLUMN IF EXISTS registration_source;
+        ALTER TABLE apps DROP COLUMN IF EXISTS registered_by_service;
+        ALTER TABLE apps DROP COLUMN IF EXISTS registration_metadata;
     """
     )
 

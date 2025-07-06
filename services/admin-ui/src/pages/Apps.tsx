@@ -74,11 +74,7 @@ export function Apps() {
     description: '',
     category: '',
     builder_id: '',
-    dust_per_use: 5,
     icon_url: '',
-    website_url: '',
-    demo_url: '',
-    callback_url: '',
   });
 
   // Action Pricing state
@@ -137,11 +133,7 @@ export function Apps() {
         description: '',
         category: '',
         builder_id: '',
-        dust_per_use: 5,
         icon_url: '',
-        website_url: '',
-        demo_url: '',
-        callback_url: '',
       });
       toast.success('App created successfully');
     } catch (err) {
@@ -382,50 +374,12 @@ export function Apps() {
                 </Select>
               </div>
               <div className="space-y-2">
-                <Label htmlFor="dust_per_use">DUST per Use</Label>
-                <Input
-                  id="dust_per_use"
-                  type="number"
-                  min="1"
-                  max="100"
-                  value={newApp.dust_per_use}
-                  onChange={(e) => setNewApp(prev => ({ ...prev, dust_per_use: parseInt(e.target.value) || 5 }))}
-                />
-              </div>
-              <div className="space-y-2">
                 <Label htmlFor="icon_url">Icon URL</Label>
                 <Input
                   id="icon_url"
                   value={newApp.icon_url}
                   onChange={(e) => setNewApp(prev => ({ ...prev, icon_url: e.target.value }))}
                   placeholder="https://example.com/icon.png"
-                />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="website_url">Website URL</Label>
-                <Input
-                  id="website_url"
-                  value={newApp.website_url}
-                  onChange={(e) => setNewApp(prev => ({ ...prev, website_url: e.target.value }))}
-                  placeholder="https://example.com"
-                />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="demo_url">Demo URL</Label>
-                <Input
-                  id="demo_url"
-                  value={newApp.demo_url}
-                  onChange={(e) => setNewApp(prev => ({ ...prev, demo_url: e.target.value }))}
-                  placeholder="https://demo.example.com"
-                />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="callback_url">Callback URL</Label>
-                <Input
-                  id="callback_url"
-                  value={newApp.callback_url}
-                  onChange={(e) => setNewApp(prev => ({ ...prev, callback_url: e.target.value }))}
-                  placeholder="https://api.example.com/callback"
                 />
               </div>
             </div>
