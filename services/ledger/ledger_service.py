@@ -545,23 +545,21 @@ class LedgerService:
                 if not user:
                     raise HTTPException(status_code=404, detail="User not found")
                 
-                # Calculate streak update WITHOUT database write
-                from shared.streak_utils import calculate_daily_streak_bonus
-                new_streak_days, new_login_date, _, _ = calculate_daily_streak_bonus(
-                    user["streak_days"], user["last_login_date"]
+                # Calculate streak update WITH database write
+                from shared.streak_utils import update_daily_streak_for_grant
+                new_streak_days, new_login_date = await update_daily_streak_for_grant(
+                    conn, user_id, user["streak_days"], user["last_login_date"]
                 )
 
                 current_balance = user["dust_balance"]
                 new_balance = current_balance + amount
 
-                # Update both balance and streak in a single operation
+                # Update only balance since streak is already updated by update_daily_streak_for_grant
                 await conn.execute(
                     """UPDATE users 
-                       SET dust_balance = $1, streak_days = $2, last_login_date = $3, updated_at = CURRENT_TIMESTAMP 
-                       WHERE id = $4""",
+                       SET dust_balance = $1, updated_at = CURRENT_TIMESTAMP 
+                       WHERE id = $2""",
                     new_balance,
-                    new_streak_days,
-                    new_login_date,
                     user_id,
                 )
 

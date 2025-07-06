@@ -38,12 +38,24 @@ fairydust is a **mobile app backend** that powers a collection of AI-powered min
 
 ### Admin Portal Deployment
 ```bash
-# React app requires manual build/deploy
+# React app requires manual build/deploy EVERY TIME
 cd services/admin-ui
 npm run build
 cp -r dist/* ../admin/static/
 git add . && git commit -m "Update admin portal"
 ```
+
+### CRITICAL DEPLOYMENT REMINDERS
+⚠️ **Admin Portal Static Files**: The React admin UI builds to `dist/` but must be manually copied to `../admin/static/` and committed. If changes don't appear, check:
+1. Did you run `npm run build`?
+2. Did you copy with `cp -r dist/* ../admin/static/`?
+3. Did you commit the static files with `git add ../admin/static/`?
+4. Version number should be updated in 3 places: `package.json`, `main.py`, and `Sidebar.tsx`
+
+⚠️ **Version Bumping**: Always increment version in ALL three files when making admin portal changes:
+- `services/admin-ui/package.json` 
+- `services/admin/main.py` 
+- `services/admin-ui/src/components/layout/Sidebar.tsx`
 
 ### Environment Variables
 ```bash
