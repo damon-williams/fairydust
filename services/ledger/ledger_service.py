@@ -14,6 +14,7 @@ from models import (
 
 from shared.database import Database
 from shared.redis_client import RedisCache
+from shared.streak_utils import update_daily_streak_for_grant
 
 
 class LedgerService:
@@ -536,18 +537,23 @@ class LedgerService:
 
         try:
             async with self.db.transaction() as conn:
-                # Verify user exists
+                # Verify user exists and get current streak info
                 user = await conn.fetchrow(
-                    "SELECT id, dust_balance FROM users WHERE id = $1 FOR UPDATE", user_id
+                    "SELECT id, dust_balance, streak_days, last_login_date FROM users WHERE id = $1 FOR UPDATE", user_id
                 )
 
                 if not user:
                     raise HTTPException(status_code=404, detail="User not found")
+                
+                # Update daily streak and last_login_date (this is the correct place to do it)
+                new_streak_days, new_login_date = await update_daily_streak_for_grant(
+                    self.db, str(user_id), user["streak_days"], user["last_login_date"]
+                )
 
                 current_balance = user["dust_balance"]
                 new_balance = current_balance + amount
 
-                # Update balance
+                # Update balance (streak already updated by update_daily_streak_for_grant)
                 await conn.execute(
                     "UPDATE users SET dust_balance = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2",
                     new_balance,
