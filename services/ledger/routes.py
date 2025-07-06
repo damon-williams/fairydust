@@ -646,9 +646,7 @@ async def grant_referral_reward(
     return await ledger.grant_dust(
         user_id=request.user_id,
         amount=request.amount,
-        description=description,
-        app_id=invite_app_uuid,
-        idempotency_key=request.idempotency_key,
+        reason=description,
         metadata={
             "reward_type": request.reason,
             "referral_id": str(request.referral_id),
