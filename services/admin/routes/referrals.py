@@ -2,7 +2,7 @@
 from datetime import datetime, timedelta
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 
 from auth import get_current_admin_user
 from models import (
@@ -493,6 +493,22 @@ async def get_promotional_codes(
     )
 
 
+@referrals_router.post("/promotional-codes-debug")
+async def debug_promotional_code_create(request: Request):
+    """Debug endpoint to see raw request data"""
+    import logging
+    logger = logging.getLogger(__name__)
+    
+    try:
+        body = await request.body()
+        import json
+        raw_data = json.loads(body) if body else {}
+        logger.info(f"Debug - Raw request body: {raw_data}")
+        return {"received_data": raw_data}
+    except Exception as e:
+        logger.error(f"Debug - Could not parse request body: {e}")
+        return {"error": str(e)}
+
 @referrals_router.post("/promotional-codes", response_model=PromotionalReferralCode)
 async def create_promotional_code(
     code_create: PromotionalReferralCodeCreate,
@@ -500,6 +516,10 @@ async def create_promotional_code(
     db: Database = Depends(get_db),
 ):
     """Create a new promotional referral code"""
+    import logging
+    logger = logging.getLogger(__name__)
+    logger.info(f"Creating promotional code with data: {code_create}")
+    logger.info(f"Raw data types: code={type(code_create.code)}, description={type(code_create.description)}, dust_bonus={type(code_create.dust_bonus)}, max_uses={type(code_create.max_uses)}, expires_at={type(code_create.expires_at)}")
     # Check if code already exists
     existing_code = await db.fetch_one(
         "SELECT id FROM promotional_referral_codes WHERE code = $1",
