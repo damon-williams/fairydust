@@ -1224,7 +1224,8 @@ async def validate_referral_code(
         )
 
     # Check if code is expired
-    now = datetime.now()
+    from datetime import timezone
+    now = datetime.now(timezone.utc)
     is_expired = code_data["expires_at"] < now
     is_active = code_data["is_active"]
 
