@@ -465,19 +465,30 @@ class LedgerService:
                 )
 
                 # Record grant in app_grants table
-                await conn.execute(
-                    """
-                    INSERT INTO app_grants (
-                        user_id, app_id, grant_type, amount, idempotency_key, metadata
-                    ) VALUES ($1, $2, $3, $4, $5, $6)
-                    """,
-                    user_id,
-                    app_id,
-                    "initial",
-                    amount,
-                    idempotency_key,
-                    json.dumps({"transaction_id": str(transaction_id)}),
-                )
+                try:
+                    await conn.execute(
+                        """
+                        INSERT INTO app_grants (
+                            user_id, app_id, grant_type, amount, idempotency_key, metadata
+                        ) VALUES ($1, $2, $3, $4, $5, $6)
+                        """,
+                        user_id,
+                        app_id,
+                        "initial",
+                        amount,
+                        idempotency_key,
+                        json.dumps({"transaction_id": str(transaction_id)}),
+                    )
+                except Exception as e:
+                    # Check for unique constraint violation (already granted)
+                    if "duplicate key value violates unique constraint" in str(e) and "app_grants_user_id_app_id_grant_type" in str(e):
+                        raise HTTPException(
+                            status_code=409, 
+                            detail=f"Initial grant already claimed for this app"
+                        )
+                    else:
+                        # Re-raise other database errors
+                        raise
 
                 # Invalidate cache
                 await self.balance_cache.delete(str(user_id))
@@ -565,20 +576,31 @@ class LedgerService:
                 )
 
                 # Record grant in app_grants table
-                await conn.execute(
-                    """
-                    INSERT INTO app_grants (
-                        user_id, app_id, grant_type, amount, granted_date, idempotency_key, metadata
-                    ) VALUES ($1, $2, $3, $4, $5, $6, $7)
-                    """,
-                    user_id,
-                    app_id,
-                    "streak",
-                    amount,
-                    today,
-                    idempotency_key,
-                    json.dumps({"transaction_id": str(transaction_id), "streak_days": streak_days}),
-                )
+                try:
+                    await conn.execute(
+                        """
+                        INSERT INTO app_grants (
+                            user_id, app_id, grant_type, amount, granted_date, idempotency_key, metadata
+                        ) VALUES ($1, $2, $3, $4, $5, $6, $7)
+                        """,
+                        user_id,
+                        app_id,
+                        "streak",
+                        amount,
+                        today,
+                        idempotency_key,
+                        json.dumps({"transaction_id": str(transaction_id), "streak_days": streak_days}),
+                    )
+                except Exception as e:
+                    # Check for unique constraint violation (already claimed today)
+                    if "duplicate key value violates unique constraint" in str(e) and "app_grants_user_id_app_id_grant_type" in str(e):
+                        raise HTTPException(
+                            status_code=409, 
+                            detail=f"Streak bonus already claimed today for this app"
+                        )
+                    else:
+                        # Re-raise other database errors
+                        raise
 
                 # Invalidate cache
                 await self.balance_cache.delete(str(user_id))
