@@ -58,7 +58,7 @@ class LedgerService:
 
         return balance
 
-    async def _acquire_balance_lock(self, user_id: UUID, timeout: int = 5) -> bool:
+    async def _acquire_balance_lock(self, user_id: UUID, timeout: int = 2) -> bool:
         """Acquire a distributed lock for balance operations"""
         lock_key = f"{self.lock_prefix}:{user_id}"
         lock_value = str(uuid4())
@@ -422,9 +422,13 @@ class LedgerService:
         # Idempotency check removed for testing - allow duplicate requests
 
         # Acquire lock
+        print(f"🔒 GRANT_INITIAL_LOCK_ATTEMPT: Trying to acquire lock for user {user_id}, idempotency_key: {idempotency_key}", flush=True)
         lock_acquired = await self._acquire_balance_lock(user_id)
         if not lock_acquired:
+            print(f"🔒 GRANT_INITIAL_LOCK_FAILED: Could not acquire lock for user {user_id}, idempotency_key: {idempotency_key}", flush=True)
             raise HTTPException(status_code=409, detail="Balance operation in progress")
+        
+        print(f"✅ GRANT_INITIAL_LOCK_ACQUIRED: Successfully acquired lock for user {user_id}", flush=True)
 
         try:
             async with self.db.transaction() as conn:
@@ -503,6 +507,7 @@ class LedgerService:
                 )
 
         finally:
+            print(f"🔓 GRANT_INITIAL_LOCK_RELEASE: Releasing lock for user {user_id}", flush=True)
             await self._release_balance_lock(user_id)
 
     async def grant_streak_bonus(
