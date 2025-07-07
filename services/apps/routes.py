@@ -1681,7 +1681,7 @@ async def redeem_promotional_referral_code(
                         headers={
                             "Authorization": f"Bearer {service_token}"
                         },
-                        timeout=30.0,
+                        timeout=60.0,
                     )
                     
                     print(f"🏦 LEDGER_RESPONSE: Status {ledger_response.status_code}", flush=True)
