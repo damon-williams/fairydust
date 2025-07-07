@@ -25,6 +25,9 @@ PRICING_CONFIG = {
         "claude-3-5-sonnet-20241022": {"input": 3.0, "output": 15.0},  # Current production model
         "claude-3-5-haiku-20241022": {"input": 0.8, "output": 4.0},
         "claude-3-5-haiku": {"input": 0.8, "output": 4.0},
+        "claude-3-haiku-20240307": {"input": 0.25, "output": 1.25},  # Legacy haiku model
+        "claude-3-sonnet-20240229": {"input": 3.0, "output": 15.0},  # Legacy sonnet model
+        "claude-3-opus-20240229": {"input": 15.0, "output": 75.0},   # Legacy opus model
     },
     "openai": {
         # GPT models - per million tokens
@@ -62,7 +65,11 @@ def get_model_pricing(provider: str, model_id: str) -> dict[str, float]:
 
     # Check if model exists for provider
     if model_id not in provider_config:
-        logger.warning(f"Unknown model '{model_id}' for provider '{provider}', using default rates")
+        available_models = list(provider_config.keys())
+        logger.warning(
+            f"Unknown model '{model_id}' for provider '{provider}'. "
+            f"Available models: {available_models}. Using default rates for {provider}."
+        )
         return DEFAULT_RATES.get(provider, {"input": 3.0, "output": 15.0})
 
     return provider_config[model_id]

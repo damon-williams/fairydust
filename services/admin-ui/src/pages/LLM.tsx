@@ -19,34 +19,15 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
-} from '@/components/ui/dialog';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { Textarea } from '@/components/ui/textarea';
-import { Switch } from '@/components/ui/switch';
 import { 
   Brain, 
   DollarSign, 
   Clock, 
   TrendingUp, 
-  Settings,
   AlertTriangle,
-  RefreshCw,
-  Plus,
-  Trash2,
-  Save
+  RefreshCw
 } from 'lucide-react';
 import { AdminAPI } from '@/lib/admin-api';
-import { toast } from 'sonner';
-import { formatDistanceToNow } from 'date-fns';
 
 interface LLMUsageMetrics {
   timeframe: string;
@@ -76,18 +57,6 @@ interface LLMUsageMetrics {
   }>;
 }
 
-interface AppConfig {
-  app_id: string;
-  app_name: string;
-  app_slug: string;
-  primary_provider: string;
-  primary_model_id: string;
-  primary_parameters: any;
-  fallback_models: any[];
-  cost_limits: any;
-  feature_flags: any;
-  updated_at: string;
-}
 
 interface ModelUsage {
   model: string;
@@ -109,84 +78,29 @@ interface ActionAnalytics {
   cost_per_dust: number | null;
 }
 
-interface ConfigFormData {
-  primary_provider: string;
-  primary_model_id: string;
-  primary_parameters: {
-    temperature: number;
-    max_tokens: number;
-    top_p: number;
-  };
-  fallback_models: Array<{
-    provider: string;
-    model_id: string;
-    trigger: string;
-    parameters: {
-      temperature: number;
-      max_tokens: number;
-    };
-  }>;
-  cost_limits: {
-    per_request_max: number;
-    daily_max: number;
-    monthly_max: number;
-  };
-  feature_flags: {
-    streaming_enabled: boolean;
-    cache_responses: boolean;
-    log_prompts: boolean;
-  };
-}
 
 export function LLM() {
   const [metrics, setMetrics] = useState<LLMUsageMetrics | null>(null);
-  const [appConfigs, setAppConfigs] = useState<AppConfig[]>([]);
   const [modelUsage, setModelUsage] = useState<ModelUsage[]>([]);
-  const [availableModels, setAvailableModels] = useState<Record<string, string[]>>({});
   const [actionAnalytics, setActionAnalytics] = useState<ActionAnalytics[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [timeframe, setTimeframe] = useState('7d');
-  const [configDialogOpen, setConfigDialogOpen] = useState(false);
-  const [selectedConfig, setSelectedConfig] = useState<AppConfig | null>(null);
-  const [configForm, setConfigForm] = useState<ConfigFormData>({
-    primary_provider: 'anthropic',
-    primary_model_id: 'claude-3-5-haiku-20241022',
-    primary_parameters: {
-      temperature: 0.8,
-      max_tokens: 150,
-      top_p: 0.9
-    },
-    fallback_models: [],
-    cost_limits: {
-      per_request_max: 0.05,
-      daily_max: 10.0,
-      monthly_max: 100.0
-    },
-    feature_flags: {
-      streaming_enabled: true,
-      cache_responses: true,
-      log_prompts: false
-    }
-  });
+  const [activeTab, setActiveTab] = useState('overview');
 
   const loadData = async () => {
     try {
       setLoading(true);
       setError(null);
       
-      const [metricsData, configsData, modelUsageData, modelsData, actionData] = await Promise.all([
+      const [metricsData, modelUsageData, actionData] = await Promise.all([
         AdminAPI.getLLMUsageMetrics(timeframe),
-        AdminAPI.getLLMAppConfigs(),
         AdminAPI.getLLMModelUsage(),
-        AdminAPI.getAvailableModels(),
         AdminAPI.getActionAnalytics(timeframe),
       ]);
       
       setMetrics(metricsData);
-      setAppConfigs(configsData);
       setModelUsage(modelUsageData);
-      setAvailableModels(modelsData);
       setActionAnalytics(actionData.action_analytics || []);
     } catch (err) {
       console.error('Failed to load LLM data:', err);
@@ -196,66 +110,6 @@ export function LLM() {
     }
   };
 
-  const openConfigDialog = (config: AppConfig) => {
-    setSelectedConfig(config);
-    setConfigForm({
-      primary_provider: config.primary_provider || 'anthropic',
-      primary_model_id: config.primary_model_id || 'claude-3-5-haiku-20241022',
-      primary_parameters: config.primary_parameters || {
-        temperature: 0.8,
-        max_tokens: 150,
-        top_p: 0.9
-      },
-      fallback_models: config.fallback_models || [],
-      cost_limits: config.cost_limits || {
-        per_request_max: 0.05,
-        daily_max: 10.0,
-        monthly_max: 100.0
-      },
-      feature_flags: config.feature_flags || {
-        streaming_enabled: true,
-        cache_responses: true,
-        log_prompts: false
-      }
-    });
-    setConfigDialogOpen(true);
-  };
-
-  const saveConfig = async () => {
-    if (!selectedConfig) return;
-    
-    try {
-      await AdminAPI.updateLLMAppConfig(selectedConfig.app_id, configForm);
-      toast.success('Configuration updated successfully');
-      setConfigDialogOpen(false);
-      loadData(); // Reload to show updated config
-    } catch (err) {
-      console.error('Failed to update config:', err);
-      toast.error('Failed to update configuration');
-    }
-  };
-
-  const addFallbackModel = () => {
-    setConfigForm((prev: ConfigFormData) => ({
-      ...prev,
-      fallback_models: [
-        ...prev.fallback_models,
-        {
-          provider: 'openai',
-          model_id: 'gpt-4o-mini',
-          trigger: 'provider_error',
-          parameters: { temperature: 0.8, max_tokens: 150 }
-        }
-      ]
-    }));
-  };
-
-  const removeFallbackModel = (index: number) => {
-    setConfigForm((prev: ConfigFormData) => ({
-      ...prev,
-      fallback_models: prev.fallback_models.filter((_: any, i: number) => i !== index)
-    }));
-  };
 
   useEffect(() => {
     loadData();
@@ -319,13 +173,12 @@ export function LLM() {
         </div>
       </div>
 
-      <Tabs defaultValue="overview" className="space-y-6">
+      <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
         <TabsList>
           <TabsTrigger value="overview">Overview</TabsTrigger>
           <TabsTrigger value="models">Model Usage</TabsTrigger>
           <TabsTrigger value="apps">App Usage</TabsTrigger>
           <TabsTrigger value="actions">Action Analytics</TabsTrigger>
-          <TabsTrigger value="config">Configuration</TabsTrigger>
         </TabsList>
 
         <TabsContent value="overview" className="space-y-6">
@@ -558,364 +411,8 @@ export function LLM() {
             </CardContent>
           </Card>
         </TabsContent>
-
-        <TabsContent value="config" className="space-y-6">
-          <Card>
-            <CardHeader>
-              <CardTitle>App Model Configurations</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>App</TableHead>
-                    <TableHead>Provider</TableHead>
-                    <TableHead>Model</TableHead>
-                    <TableHead>Last Updated</TableHead>
-                    <TableHead>Actions</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {appConfigs.map((config) => (
-                    <TableRow key={config.app_id}>
-                      <TableCell>
-                        <div>
-                          <div className="font-medium">{config.app_name}</div>
-                          <div className="text-sm text-muted-foreground">{config.app_slug}</div>
-                        </div>
-                      </TableCell>
-                      <TableCell>
-                        <Badge variant="outline" className="capitalize">
-                          {config.primary_provider || 'Not configured'}
-                        </Badge>
-                      </TableCell>
-                      <TableCell>{config.primary_model_id || 'Not configured'}</TableCell>
-                      <TableCell>
-                        {config.updated_at ? 
-                          formatDistanceToNow(new Date(config.updated_at), { addSuffix: true }) : 
-                          'Never'
-                        }
-                      </TableCell>
-                      <TableCell>
-                        <Button 
-                          size="sm" 
-                          onClick={() => openConfigDialog(config)}
-                        >
-                          <Settings className="h-4 w-4 mr-2" />
-                          Configure
-                        </Button>
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </CardContent>
-          </Card>
-        </TabsContent>
       </Tabs>
 
-      {/* Configuration Dialog */}
-      <Dialog open={configDialogOpen} onOpenChange={setConfigDialogOpen}>
-        <DialogContent className="max-w-4xl max-h-[80vh] overflow-y-auto">
-          <DialogHeader>
-            <DialogTitle>Configure {selectedConfig?.app_name}</DialogTitle>
-            <DialogDescription>
-              Manage LLM settings, fallback models, and cost limits for this app
-            </DialogDescription>
-          </DialogHeader>
-          
-          <div className="space-y-6">
-            {/* Primary Model */}
-            <div className="space-y-4">
-              <h4 className="font-medium">Primary Model</h4>
-              <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <Label>Provider</Label>
-                  <Select 
-                    value={configForm.primary_provider} 
-                    onValueChange={(value) => setConfigForm((prev: ConfigFormData) => ({ ...prev, primary_provider: value }))}
-                  >
-                    <SelectTrigger>
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="anthropic">Anthropic</SelectItem>
-                      <SelectItem value="openai">OpenAI</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div className="space-y-2">
-                  <Label>Model</Label>
-                  <Select 
-                    value={configForm.primary_model_id} 
-                    onValueChange={(value) => setConfigForm((prev: ConfigFormData) => ({ ...prev, primary_model_id: value }))}
-                  >
-                    <SelectTrigger>
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {availableModels[configForm.primary_provider]?.map(model => (
-                        <SelectItem key={model} value={model}>{model}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-              </div>
-              
-              <div className="grid grid-cols-3 gap-4">
-                <div className="space-y-2">
-                  <Label>Temperature</Label>
-                  <Input 
-                    type="number" 
-                    step="0.1" 
-                    min="0" 
-                    max="2"
-                    value={configForm.primary_parameters?.temperature || 0.8}
-                    onChange={(e) => setConfigForm((prev: ConfigFormData) => ({
-                      ...prev,
-                      primary_parameters: {
-                        ...prev.primary_parameters,
-                        temperature: parseFloat(e.target.value)
-                      }
-                    }))}
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label>Max Tokens</Label>
-                  <Input 
-                    type="number" 
-                    min="1" 
-                    max="4000"
-                    value={configForm.primary_parameters?.max_tokens || 150}
-                    onChange={(e) => setConfigForm((prev: ConfigFormData) => ({
-                      ...prev,
-                      primary_parameters: {
-                        ...prev.primary_parameters,
-                        max_tokens: parseInt(e.target.value)
-                      }
-                    }))}
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label>Top P</Label>
-                  <Input 
-                    type="number" 
-                    step="0.1" 
-                    min="0" 
-                    max="1"
-                    value={configForm.primary_parameters?.top_p || 0.9}
-                    onChange={(e) => setConfigForm((prev: ConfigFormData) => ({
-                      ...prev,
-                      primary_parameters: {
-                        ...prev.primary_parameters,
-                        top_p: parseFloat(e.target.value)
-                      }
-                    }))}
-                  />
-                </div>
-              </div>
-            </div>
-
-            {/* Cost Limits */}
-            <div className="space-y-4">
-              <h4 className="font-medium">Cost Limits</h4>
-              <div className="grid grid-cols-3 gap-4">
-                <div className="space-y-2">
-                  <Label>Per Request Max ($)</Label>
-                  <Input 
-                    type="number" 
-                    step="0.01"
-                    value={configForm.cost_limits?.per_request_max || 0.05}
-                    onChange={(e) => setConfigForm((prev: ConfigFormData) => ({
-                      ...prev,
-                      cost_limits: {
-                        ...prev.cost_limits,
-                        per_request_max: parseFloat(e.target.value)
-                      }
-                    }))}
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label>Daily Max ($)</Label>
-                  <Input 
-                    type="number" 
-                    step="0.01"
-                    value={configForm.cost_limits?.daily_max || 10.0}
-                    onChange={(e) => setConfigForm((prev: ConfigFormData) => ({
-                      ...prev,
-                      cost_limits: {
-                        ...prev.cost_limits,
-                        daily_max: parseFloat(e.target.value)
-                      }
-                    }))}
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label>Monthly Max ($)</Label>
-                  <Input 
-                    type="number" 
-                    step="0.01"
-                    value={configForm.cost_limits?.monthly_max || 100.0}
-                    onChange={(e) => setConfigForm((prev: ConfigFormData) => ({
-                      ...prev,
-                      cost_limits: {
-                        ...prev.cost_limits,
-                        monthly_max: parseFloat(e.target.value)
-                      }
-                    }))}
-                  />
-                </div>
-              </div>
-            </div>
-
-            {/* Feature Flags */}
-            <div className="space-y-4">
-              <h4 className="font-medium">Feature Flags</h4>
-              <div className="space-y-3">
-                <div className="flex items-center justify-between">
-                  <Label htmlFor="streaming">Streaming Enabled</Label>
-                  <Switch 
-                    id="streaming"
-                    checked={configForm.feature_flags?.streaming_enabled || false}
-                    onCheckedChange={(checked) => setConfigForm((prev: ConfigFormData) => ({
-                      ...prev,
-                      feature_flags: {
-                        ...prev.feature_flags,
-                        streaming_enabled: checked
-                      }
-                    }))}
-                  />
-                </div>
-                <div className="flex items-center justify-between">
-                  <Label htmlFor="cache">Cache Responses</Label>
-                  <Switch 
-                    id="cache"
-                    checked={configForm.feature_flags?.cache_responses || false}
-                    onCheckedChange={(checked) => setConfigForm((prev: ConfigFormData) => ({
-                      ...prev,
-                      feature_flags: {
-                        ...prev.feature_flags,
-                        cache_responses: checked
-                      }
-                    }))}
-                  />
-                </div>
-                <div className="flex items-center justify-between">
-                  <Label htmlFor="log">Log Prompts</Label>
-                  <Switch 
-                    id="log"
-                    checked={configForm.feature_flags?.log_prompts || false}
-                    onCheckedChange={(checked) => setConfigForm((prev: ConfigFormData) => ({
-                      ...prev,
-                      feature_flags: {
-                        ...prev.feature_flags,
-                        log_prompts: checked
-                      }
-                    }))}
-                  />
-                </div>
-              </div>
-            </div>
-
-            {/* Fallback Models */}
-            <div className="space-y-4">
-              <div className="flex items-center justify-between">
-                <h4 className="font-medium">Fallback Models</h4>
-                <Button size="sm" onClick={addFallbackModel}>
-                  <Plus className="h-4 w-4 mr-2" />
-                  Add Fallback
-                </Button>
-              </div>
-              {configForm.fallback_models?.map((fallback: ConfigFormData['fallback_models'][0], index: number) => (
-                <div key={index} className="border rounded-lg p-4 space-y-4">
-                  <div className="flex items-center justify-between">
-                    <h5 className="font-medium">Fallback {index + 1}</h5>
-                    <Button 
-                      size="sm" 
-                      variant="outline" 
-                      onClick={() => removeFallbackModel(index)}
-                    >
-                      <Trash2 className="h-4 w-4" />
-                    </Button>
-                  </div>
-                  <div className="grid grid-cols-3 gap-4">
-                    <div className="space-y-2">
-                      <Label>Provider</Label>
-                      <Select 
-                        value={fallback.provider} 
-                        onValueChange={(value) => {
-                          const newFallbacks = [...configForm.fallback_models];
-                          newFallbacks[index].provider = value;
-                          setConfigForm((prev: ConfigFormData) => ({ ...prev, fallback_models: newFallbacks }));
-                        }}
-                      >
-                        <SelectTrigger>
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="anthropic">Anthropic</SelectItem>
-                          <SelectItem value="openai">OpenAI</SelectItem>
-                        </SelectContent>
-                      </Select>
-                    </div>
-                    <div className="space-y-2">
-                      <Label>Model</Label>
-                      <Select 
-                        value={fallback.model_id} 
-                        onValueChange={(value) => {
-                          const newFallbacks = [...configForm.fallback_models];
-                          newFallbacks[index].model_id = value;
-                          setConfigForm((prev: ConfigFormData) => ({ ...prev, fallback_models: newFallbacks }));
-                        }}
-                      >
-                        <SelectTrigger>
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {availableModels[fallback.provider]?.map(model => (
-                            <SelectItem key={model} value={model}>{model}</SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    </div>
-                    <div className="space-y-2">
-                      <Label>Trigger</Label>
-                      <Select 
-                        value={fallback.trigger} 
-                        onValueChange={(value) => {
-                          const newFallbacks = [...configForm.fallback_models];
-                          newFallbacks[index].trigger = value;
-                          setConfigForm((prev: ConfigFormData) => ({ ...prev, fallback_models: newFallbacks }));
-                        }}
-                      >
-                        <SelectTrigger>
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="provider_error">Provider Error</SelectItem>
-                          <SelectItem value="cost_threshold_exceeded">Cost Threshold Exceeded</SelectItem>
-                          <SelectItem value="rate_limit">Rate Limit</SelectItem>
-                          <SelectItem value="model_unavailable">Model Unavailable</SelectItem>
-                        </SelectContent>
-                      </Select>
-                    </div>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setConfigDialogOpen(false)}>
-              Cancel
-            </Button>
-            <Button onClick={saveConfig}>
-              <Save className="h-4 w-4 mr-2" />
-              Save Configuration
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
     </div>
   );
 }

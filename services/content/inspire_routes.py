@@ -143,6 +143,10 @@ async def generate_inspiration(
 
         # Log LLM usage for analytics (background task)
         try:
+            # Get the provider from the model configuration
+            model_config = await _get_llm_model_config()
+            provider = model_config.get("primary_provider", "anthropic")
+            
             # Calculate prompt hash for the inspiration generation
             full_prompt = _build_inspiration_prompt(
                 category=request.category,

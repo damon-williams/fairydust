@@ -18,8 +18,17 @@ echo "📂 Copying files to admin/static..."
 cp -r dist/* ../admin/static/
 
 echo "✅ Admin Portal build complete!"
-echo "📍 Version: 2.10.0"
 echo ""
-echo "Next steps:"
-echo "1. git add ."
-echo "2. git commit -m 'Update admin portal to v2.10.0 - Add action analytics'"
+
+# Return to project root for git commands
+cd ../..
+
+echo "📝 Committing changes..."
+git add .
+git commit -m "Update admin portal"
+
+echo ""
+echo "🚀 Changes committed successfully!"
+
+git push
+echo "Pushing changes"
