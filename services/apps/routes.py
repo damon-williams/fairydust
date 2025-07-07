@@ -1280,17 +1280,13 @@ async def complete_referral(
     if str(referrer_user_id) == str(request.referee_user_id):
         raise HTTPException(status_code=400, detail="Cannot use your own referral code")
 
-    # Check if referee has already used any referral code (with better duplicate detection)
+    # Check if referee has already used any referral code
     existing_redemption = await db.fetch_one(
-        """SELECT id FROM referral_redemptions 
-           WHERE referee_user_id = $1 OR 
-                 (referral_code = $2 AND referee_user_id = $1)""",
+        "SELECT id FROM referral_redemptions WHERE referee_user_id = $1",
         request.referee_user_id,
-        request.referral_code,
     )
 
     if existing_redemption:
-        print(f"🚫 REFERRAL_DUPLICATE: User {request.referee_user_id} already used referral code {request.referral_code}", flush=True)
         raise HTTPException(status_code=400, detail="You have already used a referral code")
 
     # Check referrer hasn't exceeded max referrals (100 for now, configurable later)
@@ -1316,48 +1312,23 @@ async def complete_referral(
     if current_referrals in milestone_thresholds:
         milestone_bonus = milestone_thresholds[current_referrals]
 
-    # Check one more time if this specific redemption already exists (prevent race condition)
-    existing_specific = await db.fetch_one(
-        """SELECT id FROM referral_redemptions 
-           WHERE referral_code = $1 AND referee_user_id = $2""",
+    # Create redemption record
+    redemption = await db.fetch_one(
+        """
+        INSERT INTO referral_redemptions (
+            referral_code, referrer_user_id, referee_user_id,
+            referee_bonus, referrer_bonus, milestone_bonus
+        )
+        VALUES ($1, $2, $3, $4, $5, $6)
+        RETURNING id
+        """,
         request.referral_code,
+        referrer_user_id,
         request.referee_user_id,
+        referee_bonus,
+        referrer_bonus,
+        milestone_bonus,
     )
-    
-    if existing_specific:
-        print(f"🚫 REFERRAL_DUPLICATE: Redemption already exists for user {request.referee_user_id} with code {request.referral_code}", flush=True)
-        # Return success but don't process again
-        return ReferralCompleteResponse(
-            success=True,
-            referrer_user_id=referrer_user_id,
-            referee_bonus_granted=0,  # Already granted
-            referrer_bonus_granted=0,  # Already granted
-            milestone_bonus=0,
-        )
-
-    # Create redemption record with better duplicate protection
-    try:
-        redemption = await db.fetch_one(
-            """
-            INSERT INTO referral_redemptions (
-                referral_code, referrer_user_id, referee_user_id,
-                referee_bonus, referrer_bonus, milestone_bonus
-            )
-            VALUES ($1, $2, $3, $4, $5, $6)
-            RETURNING id
-            """,
-            request.referral_code,
-            referrer_user_id,
-            request.referee_user_id,
-            referee_bonus,
-            referrer_bonus,
-            milestone_bonus,
-        )
-            
-        print(f"✅ REFERRAL_CREATED: Redemption record created with ID {redemption['id']}", flush=True)
-    except Exception as e:
-        print(f"💥 REFERRAL_ERROR: Failed to create redemption record: {str(e)}", flush=True)
-        raise HTTPException(status_code=500, detail="Failed to process referral")
 
     # Grant DUST bonuses via the ledger service
     import httpx
@@ -1370,14 +1341,8 @@ async def complete_referral(
     redemption_id = redemption["id"]
     
     try:
-        print(f"🎯 REFERRAL_GRANTS: Starting DUST grants for redemption {redemption_id}", flush=True)
-        print(f"  - Referee: {request.referee_user_id} gets {referee_bonus} DUST", flush=True)
-        print(f"  - Referrer: {referrer_user_id} gets {referrer_bonus} DUST", flush=True)
-        print(f"  - Milestone: {milestone_bonus} DUST", flush=True)
-        
         async with httpx.AsyncClient() as client:
             # Grant referee bonus
-            print(f"💰 REFERRAL_GRANT: Granting referee bonus...", flush=True)
             referee_response = await client.post(
                 f"{ledger_url}/grants/referral-reward",
                 json={
@@ -1398,10 +1363,8 @@ async def complete_referral(
                     status_code=500,
                     detail=f"Failed to grant referee bonus: {referee_response.text}"
                 )
-            print(f"✅ REFERRAL_GRANT: Referee bonus granted successfully", flush=True)
 
             # Grant referrer bonus
-            print(f"💰 REFERRAL_GRANT: Granting referrer bonus...", flush=True)
             referrer_response = await client.post(
                 f"{ledger_url}/grants/referral-reward",
                 json={
@@ -1422,11 +1385,9 @@ async def complete_referral(
                     status_code=500,
                     detail=f"Failed to grant referrer bonus: {referrer_response.text}"
                 )
-            print(f"✅ REFERRAL_GRANT: Referrer bonus granted successfully", flush=True)
 
             # Grant milestone bonus if applicable
             if milestone_bonus > 0:
-                print(f"💰 REFERRAL_GRANT: Granting milestone bonus...", flush=True)
                 milestone_response = await client.post(
                     f"{ledger_url}/grants/referral-reward",
                     json={
@@ -1447,7 +1408,6 @@ async def complete_referral(
                         status_code=500,
                         detail=f"Failed to grant milestone bonus: {milestone_response.text}"
                     )
-                print(f"✅ REFERRAL_GRANT: Milestone bonus granted successfully", flush=True)
 
     except httpx.TimeoutException:
         raise HTTPException(status_code=500, detail="Ledger service timeout")
