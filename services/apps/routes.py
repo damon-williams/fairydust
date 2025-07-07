@@ -1658,6 +1658,13 @@ async def redeem_promotional_referral_code(
             ledger_url = f"https://fairydust-ledger-{base_url_suffix}.up.railway.app"
 
             try:
+                # Check which token we're using for debugging
+                service_token = os.getenv('SERVICE_JWT_TOKEN')
+                token_to_use = service_token if service_token else credentials.credentials
+                token_source = "SERVICE_JWT_TOKEN" if service_token else "USER_TOKEN"
+                
+                print(f"🔑 PROMO_REDEEM: Using {token_source} for ledger auth", flush=True)
+                
                 async with httpx.AsyncClient() as client:
                     ledger_response = await client.post(
                         f"{ledger_url}/grants/promotional",
@@ -1669,7 +1676,7 @@ async def redeem_promotional_referral_code(
                             "idempotency_key": f"promo_{request.promotional_code.upper()}_{request.user_id}",
                         },
                         headers={
-                            "Authorization": f"Bearer {os.getenv('SERVICE_JWT_TOKEN', credentials.credentials)}"
+                            "Authorization": f"Bearer {token_to_use}"
                         },
                         timeout=10.0,
                     )
