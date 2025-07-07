@@ -1583,8 +1583,6 @@ async def validate_promotional_referral_code(
 @referral_router.post("/promotional/redeem", response_model=PromotionalReferralRedeemResponse)
 async def redeem_promotional_referral_code(
     request: PromotionalReferralRedeemRequest,
-    current_user: TokenData = Depends(get_current_user),
-    credentials: HTTPAuthorizationCredentials = Depends(HTTPBearer()),
     db: Database = Depends(get_db),
 ):
     """Redeem a promotional referral code for DUST bonus"""
@@ -1660,10 +1658,13 @@ async def redeem_promotional_referral_code(
             try:
                 # Check which token we're using for debugging
                 service_token = os.getenv('SERVICE_JWT_TOKEN')
-                token_to_use = service_token if service_token else credentials.credentials
-                token_source = "SERVICE_JWT_TOKEN" if service_token else "USER_TOKEN"
+                if not service_token:
+                    raise HTTPException(
+                        status_code=500,
+                        detail="SERVICE_JWT_TOKEN environment variable not configured. Please add it to apps service."
+                    )
                 
-                print(f"🔑 PROMO_REDEEM: Using {token_source} for ledger auth", flush=True)
+                print(f"🔑 PROMO_REDEEM: Using SERVICE_JWT_TOKEN for ledger auth", flush=True)
                 
                 async with httpx.AsyncClient() as client:
                     ledger_response = await client.post(
@@ -1676,7 +1677,7 @@ async def redeem_promotional_referral_code(
                             "idempotency_key": f"promo_{request.promotional_code.upper()}_{request.user_id}",
                         },
                         headers={
-                            "Authorization": f"Bearer {token_to_use}"
+                            "Authorization": f"Bearer {service_token}"
                         },
                         timeout=10.0,
                     )
