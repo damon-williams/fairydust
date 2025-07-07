@@ -1583,6 +1583,7 @@ async def validate_promotional_referral_code(
 @referral_router.post("/promotional/redeem", response_model=PromotionalReferralRedeemResponse)
 async def redeem_promotional_referral_code(
     request: PromotionalReferralRedeemRequest,
+    current_user: TokenData = Depends(get_current_user),
     db: Database = Depends(get_db),
 ):
     """Redeem a promotional referral code for DUST bonus"""
