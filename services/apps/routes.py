@@ -1355,7 +1355,7 @@ async def complete_referral(
                 headers={
                     "Authorization": f"Bearer {os.getenv('SERVICE_JWT_TOKEN', credentials.credentials)}"
                 },
-                timeout=10.0,
+                timeout=30.0,
             )
             
             if referee_response.status_code != 200:
@@ -1377,7 +1377,7 @@ async def complete_referral(
                 headers={
                     "Authorization": f"Bearer {os.getenv('SERVICE_JWT_TOKEN', credentials.credentials)}"
                 },
-                timeout=10.0,
+                timeout=30.0,
             )
             
             if referrer_response.status_code != 200:
@@ -1400,7 +1400,7 @@ async def complete_referral(
                     headers={
                         "Authorization": f"Bearer {credentials.credentials}"
                     },
-                    timeout=10.0,
+                    timeout=30.0,
                 )
                 
                 if milestone_response.status_code != 200:
@@ -1680,7 +1680,7 @@ async def redeem_promotional_referral_code(
                         headers={
                             "Authorization": f"Bearer {service_token}"
                         },
-                        timeout=10.0,
+                        timeout=30.0,
                     )
                     
                     print(f"🏦 LEDGER_RESPONSE: Status {ledger_response.status_code}", flush=True)
