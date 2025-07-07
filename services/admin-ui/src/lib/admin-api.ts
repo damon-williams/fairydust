@@ -408,6 +408,23 @@ export class AdminAPI {
     }
   }
 
+  static async getActionAnalytics(timeframe: string = '7d'): Promise<any> {
+    try {
+      const response = await fetch(`${API_BASE}/admin/llm/action-analytics?timeframe=${timeframe}`, {
+        credentials: 'include',
+      });
+      
+      if (response.ok) {
+        return await response.json();
+      }
+      
+      throw new Error('Failed to fetch action analytics');
+    } catch (error) {
+      console.error('Failed to get action analytics:', error);
+      throw error;
+    }
+  }
+
   static async getSupportedModels(): Promise<any> {
     try {
       console.log('🌐 Fetching supported models from admin service...');

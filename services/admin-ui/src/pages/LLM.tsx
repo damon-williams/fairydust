@@ -96,6 +96,19 @@ interface ModelUsage {
   avg_latency: number;
 }
 
+interface ActionAnalytics {
+  action_slug: string;
+  app_name: string;
+  total_requests: number;
+  avg_cost_per_request: number;
+  total_cost: number;
+  avg_total_tokens: number;
+  avg_latency_ms: number;
+  current_dust_cost: number;
+  cost_efficiency: number;
+  cost_per_dust: number | null;
+}
+
 interface ConfigFormData {
   primary_provider: string;
   primary_model_id: string;
@@ -130,6 +143,7 @@ export function LLM() {
   const [appConfigs, setAppConfigs] = useState<AppConfig[]>([]);
   const [modelUsage, setModelUsage] = useState<ModelUsage[]>([]);
   const [availableModels, setAvailableModels] = useState<Record<string, string[]>>({});
+  const [actionAnalytics, setActionAnalytics] = useState<ActionAnalytics[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [timeframe, setTimeframe] = useState('7d');
@@ -161,17 +175,19 @@ export function LLM() {
       setLoading(true);
       setError(null);
       
-      const [metricsData, configsData, modelUsageData, modelsData] = await Promise.all([
+      const [metricsData, configsData, modelUsageData, modelsData, actionData] = await Promise.all([
         AdminAPI.getLLMUsageMetrics(timeframe),
         AdminAPI.getLLMAppConfigs(),
         AdminAPI.getLLMModelUsage(),
         AdminAPI.getAvailableModels(),
+        AdminAPI.getActionAnalytics(timeframe),
       ]);
       
       setMetrics(metricsData);
       setAppConfigs(configsData);
       setModelUsage(modelUsageData);
       setAvailableModels(modelsData);
+      setActionAnalytics(actionData.action_analytics || []);
     } catch (err) {
       console.error('Failed to load LLM data:', err);
       setError('Failed to load LLM data. Please try again.');
@@ -308,6 +324,7 @@ export function LLM() {
           <TabsTrigger value="overview">Overview</TabsTrigger>
           <TabsTrigger value="models">Model Usage</TabsTrigger>
           <TabsTrigger value="apps">App Usage</TabsTrigger>
+          <TabsTrigger value="actions">Action Analytics</TabsTrigger>
           <TabsTrigger value="config">Configuration</TabsTrigger>
         </TabsList>
 
@@ -474,6 +491,68 @@ export function LLM() {
                       <TableCell>{app.avg_latency_ms.toFixed(0)}ms</TableCell>
                     </TableRow>
                   ))}
+                </TableBody>
+              </Table>
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        <TabsContent value="actions" className="space-y-6">
+          <Card>
+            <CardHeader>
+              <CardTitle>Action Cost Analytics</CardTitle>
+              <p className="text-sm text-muted-foreground">
+                Analyze token costs by action-slug to optimize DUST pricing
+              </p>
+            </CardHeader>
+            <CardContent>
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Action</TableHead>
+                    <TableHead>App</TableHead>
+                    <TableHead>Requests</TableHead>
+                    <TableHead>Avg Cost/Request</TableHead>
+                    <TableHead>Current DUST Cost</TableHead>
+                    <TableHead>Cost per DUST</TableHead>
+                    <TableHead>Avg Tokens</TableHead>
+                    <TableHead>Total Cost</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {actionAnalytics.map((action, index) => (
+                    <TableRow key={index}>
+                      <TableCell className="font-medium">{action.action_slug}</TableCell>
+                      <TableCell>
+                        <Badge variant="outline">{action.app_name}</Badge>
+                      </TableCell>
+                      <TableCell>{action.total_requests.toLocaleString()}</TableCell>
+                      <TableCell>${action.avg_cost_per_request.toFixed(6)}</TableCell>
+                      <TableCell>
+                        <Badge variant={action.current_dust_cost > 0 ? "default" : "secondary"}>
+                          {action.current_dust_cost} DUST
+                        </Badge>
+                      </TableCell>
+                      <TableCell>
+                        {action.cost_per_dust !== null ? (
+                          <span className={action.cost_per_dust > 0.001 ? "text-red-600" : "text-green-600"}>
+                            ${action.cost_per_dust.toFixed(6)}/DUST
+                          </span>
+                        ) : (
+                          <span className="text-gray-400">No pricing</span>
+                        )}
+                      </TableCell>
+                      <TableCell>{action.avg_total_tokens.toFixed(0)}</TableCell>
+                      <TableCell>${action.total_cost.toFixed(4)}</TableCell>
+                    </TableRow>
+                  ))}
+                  {actionAnalytics.length === 0 && (
+                    <TableRow>
+                      <TableCell colSpan={8} className="text-center text-muted-foreground">
+                        No action analytics data available for the selected timeframe
+                      </TableCell>
+                    </TableRow>
+                  )}
                 </TableBody>
               </Table>
             </CardContent>
