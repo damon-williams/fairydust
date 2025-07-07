@@ -1573,15 +1573,13 @@ async def redeem_promotional_referral_code(
             try:
                 async with httpx.AsyncClient() as client:
                     ledger_response = await client.post(
-                        f"{ledger_url}/admin/grant",
+                        f"{ledger_url}/grants/promotional",
                         json={
                             "user_id": str(request.user_id),
                             "amount": code_data["dust_bonus"],
                             "reason": f"Promotional code redemption: {request.promotional_code.upper()}",
-                            "metadata": {
-                                "promotional_code": request.promotional_code.upper(),
-                                "description": code_data["description"],
-                            },
+                            "promotional_code": request.promotional_code.upper(),
+                            "idempotency_key": f"promo_{request.promotional_code.upper()}_{request.user_id}",
                         },
                         timeout=10.0,
                     )

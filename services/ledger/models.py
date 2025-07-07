@@ -157,6 +157,22 @@ class ReferralRewardGrantRequest(BaseModel):
         return v
 
 
+class PromotionalGrantRequest(BaseModel):
+    user_id: UUID
+    amount: int = Field(..., ge=1, le=1000, description="Promotional grant amount")
+    reason: str = Field(..., min_length=1, max_length=255)
+    promotional_code: str = Field(..., min_length=1, max_length=50)
+    idempotency_key: str = Field(..., min_length=1, max_length=128)
+
+    @validator("idempotency_key")
+    def validate_idempotency_key(cls, v):
+        import re
+
+        if not re.match(r"^[a-zA-Z0-9_\-:]+$", v):
+            raise ValueError("Idempotency key must be alphanumeric with -_: allowed")
+        return v
+
+
 class RefundRequest(BaseModel):
     transaction_id: UUID
     reason: str = Field(..., min_length=1, max_length=255)

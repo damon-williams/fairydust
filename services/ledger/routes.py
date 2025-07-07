@@ -16,6 +16,7 @@ from models import (
     BulkGrantRequest,
     ConsumeRequest,
     GrantRequest,
+    PromotionalGrantRequest,
     PurchaseRequest,
     RefundRequest,
     ReferralRewardGrantRequest,
@@ -650,5 +651,25 @@ async def grant_referral_reward(
         metadata={
             "reward_type": request.reason,
             "referral_id": str(request.referral_id),
+        },
+    )
+
+
+@grants_router.post("/promotional", response_model=TransactionResponse)
+async def grant_promotional_dust(
+    request: PromotionalGrantRequest,
+    current_user: TokenData = Depends(get_current_user),
+    ledger: LedgerService = Depends(get_ledger_service),
+):
+    """Grant DUST for promotional code redemption (service-to-service)"""
+    
+    # Grant promotional DUST using the standard grant mechanism
+    return await ledger.grant_dust(
+        user_id=request.user_id,
+        amount=request.amount,
+        reason=request.reason,
+        metadata={
+            "promotional_code": request.promotional_code,
+            "idempotency_key": request.idempotency_key,
         },
     )
