@@ -431,6 +431,40 @@ class LedgerService:
         print(f"✅ GRANT_INITIAL_LOCK_ACQUIRED: Successfully acquired lock for user {user_id}", flush=True)
 
         try:
+            # First check if user already has this grant to avoid constraint violation
+            existing_grant = await self.db.fetch_one(
+                "SELECT id FROM app_grants WHERE user_id = $1 AND app_id = $2 AND grant_type = 'initial'",
+                user_id,
+                app_id,
+            )
+            
+            if existing_grant:
+                print(f"✅ GRANT_INITIAL_ALREADY_EXISTS: User {user_id} already has initial grant for app {app_id}, returning existing", flush=True)
+                
+                # Find and return the existing transaction
+                existing_transaction = await self.db.fetch_one(
+                    """
+                    SELECT dt.* FROM dust_transactions dt
+                    JOIN app_grants ag ON ag.metadata->>'transaction_id' = dt.id::text
+                    WHERE ag.user_id = $1 AND ag.app_id = $2 AND ag.grant_type = 'initial'
+                    ORDER BY dt.created_at DESC
+                    LIMIT 1
+                    """,
+                    user_id,
+                    app_id,
+                )
+                
+                if existing_transaction:
+                    # Get current balance
+                    current_balance = await self.get_balance(user_id)
+                    
+                    transaction_data = self._parse_transaction_data(existing_transaction)
+                    return TransactionResponse(
+                        transaction=Transaction(**transaction_data),
+                        new_balance=current_balance,
+                        previous_balance=current_balance - existing_transaction["amount"],
+                    )
+
             async with self.db.transaction() as conn:
                 # Verify user exists (Redis lock provides concurrency control)
                 user = await conn.fetchrow(
@@ -470,29 +504,19 @@ class LedgerService:
                 )
 
                 # Record grant in app_grants table
-                try:
-                    await conn.execute(
-                        """
-                        INSERT INTO app_grants (
-                            user_id, app_id, grant_type, amount, idempotency_key, metadata
-                        ) VALUES ($1, $2, $3, $4, $5, $6)
-                        """,
-                        user_id,
-                        app_id,
-                        "initial",
-                        amount,
-                        idempotency_key,
-                        json.dumps({"transaction_id": str(transaction_id)}),
-                    )
-                except Exception as e:
-                    # Check for unique constraint violation (already granted)
-                    if "duplicate key value violates unique constraint" in str(e) and "app_grants_user_id_app_id_grant_type" in str(e):
-                        print(f"✅ GRANT_INITIAL_ALREADY_CLAIMED: User {user_id} already received initial grant for app {app_id}, finding existing grant", flush=True)
-                        # Transaction is aborted, need to exit and query outside transaction
-                        break
-                    else:
-                        # Re-raise other database errors
-                        raise
+                await conn.execute(
+                    """
+                    INSERT INTO app_grants (
+                        user_id, app_id, grant_type, amount, idempotency_key, metadata
+                    ) VALUES ($1, $2, $3, $4, $5, $6)
+                    """,
+                    user_id,
+                    app_id,
+                    "initial",
+                    amount,
+                    idempotency_key,
+                    json.dumps({"transaction_id": str(transaction_id)}),
+                )
 
                 # Invalidate cache
                 await self.balance_cache.delete(str(user_id))
@@ -504,35 +528,6 @@ class LedgerService:
                     new_balance=new_balance,
                     previous_balance=current_balance,
                 )
-
-        # Handle duplicate grant case (transaction was aborted)
-        print(f"🔍 GRANT_INITIAL_DUPLICATE: Looking up existing grant for user {user_id} and app {app_id}", flush=True)
-        existing_transaction = await self.db.fetch_one(
-            """
-            SELECT dt.* FROM dust_transactions dt
-            JOIN app_grants ag ON ag.metadata->>'transaction_id' = dt.id::text
-            WHERE ag.user_id = $1 AND ag.app_id = $2 AND ag.grant_type = 'initial'
-            ORDER BY dt.created_at DESC
-            LIMIT 1
-            """,
-            user_id,
-            app_id,
-        )
-        
-        if existing_transaction:
-            # Get current balance
-            current_balance = await self.get_balance(user_id)
-            
-            print(f"✅ GRANT_INITIAL_FOUND_EXISTING: Returning existing grant for user {user_id}", flush=True)
-            transaction_data = self._parse_transaction_data(existing_transaction)
-            return TransactionResponse(
-                transaction=Transaction(**transaction_data),
-                new_balance=current_balance,
-                previous_balance=current_balance - existing_transaction["amount"],
-            )
-        else:
-            # Fallback to error if we can't find the existing transaction
-            raise HTTPException(status_code=409, detail="Initial grant already claimed for this app")
 
         finally:
             print(f"🔓 GRANT_INITIAL_LOCK_RELEASE: Releasing lock for user {user_id}", flush=True)
