@@ -779,4 +779,23 @@ export class AdminAPI {
       throw error;
     }
   }
+
+  // Service Token APIs
+  static async generateServiceToken(): Promise<{ token: string, expires: string | null }> {
+    try {
+      const response = await fetch(`${API_BASE}/admin/service-token/generate`, {
+        method: 'POST',
+        credentials: 'include',
+      });
+      
+      if (response.ok) {
+        return await response.json();
+      }
+      
+      throw new Error('Failed to generate service token');
+    } catch (error) {
+      console.error('Failed to generate service token:', error);
+      throw error;
+    }
+  }
 }
