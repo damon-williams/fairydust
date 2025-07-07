@@ -1316,6 +1316,25 @@ async def complete_referral(
     if current_referrals in milestone_thresholds:
         milestone_bonus = milestone_thresholds[current_referrals]
 
+    # Check one more time if this specific redemption already exists (prevent race condition)
+    existing_specific = await db.fetch_one(
+        """SELECT id FROM referral_redemptions 
+           WHERE referral_code = $1 AND referee_user_id = $2""",
+        request.referral_code,
+        request.referee_user_id,
+    )
+    
+    if existing_specific:
+        print(f"🚫 REFERRAL_DUPLICATE: Redemption already exists for user {request.referee_user_id} with code {request.referral_code}", flush=True)
+        # Return success but don't process again
+        return ReferralCompleteResponse(
+            success=True,
+            referrer_user_id=referrer_user_id,
+            referee_bonus_granted=0,  # Already granted
+            referrer_bonus_granted=0,  # Already granted
+            milestone_bonus=0,
+        )
+
     # Create redemption record with better duplicate protection
     try:
         redemption = await db.fetch_one(
@@ -1325,6 +1344,7 @@ async def complete_referral(
                 referee_bonus, referrer_bonus, milestone_bonus
             )
             VALUES ($1, $2, $3, $4, $5, $6)
+            ON CONFLICT (referral_code, referee_user_id) DO NOTHING
             RETURNING id
             """,
             request.referral_code,
@@ -1334,11 +1354,21 @@ async def complete_referral(
             referrer_bonus,
             milestone_bonus,
         )
+        
+        if not redemption:
+            print(f"⚠️ REFERRAL_CONFLICT: Redemption already exists (caught by ON CONFLICT)", flush=True)
+            # Return success but don't process again
+            return ReferralCompleteResponse(
+                success=True,
+                referrer_user_id=referrer_user_id,
+                referee_bonus_granted=0,  # Already granted
+                referrer_bonus_granted=0,  # Already granted
+                milestone_bonus=0,
+            )
+            
         print(f"✅ REFERRAL_CREATED: Redemption record created with ID {redemption['id']}", flush=True)
     except Exception as e:
         print(f"💥 REFERRAL_ERROR: Failed to create redemption record: {str(e)}", flush=True)
-        if "duplicate key" in str(e).lower() or "unique constraint" in str(e).lower():
-            raise HTTPException(status_code=400, detail="Referral already processed")
         raise HTTPException(status_code=500, detail="Failed to process referral")
 
     # Grant DUST bonuses via the ledger service
