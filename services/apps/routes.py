@@ -1352,8 +1352,14 @@ async def complete_referral(
     redemption_id = redemption["id"]
     
     try:
+        print(f"🎯 REFERRAL_GRANTS: Starting DUST grants for redemption {redemption_id}", flush=True)
+        print(f"  - Referee: {request.referee_user_id} gets {referee_bonus} DUST", flush=True)
+        print(f"  - Referrer: {referrer_user_id} gets {referrer_bonus} DUST", flush=True)
+        print(f"  - Milestone: {milestone_bonus} DUST", flush=True)
+        
         async with httpx.AsyncClient() as client:
             # Grant referee bonus
+            print(f"💰 REFERRAL_GRANT: Granting referee bonus...", flush=True)
             referee_response = await client.post(
                 f"{ledger_url}/grants/referral-reward",
                 json={
@@ -1374,8 +1380,10 @@ async def complete_referral(
                     status_code=500,
                     detail=f"Failed to grant referee bonus: {referee_response.text}"
                 )
+            print(f"✅ REFERRAL_GRANT: Referee bonus granted successfully", flush=True)
 
             # Grant referrer bonus
+            print(f"💰 REFERRAL_GRANT: Granting referrer bonus...", flush=True)
             referrer_response = await client.post(
                 f"{ledger_url}/grants/referral-reward",
                 json={
@@ -1396,9 +1404,11 @@ async def complete_referral(
                     status_code=500,
                     detail=f"Failed to grant referrer bonus: {referrer_response.text}"
                 )
+            print(f"✅ REFERRAL_GRANT: Referrer bonus granted successfully", flush=True)
 
             # Grant milestone bonus if applicable
             if milestone_bonus > 0:
+                print(f"💰 REFERRAL_GRANT: Granting milestone bonus...", flush=True)
                 milestone_response = await client.post(
                     f"{ledger_url}/grants/referral-reward",
                     json={
@@ -1419,6 +1429,7 @@ async def complete_referral(
                         status_code=500,
                         detail=f"Failed to grant milestone bonus: {milestone_response.text}"
                     )
+                print(f"✅ REFERRAL_GRANT: Milestone bonus granted successfully", flush=True)
 
     except httpx.TimeoutException:
         raise HTTPException(status_code=500, detail="Ledger service timeout")
