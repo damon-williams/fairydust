@@ -1344,7 +1344,6 @@ async def complete_referral(
                 referee_bonus, referrer_bonus, milestone_bonus
             )
             VALUES ($1, $2, $3, $4, $5, $6)
-            ON CONFLICT (referral_code, referee_user_id) DO NOTHING
             RETURNING id
             """,
             request.referral_code,
@@ -1354,17 +1353,6 @@ async def complete_referral(
             referrer_bonus,
             milestone_bonus,
         )
-        
-        if not redemption:
-            print(f"⚠️ REFERRAL_CONFLICT: Redemption already exists (caught by ON CONFLICT)", flush=True)
-            # Return success but don't process again
-            return ReferralCompleteResponse(
-                success=True,
-                referrer_user_id=referrer_user_id,
-                referee_bonus_granted=0,  # Already granted
-                referrer_bonus_granted=0,  # Already granted
-                milestone_bonus=0,
-            )
             
         print(f"✅ REFERRAL_CREATED: Redemption record created with ID {redemption['id']}", flush=True)
     except Exception as e:

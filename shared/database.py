@@ -1186,8 +1186,7 @@ async def create_tables():
             redeemed_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
             referee_bonus INTEGER NOT NULL,
             referrer_bonus INTEGER NOT NULL,
-            milestone_bonus INTEGER DEFAULT 0,
-            UNIQUE(referral_code, referee_user_id)
+            milestone_bonus INTEGER DEFAULT 0
         );
 
         CREATE INDEX IF NOT EXISTS idx_referral_redemptions_referrer ON referral_redemptions(referrer_user_id);
