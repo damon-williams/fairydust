@@ -4,6 +4,7 @@ from typing import Optional
 from uuid import UUID, uuid4
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from models import (
     App,
     AppCreate,
@@ -1254,6 +1255,8 @@ async def validate_referral_code(
 @referral_router.post("/complete", response_model=ReferralCompleteResponse)
 async def complete_referral(
     request: ReferralCompleteRequest,
+    current_user: TokenData = Depends(get_current_user),
+    credentials: HTTPAuthorizationCredentials = Depends(HTTPBearer()),
     db: Database = Depends(get_db),
 ):
     """Complete referral when code is redeemed"""
@@ -1349,6 +1352,9 @@ async def complete_referral(
                     "referral_id": str(redemption_id),
                     "idempotency_key": f"referee_{redemption_id}",
                 },
+                headers={
+                    "Authorization": f"Bearer {credentials.credentials}"
+                },
                 timeout=10.0,
             )
             
@@ -1367,6 +1373,9 @@ async def complete_referral(
                     "reason": "referral_bonus",
                     "referral_id": str(redemption_id),
                     "idempotency_key": f"referrer_{redemption_id}",
+                },
+                headers={
+                    "Authorization": f"Bearer {credentials.credentials}"
                 },
                 timeout=10.0,
             )
@@ -1387,6 +1396,9 @@ async def complete_referral(
                         "reason": "milestone_bonus",
                         "referral_id": str(redemption_id),
                         "idempotency_key": f"milestone_{redemption_id}",
+                    },
+                    headers={
+                        "Authorization": f"Bearer {credentials.credentials}"
                     },
                     timeout=10.0,
                 )
@@ -1571,6 +1583,8 @@ async def validate_promotional_referral_code(
 @referral_router.post("/promotional/redeem", response_model=PromotionalReferralRedeemResponse)
 async def redeem_promotional_referral_code(
     request: PromotionalReferralRedeemRequest,
+    current_user: TokenData = Depends(get_current_user),
+    credentials: HTTPAuthorizationCredentials = Depends(HTTPBearer()),
     db: Database = Depends(get_db),
 ):
     """Redeem a promotional referral code for DUST bonus"""
@@ -1653,6 +1667,9 @@ async def redeem_promotional_referral_code(
                             "reason": f"Promotional code redemption: {request.promotional_code.upper()}",
                             "promotional_code": request.promotional_code.upper(),
                             "idempotency_key": f"promo_{request.promotional_code.upper()}_{request.user_id}",
+                        },
+                        headers={
+                            "Authorization": f"Bearer {credentials.credentials}"
                         },
                         timeout=10.0,
                     )

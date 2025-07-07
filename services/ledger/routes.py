@@ -658,6 +658,7 @@ async def grant_referral_reward(
 @grants_router.post("/promotional", response_model=TransactionResponse)
 async def grant_promotional_dust(
     request: PromotionalGrantRequest,
+    current_user: TokenData = Depends(get_current_user),
     ledger: LedgerService = Depends(get_ledger_service),
 ):
     """Grant DUST for promotional code redemption (service-to-service)"""
