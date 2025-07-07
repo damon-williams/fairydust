@@ -618,6 +618,8 @@ async def grant_referral_reward(
     cache: redis.Redis = Depends(get_redis),
 ):
     """Grant DUST for referral rewards"""
+    
+    print(f"📨 REFERRAL_GRANT_REQUEST: user_id={request.user_id}, amount={request.amount}, reason={request.reason}, referral_id={request.referral_id}", flush=True)
 
     # Get fairydust-invite app UUID
     invite_app_uuid = await resolve_app_id("fairydust-invite", db, cache)
