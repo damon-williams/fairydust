@@ -1327,8 +1327,81 @@ async def complete_referral(
         milestone_bonus,
     )
 
-    # Here we would trigger DUST grants via the ledger service
-    # For now, just return the response
+    # Grant DUST bonuses via the ledger service
+    import httpx
+    import os
+
+    environment = os.getenv("ENVIRONMENT", "staging")
+    base_url_suffix = "production" if environment == "production" else "staging"
+    ledger_url = f"https://fairydust-ledger-{base_url_suffix}.up.railway.app"
+
+    redemption_id = redemption["id"]
+    
+    try:
+        async with httpx.AsyncClient() as client:
+            # Grant referee bonus
+            referee_response = await client.post(
+                f"{ledger_url}/grants/referral-reward",
+                json={
+                    "user_id": str(request.referee_user_id),
+                    "amount": referee_bonus,
+                    "reason": "referee_bonus",
+                    "referral_id": str(redemption_id),
+                    "idempotency_key": f"referee_{redemption_id}",
+                },
+                timeout=10.0,
+            )
+            
+            if referee_response.status_code != 200:
+                raise HTTPException(
+                    status_code=500,
+                    detail=f"Failed to grant referee bonus: {referee_response.text}"
+                )
+
+            # Grant referrer bonus
+            referrer_response = await client.post(
+                f"{ledger_url}/grants/referral-reward",
+                json={
+                    "user_id": str(referrer_user_id),
+                    "amount": referrer_bonus,
+                    "reason": "referral_bonus",
+                    "referral_id": str(redemption_id),
+                    "idempotency_key": f"referrer_{redemption_id}",
+                },
+                timeout=10.0,
+            )
+            
+            if referrer_response.status_code != 200:
+                raise HTTPException(
+                    status_code=500,
+                    detail=f"Failed to grant referrer bonus: {referrer_response.text}"
+                )
+
+            # Grant milestone bonus if applicable
+            if milestone_bonus > 0:
+                milestone_response = await client.post(
+                    f"{ledger_url}/grants/referral-reward",
+                    json={
+                        "user_id": str(referrer_user_id),
+                        "amount": milestone_bonus,
+                        "reason": "milestone_bonus",
+                        "referral_id": str(redemption_id),
+                        "idempotency_key": f"milestone_{redemption_id}",
+                    },
+                    timeout=10.0,
+                )
+                
+                if milestone_response.status_code != 200:
+                    raise HTTPException(
+                        status_code=500,
+                        detail=f"Failed to grant milestone bonus: {milestone_response.text}"
+                    )
+
+    except httpx.TimeoutException:
+        raise HTTPException(status_code=500, detail="Ledger service timeout")
+    except httpx.RequestError as e:
+        raise HTTPException(status_code=500, detail=f"Ledger service error: {str(e)}")
+
     return ReferralCompleteResponse(
         success=True,
         referrer_user_id=referrer_user_id,
