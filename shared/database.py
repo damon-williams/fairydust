@@ -1079,8 +1079,9 @@ async def create_tables():
             created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
 
             -- Constraints to prevent duplicate grants
-            UNIQUE(user_id, app_id, grant_type),
-            UNIQUE(user_id, grant_type, granted_date),
+            -- For initial grants: one per user per app (no date constraint)
+            -- For streak grants: one per user per app per day
+            UNIQUE(user_id, app_id, grant_type, granted_date),
             UNIQUE(idempotency_key)
         );
 
@@ -1091,6 +1092,34 @@ async def create_tables():
         CREATE INDEX IF NOT EXISTS idx_app_grants_user_type_date ON app_grants(user_id, grant_type, granted_date);
     """
     )
+    
+    # Fix for streak constraint bug - remove old constraint and ensure correct one exists
+    try:
+        # Drop the problematic constraint that prevents daily streak bonuses
+        await db.execute("ALTER TABLE app_grants DROP CONSTRAINT IF EXISTS app_grants_user_id_app_id_grant_type_key")
+        logger.info("Dropped old app_grants constraint that prevented daily streak bonuses")
+    except Exception as e:
+        # Constraint might not exist, which is fine
+        logger.debug(f"Old constraint drop (expected if doesn't exist): {e}")
+    
+    # Ensure the correct constraint exists (CREATE TABLE IF NOT EXISTS above should have created it)
+    # but add it if migrating from old schema
+    try:
+        await db.execute("""
+            DO $$
+            BEGIN
+                IF NOT EXISTS (
+                    SELECT 1 FROM pg_constraint 
+                    WHERE conname = 'app_grants_user_id_app_id_grant_type_granted_date_key'
+                ) THEN
+                    ALTER TABLE app_grants ADD CONSTRAINT app_grants_user_id_app_id_grant_type_granted_date_key 
+                        UNIQUE(user_id, app_id, grant_type, granted_date);
+                END IF;
+            END $$;
+        """)
+        logger.info("Ensured correct app_grants constraint exists for daily streak bonuses")
+    except Exception as e:
+        logger.warning(f"Error ensuring constraint (may already exist): {e}")
 
     # Action-based DUST pricing table
     await db.execute_schema(

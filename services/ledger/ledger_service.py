@@ -551,10 +551,10 @@ class LedgerService:
         if streak_days < 1 or streak_days > 5:
             raise HTTPException(status_code=400, detail="Streak days must be between 1 and 5")
 
-        # No daily streak limits - allow multiple streak bonuses per day
-        from datetime import date
+        # Use UTC date to ensure consistency across timezones
+        from datetime import date, datetime
 
-        today = date.today()
+        today = datetime.utcnow().date()
 
         # Idempotency check removed for testing - allow duplicate requests
 
@@ -630,7 +630,7 @@ class LedgerService:
                     )
                 except Exception as e:
                     # Check for unique constraint violation (already claimed today)
-                    if "duplicate key value violates unique constraint" in str(e) and "app_grants_user_id_app_id_grant_type" in str(e):
+                    if "duplicate key value violates unique constraint" in str(e) and ("app_grants_user_id_app_id_grant_type" in str(e) or "granted_date" in str(e)):
                         raise HTTPException(
                             status_code=409, 
                             detail=f"Streak bonus already claimed today for this app"
