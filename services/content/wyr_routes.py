@@ -881,6 +881,8 @@ QUALITY REQUIREMENTS:
 - Avoid offensive, inappropriate, or insensitive content
 - Make dilemmas meaningful and engaging
 
+CRITICAL: Each option_a and option_b should be a SINGLE choice only. Do NOT include both choices in one option or use "or" in the options.
+
 FORMAT: Return ONLY a valid JSON array of objects with this exact structure (no other text):
 [
   {{
@@ -891,26 +893,52 @@ FORMAT: Return ONLY a valid JSON array of objects with this exact structure (no 
   }}
 ]
 
-EXAMPLES of good "Would You Rather" questions:"""
+EXAMPLES showing how to split options correctly:"""
 
-    # Add age-appropriate examples
+    # Add age-appropriate examples with proper option splitting
     if category == GameCategory.FAMILY_FRIENDLY or "children" in age_context.lower():
         base_prompt += """
-- "Would you rather have a pet dragon or a pet unicorn?"
-- "Would you rather eat ice cream for breakfast or cookies for dinner?"
-- "Would you rather be able to talk to animals or make toys come to life?"
-- "Would you rather live in a treehouse or a castle made of candy?"
-- "Would you rather have super speed or super strength?"
+- Question: "Would you rather have a pet dragon or a pet unicorn?"
+  option_a: "Have a pet dragon"
+  option_b: "Have a pet unicorn"
+
+- Question: "Would you rather eat ice cream for breakfast or cookies for dinner?"
+  option_a: "Eat ice cream for breakfast"
+  option_b: "Eat cookies for dinner"
+
+- Question: "Would you rather be able to talk to animals or make toys come to life?"
+  option_a: "Be able to talk to animals"
+  option_b: "Make toys come to life"
 """
     else:
         base_prompt += """
-- "Would you rather have the ability to fly but only 3 feet off the ground, or be invisible but only when no one is looking?"
-- "Would you rather always know when someone is lying but never be able to prove it, or never know when someone is lying but always trust people?"
+- Question: "Would you rather have the ability to fly but only 3 feet off the ground, or be invisible but only when no one is looking?"
+  option_a: "Have the ability to fly but only 3 feet off the ground"
+  option_b: "Be invisible but only when no one is looking"
+
+- Question: "Would you rather always know when someone is lying but never be able to prove it, or never know when someone is lying but always trust people?"
+  option_a: "Always know when someone is lying but never be able to prove it"
+  option_b: "Never know when someone is lying but always trust people"
 """
 
-    base_prompt += f"""Generate exactly {game_length.value} creative, engaging questions now.
+    base_prompt += f"""
 
-IMPORTANT: Return ONLY the JSON array, no explanations, no additional text."""
+CORRECT JSON FORMAT EXAMPLE:
+[
+  {{
+    "question_number": 1,
+    "option_a": "Live in a treehouse",
+    "option_b": "Live in a castle made of candy",
+    "category": "{category.value if category != GameCategory.MIX_IT_UP else 'varies'}"
+  }}
+]
+
+Generate exactly {game_length.value} creative, engaging questions now.
+
+IMPORTANT: 
+- Return ONLY the JSON array, no explanations, no additional text
+- Each option should be a single choice, not a full question
+- Do NOT include "or" or both options in a single field"""
 
     return base_prompt
 
