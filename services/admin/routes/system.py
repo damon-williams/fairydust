@@ -7,7 +7,8 @@ from uuid import UUID
 
 import jwt
 from fastapi import APIRouter, Depends
-from shared.auth_middleware import get_current_admin_user
+
+from auth import get_current_admin_user
 
 # JWT Configuration - same as identity service
 JWT_SECRET_KEY = os.getenv("JWT_SECRET_KEY", "dev-secret-key-change-in-production")
