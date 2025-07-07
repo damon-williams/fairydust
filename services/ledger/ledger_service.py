@@ -143,9 +143,9 @@ class LedgerService:
         try:
             # Start transaction
             async with self.db.transaction() as conn:
-                # Get current balance with lock
+                # Get current balance (Redis lock provides concurrency control)
                 user = await conn.fetchrow(
-                    "SELECT id, dust_balance FROM users WHERE id = $1 FOR UPDATE", user_id
+                    "SELECT id, dust_balance FROM users WHERE id = $1", user_id
                 )
 
                 if not user:
@@ -235,9 +235,9 @@ class LedgerService:
 
         try:
             async with self.db.transaction() as conn:
-                # Get current balance with lock
+                # Get current balance (Redis lock provides concurrency control)
                 user = await conn.fetchrow(
-                    "SELECT id, dust_balance FROM users WHERE id = $1 FOR UPDATE", user_id
+                    "SELECT id, dust_balance FROM users WHERE id = $1", user_id
                 )
 
                 if not user:
@@ -428,9 +428,9 @@ class LedgerService:
 
         try:
             async with self.db.transaction() as conn:
-                # Verify user exists
+                # Verify user exists (Redis lock provides concurrency control)
                 user = await conn.fetchrow(
-                    "SELECT id, dust_balance FROM users WHERE id = $1 FOR UPDATE", user_id
+                    "SELECT id, dust_balance FROM users WHERE id = $1", user_id
                 )
 
                 if not user:
@@ -537,9 +537,9 @@ class LedgerService:
 
         try:
             async with self.db.transaction() as conn:
-                # Verify user exists and get current streak info
+                # Verify user exists and get current streak info (Redis lock provides concurrency control)
                 user = await conn.fetchrow(
-                    "SELECT id, dust_balance, streak_days, last_login_date FROM users WHERE id = $1 FOR UPDATE", user_id
+                    "SELECT id, dust_balance, streak_days, last_login_date FROM users WHERE id = $1", user_id
                 )
 
                 if not user:
