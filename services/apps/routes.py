@@ -1682,11 +1682,16 @@ async def redeem_promotional_referral_code(
                         timeout=10.0,
                     )
                     
+                    print(f"🏦 LEDGER_RESPONSE: Status {ledger_response.status_code}", flush=True)
+                    print(f"🏦 LEDGER_RESPONSE: Body {ledger_response.text[:200]}", flush=True)
+                    
                     if ledger_response.status_code != 200:
                         raise HTTPException(
                             status_code=500,
-                            detail=f"Failed to grant DUST bonus: {ledger_response.text}",
+                            detail=f"Failed to grant DUST bonus: Status {ledger_response.status_code}, Body: {ledger_response.text}",
                         )
+                    
+                    print(f"✅ PROMO_REDEEM: Successfully granted {code_data['dust_bonus']} DUST", flush=True)
 
             except httpx.TimeoutException:
                 raise HTTPException(
