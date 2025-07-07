@@ -382,8 +382,6 @@ async def get_current_user_profile(
     current_user: TokenData = Depends(get_current_user), db: Database = Depends(get_db)
 ):
     """Get current user profile"""
-    print(f"👤 USER_PROFILE: Getting profile for user {current_user.user_id}", flush=True)
-
     user = await db.fetch_one(
         """SELECT id, fairyname, email, phone, is_admin,
                   first_name, birth_date, is_onboarding_completed, dust_balance, auth_provider,
@@ -394,45 +392,9 @@ async def get_current_user_profile(
     )
 
     if not user:
-        print(f"❌ USER_PROFILE: User {current_user.user_id} not found in database", flush=True)
         raise HTTPException(status_code=404, detail="User not found")
 
-    # Log the raw database values for debugging
-    print(
-        f"🔍 USER_PROFILE: Raw DB values - is_onboarding_completed: {user.get('is_onboarding_completed')} (type: {type(user.get('is_onboarding_completed'))})",
-        flush=True,
-    )
-    print(
-        f"🔍 USER_PROFILE: Raw DB values - is_admin: {user.get('is_admin')} (type: {type(user.get('is_admin'))})",
-        flush=True,
-    )
-
-    user_model = User(**user)
-
-    # Log the Pydantic model values for comparison
-    print(
-        f"📝 USER_PROFILE: Pydantic model - is_onboarding_completed: {user_model.is_onboarding_completed} (type: {type(user_model.is_onboarding_completed)})",
-        flush=True,
-    )
-    print(
-        f"📝 USER_PROFILE: Pydantic model - is_admin: {user_model.is_admin} (type: {type(user_model.is_admin)})",
-        flush=True,
-    )
-
-    # Log the JSON that will be returned to help debug frontend issues
-    import json
-
-    user_dict = user_model.model_dump()
-    print(
-        f"🌐 USER_PROFILE: JSON response snippet - is_onboarding_completed: {user_dict.get('is_onboarding_completed')}",
-        flush=True,
-    )
-    print(
-        f"🌐 USER_PROFILE: Full JSON response: {json.dumps(user_dict, default=str, indent=2)}",
-        flush=True,
-    )
-
-    return user_model
+    return User(**user)
 
 
 @user_router.patch("/me", response_model=User)
