@@ -1353,7 +1353,7 @@ async def complete_referral(
                     "idempotency_key": f"referee_{redemption_id}",
                 },
                 headers={
-                    "Authorization": f"Bearer {credentials.credentials}"
+                    "Authorization": f"Bearer {os.getenv('SERVICE_JWT_TOKEN', credentials.credentials)}"
                 },
                 timeout=10.0,
             )
@@ -1375,7 +1375,7 @@ async def complete_referral(
                     "idempotency_key": f"referrer_{redemption_id}",
                 },
                 headers={
-                    "Authorization": f"Bearer {credentials.credentials}"
+                    "Authorization": f"Bearer {os.getenv('SERVICE_JWT_TOKEN', credentials.credentials)}"
                 },
                 timeout=10.0,
             )
@@ -1669,7 +1669,7 @@ async def redeem_promotional_referral_code(
                             "idempotency_key": f"promo_{request.promotional_code.upper()}_{request.user_id}",
                         },
                         headers={
-                            "Authorization": f"Bearer {credentials.credentials}"
+                            "Authorization": f"Bearer {os.getenv('SERVICE_JWT_TOKEN', credentials.credentials)}"
                         },
                         timeout=10.0,
                     )

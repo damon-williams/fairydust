@@ -14,6 +14,12 @@ fairydust is a **mobile app backend** that powers a collection of AI-powered min
 - `GOOGLE_PLACES_API_KEY`: Restaurant discovery (content service)
 - `TRIPADVISOR_API_KEY`: Activity search (content service)
 
+### Service Authentication
+- `SERVICE_JWT_TOKEN`: JWT token for service-to-service authentication (apps → ledger)
+  - Must be an admin user JWT token for ledger service operations
+  - Used for referral/promotional code DUST grants
+  - Falls back to user token if not set
+
 ## Commands
 
 ### Development Workflow
