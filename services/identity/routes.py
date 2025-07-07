@@ -495,10 +495,6 @@ async def get_user_onboard_tracking(
     current_user: TokenData = Depends(get_current_user), db: Database = Depends(get_db)
 ):
     """Get current user's onboard tracking state"""
-    print(
-        f"🔄 ONBOARD_TRACKING: Getting onboard tracking for user {current_user.user_id}", flush=True
-    )
-
     tracking = await db.fetch_one(
         "SELECT * FROM user_onboard_tracking WHERE user_id = $1",
         current_user.user_id,
@@ -506,10 +502,6 @@ async def get_user_onboard_tracking(
 
     if not tracking:
         # Create default tracking record if it doesn't exist
-        print(
-            f"📝 ONBOARD_TRACKING: Creating new tracking record for user {current_user.user_id}",
-            flush=True,
-        )
         try:
             tracking = await db.fetch_one(
                 """
@@ -519,16 +511,9 @@ async def get_user_onboard_tracking(
                 """,
                 current_user.user_id,
             )
-            print("✅ ONBOARD_TRACKING: Created tracking record successfully", flush=True)
         except Exception as e:
             print(f"❌ ONBOARD_TRACKING: Error creating tracking record: {str(e)}", flush=True)
             raise HTTPException(status_code=500, detail="Failed to create onboard tracking record")
-    else:
-        print("✅ ONBOARD_TRACKING: Found existing tracking record", flush=True)
-
-    print(
-        f"📤 ONBOARD_TRACKING: Returning tracking data for user {current_user.user_id}", flush=True
-    )
     return OnboardTracking(**tracking)
 
 

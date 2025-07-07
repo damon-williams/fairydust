@@ -196,15 +196,9 @@ async def get_current_user(
     """Dependency to get current user from JWT token"""
     from shared.redis_client import get_redis
 
-    print(
-        f"🔐 AUTH: get_current_user called with credentials present: {bool(credentials)}", flush=True
-    )
-
     redis_client = await get_redis()
     auth_service = AuthService(redis_client)
     token_data = await auth_service.decode_token(credentials.credentials)
-
-    print(f"🔐 AUTH: Token decoded successfully for user {token_data.user_id}", flush=True)
 
     # Optionally check if token is revoked
     if token_data.user_id:
@@ -212,8 +206,6 @@ async def get_current_user(
         if is_revoked:
             print(f"🔐 AUTH: Token revoked for user {token_data.user_id}", flush=True)
             raise HTTPException(status_code=401, detail="Token has been revoked")
-
-    print(f"🔐 AUTH: Returning token data for user {token_data.user_id}", flush=True)
     return token_data
 
 
