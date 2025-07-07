@@ -1665,6 +1665,7 @@ async def redeem_promotional_referral_code(
                     )
                 
                 print(f"🔑 PROMO_REDEEM: Using SERVICE_JWT_TOKEN for ledger auth", flush=True)
+                print(f"🔗 PROMO_REDEEM: Calling ledger at {ledger_url}/grants/promotional", flush=True)
                 
                 async with httpx.AsyncClient() as client:
                     ledger_response = await client.post(
@@ -1693,12 +1694,20 @@ async def redeem_promotional_referral_code(
                     
                     print(f"✅ PROMO_REDEEM: Successfully granted {code_data['dust_bonus']} DUST", flush=True)
 
-            except httpx.TimeoutException:
+            except httpx.TimeoutException as e:
+                print(f"⏰ PROMO_REDEEM: Timeout error: {str(e)}", flush=True)
                 raise HTTPException(
                     status_code=500,
                     detail="Timeout while granting DUST bonus",
                 )
+            except httpx.RequestError as e:
+                print(f"🌐 PROMO_REDEEM: HTTP request error: {str(e)}", flush=True)
+                raise HTTPException(
+                    status_code=500,
+                    detail=f"Network error while granting DUST bonus: {str(e)}",
+                )
             except Exception as e:
+                print(f"💥 PROMO_REDEEM: Unexpected error: {str(e)}", flush=True)
                 raise HTTPException(
                     status_code=500,
                     detail=f"Failed to grant DUST bonus: {str(e)}",
