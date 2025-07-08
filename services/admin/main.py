@@ -22,9 +22,9 @@ async def lifespan(app: FastAPI):
     try:
         logger.info("Starting admin service initialization...")
 
-        # Set environment variable to skip schema init for admin service
-        # since other services will create the tables
-        os.environ.setdefault("SKIP_SCHEMA_INIT", "true")
+        # Allow schema init for admin service to ensure system_config table exists
+        # since admin service needs access to system configuration
+        os.environ.setdefault("SKIP_SCHEMA_INIT", "false")
 
         await init_db()
         logger.info("Database initialized successfully")
@@ -48,8 +48,8 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(
     title="fairydust Admin Portal",
-    version="2.10.0",
-    description="Admin portal for fairydust platform with referral management",
+    version="2.11.0",
+    description="Admin portal for fairydust platform with system configuration management",
     lifespan=lifespan,
 )
 
