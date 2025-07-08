@@ -215,10 +215,6 @@ async def create_tables():
         ALTER TABLE users ADD COLUMN IF NOT EXISTS country VARCHAR(100) DEFAULT 'US';
         ALTER TABLE users ADD COLUMN IF NOT EXISTS last_login_date TIMESTAMP WITH TIME ZONE;
         ALTER TABLE users ADD COLUMN IF NOT EXISTS is_onboarding_completed BOOLEAN DEFAULT FALSE;
-        
-        -- Remove old streak columns (they may not exist)
-        ALTER TABLE users DROP COLUMN IF EXISTS streak_days;
-        ALTER TABLE users DROP COLUMN IF EXISTS timezone;
 
         -- Drop old age_range column (replaced with birth_date)
         ALTER TABLE users DROP COLUMN IF EXISTS age_range;
@@ -1335,17 +1331,34 @@ async def create_tables():
     """
     )
 
+    # Clean up streak-related columns and constraints safely
+    try:
+        await db.execute_schema(
+            """
+            -- Remove old streak columns (they may not exist in all environments)
+            ALTER TABLE users DROP COLUMN IF EXISTS streak_days;
+            ALTER TABLE users DROP COLUMN IF EXISTS timezone;
+            """
+        )
+        logger.info("Removed streak_days and timezone columns from users table")
+    except Exception as e:
+        logger.debug(f"Column cleanup (expected if columns don't exist): {e}")
+
     # Clean up app_grants table for daily bonus only (remove streak logic)
-    await db.execute_schema(
+    try:
+        await db.execute_schema(
+            """
+            -- Update grant_type constraint to only allow 'initial' and 'daily_bonus'
+            ALTER TABLE app_grants DROP CONSTRAINT IF EXISTS app_grants_grant_type_check;
+            ALTER TABLE app_grants ADD CONSTRAINT app_grants_grant_type_check 
+                CHECK (grant_type IN ('initial', 'daily_bonus'));
+                
+            -- Update existing 'streak' entries to 'daily_bonus'
+            UPDATE app_grants SET grant_type = 'daily_bonus' WHERE grant_type = 'streak';
         """
-        -- Update grant_type constraint to only allow 'initial' and 'daily_bonus'
-        ALTER TABLE app_grants DROP CONSTRAINT IF EXISTS app_grants_grant_type_check;
-        ALTER TABLE app_grants ADD CONSTRAINT app_grants_grant_type_check 
-            CHECK (grant_type IN ('initial', 'daily_bonus'));
-            
-        -- Update existing 'streak' entries to 'daily_bonus'
-        UPDATE app_grants SET grant_type = 'daily_bonus' WHERE grant_type = 'streak';
-    """
-    )
+        )
+        logger.info("Updated app_grants table for daily bonus system")
+    except Exception as e:
+        logger.warning(f"App grants cleanup failed: {e}")
 
     logger.info("Database schema creation/update completed successfully")
