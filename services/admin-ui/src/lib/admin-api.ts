@@ -815,4 +815,65 @@ export class AdminAPI {
       throw error;
     }
   }
+
+  // System Configuration APIs
+  static async getSystemConfig(): Promise<Array<{ key: string; value: string; description: string; updated_at: string }>> {
+    try {
+      const response = await fetch(`${API_BASE}/admin/system/config`, {
+        credentials: 'include',
+      });
+      
+      if (response.ok) {
+        return await response.json();
+      }
+      
+      throw new Error('Failed to fetch system config');
+    } catch (error) {
+      console.error('Failed to get system config:', error);
+      throw error;
+    }
+  }
+
+  static async getSystemConfigValue(key: string): Promise<{ key: string; value: string; description: string; updated_at: string }> {
+    try {
+      const response = await fetch(`${API_BASE}/admin/system/config/${key}`, {
+        credentials: 'include',
+      });
+      
+      if (response.ok) {
+        return await response.json();
+      }
+      
+      throw new Error(`Failed to fetch system config value: ${key}`);
+    } catch (error) {
+      console.error(`Failed to get system config value ${key}:`, error);
+      throw error;
+    }
+  }
+
+  static async updateSystemConfigValue(
+    key: string, 
+    value: string | number, 
+    description?: string
+  ): Promise<{ key: string; value: string; description: string; updated_by: string }> {
+    try {
+      const response = await fetch(`${API_BASE}/admin/system/config/${key}`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        credentials: 'include',
+        body: JSON.stringify({ value, description }),
+      });
+      
+      if (response.ok) {
+        return await response.json();
+      }
+      
+      throw new Error(`Failed to update system config value: ${key}`);
+    } catch (error) {
+      console.error(`Failed to update system config value ${key}:`, error);
+      throw error;
+    }
+  }
 }
