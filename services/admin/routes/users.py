@@ -24,7 +24,7 @@ async def get_users_json(
     base_query = """
         SELECT id, fairyname, email, phone, is_builder, is_admin, is_active,
                dust_balance, created_at, updated_at, auth_provider, city, country,
-               streak_days, avatar_url, first_name, birth_date, last_login_date
+               avatar_url, first_name, birth_date, last_login_date
         FROM users
     """
     count_query = "SELECT COUNT(*) as total FROM users"
@@ -63,7 +63,6 @@ async def get_users_json(
                 "country": user["country"],
                 "dust_balance": user["dust_balance"],
                 "auth_provider": user["auth_provider"] or "email",
-                "streak_days": user["streak_days"] or 0,
                 "last_login_date": user["last_login_date"].isoformat()
                 if user["last_login_date"]
                 else None,
