@@ -1357,18 +1357,24 @@ async def create_tables():
 
     # Clean up app_grants table for daily bonus only (remove streak logic)
     try:
+        # First update existing 'streak' entries to 'daily_bonus'
+        await db.execute_schema(
+            """
+            UPDATE app_grants SET grant_type = 'daily_bonus' WHERE grant_type = 'streak';
+            """
+        )
+        logger.info("Updated existing streak grants to daily_bonus")
+        
+        # Then update the constraint
         await db.execute_schema(
             """
             -- Update grant_type constraint to only allow 'initial' and 'daily_bonus'
             ALTER TABLE app_grants DROP CONSTRAINT IF EXISTS app_grants_grant_type_check;
             ALTER TABLE app_grants ADD CONSTRAINT app_grants_grant_type_check 
                 CHECK (grant_type IN ('initial', 'daily_bonus'));
-                
-            -- Update existing 'streak' entries to 'daily_bonus'
-            UPDATE app_grants SET grant_type = 'daily_bonus' WHERE grant_type = 'streak';
         """
         )
-        logger.info("Updated app_grants table for daily bonus system")
+        logger.info("Updated app_grants constraint for daily bonus system")
     except Exception as e:
         logger.warning(f"App grants cleanup failed: {e}")
 

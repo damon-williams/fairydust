@@ -82,7 +82,7 @@ class User(BaseModel):
     updated_at: datetime
     dust_balance: int = 0  # Denormalized for performance
     # Calculated daily bonus field (not stored in database)
-    is_daily_bonus_eligible: Optional[bool] = None
+    daily_bonus_eligible: Optional[bool] = None
 
     class Config:
         from_attributes = True

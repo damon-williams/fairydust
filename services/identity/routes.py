@@ -389,7 +389,7 @@ async def get_current_user_profile(
 
     # Convert user dict to mutable dict and add calculated fields
     user_dict = dict(user)
-    user_dict["is_daily_bonus_eligible"] = is_bonus_eligible
+    user_dict["daily_bonus_eligible"] = is_bonus_eligible
 
     return User(**user_dict)
 
