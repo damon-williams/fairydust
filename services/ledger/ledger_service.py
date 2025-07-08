@@ -14,7 +14,7 @@ from models import (
 
 from shared.database import Database
 from shared.redis_client import RedisCache
-from shared.streak_utils import update_daily_streak_for_grant
+from shared.daily_bonus_utils import update_last_login_for_bonus
 
 
 class LedgerService:
@@ -533,30 +533,23 @@ class LedgerService:
             print(f"🔓 GRANT_INITIAL_LOCK_RELEASE: Releasing lock for user {user_id}", flush=True)
             await self._release_balance_lock(user_id)
 
-    async def grant_streak_bonus(
+    async def grant_daily_bonus(
         self,
         user_id: UUID,
         app_id: UUID,
         amount: int,
-        streak_days: int,
         idempotency_key: str,
     ) -> TransactionResponse:
-        """Grant daily streak bonus to user (max 25)"""
+        """Grant daily login bonus to user"""
 
         # Validate amount
-        if amount > 25:
-            raise HTTPException(status_code=400, detail="Streak bonus cannot exceed 25 DUST")
-
-        # Validate streak days
-        if streak_days < 1 or streak_days > 5:
-            raise HTTPException(status_code=400, detail="Streak days must be between 1 and 5")
+        if amount > 100:
+            raise HTTPException(status_code=400, detail="Daily bonus cannot exceed 100 DUST")
 
         # Use UTC date to ensure consistency across timezones
         from datetime import date, datetime
 
         today = datetime.utcnow().date()
-
-        # Idempotency check removed for testing - allow duplicate requests
 
         # Acquire lock
         lock_acquired = await self._acquire_balance_lock(user_id)
@@ -565,24 +558,22 @@ class LedgerService:
 
         try:
             async with self.db.transaction() as conn:
-                # Verify user exists and get current streak info (Redis lock provides concurrency control)
+                # Verify user exists and get current info
                 user = await conn.fetchrow(
-                    "SELECT id, dust_balance, streak_days, last_login_date FROM users WHERE id = $1", user_id
+                    "SELECT id, dust_balance, last_login_date FROM users WHERE id = $1", user_id
                 )
 
                 if not user:
                     raise HTTPException(status_code=404, detail="User not found")
                 
-                # Calculate streak update WITH database write
-                from shared.streak_utils import update_daily_streak_for_grant
-                new_streak_days, new_login_date = await update_daily_streak_for_grant(
-                    conn, user_id, user["streak_days"], user["last_login_date"]
-                )
+                # Update last login date
+                current_time = datetime.utcnow()
+                await update_last_login_for_bonus(conn, str(user_id), current_time)
 
                 current_balance = user["dust_balance"]
                 new_balance = current_balance + amount
 
-                # Update only balance since streak is already updated by update_daily_streak_for_grant
+                # Update balance
                 await conn.execute(
                     """UPDATE users 
                        SET dust_balance = $1, updated_at = CURRENT_TIMESTAMP 
@@ -605,10 +596,10 @@ class LedgerService:
                     amount,
                     TransactionType.GRANT.value,
                     TransactionStatus.COMPLETED.value,
-                    f"Daily streak bonus (day {streak_days})",
+                    "Daily login bonus",
                     app_id,
                     json.dumps(
-                        {"grant_type": "streak", "streak_days": streak_days, "app_id": str(app_id)}
+                        {"grant_type": "daily_bonus", "app_id": str(app_id)}
                     ),
                 )
 
@@ -622,18 +613,18 @@ class LedgerService:
                         """,
                         user_id,
                         app_id,
-                        "streak",
+                        "daily_bonus",
                         amount,
                         today,
                         idempotency_key,
-                        json.dumps({"transaction_id": str(transaction_id), "streak_days": streak_days}),
+                        json.dumps({"transaction_id": str(transaction_id)}),
                     )
                 except Exception as e:
                     # Check for unique constraint violation (already claimed today)
                     if "duplicate key value violates unique constraint" in str(e) and ("app_grants_user_id_app_id_grant_type" in str(e) or "granted_date" in str(e)):
                         raise HTTPException(
                             status_code=409, 
-                            detail=f"Streak bonus already claimed today for this app"
+                            detail=f"Daily bonus already claimed today for this app"
                         )
                     else:
                         # Re-raise other database errors

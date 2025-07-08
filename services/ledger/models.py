@@ -101,11 +101,9 @@ class AppInitialGrantRequest(BaseModel):
         return v
 
 
-class AppStreakGrantRequest(BaseModel):
+class DailyBonusGrantRequest(BaseModel):
     user_id: UUID
     app_id: str = Field(..., description="App UUID or slug")
-    amount: int = Field(..., ge=1, le=25, description="Daily bonus amount (max 25)")
-    streak_days: int = Field(..., ge=1, le=5, description="Current streak for validation")
     idempotency_key: str = Field(..., min_length=1, max_length=128)
 
     @validator("app_id")

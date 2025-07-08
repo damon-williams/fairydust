@@ -27,7 +27,7 @@ from shared.database import Database, get_db
 from shared.email_service import send_otp_email
 from shared.redis_client import get_redis
 from shared.sms_service import send_otp_sms
-from shared.streak_utils import calculate_daily_streak_for_auth
+from shared.daily_bonus_utils import check_daily_bonus_eligibility
 
 security = HTTPBearer()
 
@@ -141,7 +141,7 @@ async def verify_otp(
     user = await db.fetch_one(
         f"""SELECT id, fairyname, email, phone, is_admin,
                   first_name, birth_date, is_onboarding_completed, dust_balance, auth_provider,
-                  streak_days, last_login_date,
+                  last_login_date,
                   created_at, updated_at
            FROM users WHERE {identifier_type} = $1""",
         otp_verify.identifier,
@@ -183,17 +183,12 @@ async def verify_otp(
             "otp",
         )
 
-    # Calculate and update daily login streak
-    (
-        streak_days,
-        last_login_date,
-        is_bonus_eligible,
-        current_streak_day,
-    ) = await calculate_daily_streak_for_auth(
-        db, str(user["id"]), user.get("streak_days", 0), user.get("last_login_date")
+    # Check daily login bonus eligibility
+    is_bonus_eligible, current_time = await check_daily_bonus_eligibility(
+        db, str(user["id"]), user.get("last_login_date")
     )
 
-    # Note: Database is NOT updated in auth - only calculated for response
+    # Note: Database is NOT updated in auth - only checked for response
     # DUST grant endpoint will handle actual database updates
 
     # Create tokens
@@ -212,8 +207,7 @@ async def verify_otp(
         is_new_user=is_new_user,
         dust_granted=0,  # DUST grants now handled by apps, not identity service
         is_first_login_today=is_bonus_eligible,
-        streak_bonus_eligible=not is_new_user and is_bonus_eligible and user.get("is_onboarding_completed", False),
-        current_streak_day=current_streak_day,
+        daily_bonus_eligible=not is_new_user and is_bonus_eligible and user.get("is_onboarding_completed", False),
     )
 
 
@@ -295,17 +289,12 @@ async def oauth_login(
             user_info["provider_id"],
         )
 
-    # Calculate and update daily login streak
-    (
-        streak_days,
-        last_login_date,
-        is_bonus_eligible,
-        current_streak_day,
-    ) = await calculate_daily_streak_for_auth(
-        db, str(user["id"]), user.get("streak_days", 0), user.get("last_login_date")
+    # Check daily login bonus eligibility
+    is_bonus_eligible, current_time = await check_daily_bonus_eligibility(
+        db, str(user["id"]), user.get("last_login_date")
     )
 
-    # Note: Database is NOT updated in auth - only calculated for response
+    # Note: Database is NOT updated in auth - only checked for response
     # DUST grant endpoint will handle actual database updates
 
     # Create tokens
@@ -324,8 +313,7 @@ async def oauth_login(
         is_new_user=is_new_user,
         dust_granted=0,  # DUST grants now handled by apps, not identity service
         is_first_login_today=is_bonus_eligible,
-        streak_bonus_eligible=not is_new_user and is_bonus_eligible and user.get("is_onboarding_completed", False),
-        current_streak_day=current_streak_day,
+        daily_bonus_eligible=not is_new_user and is_bonus_eligible and user.get("is_onboarding_completed", False),
     )
 
 
@@ -385,7 +373,7 @@ async def get_current_user_profile(
     user = await db.fetch_one(
         """SELECT id, fairyname, email, phone, is_admin,
                   first_name, birth_date, is_onboarding_completed, dust_balance, auth_provider,
-                  streak_days, last_login_date,
+                  last_login_date,
                   created_at, updated_at
            FROM users WHERE id = $1""",
         current_user.user_id,
@@ -394,20 +382,14 @@ async def get_current_user_profile(
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
 
-    # Calculate streak bonus fields for frontend
-    (
-        calculated_streak_days,
-        last_login_date,
-        is_bonus_eligible,
-        current_streak_day,
-    ) = await calculate_daily_streak_for_auth(
-        db, str(user["id"]), user.get("streak_days", 0), user.get("last_login_date")
+    # Check daily bonus eligibility for frontend
+    is_bonus_eligible, current_time = await check_daily_bonus_eligibility(
+        db, str(user["id"]), user.get("last_login_date")
     )
 
     # Convert user dict to mutable dict and add calculated fields
     user_dict = dict(user)
-    user_dict["is_streak_bonus_eligible"] = is_bonus_eligible
-    user_dict["current_streak_day"] = current_streak_day
+    user_dict["is_daily_bonus_eligible"] = is_bonus_eligible
 
     return User(**user_dict)
 

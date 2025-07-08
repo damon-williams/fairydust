@@ -76,15 +76,13 @@ class User(BaseModel):
     first_name: Optional[str] = None
     birth_date: Optional[date] = None
     is_onboarding_completed: bool = False
-    streak_days: int = 0
     last_login_date: Optional[datetime] = None
     auth_provider: Optional[str] = None
     created_at: datetime
     updated_at: datetime
     dust_balance: int = 0  # Denormalized for performance
-    # Calculated streak bonus fields (not stored in database)
-    is_streak_bonus_eligible: Optional[bool] = None
-    current_streak_day: Optional[int] = None
+    # Calculated daily bonus field (not stored in database)
+    is_daily_bonus_eligible: Optional[bool] = None
 
     class Config:
         from_attributes = True
@@ -180,5 +178,4 @@ class AuthResponse(BaseModel):
     dust_granted: int = 0
     # Daily login bonus eligibility info
     is_first_login_today: bool = False
-    streak_bonus_eligible: bool = False
-    current_streak_day: int = 1
+    daily_bonus_eligible: bool = False

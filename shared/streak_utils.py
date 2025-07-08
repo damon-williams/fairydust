@@ -27,7 +27,7 @@ async def _execute_with_retry(db, query: str, *args, max_retries: int = 2, timeo
 
 
 async def calculate_daily_streak_for_auth(
-    db, user_id: str, current_streak: int, last_login_date: Optional[datetime]
+    db, user_id: str, current_streak: int, last_login_date: Optional[datetime], user_timezone: str = "America/Los_Angeles"
 ) -> tuple[int, datetime, bool, int]:
     """
     Calculate daily login streak for auth response WITHOUT updating database.
@@ -51,11 +51,24 @@ async def calculate_daily_streak_for_auth(
     - Bonus eligible on: first login ever, consecutive days, or after missed days
     - NO DATABASE UPDATES - read-only calculation for auth response
     """
-    now = datetime.utcnow()
+    from zoneinfo import ZoneInfo
+    
+    now_utc = datetime.utcnow()
+    
+    # Convert to user's timezone
+    try:
+        tz = ZoneInfo(user_timezone)
+        now_local = now_utc.replace(tzinfo=ZoneInfo('UTC')).astimezone(tz)
+    except Exception as e:
+        print(f"⚠️ STREAK_DEBUG [{user_id}]: Invalid timezone '{user_timezone}', using Pacific: {e}", flush=True)
+        tz = ZoneInfo('America/Los_Angeles')
+        now_local = now_utc.replace(tzinfo=ZoneInfo('UTC')).astimezone(tz)
     
     print(f"🔍 STREAK_DEBUG [{user_id}]: === Calculating Streak ===", flush=True)
-    print(f"🕐 STREAK_DEBUG [{user_id}]: Current UTC time: {now.isoformat()}", flush=True)
-    print(f"🕐 STREAK_DEBUG [{user_id}]: Current UTC date: {now.date()}", flush=True)
+    print(f"🕐 STREAK_DEBUG [{user_id}]: Current UTC time: {now_utc.isoformat()}", flush=True)
+    print(f"🌍 STREAK_DEBUG [{user_id}]: User timezone: {user_timezone}", flush=True)
+    print(f"🕐 STREAK_DEBUG [{user_id}]: Current local time: {now_local.isoformat()}", flush=True)
+    print(f"📅 STREAK_DEBUG [{user_id}]: Current local date: {now_local.date()}", flush=True)
     print(f"📊 STREAK_DEBUG [{user_id}]: Current streak: {current_streak} days", flush=True)
     print(f"📅 STREAK_DEBUG [{user_id}]: Last login: {last_login_date.isoformat() if last_login_date else 'NEVER'}", flush=True)
 
@@ -67,25 +80,35 @@ async def calculate_daily_streak_for_auth(
         print(f"🎉 STREAK_DEBUG [{user_id}]: FIRST LOGIN EVER - Bonus eligible!", flush=True)
         print(f"✅ STREAK_DEBUG [{user_id}]: New streak: 1, Bonus: YES, Streak day: 1", flush=True)
         # NO DATABASE UPDATE - return calculated values only
-        return new_streak, now, is_bonus_eligible, current_streak_day
+        return new_streak, now_utc, is_bonus_eligible, current_streak_day
 
-    # Calculate days since last login (UTC-based)
-    last_login_date_only = last_login_date.date() if last_login_date else None
-    days_since = (now.date() - last_login_date.date()).days
-    
-    print(f"📅 STREAK_DEBUG [{user_id}]: Last login date only: {last_login_date_only}", flush=True)
-    print(f"📏 STREAK_DEBUG [{user_id}]: Days since last login: {days_since}", flush=True)
-    
-    # Human-readable interpretation
-    if days_since == 0:
-        print(f"🔄 STREAK_DEBUG [{user_id}]: SAME DAY LOGIN - No bonus", flush=True)
-    elif days_since == 1:
-        print(f"🔥 STREAK_DEBUG [{user_id}]: CONSECUTIVE DAY - Streak continues!", flush=True)
+    # Convert last login to user's timezone  
+    if last_login_date.tzinfo is None:
+        last_login_utc = last_login_date.replace(tzinfo=ZoneInfo('UTC'))
     else:
-        print(f"💔 STREAK_DEBUG [{user_id}]: MISSED {days_since-1} DAYS - Streak broken!", flush=True)
+        last_login_utc = last_login_date
+    
+    last_login_local = last_login_utc.astimezone(tz)
+    
+    # Calculate days using LOCAL dates (this is the key!)
+    last_login_date_local = last_login_local.date()
+    current_date_local = now_local.date()
+    days_since = (current_date_local - last_login_date_local).days
+    
+    print(f"📅 STREAK_DEBUG [{user_id}]: Last login local date: {last_login_date_local}", flush=True)
+    print(f"📅 STREAK_DEBUG [{user_id}]: Current local date: {current_date_local}", flush=True)
+    print(f"📏 STREAK_DEBUG [{user_id}]: Local calendar days since: {days_since}", flush=True)
+    
+    # Simple logic: consecutive local calendar days = streak continues
+    if days_since == 0:
+        print(f"🔄 STREAK_DEBUG [{user_id}]: SAME LOCAL DAY - No bonus", flush=True)
+    elif days_since == 1:
+        print(f"🔥 STREAK_DEBUG [{user_id}]: CONSECUTIVE LOCAL DAY - Streak continues!", flush=True)
+    else:
+        print(f"💔 STREAK_DEBUG [{user_id}]: MISSED {days_since-1} LOCAL DAYS - Streak broken!", flush=True)
 
     if days_since == 0:
-        # Same day, return current streak (no bonus)
+        # Same calendar day, return current streak (no bonus)
         is_bonus_eligible = False
         current_streak_day = ((current_streak - 1) % 5) + 1
         print(f"❌ STREAK_DEBUG [{user_id}]: No change - Same day login", flush=True)
@@ -110,7 +133,7 @@ async def calculate_daily_streak_for_auth(
     print(f"🔍 STREAK_DEBUG [{user_id}]: === End Streak Calculation ===", flush=True)
 
     # NO DATABASE UPDATE - return calculated values only
-    return new_streak, now, is_bonus_eligible, current_streak_day
+    return new_streak, now_utc, is_bonus_eligible, current_streak_day
 
 
 async def update_daily_streak_for_grant(
@@ -136,8 +159,12 @@ async def update_daily_streak_for_grant(
     """
     now = datetime.utcnow()
     
+    # Grace period to account for timezone differences
+    GRACE_PERIOD_HOURS = 36
+    
     print(f"🔄 STREAK_UPDATE_DEBUG [{user_id}]: === Updating Streak in DB ===", flush=True)
     print(f"🕐 STREAK_UPDATE_DEBUG [{user_id}]: Current UTC time: {now.isoformat()}", flush=True)
+    print(f"⏰ STREAK_UPDATE_DEBUG [{user_id}]: Grace period: {GRACE_PERIOD_HOURS} hours", flush=True)
     print(f"📊 STREAK_UPDATE_DEBUG [{user_id}]: Current streak: {current_streak} days", flush=True)
     print(f"📅 STREAK_UPDATE_DEBUG [{user_id}]: Last login: {last_login_date.isoformat() if last_login_date else 'NEVER'}", flush=True)
 
@@ -159,22 +186,30 @@ async def update_daily_streak_for_grant(
         print(f"✅ STREAK_UPDATE_DEBUG [{user_id}]: Database updated - Streak: 1, Last login: {now.isoformat()}", flush=True)
         return new_streak, now
 
-    # Calculate days since last login (UTC-based)
+    # Calculate time since last login
+    time_since = now - last_login_date
+    hours_since = time_since.total_seconds() / 3600
     days_since = (now.date() - last_login_date.date()).days
-    print(f"📏 STREAK_UPDATE_DEBUG [{user_id}]: Days since last login: {days_since}", flush=True)
+    
+    print(f"⏱️ STREAK_UPDATE_DEBUG [{user_id}]: Hours since last login: {hours_since:.1f}", flush=True)
+    print(f"📏 STREAK_UPDATE_DEBUG [{user_id}]: Calendar days since: {days_since}", flush=True)
+
+    # Hybrid approach: Check both calendar days AND grace period
+    is_different_calendar_day = days_since >= 1
+    is_within_grace_period = hours_since <= GRACE_PERIOD_HOURS
 
     if days_since == 0:
-        # Same day, no update needed
-        print(f"🔄 STREAK_UPDATE_DEBUG [{user_id}]: Same day - No database update needed", flush=True)
+        # Same calendar day, no update needed
+        print(f"🔄 STREAK_UPDATE_DEBUG [{user_id}]: Same calendar day - No database update needed", flush=True)
         return current_streak, last_login_date
-    elif days_since == 1:
-        # Consecutive day, increment (no cap - infinite streak)
+    elif is_different_calendar_day and is_within_grace_period:
+        # Different day within grace period - increment
         new_streak = current_streak + 1
-        print(f"🔥 STREAK_UPDATE_DEBUG [{user_id}]: Consecutive day - Incrementing to {new_streak}", flush=True)
+        print(f"🔥 STREAK_UPDATE_DEBUG [{user_id}]: Different day + within grace period - Incrementing to {new_streak}", flush=True)
     else:
-        # Missed days, reset to 1
+        # Beyond grace period - reset
         new_streak = 1
-        print(f"💔 STREAK_UPDATE_DEBUG [{user_id}]: Missed {days_since-1} days - Resetting to 1", flush=True)
+        print(f"💔 STREAK_UPDATE_DEBUG [{user_id}]: Beyond grace period ({hours_since:.1f} > {GRACE_PERIOD_HOURS} hours) - Resetting to 1", flush=True)
 
     # Update database with new streak and login date
     print(f"💾 STREAK_UPDATE_DEBUG [{user_id}]: Updating database...", flush=True)

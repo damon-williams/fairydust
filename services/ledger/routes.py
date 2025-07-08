@@ -10,7 +10,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from ledger_service import LedgerService
 from models import (
     AppInitialGrantRequest,
-    AppStreakGrantRequest,
+    DailyBonusGrantRequest,
     Balance,
     BalanceAdjustment,
     BulkGrantRequest,
@@ -574,19 +574,19 @@ async def grant_initial_dust(
     )
 
 
-@grants_router.post("/app-streak", response_model=TransactionResponse)
-async def grant_streak_bonus(
-    request: AppStreakGrantRequest,
+@grants_router.post("/daily-bonus", response_model=TransactionResponse)
+async def grant_daily_bonus(
+    request: DailyBonusGrantRequest,
     current_user: TokenData = Depends(get_current_user),
     ledger: LedgerService = Depends(get_ledger_service),
     db: Database = Depends(get_db),
     cache: redis.Redis = Depends(get_redis),
 ):
-    """Grant daily streak bonus to user (app-initiated)"""
+    """Grant daily login bonus to user (app-initiated)"""
 
     # Resolve app slug to UUID if needed
     app_uuid = await resolve_app_id(request.app_id, db, cache)
-    print(f"🎨 GRANT_STREAK: Resolved app '{request.app_id}' to UUID {app_uuid}", flush=True)
+    print(f"🎨 GRANT_DAILY_BONUS: Resolved app '{request.app_id}' to UUID {app_uuid}", flush=True)
 
     # Validate the app
     app_validation = await validate_app(app_uuid)
@@ -599,12 +599,21 @@ async def grant_streak_bonus(
             status_code=status.HTTP_403_FORBIDDEN, detail="App is not active or not approved"
         )
 
-    # Apps can grant streak bonuses to any user
-    return await ledger.grant_streak_bonus(
+    # Get daily bonus amount from system config
+    config_result = await db.fetch_one(
+        "SELECT value FROM system_config WHERE key = 'daily_login_bonus_amount'"
+    )
+    
+    if not config_result:
+        raise HTTPException(status_code=500, detail="Daily bonus not configured")
+    
+    bonus_amount = int(config_result["value"])
+
+    # Apps can grant daily bonuses to any user
+    return await ledger.grant_daily_bonus(
         user_id=request.user_id,
         app_id=app_uuid,
-        amount=request.amount,
-        streak_days=request.streak_days,
+        amount=bonus_amount,
         idempotency_key=request.idempotency_key,
     )
 
