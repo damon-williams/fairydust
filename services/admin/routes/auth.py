@@ -260,3 +260,5 @@ async def generate_service_token(admin_user: dict = Depends(get_current_admin_us
         "generated_for": admin_user["fairyname"],
         "usage": "Set this as SERVICE_JWT_TOKEN environment variable in apps service"
     }
+
+
