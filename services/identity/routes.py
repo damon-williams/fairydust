@@ -29,6 +29,19 @@ from shared.redis_client import get_redis
 from shared.sms_service import send_otp_sms
 from shared.daily_bonus_utils import check_daily_bonus_eligibility
 
+
+async def get_daily_bonus_amount(db: Database) -> int:
+    """Get current daily bonus amount from system config with fallback"""
+    try:
+        config_result = await db.fetch_one(
+            "SELECT value FROM system_config WHERE key = 'daily_login_bonus_amount'"
+        )
+        if config_result:
+            return int(config_result["value"])
+    except Exception:
+        pass
+    return 5  # Default fallback
+
 security = HTTPBearer()
 
 # Constants
@@ -191,10 +204,14 @@ async def verify_otp(
     # Note: Database is NOT updated in auth - only checked for response
     # DUST grant endpoint will handle actual database updates
 
-    # Add calculated daily bonus field to user data
+    # Get daily bonus amount from system config
+    daily_bonus_amount = await get_daily_bonus_amount(db)
+
+    # Add calculated daily bonus fields to user data
     user_dict = dict(user)
     daily_bonus_value = not is_new_user and is_bonus_eligible and user.get("is_onboarding_completed", False)
     user_dict["daily_bonus_eligible"] = daily_bonus_value
+    user_dict["daily_bonus_amount"] = daily_bonus_amount
 
     # Create tokens
     token_data = {
@@ -302,10 +319,14 @@ async def oauth_login(
     # Note: Database is NOT updated in auth - only checked for response
     # DUST grant endpoint will handle actual database updates
 
-    # Add calculated daily bonus field to user data
+    # Get daily bonus amount from system config
+    daily_bonus_amount = await get_daily_bonus_amount(db)
+
+    # Add calculated daily bonus fields to user data
     user_dict = dict(user)
     daily_bonus_value = not is_new_user and is_bonus_eligible and user.get("is_onboarding_completed", False)
     user_dict["daily_bonus_eligible"] = daily_bonus_value
+    user_dict["daily_bonus_amount"] = daily_bonus_amount
 
     # Create tokens
     token_data = {
@@ -397,9 +418,13 @@ async def get_current_user_profile(
         db, str(user["id"]), user.get("last_login_date")
     )
 
+    # Get daily bonus amount from system config
+    daily_bonus_amount = await get_daily_bonus_amount(db)
+
     # Convert user dict to mutable dict and add calculated fields
     user_dict = dict(user)
     user_dict["daily_bonus_eligible"] = is_bonus_eligible
+    user_dict["daily_bonus_amount"] = daily_bonus_amount
 
     return User(**user_dict)
 
