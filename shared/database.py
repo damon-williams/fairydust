@@ -202,7 +202,7 @@ async def create_tables():
         CREATE INDEX IF NOT EXISTS idx_users_fairyname ON users(fairyname);
         CREATE INDEX IF NOT EXISTS idx_users_email ON users(email);
         CREATE INDEX IF NOT EXISTS idx_users_phone ON users(phone);
-        CREATE INDEX IF NOT EXISTS idx_users_streak_login ON users(id, last_login_date, streak_days);
+        CREATE INDEX IF NOT EXISTS idx_users_login ON users(id, last_login_date);
     """
     )
 
@@ -1332,6 +1332,17 @@ async def create_tables():
     )
 
     # Clean up streak-related columns and constraints safely
+    try:
+        # Drop old index that references streak_days first
+        await db.execute_schema(
+            """
+            DROP INDEX IF EXISTS idx_users_streak_login;
+            """
+        )
+        logger.info("Dropped old streak login index")
+    except Exception as e:
+        logger.debug(f"Index cleanup (expected if index doesn't exist): {e}")
+    
     try:
         await db.execute_schema(
             """
