@@ -110,7 +110,7 @@ app.include_router(users_router, prefix="/admin/users")
 app.include_router(apps_router, prefix="/admin/apps")
 app.include_router(llm_router, prefix="/admin/llm")
 app.include_router(referrals_router, prefix="/admin/referrals")
-app.include_router(system_router, prefix="/admin")
+app.include_router(system_router, prefix="/admin/system")
 
 # Dynamic asset serving for any file with cache-busting
 static_dir = Path(__file__).parent / "static"
