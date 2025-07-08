@@ -191,6 +191,11 @@ async def verify_otp(
     # Note: Database is NOT updated in auth - only checked for response
     # DUST grant endpoint will handle actual database updates
 
+    # Add calculated daily bonus field to user data
+    user_dict = dict(user)
+    daily_bonus_value = not is_new_user and is_bonus_eligible and user.get("is_onboarding_completed", False)
+    user_dict["daily_bonus_eligible"] = daily_bonus_value
+
     # Create tokens
     token_data = {
         "user_id": str(user["id"]),
@@ -202,12 +207,12 @@ async def verify_otp(
     refresh_token = await auth_service.create_refresh_token(token_data)
 
     return AuthResponse(
-        user=User(**user),
+        user=User(**user_dict),
         token=Token(access_token=access_token, refresh_token=refresh_token, expires_in=3600),
         is_new_user=is_new_user,
         dust_granted=0,  # DUST grants now handled by apps, not identity service
         is_first_login_today=is_bonus_eligible,
-        daily_bonus_eligible=not is_new_user and is_bonus_eligible and user.get("is_onboarding_completed", False),
+        daily_bonus_eligible=daily_bonus_value,
     )
 
 
@@ -297,6 +302,11 @@ async def oauth_login(
     # Note: Database is NOT updated in auth - only checked for response
     # DUST grant endpoint will handle actual database updates
 
+    # Add calculated daily bonus field to user data
+    user_dict = dict(user)
+    daily_bonus_value = not is_new_user and is_bonus_eligible and user.get("is_onboarding_completed", False)
+    user_dict["daily_bonus_eligible"] = daily_bonus_value
+
     # Create tokens
     token_data = {
         "user_id": str(user["id"]),
@@ -308,12 +318,12 @@ async def oauth_login(
     refresh_token = await auth_service.create_refresh_token(token_data)
 
     return AuthResponse(
-        user=User(**user),
+        user=User(**user_dict),
         token=Token(access_token=access_token, refresh_token=refresh_token, expires_in=3600),
         is_new_user=is_new_user,
         dust_granted=0,  # DUST grants now handled by apps, not identity service
         is_first_login_today=is_bonus_eligible,
-        daily_bonus_eligible=not is_new_user and is_bonus_eligible and user.get("is_onboarding_completed", False),
+        daily_bonus_eligible=daily_bonus_value,
     )
 
 
