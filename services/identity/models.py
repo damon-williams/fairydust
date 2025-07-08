@@ -82,6 +82,9 @@ class User(BaseModel):
     created_at: datetime
     updated_at: datetime
     dust_balance: int = 0  # Denormalized for performance
+    # Calculated streak bonus fields (not stored in database)
+    is_streak_bonus_eligible: Optional[bool] = None
+    current_streak_day: Optional[int] = None
 
     class Config:
         from_attributes = True

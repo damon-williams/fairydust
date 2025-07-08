@@ -394,7 +394,22 @@ async def get_current_user_profile(
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
 
-    return User(**user)
+    # Calculate streak bonus fields for frontend
+    (
+        calculated_streak_days,
+        last_login_date,
+        is_bonus_eligible,
+        current_streak_day,
+    ) = await calculate_daily_streak_for_auth(
+        db, str(user["id"]), user.get("streak_days", 0), user.get("last_login_date")
+    )
+
+    # Convert user dict to mutable dict and add calculated fields
+    user_dict = dict(user)
+    user_dict["is_streak_bonus_eligible"] = is_bonus_eligible
+    user_dict["current_streak_day"] = current_streak_day
+
+    return User(**user_dict)
 
 
 @user_router.patch("/me", response_model=User)
