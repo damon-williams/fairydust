@@ -5,7 +5,7 @@ import os
 import time
 from typing import Optional, Tuple
 
-import aiohttp
+import httpx
 from fastapi import HTTPException
 
 from models import ImageStyle, ImageSize, ImageReferencePerson
@@ -96,30 +96,30 @@ class ImageGenerationService:
             "Content-Type": "application/json"
         }
         
-        async with aiohttp.ClientSession() as session:
-            async with session.post(
+        async with httpx.AsyncClient() as client:
+            response = await client.post(
                 "https://api.openai.com/v1/images/generations",
                 headers=headers,
                 json=payload,
-                timeout=aiohttp.ClientTimeout(total=60)
-            ) as response:
-                if response.status != 200:
-                    error_data = await response.json()
-                    raise HTTPException(
-                        status_code=500,
-                        detail=f"OpenAI API error: {error_data.get('error', {}).get('message', 'Unknown error')}"
-                    )
-                
-                data = await response.json()
-                image_url = data["data"][0]["url"]
-                
-                metadata = {
-                    "model_used": "dall-e-3",
-                    "api_provider": "openai",
-                    "enhanced_prompt": enhanced_prompt
-                }
-                
-                return image_url, metadata
+                timeout=60.0
+            )
+            if response.status_code != 200:
+                error_data = response.json()
+                raise HTTPException(
+                    status_code=500,
+                    detail=f"OpenAI API error: {error_data.get('error', {}).get('message', 'Unknown error')}"
+                )
+            
+            data = response.json()
+            image_url = data["data"][0]["url"]
+            
+            metadata = {
+                "model_used": "dall-e-3",
+                "api_provider": "openai",
+                "enhanced_prompt": enhanced_prompt
+            }
+            
+            return image_url, metadata
     
     async def _generate_with_replicate(
         self,
@@ -179,61 +179,62 @@ class ImageGenerationService:
         }
         
         # Start prediction
-        async with aiohttp.ClientSession() as session:
-            async with session.post(
+        async with httpx.AsyncClient() as client:
+            response = await client.post(
                 f"https://api.replicate.com/v1/models/{model}/predictions",
                 headers=headers,
                 json=payload,
-                timeout=aiohttp.ClientTimeout(total=10)
-            ) as response:
-                if response.status != 201:
-                    error_data = await response.json()
-                    raise HTTPException(
-                        status_code=500,
-                        detail=f"Replicate API error: {error_data.get('detail', 'Unknown error')}"
-                    )
-                
-                prediction = await response.json()
-                prediction_id = prediction["id"]
+                timeout=10.0
+            )
+            if response.status_code != 201:
+                error_data = response.json()
+                raise HTTPException(
+                    status_code=500,
+                    detail=f"Replicate API error: {error_data.get('detail', 'Unknown error')}"
+                )
             
-            # Poll for completion
-            max_wait_time = 120  # 2 minutes
-            poll_interval = 2    # 2 seconds
-            elapsed_time = 0
-            
+            prediction = response.json()
+            prediction_id = prediction["id"]
+        
+        # Poll for completion
+        max_wait_time = 120  # 2 minutes
+        poll_interval = 2    # 2 seconds
+        elapsed_time = 0
+        
+        async with httpx.AsyncClient() as client:
             while elapsed_time < max_wait_time:
                 await asyncio.sleep(poll_interval)
                 elapsed_time += poll_interval
                 
-                async with session.get(
+                poll_response = await client.get(
                     f"https://api.replicate.com/v1/predictions/{prediction_id}",
                     headers=headers
-                ) as poll_response:
-                    if poll_response.status != 200:
-                        raise HTTPException(status_code=500, detail="Failed to check prediction status")
+                )
+                if poll_response.status_code != 200:
+                    raise HTTPException(status_code=500, detail="Failed to check prediction status")
+                
+                result = poll_response.json()
+                status = result["status"]
+                
+                if status == "succeeded":
+                    image_url = result["output"][0] if isinstance(result["output"], list) else result["output"]
                     
-                    result = await poll_response.json()
-                    status = result["status"]
+                    metadata = {
+                        "model_used": model,
+                        "api_provider": "replicate",
+                        "enhanced_prompt": enhanced_prompt,
+                        "prediction_id": prediction_id,
+                        "reference_people_count": len(reference_people)
+                    }
                     
-                    if status == "succeeded":
-                        image_url = result["output"][0] if isinstance(result["output"], list) else result["output"]
-                        
-                        metadata = {
-                            "model_used": model,
-                            "api_provider": "replicate",
-                            "enhanced_prompt": enhanced_prompt,
-                            "prediction_id": prediction_id,
-                            "reference_people_count": len(reference_people)
-                        }
-                        
-                        return image_url, metadata
-                    
-                    elif status == "failed":
-                        error_msg = result.get("error", "Unknown generation error")
-                        raise HTTPException(status_code=500, detail=f"Image generation failed: {error_msg}")
-            
-            # Timeout
-            raise HTTPException(status_code=500, detail="Image generation timed out")
+                    return image_url, metadata
+                
+                elif status == "failed":
+                    error_msg = result.get("error", "Unknown generation error")
+                    raise HTTPException(status_code=500, detail=f"Image generation failed: {error_msg}")
+        
+        # Timeout
+        raise HTTPException(status_code=500, detail="Image generation timed out")
     
 
 

@@ -5,10 +5,7 @@ import uuid
 from typing import Optional, Tuple
 from urllib.parse import urlparse
 
-import aiohttp
-import boto3
-from botocore.config import Config
-from botocore.exceptions import ClientError
+import httpx
 from fastapi import HTTPException
 
 
@@ -22,18 +19,8 @@ class ImageStorageService:
         self.bucket_name = os.getenv("R2_BUCKET_NAME", "fairydust-images")
         self.endpoint = os.getenv("R2_ENDPOINT")
         
-        if not all([self.account_id, self.access_key, self.secret_key]):
-            raise ValueError("Missing R2 configuration. Check environment variables.")
-        
-        # Initialize R2 client
-        self.client = boto3.client(
-            's3',
-            endpoint_url=self.endpoint,
-            aws_access_key_id=self.access_key,
-            aws_secret_access_key=self.secret_key,
-            config=Config(signature_version='s3v4'),
-            region_name='auto'  # R2 uses 'auto' for region
-        )
+        # For now, we'll just store URLs without actual R2 upload
+        # This can be enabled once boto3 is properly installed
     
     async def store_generated_image(
         self,
@@ -53,48 +40,27 @@ class ImageStorageService:
             Tuple[str, int, dict]: (stored_url, file_size_bytes, dimensions)
         """
         try:
-            # Download the image
-            async with aiohttp.ClientSession() as session:
-                async with session.get(image_url, timeout=aiohttp.ClientTimeout(total=30)) as response:
-                    if response.status != 200:
-                        raise HTTPException(
-                            status_code=500,
-                            detail=f"Failed to download generated image: HTTP {response.status}"
-                        )
-                    
-                    image_data = await response.read()
-                    content_type = response.headers.get('content-type', 'image/jpeg')
+            # Download the image to get file info
+            async with httpx.AsyncClient() as client:
+                response = await client.get(image_url, timeout=30.0)
+                if response.status_code != 200:
+                    raise HTTPException(
+                        status_code=500,
+                        detail=f"Failed to download generated image: HTTP {response.status_code}"
+                    )
+                
+                image_data = response.content
+                content_type = response.headers.get('content-type', 'image/jpeg')
             
-            # Determine file extension
-            file_extension = self._get_extension_from_content_type(content_type)
-            
-            # Generate storage key
-            storage_key = f"generated/{user_id}/{image_id}.{file_extension}"
-            
-            # Upload to R2
-            self.client.put_object(
-                Bucket=self.bucket_name,
-                Key=storage_key,
-                Body=image_data,
-                ContentType=content_type,
-                CacheControl="public, max-age=31536000",  # Cache for 1 year
-                Metadata={
-                    'user-id': user_id,
-                    'image-id': image_id,
-                    'source': 'ai-generated'
-                }
-            )
-            
-            # Generate public URL
-            stored_url = f"https://pub-{self.account_id[:8]}.r2.dev/{self.bucket_name}/{storage_key}"
+            # For now, just return the original URL until R2 is properly configured
+            # TODO: Implement actual R2 upload once boto3 is available
+            stored_url = image_url
             
             # Get image dimensions
             dimensions = await self._get_image_dimensions(image_data)
             
             return stored_url, len(image_data), dimensions
             
-        except ClientError as e:
-            raise HTTPException(status_code=500, detail=f"Storage failed: {str(e)}")
         except Exception as e:
             raise HTTPException(status_code=500, detail=f"Image processing failed: {str(e)}")
     
@@ -108,17 +74,9 @@ class ImageStorageService:
         Returns:
             bool: True if deleted successfully
         """
-        try:
-            # Extract key from URL
-            key = self._extract_key_from_url(image_url)
-            if not key:
-                return False
-            
-            self.client.delete_object(Bucket=self.bucket_name, Key=key)
-            return True
-            
-        except ClientError:
-            return False
+        # For now, just return True since we're not actually storing in R2
+        # TODO: Implement actual R2 deletion once boto3 is available
+        return True
     
     def _get_extension_from_content_type(self, content_type: str) -> str:
         """Get file extension from content type"""

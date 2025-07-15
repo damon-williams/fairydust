@@ -4,7 +4,7 @@ import os
 from datetime import datetime
 from uuid import uuid4
 
-import aiohttp
+import httpx
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.security import HTTPBearer
 
@@ -43,29 +43,29 @@ async def validate_user_people(db: Database, user_id: str, person_ids: list[str]
     # Get people from identity service
     identity_base_url = _get_identity_service_url()
     
-    async with aiohttp.ClientSession() as session:
-        async with session.get(
+    async with httpx.AsyncClient() as client:
+        response = await client.get(
             f"{identity_base_url}/users/{user_id}/people",
-            timeout=aiohttp.ClientTimeout(total=10)
-        ) as response:
-            if response.status != 200:
+            timeout=10.0
+        )
+        if response.status_code != 200:
+            raise HTTPException(
+                status_code=400,
+                detail="Failed to validate people references"
+            )
+        
+        people_data = response.json()
+        people_map = {str(person["id"]): person["name"] for person in people_data}
+        
+        # Validate all person IDs exist
+        for person_id in person_ids:
+            if person_id not in people_map:
                 raise HTTPException(
                     status_code=400,
-                    detail="Failed to validate people references"
+                    detail=f"Person {person_id} not found or does not belong to user"
                 )
-            
-            people_data = await response.json()
-            people_map = {str(person["id"]): person["name"] for person in people_data}
-            
-            # Validate all person IDs exist
-            for person_id in person_ids:
-                if person_id not in people_map:
-                    raise HTTPException(
-                        status_code=400,
-                        detail=f"Person {person_id} not found or does not belong to user"
-                    )
-            
-            return people_map
+        
+        return people_map
 
 
 def _get_identity_service_url() -> str:
