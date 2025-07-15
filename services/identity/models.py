@@ -125,6 +125,9 @@ class PersonInMyLife(BaseModel):
     name: str
     birth_date: Optional[date] = None
     relationship: Optional[str] = None
+    photo_url: Optional[str] = None
+    photo_uploaded_at: Optional[datetime] = None
+    photo_size_bytes: Optional[int] = None
     created_at: datetime
     updated_at: datetime
 

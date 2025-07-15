@@ -4,7 +4,7 @@ from datetime import datetime
 from uuid import uuid4
 
 from auth import AuthService, TokenData, get_current_user
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Security
+from fastapi import APIRouter, BackgroundTasks, Depends, File, HTTPException, Security, UploadFile
 from fastapi.security import HTTPBearer
 from models import (
     AuthResponse,
@@ -28,6 +28,7 @@ from shared.email_service import send_otp_email
 from shared.redis_client import get_redis
 from shared.sms_service import send_otp_sms
 from shared.daily_bonus_utils import check_daily_bonus_eligibility
+from shared.storage_service import upload_person_photo, delete_person_photo
 
 
 async def get_daily_bonus_amount(db: Database) -> int:
@@ -753,6 +754,181 @@ async def remove_person_from_life(
     await db.execute("DELETE FROM people_in_my_life WHERE id = $1", person_id)
 
     return {"message": "Person removed successfully"}
+
+
+@user_router.post("/{user_id}/people/{person_id}/photo")
+async def upload_person_photo_endpoint(
+    user_id: str,
+    person_id: str,
+    file: UploadFile = File(...),
+    current_user: TokenData = Depends(get_current_user),
+    db: Database = Depends(get_db),
+):
+    """Upload a photo for a person in user's life"""
+    if current_user.user_id != user_id and not current_user.is_admin:
+        raise HTTPException(status_code=403, detail="Access denied")
+
+    # Verify person belongs to user
+    existing = await db.fetch_one(
+        "SELECT id, photo_url FROM people_in_my_life WHERE id = $1 AND user_id = $2", 
+        person_id, user_id
+    )
+
+    if not existing:
+        raise HTTPException(status_code=404, detail="Person not found")
+
+    try:
+        # Upload new photo
+        photo_url, file_size = await upload_person_photo(file, user_id, person_id)
+        
+        # Delete old photo if it exists
+        if existing["photo_url"]:
+            await delete_person_photo(existing["photo_url"])
+        
+        # Update database
+        await db.execute(
+            """UPDATE people_in_my_life 
+               SET photo_url = $1, photo_uploaded_at = CURRENT_TIMESTAMP, 
+                   photo_size_bytes = $2, updated_at = CURRENT_TIMESTAMP
+               WHERE id = $3""",
+            photo_url, file_size, person_id
+        )
+        
+        return {
+            "message": "Photo uploaded successfully",
+            "photo_url": photo_url,
+            "file_size": file_size
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Upload failed: {str(e)}")
+
+
+@user_router.get("/{user_id}/people/{person_id}/photo")
+async def get_person_photo_endpoint(
+    user_id: str,
+    person_id: str,
+    current_user: TokenData = Depends(get_current_user),
+    db: Database = Depends(get_db),
+):
+    """Get photo info for a person in user's life"""
+    if current_user.user_id != user_id and not current_user.is_admin:
+        raise HTTPException(status_code=403, detail="Access denied")
+
+    # Get person with photo info
+    person = await db.fetch_one(
+        "SELECT photo_url, photo_uploaded_at, photo_size_bytes FROM people_in_my_life WHERE id = $1 AND user_id = $2", 
+        person_id, user_id
+    )
+
+    if not person:
+        raise HTTPException(status_code=404, detail="Person not found")
+    
+    if not person["photo_url"]:
+        raise HTTPException(status_code=404, detail="No photo found")
+
+    return {
+        "photo_url": person["photo_url"],
+        "photo_uploaded_at": person["photo_uploaded_at"],
+        "photo_size_bytes": person["photo_size_bytes"]
+    }
+
+
+@user_router.patch("/{user_id}/people/{person_id}/photo")
+async def update_person_photo_endpoint(
+    user_id: str,
+    person_id: str,
+    file: UploadFile = File(...),
+    current_user: TokenData = Depends(get_current_user),
+    db: Database = Depends(get_db),
+):
+    """Update/replace a photo for a person in user's life"""
+    if current_user.user_id != user_id and not current_user.is_admin:
+        raise HTTPException(status_code=403, detail="Access denied")
+
+    # Verify person belongs to user
+    existing = await db.fetch_one(
+        "SELECT id, photo_url FROM people_in_my_life WHERE id = $1 AND user_id = $2", 
+        person_id, user_id
+    )
+
+    if not existing:
+        raise HTTPException(status_code=404, detail="Person not found")
+
+    try:
+        # Upload new photo
+        photo_url, file_size = await upload_person_photo(file, user_id, person_id)
+        
+        # Delete old photo if it exists
+        if existing["photo_url"]:
+            await delete_person_photo(existing["photo_url"])
+        
+        # Update database
+        await db.execute(
+            """UPDATE people_in_my_life 
+               SET photo_url = $1, photo_uploaded_at = CURRENT_TIMESTAMP, 
+                   photo_size_bytes = $2, updated_at = CURRENT_TIMESTAMP
+               WHERE id = $3""",
+            photo_url, file_size, person_id
+        )
+        
+        return {
+            "message": "Photo updated successfully",
+            "photo_url": photo_url,
+            "file_size": file_size
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Upload failed: {str(e)}")
+
+
+@user_router.delete("/{user_id}/people/{person_id}/photo")
+async def delete_person_photo_endpoint(
+    user_id: str,
+    person_id: str,
+    current_user: TokenData = Depends(get_current_user),
+    db: Database = Depends(get_db),
+):
+    """Delete a photo for a person in user's life"""
+    if current_user.user_id != user_id and not current_user.is_admin:
+        raise HTTPException(status_code=403, detail="Access denied")
+
+    # Verify person belongs to user and get photo URL
+    existing = await db.fetch_one(
+        "SELECT photo_url FROM people_in_my_life WHERE id = $1 AND user_id = $2", 
+        person_id, user_id
+    )
+
+    if not existing:
+        raise HTTPException(status_code=404, detail="Person not found")
+    
+    if not existing["photo_url"]:
+        raise HTTPException(status_code=404, detail="No photo to delete")
+
+    try:
+        # Delete from R2
+        deleted = await delete_person_photo(existing["photo_url"])
+        
+        # Update database (remove photo reference)
+        await db.execute(
+            """UPDATE people_in_my_life 
+               SET photo_url = NULL, photo_uploaded_at = NULL, 
+                   photo_size_bytes = NULL, updated_at = CURRENT_TIMESTAMP
+               WHERE id = $1""",
+            person_id
+        )
+        
+        return {
+            "message": "Photo deleted successfully",
+            "deleted_from_storage": deleted
+        }
+        
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Delete failed: {str(e)}")
 
 
 # Person profile data endpoints removed - no longer needed

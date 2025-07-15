@@ -841,6 +841,148 @@ class WyrGameErrorResponse(BaseModel):
     session_id: Optional[UUID] = None
 
 
+# Image App Models
+class ImageStyle(str, Enum):
+    REALISTIC = "realistic"
+    ARTISTIC = "artistic"
+    CARTOON = "cartoon"
+    ABSTRACT = "abstract"
+    VINTAGE = "vintage"
+    MODERN = "modern"
+
+
+class ImageSize(str, Enum):
+    STANDARD = "standard"  # 1024x1024
+    LARGE = "large"      # 1024x1792
+    SQUARE = "square"    # 1024x1024
+
+
+class ImageReferencePerson(BaseModel):
+    person_id: UUID
+    photo_url: str = Field(..., max_length=1000)
+    description: str = Field(..., min_length=1, max_length=500)
+
+
+class ImageGenerateRequest(BaseModel):
+    user_id: UUID
+    prompt: str = Field(..., min_length=1, max_length=1000)
+    style: ImageStyle
+    image_size: ImageSize = ImageSize.STANDARD
+    reference_people: list[ImageReferencePerson] = Field(default_factory=list, max_items=3)
+    metadata: Optional[dict] = Field(default_factory=dict)
+
+
+class ImageRegenerateRequest(BaseModel):
+    user_id: UUID
+    feedback: str = Field(..., min_length=1, max_length=1000)
+    keep_people: bool = True
+    style_adjustments: Optional[dict] = Field(default_factory=dict)
+    metadata: Optional[dict] = Field(default_factory=dict)
+
+
+class ImagePersonReference(BaseModel):
+    person_id: UUID
+    person_name: str
+    description: str
+
+
+class ImageMetadata(BaseModel):
+    model_used: str
+    generation_time_ms: int
+    has_reference_people: bool
+    api_provider: str
+    file_size_bytes: Optional[int] = None
+    dimensions: Optional[dict] = None
+    is_regeneration: bool = False
+    original_image_id: Optional[UUID] = None
+    regeneration_feedback: Optional[str] = None
+
+
+class UserImage(BaseModel):
+    id: UUID
+    user_id: UUID
+    url: str
+    prompt: str
+    style: ImageStyle
+    image_size: ImageSize
+    is_favorited: bool = False
+    reference_people: list[ImagePersonReference] = Field(default_factory=list)
+    metadata: dict = Field(default_factory=dict)
+    created_at: datetime
+    updated_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+class ImageGenerationInfo(BaseModel):
+    model_used: str
+    generation_time_ms: int
+    cost_estimate: str
+
+
+class ImageGenerateResponse(BaseModel):
+    success: bool = True
+    image: UserImage
+    generation_info: ImageGenerationInfo
+
+
+class ImageRegenerateResponse(BaseModel):
+    success: bool = True
+    image: UserImage
+    generation_info: ImageGenerationInfo
+
+
+class ImageListRequest(BaseModel):
+    limit: int = Field(20, ge=1, le=50)
+    offset: int = Field(0, ge=0)
+    favorites_only: bool = False
+    style: Optional[ImageStyle] = None
+    has_people: Optional[bool] = None
+
+
+class ImagePagination(BaseModel):
+    total: int
+    limit: int
+    offset: int
+    has_more: bool
+
+
+class ImageListResponse(BaseModel):
+    success: bool = True
+    images: list[UserImage]
+    pagination: ImagePagination
+
+
+class ImageDetailResponse(BaseModel):
+    success: bool = True
+    image: UserImage
+
+
+class ImageUpdateRequest(BaseModel):
+    is_favorited: bool
+
+
+class ImageUpdateResponse(BaseModel):
+    success: bool = True
+    image: UserImage
+
+
+class ImageDeleteResponse(BaseModel):
+    success: bool = True
+    message: str = "Image deleted successfully"
+    deleted_from_storage: bool
+
+
+class ImageErrorResponse(BaseModel):
+    success: bool = False
+    error: str
+    error_code: Optional[str] = None
+    current_balance: Optional[int] = None
+    required_amount: Optional[int] = None
+    image_id: Optional[UUID] = None
+
+
 # Error Response Model
 class ErrorResponse(BaseModel):
     error: dict

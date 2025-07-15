@@ -25,6 +25,7 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from fortune_routes import router as fortune_router
+from image_routes import image_router
 from inspire_routes import router as inspire_router
 from recipe_routes import router as recipe_router
 from restaurant_routes import router as restaurant_router
@@ -100,6 +101,8 @@ endpoint_limits = {
     "/apps/fortune-teller/generate": 50 * 1024,  # 50KB for fortune generation requests
     "/users/*/characters": 10 * 1024,  # 10KB for character management requests
     "/apps/would-you-rather/*": 20 * 1024,  # 20KB for would-you-rather requests
+    "/images/generate": 100 * 1024,  # 100KB for image generation requests
+    "/images/*/regenerate": 100 * 1024,  # 100KB for image regeneration requests
 }
 
 add_middleware_to_app(
@@ -130,6 +133,7 @@ app.include_router(recipe_router, tags=["recipes-new"])
 app.include_router(fortune_router, tags=["fortune-teller"])
 app.include_router(character_router, tags=["characters"])
 app.include_router(wyr_router, tags=["would-you-rather"])
+app.include_router(image_router, tags=["images"])
 
 
 @app.get("/")

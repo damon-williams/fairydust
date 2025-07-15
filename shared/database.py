@@ -352,6 +352,9 @@ async def create_tables():
             name VARCHAR(100) NOT NULL,
             birth_date DATE,
             relationship VARCHAR(100),
+            photo_url TEXT,
+            photo_uploaded_at TIMESTAMP WITH TIME ZONE,
+            photo_size_bytes INTEGER,
             created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
             updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
         );
@@ -1384,5 +1387,58 @@ async def create_tables():
         logger.info("Added updated app_grants constraint for daily bonus system")
     except Exception as e:
         logger.warning(f"App grants cleanup failed: {e}")
+
+    # User Images table for Image app
+    await db.execute_schema(
+        """
+        CREATE TABLE IF NOT EXISTS user_images (
+            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            url TEXT NOT NULL,
+            prompt TEXT NOT NULL,
+            style VARCHAR(20) NOT NULL CHECK (style IN ('realistic', 'artistic', 'cartoon', 'abstract', 'vintage', 'modern')),
+            image_size VARCHAR(10) NOT NULL CHECK (image_size IN ('standard', 'large', 'square')),
+            is_favorited BOOLEAN DEFAULT FALSE,
+            reference_people JSONB DEFAULT '[]',
+            metadata JSONB DEFAULT '{}',
+            created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_user_images_user_id ON user_images(user_id);
+        CREATE INDEX IF NOT EXISTS idx_user_images_created_at ON user_images(created_at DESC);
+        CREATE INDEX IF NOT EXISTS idx_user_images_style ON user_images(style);
+        CREATE INDEX IF NOT EXISTS idx_user_images_favorited ON user_images(user_id, is_favorited);
+        CREATE INDEX IF NOT EXISTS idx_user_images_has_people ON user_images(user_id) WHERE jsonb_array_length(reference_people) > 0;
+    """
+    )
+
+    # Insert Image app if it doesn't exist
+    try:
+        await db.execute_schema(
+            """
+            INSERT INTO apps (
+                id, builder_id, name, slug, description, icon_url,
+                status, category, is_active, created_at, updated_at
+            )
+            SELECT
+                gen_random_uuid(),
+                (SELECT id FROM users WHERE is_builder = true LIMIT 1),
+                'Image',
+                'fairydust-image',
+                'Generate AI images from text prompts with optional reference people',
+                NULL,
+                'approved',
+                'creative',
+                true,
+                CURRENT_TIMESTAMP,
+                CURRENT_TIMESTAMP
+            WHERE NOT EXISTS (
+                SELECT 1 FROM apps WHERE slug = 'fairydust-image'
+            );
+        """
+        )
+    except Exception as e:
+        logger.warning(f"Image app creation failed (may already exist): {e}")
 
     logger.info("Database schema creation/update completed successfully")
