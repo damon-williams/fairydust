@@ -235,35 +235,6 @@ class ImageGenerationService:
             # Timeout
             raise HTTPException(status_code=500, detail="Image generation timed out")
     
-    def calculate_dust_cost(
-        self,
-        image_size: ImageSize,
-        has_reference_people: bool,
-        is_regeneration: bool = False
-    ) -> int:
-        """Calculate DUST cost for image generation"""
-        
-        # Base costs
-        if image_size == ImageSize.LARGE:
-            base_cost = 5
-        else:  # STANDARD or SQUARE
-            base_cost = 3
-        
-        # Add cost for reference people
-        if has_reference_people:
-            base_cost += 2
-        
-        # Regeneration discount
-        if is_regeneration:
-            base_cost = int(base_cost * 0.5)  # 50% discount
-        
-        return base_cost
-    
-    def get_cost_estimate(self, dust_cost: int) -> str:
-        """Convert DUST cost to dollar estimate"""
-        # Rough estimate: 1 DUST ≈ $0.01
-        dollar_estimate = dust_cost * 0.01
-        return f"${dollar_estimate:.3f}"
 
 
 # Global instance

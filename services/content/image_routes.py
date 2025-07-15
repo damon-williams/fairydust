@@ -68,48 +68,11 @@ async def validate_user_people(db: Database, user_id: str, person_ids: list[str]
             return people_map
 
 
-async def consume_dust(user_id: str, amount: int, action: str, idempotency_key: str) -> dict:
-    """Consume DUST via ledger service"""
-    ledger_base_url = _get_ledger_service_url()
-    
-    payload = {
-        "user_id": user_id,
-        "amount": amount,
-        "app_id": "fairydust-image",
-        "action": action,
-        "idempotency_key": idempotency_key
-    }
-    
-    async with aiohttp.ClientSession() as session:
-        async with session.post(
-            f"{ledger_base_url}/consume",
-            json=payload,
-            timeout=aiohttp.ClientTimeout(total=10)
-        ) as response:
-            if response.status == 402:
-                raise HTTPException(status_code=402, detail="Insufficient DUST balance")
-            elif response.status != 200:
-                error_data = await response.json()
-                raise HTTPException(
-                    status_code=response.status,
-                    detail=f"DUST consumption failed: {error_data.get('detail', 'Unknown error')}"
-                )
-            
-            return await response.json()
-
-
 def _get_identity_service_url() -> str:
     """Get identity service URL based on environment"""
     environment = os.getenv('ENVIRONMENT', 'staging')
     base_url_suffix = 'production' if environment == 'production' else 'staging'
     return f"https://fairydust-identity-{base_url_suffix}.up.railway.app"
-
-
-def _get_ledger_service_url() -> str:
-    """Get ledger service URL based on environment"""
-    environment = os.getenv('ENVIRONMENT', 'staging')
-    base_url_suffix = 'production' if environment == 'production' else 'staging'
-    return f"https://fairydust-ledger-{base_url_suffix}.up.railway.app"
 
 
 @image_router.post("/generate", response_model=ImageGenerateResponse)
@@ -126,20 +89,6 @@ async def generate_image(
             person_ids = [str(person.person_id) for person in request.reference_people]
             people_map = await validate_user_people(db, str(request.user_id), person_ids)
         
-        # Calculate DUST cost
-        dust_cost = image_generation_service.calculate_dust_cost(
-            request.image_size,
-            len(request.reference_people) > 0
-        )
-        
-        # Consume DUST
-        idempotency_key = f"image_gen_{request.user_id}_{uuid4()}"
-        await consume_dust(
-            str(request.user_id),
-            dust_cost,
-            "image_generation",
-            idempotency_key
-        )
         
         # Generate image
         image_url, generation_metadata = await image_generation_service.generate_image(
@@ -199,7 +148,7 @@ async def generate_image(
         generation_info = ImageGenerationInfo(
             model_used=generation_metadata["model_used"],
             generation_time_ms=generation_metadata["generation_time_ms"],
-            cost_estimate=image_generation_service.get_cost_estimate(dust_cost)
+            cost_estimate="$0.040"  # Static estimate - actual cost handled by apps service
         )
         
         return ImageGenerateResponse(
@@ -242,21 +191,6 @@ async def regenerate_image(
                     "description": person_ref["description"]
                 })
         
-        # Calculate DUST cost (with regeneration discount)
-        dust_cost = image_generation_service.calculate_dust_cost(
-            original_image["image_size"],
-            len(reference_people) > 0,
-            is_regeneration=True
-        )
-        
-        # Consume DUST
-        idempotency_key = f"image_regen_{request.user_id}_{image_id}_{uuid4()}"
-        await consume_dust(
-            str(request.user_id),
-            dust_cost,
-            "image_regeneration",
-            idempotency_key
-        )
         
         # Build enhanced prompt with feedback
         enhanced_prompt = f"{original_image['prompt']}. {request.feedback}"
@@ -317,7 +251,7 @@ async def regenerate_image(
         generation_info = ImageGenerationInfo(
             model_used=generation_metadata["model_used"],
             generation_time_ms=generation_metadata["generation_time_ms"],
-            cost_estimate=image_generation_service.get_cost_estimate(dust_cost)
+            cost_estimate="$0.020"  # Static estimate - actual cost handled by apps service
         )
         
         return ImageRegenerateResponse(
