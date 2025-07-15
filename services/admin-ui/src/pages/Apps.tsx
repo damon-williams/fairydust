@@ -32,7 +32,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { App, ActionPricing } from '@/types/admin';
-import { MoreHorizontal, CheckCircle, XCircle, Clock, RefreshCw, AlertTriangle, Plus, Settings, Edit } from 'lucide-react';
+import { MoreHorizontal, CheckCircle, XCircle, Clock, RefreshCw, AlertTriangle, Plus, Settings, Edit, Trash2 } from 'lucide-react';
 import { formatDistanceToNow } from 'date-fns';
 import { AdminAPI } from '@/lib/admin-api';
 import { toast } from 'sonner';
@@ -260,6 +260,25 @@ export function Apps() {
     } catch (err) {
       console.error('Failed to update pricing:', err);
       toast.error(isCreatingAction ? 'Failed to create action' : 'Failed to update pricing');
+    }
+  };
+
+  const handleDeleteAction = async () => {
+    if (!editingPricing?.action_slug || isCreatingAction) return;
+
+    if (!confirm(`Are you sure you want to delete the action "${editingPricing.action_slug}"? This cannot be undone.`)) {
+      return;
+    }
+
+    try {
+      await AdminAPI.deleteActionPricing(editingPricing.action_slug);
+      toast.success('Action deleted successfully');
+      setPricingDialogOpen(false);
+      setEditingPricing(null);
+      await loadActionPricing();
+    } catch (err) {
+      console.error('Failed to delete action:', err);
+      toast.error('Failed to delete action');
     }
   };
 
@@ -799,7 +818,7 @@ export function Apps() {
             <DialogContent className="max-w-md">
               <DialogHeader>
                 <DialogTitle>
-                  {isCreatingAction ? 'Create New Action' : 'Edit Action Pricing'}
+                  {isCreatingAction ? 'Create New Action' : 'Edit Action'}
                 </DialogTitle>
                 <DialogDescription>
                   {isCreatingAction 
@@ -872,20 +891,34 @@ export function Apps() {
                   </div>
                 </div>
               )}
-              <DialogFooter>
-                <Button variant="outline" onClick={() => {
-                  setPricingDialogOpen(false);
-                  setIsCreatingAction(false);
-                  setEditingPricing(null);
-                }}>
-                  Cancel
-                </Button>
-                <Button 
-                  onClick={handleUpdatePricing}
-                  disabled={!editingPricing?.action_slug || !editingPricing?.description?.trim()}
-                >
-                  {isCreatingAction ? 'Create Action' : 'Save Changes'}
-                </Button>
+              <DialogFooter className="flex justify-between">
+                <div>
+                  {!isCreatingAction && (
+                    <Button 
+                      variant="destructive" 
+                      onClick={handleDeleteAction}
+                      className="mr-auto"
+                    >
+                      <Trash2 className="h-4 w-4 mr-2" />
+                      Delete Action
+                    </Button>
+                  )}
+                </div>
+                <div className="flex space-x-2">
+                  <Button variant="outline" onClick={() => {
+                    setPricingDialogOpen(false);
+                    setIsCreatingAction(false);
+                    setEditingPricing(null);
+                  }}>
+                    Cancel
+                  </Button>
+                  <Button 
+                    onClick={handleUpdatePricing}
+                    disabled={!editingPricing?.action_slug || !editingPricing?.description?.trim()}
+                  >
+                    {isCreatingAction ? 'Create Action' : 'Save Changes'}
+                  </Button>
+                </div>
               </DialogFooter>
             </DialogContent>
           </Dialog>
