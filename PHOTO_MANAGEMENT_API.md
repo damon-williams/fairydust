@@ -19,9 +19,10 @@ Authorization: Bearer <jwt_token>
 
 ## File Upload Constraints
 - **Supported formats**: JPEG, PNG, WebP
-- **Maximum file size**: 5MB
+- **Maximum file size**: 5MB (application limit) / 6MB (server limit)
 - **Content-Type**: Must be valid image MIME type
 - **Empty files**: Not allowed
+- **Recommended client behavior**: Resize images to under 5MB before upload
 
 ## User Avatar Endpoints
 
@@ -212,11 +213,54 @@ The user profile endpoint now includes avatar information:
 
 ## Frontend Implementation Guide
 
+### Client-Side Image Resizing (Recommended)
+
+Before uploading, resize images to ensure they're under 5MB:
+
+```javascript
+const resizeImage = (file, maxWidth = 1024, maxHeight = 1024, quality = 0.8) => {
+  return new Promise((resolve) => {
+    const canvas = document.createElement('canvas');
+    const ctx = canvas.getContext('2d');
+    const img = new Image();
+    
+    img.onload = () => {
+      // Calculate new dimensions
+      let { width, height } = img;
+      
+      if (width > height) {
+        if (width > maxWidth) {
+          height = (height * maxWidth) / width;
+          width = maxWidth;
+        }
+      } else {
+        if (height > maxHeight) {
+          width = (width * maxHeight) / height;
+          height = maxHeight;
+        }
+      }
+      
+      canvas.width = width;
+      canvas.height = height;
+      
+      // Draw and compress
+      ctx.drawImage(img, 0, 0, width, height);
+      canvas.toBlob(resolve, 'image/jpeg', quality);
+    };
+    
+    img.src = URL.createObjectURL(file);
+  });
+};
+```
+
 ### Avatar Upload Example
 ```javascript
 const uploadAvatar = async (file) => {
+  // Resize image if needed
+  const resizedFile = await resizeImage(file);
+  
   const formData = new FormData();
-  formData.append('file', file);
+  formData.append('file', resizedFile);
   
   const response = await fetch('/users/me/avatar', {
     method: 'POST',

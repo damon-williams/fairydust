@@ -59,12 +59,14 @@ endpoint_limits = {
     "/auth/otp/verify": 1024,  # 1KB limit for OTP verification
     "/users/profile": 50 * 1024,  # 50KB for profile data
     "/users/people": 10 * 1024,  # 10KB for people data
+    "/users/*/people/*/photo": 6 * 1024 * 1024,  # 6MB for people photos
+    "/users/me/avatar": 6 * 1024 * 1024,  # 6MB for user avatars
 }
 
 add_middleware_to_app(
     app=app,
     service_name="identity",
-    max_request_size=1 * 1024 * 1024,  # 1MB default for identity service
+    max_request_size=6 * 1024 * 1024,  # 6MB default for identity service (to support photo uploads)
     endpoint_limits=endpoint_limits,
     log_requests=True,
 )
