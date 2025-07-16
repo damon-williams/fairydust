@@ -153,17 +153,9 @@ class ImageStorageService:
                 }
             )
             
-            # Generate signed URL (works with private buckets)
-            try:
-                permanent_url = self.r2_client.generate_presigned_url(
-                    'get_object',
-                    Params={'Bucket': self.bucket_name, 'Key': storage_key},
-                    ExpiresIn=31536000  # 1 year expiration
-                )
-                print(f"🔗 Generated signed URL: {permanent_url[:100]}...")
-            except Exception as e:
-                print(f"⚠️ Failed to generate signed URL, using direct URL: {e}")
-                permanent_url = f"https://pub-{self.account_id[:8]}.r2.dev/{self.bucket_name}/{storage_key}"
+            # Use custom domain for R2 public access
+            permanent_url = f"https://images.fairydust.fun/{storage_key}"
+            print(f"🔗 Generated public URL (custom domain): {permanent_url}")
             
             # Get actual dimensions
             dimensions = await self._get_image_dimensions(image_data)
@@ -222,8 +214,11 @@ class ImageStorageService:
     def _extract_key_from_url(self, image_url: str) -> Optional[str]:
         """Extract R2 object key from image URL"""
         try:
-            # Expected format: https://pub-abc123.r2.dev/bucket-name/key
-            if f"/{self.bucket_name}/" in image_url:
+            # Expected format: https://images.fairydust.fun/generated/user-id/image-id.ext
+            if "images.fairydust.fun/" in image_url:
+                return image_url.split("images.fairydust.fun/", 1)[1]
+            # Fallback for old format: https://pub-abc123.r2.dev/bucket-name/key
+            elif f"/{self.bucket_name}/" in image_url:
                 return image_url.split(f"/{self.bucket_name}/", 1)[1]
             return None
         except Exception:
