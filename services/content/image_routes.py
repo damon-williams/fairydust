@@ -145,29 +145,22 @@ async def generate_image(
             json.dumps(full_metadata)  # Convert to JSON string for JSONB
         )
         
-        # Create response
-        try:
-            print(f"🔍 Creating UserImage from record: {image_record}")
-            user_image = UserImage(**image_record)
-            print(f"✅ UserImage created successfully")
-            
-            generation_info = ImageGenerationInfo(
-                model_used=generation_metadata["model_used"],
-                generation_time_ms=generation_metadata["generation_time_ms"],
-                cost_estimate="$0.025"  # FLUX cost estimate - actual cost handled by apps service
-            )
-            print(f"✅ GenerationInfo created successfully")
-            
-            response = ImageGenerateResponse(
-                image=user_image,
-                generation_info=generation_info
-            )
-            print(f"✅ Response created successfully")
-            return response
-        except Exception as response_error:
-            print(f"❌ Response creation failed: {response_error}")
-            print(f"   Error type: {type(response_error)}")
-            raise
+        # Create response - Parse JSONB fields back to Python objects
+        image_data = dict(image_record)
+        image_data["reference_people"] = json.loads(image_record["reference_people"])
+        image_data["metadata"] = json.loads(image_record["metadata"])
+        
+        user_image = UserImage(**image_data)
+        generation_info = ImageGenerationInfo(
+            model_used=generation_metadata["model_used"],
+            generation_time_ms=generation_metadata["generation_time_ms"],
+            cost_estimate="$0.025"  # FLUX cost estimate - actual cost handled by apps service
+        )
+        
+        return ImageGenerateResponse(
+            image=user_image,
+            generation_info=generation_info
+        )
         
     except HTTPException:
         raise
@@ -197,7 +190,12 @@ async def regenerate_image(
         # Prepare reference people if keeping them
         reference_people = []
         if request.keep_people and original_image["reference_people"]:
-            for person_ref in original_image["reference_people"]:
+            # Parse JSONB string to Python object if needed
+            ref_people_data = original_image["reference_people"]
+            if isinstance(ref_people_data, str):
+                ref_people_data = json.loads(ref_people_data)
+            
+            for person_ref in ref_people_data:
                 reference_people.append({
                     "person_id": person_ref["person_id"],
                     "photo_url": "placeholder",  # Will be validated separately
@@ -260,8 +258,12 @@ async def regenerate_image(
             json.dumps(full_metadata)  # Convert to JSON string for JSONB
         )
         
-        # Create response
-        user_image = UserImage(**new_image_record)
+        # Create response - Parse JSONB fields back to Python objects
+        image_data = dict(new_image_record)
+        image_data["reference_people"] = json.loads(new_image_record["reference_people"])
+        image_data["metadata"] = json.loads(new_image_record["metadata"])
+        
+        user_image = UserImage(**image_data)
         generation_info = ImageGenerationInfo(
             model_used=generation_metadata["model_used"],
             generation_time_ms=generation_metadata["generation_time_ms"],
