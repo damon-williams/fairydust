@@ -153,8 +153,17 @@ class ImageStorageService:
                 }
             )
             
-            # Generate permanent public URL
-            permanent_url = f"https://pub-{self.account_id[:8]}.r2.dev/{self.bucket_name}/{storage_key}"
+            # Generate signed URL (works with private buckets)
+            try:
+                permanent_url = self.r2_client.generate_presigned_url(
+                    'get_object',
+                    Params={'Bucket': self.bucket_name, 'Key': storage_key},
+                    ExpiresIn=31536000  # 1 year expiration
+                )
+                print(f"🔗 Generated signed URL: {permanent_url[:100]}...")
+            except Exception as e:
+                print(f"⚠️ Failed to generate signed URL, using direct URL: {e}")
+                permanent_url = f"https://pub-{self.account_id[:8]}.r2.dev/{self.bucket_name}/{storage_key}"
             
             # Get actual dimensions
             dimensions = await self._get_image_dimensions(image_data)

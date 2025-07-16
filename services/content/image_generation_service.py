@@ -96,7 +96,7 @@ class ImageGenerationService:
                 "prompt": enhanced_prompt,
                 "width": dimensions["width"],
                 "height": dimensions["height"],
-                "output_format": "webp",
+                "output_format": "png",
                 "output_quality": 90,
                 "safety_tolerance": 2,
                 "prompt_upsampling": False

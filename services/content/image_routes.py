@@ -337,10 +337,20 @@ async def get_user_images(
         # Convert to response format
         user_images = []
         for image in images:
-            # Build simplified image data for list view
-            image_data = dict(image)
-            image_data["has_reference_people"] = image_data["reference_people_count"] > 0
-            user_images.append(UserImage(**image_data))
+            try:
+                # Build simplified image data for list view
+                image_data = dict(image)
+                image_data["has_reference_people"] = image_data["reference_people_count"] > 0
+                
+                # Parse JSONB fields back to Python objects
+                image_data["reference_people"] = json.loads(image["reference_people"])
+                image_data["metadata"] = json.loads(image["metadata"])
+                
+                user_images.append(UserImage(**image_data))
+            except Exception as e:
+                print(f"❌ Failed to process image {image.get('id')}: {e}")
+                print(f"   Image data: {image}")
+                raise
         
         pagination = ImagePagination(
             total=total,
@@ -374,7 +384,12 @@ async def get_image_detail(
         if not image:
             raise HTTPException(status_code=404, detail="Image not found")
         
-        user_image = UserImage(**image)
+        # Parse JSONB fields back to Python objects
+        image_data = dict(image)
+        image_data["reference_people"] = json.loads(image["reference_people"])
+        image_data["metadata"] = json.loads(image["metadata"])
+        
+        user_image = UserImage(**image_data)
         return ImageDetailResponse(image=user_image)
         
     except HTTPException:
@@ -407,7 +422,12 @@ async def update_image(
         if not updated_image:
             raise HTTPException(status_code=404, detail="Image not found")
         
-        user_image = UserImage(**updated_image)
+        # Parse JSONB fields back to Python objects
+        image_data = dict(updated_image)
+        image_data["reference_people"] = json.loads(updated_image["reference_people"])
+        image_data["metadata"] = json.loads(updated_image["metadata"])
+        
+        user_image = UserImage(**image_data)
         return ImageUpdateResponse(image=user_image)
         
     except HTTPException:
