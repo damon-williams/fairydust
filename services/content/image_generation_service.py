@@ -12,14 +12,11 @@ from models import ImageStyle, ImageSize, ImageReferencePerson
 
 
 class ImageGenerationService:
-    """Service for generating AI images using OpenAI DALL-E and Replicate"""
+    """Service for generating AI images using Replicate FLUX"""
     
     def __init__(self):
-        self.openai_api_key = os.getenv("OPENAI_API_KEY")
         self.replicate_api_token = os.getenv("REPLICATE_API_TOKEN")
         
-        if not self.openai_api_key:
-            raise ValueError("Missing OPENAI_API_KEY environment variable")
         if not self.replicate_api_token:
             raise ValueError("Missing REPLICATE_API_TOKEN environment variable")
     
@@ -31,22 +28,17 @@ class ImageGenerationService:
         reference_people: list[ImageReferencePerson]
     ) -> Tuple[str, dict]:
         """
-        Generate an AI image using appropriate API based on requirements
+        Generate an AI image using FLUX for all generations
         
         Returns:
             Tuple[str, dict]: (image_url, metadata)
         """
         start_time = time.time()
         
-        # Use Replicate for images with people, OpenAI for text-only
-        if reference_people:
-            image_url, metadata = await self._generate_with_replicate(
-                prompt, style, image_size, reference_people
-            )
-        else:
-            image_url, metadata = await self._generate_with_openai(
-                prompt, style, image_size
-            )
+        # Use FLUX for all image generation (better quality and no storage auth issues)
+        image_url, metadata = await self._generate_with_replicate(
+            prompt, style, image_size, reference_people
+        )
         
         generation_time_ms = int((time.time() - start_time) * 1000)
         metadata["generation_time_ms"] = generation_time_ms
@@ -54,72 +46,6 @@ class ImageGenerationService:
         
         return image_url, metadata
     
-    async def _generate_with_openai(
-        self,
-        prompt: str,
-        style: ImageStyle,
-        image_size: ImageSize
-    ) -> Tuple[str, dict]:
-        """Generate image using OpenAI DALL-E 3"""
-        
-        # Map our styles to DALL-E prompts
-        style_prompts = {
-            ImageStyle.REALISTIC: "photorealistic, high quality, detailed",
-            ImageStyle.ARTISTIC: "artistic, painted style, creative interpretation",
-            ImageStyle.CARTOON: "cartoon style, animated, colorful",
-            ImageStyle.ABSTRACT: "abstract art, modern, artistic interpretation",
-            ImageStyle.VINTAGE: "vintage style, retro, classic aesthetic",
-            ImageStyle.MODERN: "modern style, contemporary, clean design"
-        }
-        
-        # Map our sizes to DALL-E sizes
-        size_map = {
-            ImageSize.STANDARD: "1024x1024",
-            ImageSize.LARGE: "1024x1792", 
-            ImageSize.SQUARE: "1024x1024"
-        }
-        
-        # Enhance prompt with style
-        enhanced_prompt = f"{prompt}, {style_prompts[style]}"
-        
-        payload = {
-            "model": "dall-e-3",
-            "prompt": enhanced_prompt,
-            "n": 1,
-            "size": size_map[image_size],
-            "quality": "standard",
-            "response_format": "url"
-        }
-        
-        headers = {
-            "Authorization": f"Bearer {self.openai_api_key}",
-            "Content-Type": "application/json"
-        }
-        
-        async with httpx.AsyncClient() as client:
-            response = await client.post(
-                "https://api.openai.com/v1/images/generations",
-                headers=headers,
-                json=payload,
-                timeout=60.0
-            )
-            if response.status_code != 200:
-                error_data = response.json()
-                raise HTTPException(
-                    status_code=500,
-                    detail=f"OpenAI API error: {error_data.get('error', {}).get('message', 'Unknown error')}"
-                )
-            
-            data = response.json()
-            image_url = data["data"][0]["url"]
-            
-            metadata = {
-                "model_used": "dall-e-3",
-                "api_provider": "openai",
-                "enhanced_prompt": enhanced_prompt
-            }
-            
-            return image_url, metadata
     
     async def _generate_with_replicate(
         self,
@@ -128,29 +54,33 @@ class ImageGenerationService:
         image_size: ImageSize,
         reference_people: list[ImageReferencePerson]
     ) -> Tuple[str, dict]:
-        """Generate image using Replicate FLUX/Stable Diffusion"""
+        """Generate image using Replicate FLUX for all image generation"""
         
-        # Use FLUX model for face consistency
+        # Use FLUX model for all generation (consistent quality)
         model = "black-forest-labs/flux-1.1-pro"
         
-        # Map our styles to appropriate prompts
+        # Map our styles to FLUX-optimized prompts
         style_prompts = {
-            ImageStyle.REALISTIC: "photorealistic, professional photography, high detail",
-            ImageStyle.ARTISTIC: "artistic painting, oil painting style, masterpiece",
-            ImageStyle.CARTOON: "cartoon illustration, animated style, vibrant colors",
-            ImageStyle.ABSTRACT: "abstract art, modern artistic interpretation",
-            ImageStyle.VINTAGE: "vintage photography, retro style, film grain",
-            ImageStyle.MODERN: "modern digital art, contemporary style"
+            ImageStyle.REALISTIC: "photorealistic, professional photography, high detail, sharp focus, studio lighting",
+            ImageStyle.ARTISTIC: "artistic masterpiece, oil painting style, fine art, brush strokes, gallery quality",
+            ImageStyle.CARTOON: "cartoon illustration, animated style, vibrant colors, clean lines, stylized",
+            ImageStyle.ABSTRACT: "abstract art, modern artistic interpretation, geometric shapes, color theory",
+            ImageStyle.VINTAGE: "vintage photography, retro aesthetic, film grain, sepia tones, nostalgic",
+            ImageStyle.MODERN: "modern digital art, contemporary style, minimalist, clean composition"
         }
         
-        # Build enhanced prompt with people descriptions
-        people_descriptions = []
-        for person in reference_people:
-            people_descriptions.append(f"person ({person.description})")
-        
+        # Build enhanced prompt
         enhanced_prompt = f"{prompt}, {style_prompts[style]}"
-        if people_descriptions:
+        
+        # Add people descriptions if provided
+        if reference_people:
+            people_descriptions = []
+            for person in reference_people:
+                people_descriptions.append(f"person ({person.description})")
             enhanced_prompt += f", featuring {', '.join(people_descriptions)}"
+        
+        # Add quality enhancers for FLUX
+        enhanced_prompt += ", high quality, detailed, professional"
         
         # Map image sizes
         size_map = {
@@ -220,11 +150,12 @@ class ImageGenerationService:
                     image_url = result["output"][0] if isinstance(result["output"], list) else result["output"]
                     
                     metadata = {
-                        "model_used": model,
+                        "model_used": "flux-1.1-pro",
                         "api_provider": "replicate",
                         "enhanced_prompt": enhanced_prompt,
                         "prediction_id": prediction_id,
-                        "reference_people_count": len(reference_people)
+                        "reference_people_count": len(reference_people),
+                        "generation_approach": "flux_universal"
                     }
                     
                     return image_url, metadata

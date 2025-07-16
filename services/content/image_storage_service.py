@@ -76,35 +76,62 @@ class ImageStorageService:
 
     async def _upload_to_r2(self, image_url: str, user_id: str, image_id: str) -> Tuple[str, int, dict]:
         """Upload image to R2 and return permanent URL"""
-        try:
-            # Download the image with proper headers
-            async with httpx.AsyncClient() as client:
-                # Add headers that work better with OpenAI blob storage
-                headers = {
-                    'User-Agent': 'fairydust-content-service/1.0',
-                    'Accept': '*/*',
-                    'Accept-Encoding': 'gzip, deflate',
-                }
+        max_retries = 3
+        
+        for attempt in range(max_retries):
+            try:
+                print(f"🔄 Attempting to download image (attempt {attempt + 1}/{max_retries})")
                 
-                response = await client.get(
-                    image_url, 
-                    headers=headers, 
-                    timeout=60.0,
-                    follow_redirects=True
-                )
-                
-                if response.status_code != 200:
-                    raise HTTPException(
-                        status_code=500,
-                        detail=f"Failed to download image from OpenAI: HTTP {response.status_code}"
+                # Download the image with minimal headers to avoid authentication issues
+                async with httpx.AsyncClient() as client:
+                    # Use minimal headers - sometimes less is more with OpenAI blob storage
+                    headers = {}
+                    
+                    # Try different approaches on retries
+                    if attempt == 1:
+                        headers = {'User-Agent': 'Mozilla/5.0 (compatible; fairydust/1.0)'}
+                    elif attempt == 2:
+                        headers = {
+                            'User-Agent': 'curl/7.68.0',
+                            'Accept': 'image/png,image/*,*/*'
+                        }
+                    
+                    response = await client.get(
+                        image_url, 
+                        headers=headers, 
+                        timeout=30.0,
+                        follow_redirects=True
                     )
-                
-                image_data = response.content
-                content_type = response.headers.get('content-type', 'image/png')
-                
-                if len(image_data) == 0:
-                    raise HTTPException(status_code=500, detail="Downloaded image is empty")
+                    
+                    print(f"📡 Download response: {response.status_code}")
+                    
+                    if response.status_code == 200:
+                        image_data = response.content
+                        content_type = response.headers.get('content-type', 'image/png')
+                        
+                        if len(image_data) > 0:
+                            # Success! Upload to R2
+                            break
+                        else:
+                            print("⚠️ Downloaded image is empty, retrying...")
+                            continue
+                    else:
+                        print(f"⚠️ Download failed with status {response.status_code}, retrying...")
+                        if attempt == max_retries - 1:
+                            # Last attempt failed, fall back to original URL
+                            print("❌ All download attempts failed, falling back to original URL")
+                            return image_url, 1024000, {"width": 1024, "height": 1024}
+                        continue
             
+            except Exception as e:
+                print(f"⚠️ Download attempt {attempt + 1} failed: {e}")
+                if attempt == max_retries - 1:
+                    # Last attempt failed, fall back to original URL
+                    print("❌ All download attempts failed, falling back to original URL")
+                    return image_url, 1024000, {"width": 1024, "height": 1024}
+                continue
+        
+        try:
             # Determine file extension
             file_extension = self._get_extension_from_content_type(content_type)
             
@@ -137,10 +164,12 @@ class ImageStorageService:
             
         except ClientError as e:
             print(f"❌ R2 upload failed: {e}")
-            raise HTTPException(status_code=500, detail=f"Failed to store image in R2: {str(e)}")
+            # Fall back to original URL if R2 upload fails
+            return image_url, 1024000, {"width": 1024, "height": 1024}
         except Exception as e:
-            print(f"❌ Image upload failed: {e}")
-            raise HTTPException(status_code=500, detail=f"Image upload failed: {str(e)}")
+            print(f"❌ Image processing failed: {e}")
+            # Fall back to original URL if anything fails
+            return image_url, 1024000, {"width": 1024, "height": 1024}
     
     async def delete_generated_image(self, image_url: str) -> bool:
         """

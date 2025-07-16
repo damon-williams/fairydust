@@ -148,7 +148,7 @@ async def generate_image(
         generation_info = ImageGenerationInfo(
             model_used=generation_metadata["model_used"],
             generation_time_ms=generation_metadata["generation_time_ms"],
-            cost_estimate="$0.040"  # Static estimate - actual cost handled by apps service
+            cost_estimate="$0.025"  # FLUX cost estimate - actual cost handled by apps service
         )
         
         return ImageGenerateResponse(
@@ -251,7 +251,7 @@ async def regenerate_image(
         generation_info = ImageGenerationInfo(
             model_used=generation_metadata["model_used"],
             generation_time_ms=generation_metadata["generation_time_ms"],
-            cost_estimate="$0.020"  # Static estimate - actual cost handled by apps service
+            cost_estimate="$0.025"  # FLUX cost estimate - actual cost handled by apps service
         )
         
         return ImageRegenerateResponse(
