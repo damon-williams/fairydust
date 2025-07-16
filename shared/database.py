@@ -215,6 +215,8 @@ async def create_tables():
         ALTER TABLE users ADD COLUMN IF NOT EXISTS country VARCHAR(100) DEFAULT 'US';
         ALTER TABLE users ADD COLUMN IF NOT EXISTS last_login_date TIMESTAMP WITH TIME ZONE;
         ALTER TABLE users ADD COLUMN IF NOT EXISTS is_onboarding_completed BOOLEAN DEFAULT FALSE;
+        ALTER TABLE users ADD COLUMN IF NOT EXISTS avatar_uploaded_at TIMESTAMP WITH TIME ZONE;
+        ALTER TABLE users ADD COLUMN IF NOT EXISTS avatar_size_bytes INTEGER;
 
         -- Drop old age_range column (replaced with birth_date)
         ALTER TABLE users DROP COLUMN IF EXISTS age_range;

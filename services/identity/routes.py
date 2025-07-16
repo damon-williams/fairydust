@@ -28,7 +28,7 @@ from shared.email_service import send_otp_email
 from shared.redis_client import get_redis
 from shared.sms_service import send_otp_sms
 from shared.daily_bonus_utils import check_daily_bonus_eligibility
-from shared.storage_service import upload_person_photo, delete_person_photo
+from shared.storage_service import upload_person_photo, delete_person_photo, upload_user_avatar, delete_user_avatar
 
 
 async def get_daily_bonus_amount(db: Database) -> int:
@@ -405,7 +405,7 @@ async def get_current_user_profile(
     user = await db.fetch_one(
         """SELECT id, fairyname, email, phone, is_admin,
                   first_name, birth_date, is_onboarding_completed, dust_balance, auth_provider,
-                  last_login_date,
+                  last_login_date, avatar_url, avatar_uploaded_at, avatar_size_bytes,
                   created_at, updated_at
            FROM users WHERE id = $1""",
         current_user.user_id,
@@ -514,6 +514,126 @@ async def update_user_profile(
     )
 
     return User(**user)
+
+
+# User Avatar Routes
+@user_router.post("/me/avatar")
+async def upload_avatar(
+    file: UploadFile = File(...),
+    current_user: TokenData = Depends(get_current_user),
+    db: Database = Depends(get_db)
+):
+    """Upload or replace user avatar"""
+    try:
+        # Get current user data to check for existing avatar
+        user_data = await db.fetch_one(
+            "SELECT avatar_url FROM users WHERE id = $1",
+            current_user.user_id
+        )
+        
+        if not user_data:
+            raise HTTPException(status_code=404, detail="User not found")
+        
+        # Delete old avatar if exists
+        if user_data["avatar_url"]:
+            await delete_user_avatar(user_data["avatar_url"])
+        
+        # Upload new avatar
+        avatar_url, file_size = await upload_user_avatar(file, str(current_user.user_id))
+        
+        # Update user record with new avatar info
+        await db.execute(
+            """
+            UPDATE users 
+            SET avatar_url = $1, avatar_uploaded_at = CURRENT_TIMESTAMP, avatar_size_bytes = $2, updated_at = CURRENT_TIMESTAMP
+            WHERE id = $3
+            """,
+            avatar_url, file_size, current_user.user_id
+        )
+        
+        return {
+            "message": "Avatar uploaded successfully",
+            "avatar_url": avatar_url,
+            "file_size": file_size
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Avatar upload failed: {str(e)}")
+
+
+@user_router.get("/me/avatar")
+async def get_avatar_info(
+    current_user: TokenData = Depends(get_current_user),
+    db: Database = Depends(get_db)
+):
+    """Get current user's avatar information"""
+    try:
+        user_data = await db.fetch_one(
+            "SELECT avatar_url, avatar_uploaded_at, avatar_size_bytes FROM users WHERE id = $1",
+            current_user.user_id
+        )
+        
+        if not user_data:
+            raise HTTPException(status_code=404, detail="User not found")
+        
+        if not user_data["avatar_url"]:
+            raise HTTPException(status_code=404, detail="No avatar found")
+        
+        return {
+            "avatar_url": user_data["avatar_url"],
+            "avatar_uploaded_at": user_data["avatar_uploaded_at"],
+            "avatar_size_bytes": user_data["avatar_size_bytes"]
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to get avatar info: {str(e)}")
+
+
+@user_router.delete("/me/avatar")
+async def delete_avatar(
+    current_user: TokenData = Depends(get_current_user),
+    db: Database = Depends(get_db)
+):
+    """Delete user's current avatar"""
+    try:
+        # Get current avatar URL
+        user_data = await db.fetch_one(
+            "SELECT avatar_url FROM users WHERE id = $1",
+            current_user.user_id
+        )
+        
+        if not user_data:
+            raise HTTPException(status_code=404, detail="User not found")
+        
+        if not user_data["avatar_url"]:
+            raise HTTPException(status_code=404, detail="No avatar to delete")
+        
+        # Delete from storage
+        deleted_from_storage = await delete_user_avatar(user_data["avatar_url"])
+        
+        # Clear avatar info from database
+        await db.execute(
+            """
+            UPDATE users 
+            SET avatar_url = NULL, avatar_uploaded_at = NULL, avatar_size_bytes = NULL, updated_at = CURRENT_TIMESTAMP
+            WHERE id = $1
+            """,
+            current_user.user_id
+        )
+        
+        return {
+            "message": "Avatar deleted successfully",
+            "deleted_from_storage": deleted_from_storage
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Avatar deletion failed: {str(e)}")
 
 
 # Onboard Tracking Routes

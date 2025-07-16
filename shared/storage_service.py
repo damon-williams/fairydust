@@ -81,8 +81,8 @@ class StorageService:
                 }
             )
             
-            # Generate public URL
-            photo_url = f"https://pub-{self.account_id[:8]}.r2.dev/{self.bucket_name}/{unique_filename}"
+            # Generate public URL using custom domain
+            photo_url = f"https://images.fairydust.fun/{unique_filename}"
             
             return photo_url, file_size
             
@@ -111,6 +111,83 @@ class StorageService:
         except ClientError:
             return False
     
+    async def upload_user_avatar(self, file: UploadFile, user_id: str) -> tuple[str, int]:
+        """
+        Upload an avatar for a user
+        
+        Args:
+            file: UploadFile object containing the avatar image
+            user_id: User UUID string
+            
+        Returns:
+            tuple: (avatar_url, file_size_bytes)
+        """
+        # Validate file type
+        allowed_types = ["image/jpeg", "image/jpg", "image/png", "image/webp"]
+        if file.content_type not in allowed_types:
+            raise HTTPException(
+                status_code=400, 
+                detail=f"Invalid file type. Allowed: {', '.join(allowed_types)}"
+            )
+        
+        # Validate file size (5MB limit)
+        content = await file.read()
+        file_size = len(content)
+        if file_size > 5 * 1024 * 1024:  # 5MB
+            raise HTTPException(status_code=400, detail="File too large. Maximum 5MB allowed.")
+        
+        if file_size == 0:
+            raise HTTPException(status_code=400, detail="Empty file not allowed.")
+        
+        # Generate unique filename
+        file_extension = self._get_file_extension(file.filename, file.content_type)
+        unique_filename = f"avatars/{user_id}/{uuid.uuid4()}.{file_extension}"
+        
+        try:
+            # Upload to R2
+            self.client.put_object(
+                Bucket=self.bucket_name,
+                Key=unique_filename,
+                Body=content,
+                ContentType=file.content_type,
+                CacheControl="public, max-age=31536000",  # Cache for 1 year
+                Metadata={
+                    'user-id': user_id,
+                    'type': 'avatar',
+                    'original-filename': file.filename or 'unknown'
+                }
+            )
+            
+            # Generate public URL using custom domain
+            avatar_url = f"https://images.fairydust.fun/{unique_filename}"
+            
+            return avatar_url, file_size
+            
+        except ClientError as e:
+            raise HTTPException(status_code=500, detail=f"Upload failed: {str(e)}")
+    
+    async def delete_user_avatar(self, avatar_url: str) -> bool:
+        """
+        Delete a user's avatar from R2
+        
+        Args:
+            avatar_url: The URL of the avatar to delete
+            
+        Returns:
+            bool: True if deleted successfully
+        """
+        try:
+            # Extract key from URL
+            key = self._extract_key_from_url(avatar_url)
+            if not key:
+                return False
+            
+            self.client.delete_object(Bucket=self.bucket_name, Key=key)
+            return True
+            
+        except ClientError:
+            return False
+    
     def _get_file_extension(self, filename: Optional[str], content_type: str) -> str:
         """Get file extension from filename or content type"""
         if filename and '.' in filename:
@@ -128,8 +205,11 @@ class StorageService:
     def _extract_key_from_url(self, photo_url: str) -> Optional[str]:
         """Extract R2 object key from photo URL"""
         try:
-            # Expected format: https://pub-abc123.r2.dev/bucket-name/key
-            if f"/{self.bucket_name}/" in photo_url:
+            # Custom domain format: https://images.fairydust.fun/key
+            if "images.fairydust.fun/" in photo_url:
+                return photo_url.split("images.fairydust.fun/", 1)[1]
+            # Legacy format: https://pub-abc123.r2.dev/bucket-name/key
+            elif f"/{self.bucket_name}/" in photo_url:
                 return photo_url.split(f"/{self.bucket_name}/", 1)[1]
             return None
         except Exception:
@@ -148,3 +228,13 @@ async def upload_person_photo(file: UploadFile, user_id: str, person_id: str) ->
 async def delete_person_photo(photo_url: str) -> bool:
     """Convenience function for deleting person photos"""
     return await storage_service.delete_person_photo(photo_url)
+
+
+async def upload_user_avatar(file: UploadFile, user_id: str) -> tuple[str, int]:
+    """Convenience function for uploading user avatars"""
+    return await storage_service.upload_user_avatar(file, user_id)
+
+
+async def delete_user_avatar(avatar_url: str) -> bool:
+    """Convenience function for deleting user avatars"""
+    return await storage_service.delete_user_avatar(avatar_url)

@@ -78,6 +78,9 @@ class User(BaseModel):
     is_onboarding_completed: bool = False
     last_login_date: Optional[datetime] = None
     auth_provider: Optional[str] = None
+    avatar_url: Optional[str] = None
+    avatar_uploaded_at: Optional[datetime] = None
+    avatar_size_bytes: Optional[int] = None
     created_at: datetime
     updated_at: datetime
     dust_balance: int = 0  # Denormalized for performance
