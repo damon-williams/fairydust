@@ -127,10 +127,10 @@ async def generate_image(
         image_record = await db.fetch_one(
             """
             INSERT INTO user_images (
-                id, user_id, url, prompt, style, image_size,
+                id, user_id, url, prompt, style, image_size, is_favorited,
                 reference_people, metadata, created_at, updated_at
             )
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
             RETURNING *
             """,
             image_id,
@@ -139,6 +139,7 @@ async def generate_image(
             request.prompt,
             request.style.value,
             request.image_size.value,
+            False,  # is_favorited defaults to False
             reference_people_data,
             full_metadata
         )
@@ -230,10 +231,10 @@ async def regenerate_image(
         new_image_record = await db.fetch_one(
             """
             INSERT INTO user_images (
-                id, user_id, url, prompt, style, image_size,
+                id, user_id, url, prompt, style, image_size, is_favorited,
                 reference_people, metadata, created_at, updated_at
             )
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
             RETURNING *
             """,
             new_image_id,
@@ -242,6 +243,7 @@ async def regenerate_image(
             enhanced_prompt,
             style,
             original_image["image_size"],
+            False,  # is_favorited defaults to False
             original_image["reference_people"] if request.keep_people else [],
             full_metadata
         )
