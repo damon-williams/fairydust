@@ -48,7 +48,7 @@ async def validate_user_people(db: Database, user_id: str, person_ids: list[str]
     if not service_token:
         raise HTTPException(
             status_code=500,
-            detail="Service authentication not configured"
+            detail="SERVICE_JWT_TOKEN not configured for inter-service authentication"
         )
     
     async with httpx.AsyncClient() as client:
