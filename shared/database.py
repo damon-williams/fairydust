@@ -366,6 +366,11 @@ async def create_tables():
         -- Add birth_date column to existing people_in_my_life table
         ALTER TABLE people_in_my_life ADD COLUMN IF NOT EXISTS birth_date DATE;
 
+        -- Add photo-related columns to existing people_in_my_life table
+        ALTER TABLE people_in_my_life ADD COLUMN IF NOT EXISTS photo_url TEXT;
+        ALTER TABLE people_in_my_life ADD COLUMN IF NOT EXISTS photo_uploaded_at TIMESTAMP WITH TIME ZONE;
+        ALTER TABLE people_in_my_life ADD COLUMN IF NOT EXISTS photo_size_bytes INTEGER;
+
         -- Drop old age_range column from people_in_my_life (replaced with birth_date)
         ALTER TABLE people_in_my_life DROP COLUMN IF EXISTS age_range;
     """
