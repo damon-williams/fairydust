@@ -1,5 +1,6 @@
 """Image generation app routes for fairydust content service"""
 
+import json
 import os
 from datetime import datetime
 from uuid import uuid4
@@ -124,41 +125,25 @@ async def generate_image(
         }
         
         # Store in database
-        try:
-            print(f"🔍 DEBUG: Inserting image record:")
-            print(f"  - image_id: {image_id}")
-            print(f"  - user_id: {str(request.user_id)}")
-            print(f"  - stored_url: {stored_url}")
-            print(f"  - prompt: {request.prompt[:50]}...")
-            print(f"  - style: {request.style.value}")
-            print(f"  - image_size: {request.image_size.value}")
-            print(f"  - reference_people_data: {reference_people_data}")
-            print(f"  - metadata keys: {list(full_metadata.keys())}")
-            
-            image_record = await db.fetch_one(
-                """
-                INSERT INTO user_images (
-                    id, user_id, url, prompt, style, image_size, is_favorited,
-                    reference_people, metadata, created_at, updated_at
-                )
-                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
-                RETURNING *
-                """,
-                image_id,
-                str(request.user_id),
-                stored_url,
-                request.prompt,
-                request.style.value,
-                request.image_size.value,
-                False,  # is_favorited defaults to False
-                reference_people_data,
-                full_metadata
+        image_record = await db.fetch_one(
+            """
+            INSERT INTO user_images (
+                id, user_id, url, prompt, style, image_size, is_favorited,
+                reference_people, metadata, created_at, updated_at
             )
-            print(f"✅ Database insert successful: {image_record['id']}")
-        except Exception as db_error:
-            print(f"❌ Database insert failed: {db_error}")
-            print(f"   Error type: {type(db_error)}")
-            raise
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+            RETURNING *
+            """,
+            image_id,
+            str(request.user_id),
+            stored_url,
+            request.prompt,
+            request.style.value,
+            request.image_size.value,
+            False,  # is_favorited defaults to False
+            json.dumps(reference_people_data),  # Convert to JSON string for JSONB
+            json.dumps(full_metadata)  # Convert to JSON string for JSONB
+        )
         
         # Create response
         user_image = UserImage(**image_record)
@@ -260,8 +245,8 @@ async def regenerate_image(
             style,
             original_image["image_size"],
             False,  # is_favorited defaults to False
-            original_image["reference_people"] if request.keep_people else [],
-            full_metadata
+            json.dumps(original_image["reference_people"] if request.keep_people else []),  # Convert to JSON string
+            json.dumps(full_metadata)  # Convert to JSON string for JSONB
         )
         
         # Create response
