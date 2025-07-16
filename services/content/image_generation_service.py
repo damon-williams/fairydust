@@ -96,10 +96,10 @@ class ImageGenerationService:
                 "prompt": enhanced_prompt,
                 "width": dimensions["width"],
                 "height": dimensions["height"],
-                "steps": 28,
-                "guidance": 3.5,
+                "output_format": "webp",
+                "output_quality": 90,
                 "safety_tolerance": 2,
-                "seed": None
+                "prompt_upsampling": False
             }
         }
         
