@@ -83,10 +83,10 @@ class ImageGenerationService:
         # Add quality enhancers for FLUX
         enhanced_prompt += ", high quality, detailed, professional"
         
-        # Map image sizes
+        # Map image sizes (FLUX max dimensions: 1440x1440)
         size_map = {
             ImageSize.STANDARD: {"width": 1024, "height": 1024},
-            ImageSize.LARGE: {"width": 1024, "height": 1792},
+            ImageSize.LARGE: {"width": 1024, "height": 1440},  # FLUX max height is 1440
             ImageSize.SQUARE: {"width": 1024, "height": 1024}
         }
         
@@ -118,9 +118,6 @@ class ImageGenerationService:
             )
             if response.status_code != 201:
                 error_data = response.json()
-                print(f"❌ Replicate API error - Status: {response.status_code}")
-                print(f"   Request payload: {json.dumps(payload, indent=2)}")
-                print(f"   Error response: {json.dumps(error_data, indent=2)}")
                 raise HTTPException(
                     status_code=500,
                     detail=f"Replicate API error: {error_data.get('detail', 'Unknown error')}"
