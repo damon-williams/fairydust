@@ -146,17 +146,28 @@ async def generate_image(
         )
         
         # Create response
-        user_image = UserImage(**image_record)
-        generation_info = ImageGenerationInfo(
-            model_used=generation_metadata["model_used"],
-            generation_time_ms=generation_metadata["generation_time_ms"],
-            cost_estimate="$0.025"  # FLUX cost estimate - actual cost handled by apps service
-        )
-        
-        return ImageGenerateResponse(
-            image=user_image,
-            generation_info=generation_info
-        )
+        try:
+            print(f"🔍 Creating UserImage from record: {image_record}")
+            user_image = UserImage(**image_record)
+            print(f"✅ UserImage created successfully")
+            
+            generation_info = ImageGenerationInfo(
+                model_used=generation_metadata["model_used"],
+                generation_time_ms=generation_metadata["generation_time_ms"],
+                cost_estimate="$0.025"  # FLUX cost estimate - actual cost handled by apps service
+            )
+            print(f"✅ GenerationInfo created successfully")
+            
+            response = ImageGenerateResponse(
+                image=user_image,
+                generation_info=generation_info
+            )
+            print(f"✅ Response created successfully")
+            return response
+        except Exception as response_error:
+            print(f"❌ Response creation failed: {response_error}")
+            print(f"   Error type: {type(response_error)}")
+            raise
         
     except HTTPException:
         raise
