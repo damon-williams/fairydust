@@ -43,10 +43,18 @@ async def validate_user_people(db: Database, user_id: str, person_ids: list[str]
     
     # Get people from identity service
     identity_base_url = _get_identity_service_url()
+    service_token = os.getenv("SERVICE_JWT_TOKEN")
+    
+    if not service_token:
+        raise HTTPException(
+            status_code=500,
+            detail="Service authentication not configured"
+        )
     
     async with httpx.AsyncClient() as client:
         response = await client.get(
             f"{identity_base_url}/users/{user_id}/people",
+            headers={"Authorization": f"Bearer {service_token}"},
             timeout=10.0
         )
         if response.status_code != 200:
