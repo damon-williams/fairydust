@@ -333,6 +333,56 @@ const uploadPersonPhoto = async (userId, personId, file) => {
 }
 ```
 
+## ⚠️ **Important: Reference Image Limitations**
+
+### **FLUX Model Limitations**
+The current image generation service uses **FLUX-1.1-Pro**, which has the following limitations regarding reference images:
+
+❌ **Does NOT support direct image references** (unlike DALL-E)  
+❌ **Cannot generate accurate likenesses** from uploaded photos  
+❌ **Only uses text descriptions** for people references  
+
+### **Current Implementation**
+When you provide reference people, the system:
+1. ✅ **Validates** that people belong to the user
+2. ✅ **Extracts descriptions** from the people references
+3. ✅ **Adds text descriptions** to the prompt (e.g., "featuring person (Damon), person (Leslie)")
+4. ❌ **Does NOT use the actual photos** for visual reference
+
+### **Example:**
+```javascript
+// Request with reference people
+{
+  "prompt": "walking together in a park",
+  "reference_people": [
+    {
+      "person_id": "user-id",
+      "description": "Damon (Me)",
+      "photo_url": "https://images.fairydust.fun/avatars/..."
+    },
+    {
+      "person_id": "person-id", 
+      "description": "Leslie (Wife)",
+      "photo_url": "https://images.fairydust.fun/people/..."
+    }
+  ]
+}
+
+// Actual prompt sent to FLUX
+"walking together in a park, featuring person (Damon), person (Leslie), photorealistic..."
+```
+
+### **Recommendations for Frontend**
+1. **Set expectations** - Inform users that generated people won't look like the reference photos
+2. **Focus on descriptions** - Encourage detailed descriptions rather than relying on photos
+3. **Consider alternative models** - Future integration with models that support image references
+4. **Use for composition** - Good for generating scenes with multiple people, but not accurate likenesses
+
+### **Future Improvements**
+- Integration with models that support image references (e.g., Midjourney, Stable Diffusion with ControlNet)
+- Face detection and description generation from uploaded photos
+- Hybrid approach combining FLUX with face-swapping post-processing
+
 ## Storage & Performance
 
 ### CDN Integration

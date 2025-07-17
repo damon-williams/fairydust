@@ -51,30 +51,55 @@ async def validate_user_people(db: Database, user_id: str, person_ids: list[str]
             detail="SERVICE_JWT_TOKEN not configured for inter-service authentication"
         )
     
-    async with httpx.AsyncClient() as client:
-        response = await client.get(
-            f"{identity_base_url}/users/{user_id}/people",
-            headers={"Authorization": f"Bearer {service_token}"},
-            timeout=10.0
-        )
-        if response.status_code != 200:
-            raise HTTPException(
-                status_code=400,
-                detail="Failed to validate people references"
+    people_map = {}
+    
+    # Separate user avatar references from actual people
+    people_to_validate = []
+    for person_id in person_ids:
+        if person_id == user_id:
+            # This is the user themselves - get their name
+            async with httpx.AsyncClient() as client:
+                user_response = await client.get(
+                    f"{identity_base_url}/users/me",
+                    headers={"Authorization": f"Bearer {service_token}"},
+                    timeout=10.0
+                )
+                if user_response.status_code == 200:
+                    user_data = user_response.json()
+                    people_map[person_id] = user_data.get("first_name", "Me")
+                else:
+                    people_map[person_id] = "Me"
+        else:
+            people_to_validate.append(person_id)
+    
+    # Validate actual people in their life
+    if people_to_validate:
+        async with httpx.AsyncClient() as client:
+            response = await client.get(
+                f"{identity_base_url}/users/{user_id}/people",
+                headers={"Authorization": f"Bearer {service_token}"},
+                timeout=10.0
             )
-        
-        people_data = response.json()
-        people_map = {str(person["id"]): person["name"] for person in people_data}
-        
-        # Validate all person IDs exist
-        for person_id in person_ids:
-            if person_id not in people_map:
+            if response.status_code != 200:
                 raise HTTPException(
                     status_code=400,
-                    detail=f"Person {person_id} not found or does not belong to user"
+                    detail="Failed to validate people references"
                 )
+            
+            people_data = response.json()
+            people_data_map = {str(person["id"]): person["name"] for person in people_data}
+            
+            # Validate all people IDs exist
+            for person_id in people_to_validate:
+                if person_id not in people_data_map:
+                    raise HTTPException(
+                        status_code=400,
+                        detail=f"Person {person_id} not found or does not belong to user"
+                    )
+            
+            people_map.update(people_data_map)
         
-        return people_map
+    return people_map
 
 
 def _get_identity_service_url() -> str:
