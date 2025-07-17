@@ -135,9 +135,18 @@ class ImageGenerationService:
             )
             if response.status_code != 201:
                 error_data = response.json()
+                error_detail = error_data.get('detail', 'Unknown error')
+                
+                # Handle NSFW content detection gracefully
+                if 'nsfw' in error_detail.lower() or 'inappropriate' in error_detail.lower():
+                    raise HTTPException(
+                        status_code=400,
+                        detail="Content not allowed. Please modify your prompt to avoid inappropriate content."
+                    )
+                
                 raise HTTPException(
                     status_code=500,
-                    detail=f"Replicate API error: {error_data.get('detail', 'Unknown error')}"
+                    detail=f"Image generation service error: {error_detail}"
                 )
             
             prediction = response.json()
@@ -179,6 +188,14 @@ class ImageGenerationService:
                 
                 elif status == "failed":
                     error_msg = result.get("error", "Unknown generation error")
+                    
+                    # Handle NSFW content detection gracefully
+                    if 'nsfw' in error_msg.lower() or 'inappropriate' in error_msg.lower():
+                        raise HTTPException(
+                            status_code=400,
+                            detail="Content not allowed. Please modify your prompt to avoid inappropriate content."
+                        )
+                    
                     raise HTTPException(status_code=500, detail=f"Image generation failed: {error_msg}")
         
         # Timeout
@@ -267,9 +284,18 @@ class ImageGenerationService:
             )
             if response.status_code != 201:
                 error_data = response.json()
+                error_detail = error_data.get('detail', 'Unknown error')
+                
+                # Handle NSFW content detection gracefully
+                if 'nsfw' in error_detail.lower() or 'inappropriate' in error_detail.lower():
+                    raise HTTPException(
+                        status_code=400,
+                        detail="Content not allowed. Please modify your prompt to avoid inappropriate content."
+                    )
+                
                 raise HTTPException(
                     status_code=500,
-                    detail=f"Replicate API error: {error_data.get('detail', 'Unknown error')}"
+                    detail=f"Image generation service error: {error_detail}"
                 )
             
             prediction = response.json()
@@ -314,6 +340,14 @@ class ImageGenerationService:
                 
                 elif status == "failed":
                     error_msg = result.get("error", "Unknown generation error")
+                    
+                    # Handle NSFW content detection gracefully
+                    if 'nsfw' in error_msg.lower() or 'inappropriate' in error_msg.lower():
+                        raise HTTPException(
+                            status_code=400,
+                            detail="Content not allowed. Please modify your prompt to avoid inappropriate content."
+                        )
+                    
                     raise HTTPException(status_code=500, detail=f"Image generation failed: {error_msg}")
         
         # Timeout
