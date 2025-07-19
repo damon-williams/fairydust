@@ -317,7 +317,6 @@ async def get_deletion_stats(
     reason_stats = await db.fetch_all("""
         SELECT deletion_reason, COUNT(*) as count
         FROM account_deletion_logs
-        WHERE deletion_completed_at IS NOT NULL
         GROUP BY deletion_reason
         ORDER BY count DESC
     """)
@@ -326,7 +325,6 @@ async def get_deletion_stats(
     type_stats = await db.fetch_all("""
         SELECT deleted_by, COUNT(*) as count
         FROM account_deletion_logs
-        WHERE deletion_completed_at IS NOT NULL
         GROUP BY deleted_by
     """)
     
@@ -335,7 +333,6 @@ async def get_deletion_stats(
         SELECT DATE(deletion_requested_at) as deletion_date, COUNT(*) as count
         FROM account_deletion_logs
         WHERE deletion_requested_at >= CURRENT_DATE - INTERVAL '30 days'
-          AND deletion_completed_at IS NOT NULL
         GROUP BY DATE(deletion_requested_at)
         ORDER BY deletion_date DESC
         LIMIT 30
@@ -345,18 +342,10 @@ async def get_deletion_stats(
     total_deletions = await db.fetch_one("""
         SELECT COUNT(*) as total
         FROM account_deletion_logs
-        WHERE deletion_completed_at IS NOT NULL
-    """)
-    
-    pending_deletions = await db.fetch_one("""
-        SELECT COUNT(*) as pending
-        FROM account_deletion_logs
-        WHERE deletion_completed_at IS NULL
     """)
     
     return {
         "total_deletions": total_deletions["total"] if total_deletions else 0,
-        "pending_deletions": pending_deletions["pending"] if pending_deletions else 0,
         "deletion_reasons": [dict(row) for row in reason_stats],
         "deletion_types": [dict(row) for row in type_stats],
         "recent_trend": [dict(row) for row in trend_stats]

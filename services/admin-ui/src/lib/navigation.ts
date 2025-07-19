@@ -5,7 +5,8 @@ import {
   Brain,
   Activity,
   Settings,
-  UserPlus
+  UserPlus,
+  Trash2
 } from 'lucide-react';
 
 export interface NavigationItem {
@@ -43,6 +44,12 @@ export const navigation: NavigationItem[] = [
     name: 'Referrals',
     href: '/admin/referrals',
     icon: UserPlus,
+  },
+  {
+    name: 'Deletion Logs',
+    href: '/admin/deletion-logs',
+    icon: Trash2,
+    new: true,
   },
   {
     name: 'System Status',

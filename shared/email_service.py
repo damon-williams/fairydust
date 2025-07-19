@@ -93,8 +93,6 @@ async def send_account_deletion_confirmation(email: str, fairyname: str, deletio
     • Photos of people in your life
     • All app data and preferences
 
-    If you deleted your account by mistake or need assistance, please contact our support team within 7 days and reference your deletion ID.
-
     Thank you for being part of fairydust.
 
     - The fairydust team
@@ -121,13 +119,6 @@ async def send_account_deletion_confirmation(email: str, fairyname: str, deletio
                     <li>Photos of people in your life</li>
                     <li>All app data and preferences</li>
                 </ul>
-
-                <div style="background-color: #fff3cd; border: 1px solid #ffeaa7; padding: 15px; border-radius: 8px; margin: 20px 0;">
-                    <p style="margin: 0; color: #856404;">
-                        <strong>Need help?</strong> If you deleted your account by mistake or need assistance, 
-                        please contact our support team within 7 days and reference your deletion ID.
-                    </p>
-                </div>
 
                 <p>Thank you for being part of fairydust.</p>
                 

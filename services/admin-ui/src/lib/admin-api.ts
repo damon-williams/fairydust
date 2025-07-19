@@ -876,4 +876,80 @@ export class AdminAPI {
       throw error;
     }
   }
+
+  // Account Deletion APIs
+  static async getDeletionLogs(params: {
+    limit?: number;
+    offset?: number;
+    deleted_by?: 'self' | 'admin';
+    reason?: string;
+  } = {}): Promise<{
+    deletion_logs: Array<{
+      id: string;
+      user_id: string;
+      fairyname: string;
+      email: string;
+      deletion_reason: string;
+      deletion_feedback: string;
+      deleted_by: string;
+      deleted_by_user_id?: string;
+      user_created_at: string;
+      deletion_requested_at: string;
+      deletion_completed_at?: string;
+      data_summary: any;
+    }>;
+    pagination: {
+      total: number;
+      limit: number;
+      offset: number;
+      has_more: boolean;
+    };
+    filters: {
+      deleted_by?: string;
+      reason?: string;
+    };
+  }> {
+    try {
+      const queryParams = new URLSearchParams();
+      if (params.limit) queryParams.append('limit', params.limit.toString());
+      if (params.offset) queryParams.append('offset', params.offset.toString());
+      if (params.deleted_by) queryParams.append('deleted_by', params.deleted_by);
+      if (params.reason) queryParams.append('reason', params.reason);
+
+      const response = await fetch(`${API_BASE}/admin/users/deletion-logs?${queryParams}`, {
+        credentials: 'include',
+      });
+      
+      if (response.ok) {
+        return await response.json();
+      }
+      
+      throw new Error('Failed to fetch deletion logs');
+    } catch (error) {
+      console.error('Failed to get deletion logs:', error);
+      throw error;
+    }
+  }
+
+  static async getDeletionStats(): Promise<{
+    total_deletions: number;
+    deletion_reasons: Array<{ deletion_reason: string; count: number }>;
+    deletion_types: Array<{ deleted_by: string; count: number }>;
+    recent_trend: Array<{ deletion_date: string; count: number }>;
+  }> {
+    try {
+      const response = await fetch(`${API_BASE}/admin/users/deletion-logs/stats`, {
+        credentials: 'include',
+      });
+      
+      if (response.ok) {
+        return await response.json();
+      }
+      
+      throw new Error('Failed to fetch deletion stats');
+    } catch (error) {
+      console.error('Failed to get deletion stats:', error);
+      throw error;
+    }
+  }
 }
