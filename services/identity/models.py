@@ -114,12 +114,14 @@ class PersonInMyLifeCreate(BaseModel):
     name: str = Field(..., max_length=100)
     birth_date: Optional[str] = Field(None, pattern=r"^\d{4}-\d{2}-\d{2}$")
     relationship: Optional[str] = Field(None, max_length=100)
+    personality_description: Optional[str] = Field(None, max_length=200)
 
 
 class PersonInMyLifeUpdate(BaseModel):
     name: Optional[str] = Field(None, max_length=100)
     birth_date: Optional[str] = Field(None, pattern=r"^\d{4}-\d{2}-\d{2}$")
     relationship: Optional[str] = Field(None, max_length=100)
+    personality_description: Optional[str] = Field(None, max_length=200)
 
 
 class PersonInMyLife(BaseModel):
@@ -128,6 +130,7 @@ class PersonInMyLife(BaseModel):
     name: str
     birth_date: Optional[date] = None
     relationship: Optional[str] = None
+    personality_description: Optional[str] = None
     photo_url: Optional[str] = None
     photo_uploaded_at: Optional[datetime] = None
     photo_size_bytes: Optional[int] = None

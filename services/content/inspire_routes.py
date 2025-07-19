@@ -584,7 +584,7 @@ async def _get_user_context(db: Database, user_id: uuid.UUID) -> str:
 
         # Get people in my life
         people_query = """
-            SELECT name, relationship, birth_date
+            SELECT name, relationship, birth_date, personality_description
             FROM people_in_my_life
             WHERE user_id = $1
         """
@@ -618,6 +618,11 @@ async def _get_user_context(db: Database, user_id: uuid.UUID) -> str:
                     birth = date.fromisoformat(str(row["birth_date"]))
                     age = (date.today() - birth).days // 365
                     person_desc += f", {age} years old"
+                
+                # Add personality description if available
+                if row["personality_description"]:
+                    person_desc += f", {row['personality_description']}"
+                
                 person_desc += ")"
                 people_list.append(person_desc)
 

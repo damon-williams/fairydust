@@ -371,6 +371,9 @@ async def create_tables():
         ALTER TABLE people_in_my_life ADD COLUMN IF NOT EXISTS photo_uploaded_at TIMESTAMP WITH TIME ZONE;
         ALTER TABLE people_in_my_life ADD COLUMN IF NOT EXISTS photo_size_bytes INTEGER;
 
+        -- Add personality description column for Story app character enhancement
+        ALTER TABLE people_in_my_life ADD COLUMN IF NOT EXISTS personality_description TEXT;
+
         -- Drop old age_range column from people_in_my_life (replaced with birth_date)
         ALTER TABLE people_in_my_life DROP COLUMN IF EXISTS age_range;
     """

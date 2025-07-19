@@ -888,14 +888,15 @@ async def add_person_to_life(
 
     new_person = await db.fetch_one(
         """
-        INSERT INTO people_in_my_life (user_id, name, birth_date, relationship)
-        VALUES ($1, $2, $3, $4)
+        INSERT INTO people_in_my_life (user_id, name, birth_date, relationship, personality_description)
+        VALUES ($1, $2, $3, $4, $5)
         RETURNING *
         """,
         user_id,
         person.name,
         birth_date_obj,
         person.relationship,
+        person.personality_description,
     )
 
     return PersonInMyLife(**new_person)
@@ -961,6 +962,11 @@ async def update_person_in_my_life(
     if person_update.relationship is not None:
         updates.append(f"relationship = ${param_count}")
         values.append(person_update.relationship)
+        param_count += 1
+
+    if person_update.personality_description is not None:
+        updates.append(f"personality_description = ${param_count}")
+        values.append(person_update.personality_description)
         param_count += 1
 
     if not updates:

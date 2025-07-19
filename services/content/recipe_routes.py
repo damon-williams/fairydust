@@ -941,7 +941,7 @@ async def _get_user_context(
         # Get selected people information
         if selected_people:
             people_query = """
-                SELECT name, relationship, birth_date
+                SELECT name, relationship, birth_date, personality_description
                 FROM people_in_my_life
                 WHERE user_id = $1 AND id = ANY($2)
             """
@@ -959,6 +959,11 @@ async def _get_user_context(
                         birth = date.fromisoformat(str(row["birth_date"]))
                         age = (date.today() - birth).days // 365
                         person_desc += f", {age} years old"
+                    
+                    # Add personality description if available
+                    if row["personality_description"]:
+                        person_desc += f", {row['personality_description']}"
+                    
                     person_desc += ")"
                     people_list.append(person_desc)
 
