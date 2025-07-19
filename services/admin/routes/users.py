@@ -166,7 +166,7 @@ async def delete_user_json(
         
         data_summary = {
             "dust_balance": user_data["dust_balance"],
-            "account_age_days": (datetime.utcnow() - user_data["created_at"]).days if user_data["created_at"] else 0,
+            "account_age_days": (datetime.utcnow().replace(tzinfo=None) - user_data["created_at"].replace(tzinfo=None)).days if user_data["created_at"] else 0,
             "has_avatar": bool(user_data["avatar_url"]),
             "admin_deletion_reason": "admin_action",
             "deleted_by_admin": admin_user.get("fairyname", "unknown_admin")

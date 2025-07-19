@@ -1,5 +1,6 @@
 import secrets
 import string
+import json
 from datetime import datetime
 from uuid import uuid4
 
@@ -646,9 +647,6 @@ async def delete_account(
     redis = Depends(get_redis)
 ):
     """Delete user's account permanently"""
-    import json
-    from uuid import uuid4
-    
     try:
         user_id = current_user.user_id
         
@@ -675,7 +673,7 @@ async def delete_account(
         
         data_summary = {
             "dust_balance": user_data["dust_balance"],
-            "account_age_days": (datetime.utcnow() - user_data["created_at"]).days if user_data["created_at"] else 0,
+            "account_age_days": (datetime.utcnow().replace(tzinfo=None) - user_data["created_at"].replace(tzinfo=None)).days if user_data["created_at"] else 0,
             "has_avatar": bool(user_data["avatar_url"]),
             "last_deletion_request": datetime.utcnow().isoformat()
         }
