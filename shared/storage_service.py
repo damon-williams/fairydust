@@ -214,6 +214,81 @@ class StorageService:
             return None
         except Exception:
             return None
+    
+    async def delete_user_assets(self, user_id: str) -> dict:
+        """
+        Delete all storage assets for a user (avatars, people photos, generated images)
+        
+        Args:
+            user_id: User's UUID
+            
+        Returns:
+            dict: Summary of deletion results
+        """
+        deletion_summary = {
+            "avatars_deleted": 0,
+            "people_photos_deleted": 0,
+            "generated_images_deleted": 0,
+            "total_deleted": 0,
+            "errors": []
+        }
+        
+        try:
+            # Define user-specific prefixes to delete
+            prefixes_to_delete = [
+                f"avatars/{user_id}/",
+                f"people/{user_id}/",
+                f"generated/{user_id}/"  # Generated images if they exist
+            ]
+            
+            for prefix in prefixes_to_delete:
+                try:
+                    # List all objects with this prefix
+                    response = self.client.list_objects_v2(
+                        Bucket=self.bucket_name,
+                        Prefix=prefix
+                    )
+                    
+                    if 'Contents' in response:
+                        # Delete objects in batches (R2 supports up to 1000 per batch)
+                        objects_to_delete = []
+                        for obj in response['Contents']:
+                            objects_to_delete.append({'Key': obj['Key']})
+                            
+                            # Track by category
+                            if prefix.startswith("avatars/"):
+                                deletion_summary["avatars_deleted"] += 1
+                            elif prefix.startswith("people/"):
+                                deletion_summary["people_photos_deleted"] += 1
+                            elif prefix.startswith("generated/"):
+                                deletion_summary["generated_images_deleted"] += 1
+                        
+                        # Batch delete
+                        if objects_to_delete:
+                            delete_response = self.client.delete_objects(
+                                Bucket=self.bucket_name,
+                                Delete={'Objects': objects_to_delete}
+                            )
+                            
+                            # Check for errors in batch delete
+                            if 'Errors' in delete_response:
+                                for error in delete_response['Errors']:
+                                    deletion_summary["errors"].append(f"Failed to delete {error['Key']}: {error['Message']}")
+                                    
+                except Exception as e:
+                    deletion_summary["errors"].append(f"Error deleting prefix {prefix}: {str(e)}")
+            
+            deletion_summary["total_deleted"] = (
+                deletion_summary["avatars_deleted"] + 
+                deletion_summary["people_photos_deleted"] + 
+                deletion_summary["generated_images_deleted"]
+            )
+            
+            return deletion_summary
+            
+        except Exception as e:
+            deletion_summary["errors"].append(f"General deletion error: {str(e)}")
+            return deletion_summary
 
 
 # Global instance
@@ -238,3 +313,8 @@ async def upload_user_avatar(file: UploadFile, user_id: str) -> tuple[str, int]:
 async def delete_user_avatar(avatar_url: str) -> bool:
     """Convenience function for deleting user avatars"""
     return await storage_service.delete_user_avatar(avatar_url)
+
+
+async def delete_user_assets(user_id: str) -> dict:
+    """Convenience function for deleting all user assets"""
+    return await storage_service.delete_user_assets(user_id)

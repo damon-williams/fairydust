@@ -7,6 +7,8 @@ from auth import AuthService, TokenData, get_current_user
 from fastapi import APIRouter, BackgroundTasks, Depends, File, HTTPException, Security, UploadFile
 from fastapi.security import HTTPBearer
 from models import (
+    AccountDeletionRequest,
+    AccountDeletionResponse,
     AuthResponse,
     OAuthCallback,
     OnboardTracking,
@@ -24,11 +26,11 @@ from models import (
 )
 
 from shared.database import Database, get_db
-from shared.email_service import send_otp_email
+from shared.email_service import send_otp_email, send_account_deletion_confirmation
 from shared.redis_client import get_redis
 from shared.sms_service import send_otp_sms
 from shared.daily_bonus_utils import check_daily_bonus_eligibility
-from shared.storage_service import upload_person_photo, delete_person_photo, upload_user_avatar, delete_user_avatar
+from shared.storage_service import upload_person_photo, delete_person_photo, upload_user_avatar, delete_user_avatar, delete_user_assets
 
 
 async def get_daily_bonus_amount(db: Database) -> int:
@@ -634,6 +636,133 @@ async def delete_avatar(
         raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Avatar deletion failed: {str(e)}")
+
+
+@user_router.delete("/me", response_model=AccountDeletionResponse)
+async def delete_account(
+    request: AccountDeletionRequest,
+    current_user: TokenData = Depends(get_current_user),
+    db: Database = Depends(get_db),
+    redis = Depends(get_redis)
+):
+    """Delete user's account permanently"""
+    import json
+    from uuid import uuid4
+    
+    try:
+        user_id = current_user.user_id
+        
+        # Get user data for logging before deletion
+        user_data = await db.fetch_one(
+            """SELECT fairyname, email, created_at, dust_balance, 
+                      avatar_url, avatar_uploaded_at, avatar_size_bytes 
+               FROM users WHERE id = $1""",
+            user_id
+        )
+        
+        if not user_data:
+            raise HTTPException(status_code=404, detail="User not found")
+        
+        # Gather data summary for audit log
+        stats_queries = [
+            ("recipes_created", "SELECT COUNT(*) as count FROM user_recipes WHERE user_id = $1"),
+            ("stories_created", "SELECT COUNT(*) as count FROM user_stories WHERE user_id = $1"),
+            ("images_generated", "SELECT COUNT(*) as count FROM user_images WHERE user_id = $1"),
+            ("people_in_life", "SELECT COUNT(*) as count FROM people_in_my_life WHERE user_id = $1"),
+            ("total_transactions", "SELECT COUNT(*) as count FROM dust_transactions WHERE user_id = $1"),
+            ("referrals_made", "SELECT COUNT(*) as count FROM referral_codes WHERE user_id = $1")
+        ]
+        
+        data_summary = {
+            "dust_balance": user_data["dust_balance"],
+            "account_age_days": (datetime.utcnow() - user_data["created_at"]).days if user_data["created_at"] else 0,
+            "has_avatar": bool(user_data["avatar_url"]),
+            "last_deletion_request": datetime.utcnow().isoformat()
+        }
+        
+        # Get counts for data summary
+        for stat_name, query in stats_queries:
+            try:
+                result = await db.fetch_one(query, user_id)
+                data_summary[stat_name] = result["count"] if result else 0
+            except Exception:
+                data_summary[stat_name] = 0
+        
+        # Create deletion log entry
+        deletion_id = str(uuid4())
+        await db.execute(
+            """INSERT INTO account_deletion_logs 
+               (id, user_id, fairyname, email, deletion_reason, deletion_feedback, 
+                deleted_by, user_created_at, data_summary, deletion_requested_at)
+               VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, CURRENT_TIMESTAMP)""",
+            deletion_id,
+            user_id,
+            user_data["fairyname"],
+            user_data["email"], 
+            request.reason,
+            request.feedback,
+            "self",
+            user_data["created_at"],
+            json.dumps(data_summary)
+        )
+        
+        # Delete storage assets (avatars, people photos, generated images)
+        storage_deletion_summary = await delete_user_assets(user_id)
+        
+        # Clear Redis data (sessions, rate limits, etc.)
+        try:
+            # Clear user sessions
+            session_keys = await redis.keys(f"session:*:{user_id}")
+            if session_keys:
+                await redis.delete(*session_keys)
+            
+            # Clear rate limiting data
+            rate_limit_keys = await redis.keys(f"rate_limit:*:{user_id}*")
+            if rate_limit_keys:
+                await redis.delete(*rate_limit_keys)
+                
+            # Clear OTP codes
+            otp_keys = await redis.keys(f"otp:*:{user_data['email']}*")
+            if otp_keys:
+                await redis.delete(*otp_keys)
+                
+        except Exception as e:
+            # Log but don't fail deletion for Redis errors
+            print(f"Redis cleanup warning for user {user_id}: {e}")
+        
+        # Delete user record (CASCADE will handle all related data)
+        await db.execute("DELETE FROM users WHERE id = $1", user_id)
+        
+        # Update deletion log with completion
+        await db.execute(
+            """UPDATE account_deletion_logs 
+               SET deletion_completed_at = CURRENT_TIMESTAMP,
+                   data_summary = data_summary || $2
+               WHERE id = $1""",
+            deletion_id,
+            json.dumps({"storage_cleanup": storage_deletion_summary})
+        )
+        
+        # Send deletion confirmation email
+        try:
+            await send_account_deletion_confirmation(
+                user_data["email"],
+                user_data["fairyname"],
+                deletion_id
+            )
+        except Exception as e:
+            # Log email error but don't fail the deletion
+            print(f"Email notification failed for user {user_id}: {e}")
+        
+        return AccountDeletionResponse(
+            message="Account successfully deleted",
+            deletion_id=deletion_id
+        )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Account deletion failed: {str(e)}")
 
 
 # Onboard Tracking Routes

@@ -1,5 +1,6 @@
 # email_service.py
 import os
+from datetime import datetime
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from typing import Optional
@@ -63,6 +64,73 @@ async def send_otp_email(email: str, otp: str):
                 </div>
                 <p>This code will expire in 10 minutes.</p>
                 <p style="color: #666; font-size: 14px;">If you didn't request this code, please ignore this email.</p>
+                <hr style="border: none; border-top: 1px solid #eee; margin: 20px 0;">
+                <p style="color: #999; font-size: 12px; text-align: center;">- The fairydust team</p>
+            </div>
+        </body>
+    </html>
+    """
+
+    await send_email(email, subject, body, html_body)
+
+
+async def send_account_deletion_confirmation(email: str, fairyname: str, deletion_id: str):
+    """Send account deletion confirmation email"""
+    subject = "Your fairydust account has been deleted"
+
+    body = f"""
+    Hi {fairyname},
+
+    This email confirms that your fairydust account has been permanently deleted.
+
+    Deletion ID: {deletion_id}
+    Date: {datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S')} UTC
+
+    What was deleted:
+    • Your profile and account information
+    • All recipes, stories, and generated images
+    • Your DUST balance and transaction history
+    • Photos of people in your life
+    • All app data and preferences
+
+    If you deleted your account by mistake or need assistance, please contact our support team within 7 days and reference your deletion ID.
+
+    Thank you for being part of fairydust.
+
+    - The fairydust team
+    """
+
+    html_body = f"""
+    <html>
+        <body style="font-family: Arial, sans-serif; line-height: 1.6; color: #333;">
+            <div style="max-width: 600px; margin: 0 auto; padding: 20px;">
+                <h2 style="color: #667eea;">Account Deletion Confirmation</h2>
+                <p>Hi {fairyname},</p>
+                <p>This email confirms that your fairydust account has been permanently deleted.</p>
+                
+                <div style="background-color: #f9f9f9; padding: 15px; border-radius: 8px; margin: 20px 0;">
+                    <p style="margin: 5px 0;"><strong>Deletion ID:</strong> <code style="background: #eee; padding: 2px 4px; border-radius: 3px;">{deletion_id}</code></p>
+                    <p style="margin: 5px 0;"><strong>Date:</strong> {datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S')} UTC</p>
+                </div>
+
+                <h3 style="color: #555;">What was deleted:</h3>
+                <ul style="color: #666;">
+                    <li>Your profile and account information</li>
+                    <li>All recipes, stories, and generated images</li>
+                    <li>Your DUST balance and transaction history</li>
+                    <li>Photos of people in your life</li>
+                    <li>All app data and preferences</li>
+                </ul>
+
+                <div style="background-color: #fff3cd; border: 1px solid #ffeaa7; padding: 15px; border-radius: 8px; margin: 20px 0;">
+                    <p style="margin: 0; color: #856404;">
+                        <strong>Need help?</strong> If you deleted your account by mistake or need assistance, 
+                        please contact our support team within 7 days and reference your deletion ID.
+                    </p>
+                </div>
+
+                <p>Thank you for being part of fairydust.</p>
+                
                 <hr style="border: none; border-top: 1px solid #eee; margin: 20px 0;">
                 <p style="color: #999; font-size: 12px; text-align: center;">- The fairydust team</p>
             </div>

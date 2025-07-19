@@ -186,3 +186,14 @@ class AuthResponse(BaseModel):
     # Daily login bonus eligibility info
     is_first_login_today: bool = False
     daily_bonus_eligible: bool = False
+
+
+# Account deletion models
+class AccountDeletionRequest(BaseModel):
+    reason: Literal["not_using_anymore", "privacy_concerns", "too_expensive", "switching_platform", "other"]
+    feedback: Optional[str] = Field(None, max_length=1000)
+
+
+class AccountDeletionResponse(BaseModel):
+    message: str
+    deletion_id: str
