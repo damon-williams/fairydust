@@ -40,6 +40,7 @@ export default function DeletionLogs() {
   const [logs, setLogs] = useState<DeletionLog[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [renderError, setRenderError] = useState<string | null>(null);
   const [pagination, setPagination] = useState({
     total: 0,
     limit: 25,
@@ -47,21 +48,29 @@ export default function DeletionLogs() {
     has_more: false
   });
   const [filters, setFilters] = useState({
-    deleted_by: '',
-    reason: ''
+    deleted_by: 'all',
+    reason: 'all_reasons'
   });
 
   const fetchDeletionLogs = useCallback(async () => {
     try {
       setLoading(true);
       setError(null);
+      console.log('Fetching deletion logs with params:', {
+        limit: pagination.limit,
+        offset: pagination.offset,
+        deleted_by: filters.deleted_by,
+        reason: filters.reason
+      });
+      
       const response = await AdminAPI.getDeletionLogs({
         limit: pagination.limit,
         offset: pagination.offset,
-        deleted_by: (filters.deleted_by as 'self' | 'admin') || undefined,
-        reason: filters.reason || undefined
+        deleted_by: (filters.deleted_by === 'all' ? undefined : filters.deleted_by as 'self' | 'admin'),
+        reason: (filters.reason === 'all_reasons' ? undefined : filters.reason)
       });
       
+      console.log('Deletion logs response:', response);
       setLogs(response.deletion_logs);
       setPagination(response.pagination);
     } catch (error) {
@@ -110,6 +119,30 @@ export default function DeletionLogs() {
     };
     return colorMap[reason] || 'bg-gray-100 text-gray-800';
   };
+
+  if (renderError) {
+    return (
+      <div className="space-y-6">
+        <div>
+          <h1 className="text-3xl font-bold">Account Deletion Logs</h1>
+          <p className="text-muted-foreground">
+            View and analyze account deletion history for compliance and insights
+          </p>
+        </div>
+        <div className="flex items-center justify-center h-64">
+          <div className="text-center">
+            <p className="text-red-600 mb-4">Render Error: {renderError}</p>
+            <button 
+              onClick={() => window.location.reload()} 
+              className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700"
+            >
+              Reload Page
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   if (loading) {
     return (
@@ -169,7 +202,7 @@ export default function DeletionLogs() {
                   <SelectValue placeholder="All" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="">All</SelectItem>
+                  <SelectItem value="all">All</SelectItem>
                   <SelectItem value="self">Self</SelectItem>
                   <SelectItem value="admin">Admin</SelectItem>
                 </SelectContent>
@@ -182,7 +215,7 @@ export default function DeletionLogs() {
                   <SelectValue placeholder="All reasons" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="">All Reasons</SelectItem>
+                  <SelectItem value="all_reasons">All Reasons</SelectItem>
                   <SelectItem value="not_using_anymore">Not Using Anymore</SelectItem>
                   <SelectItem value="privacy_concerns">Privacy Concerns</SelectItem>
                   <SelectItem value="too_expensive">Too Expensive</SelectItem>
@@ -220,7 +253,13 @@ export default function DeletionLogs() {
                     <div className="flex items-center gap-4 text-sm text-muted-foreground">
                       <span className="flex items-center gap-1">
                         <Calendar className="h-3 w-3" />
-                        {format(new Date(log.deletion_requested_at), 'MMM d, yyyy HH:mm')}
+                        {(() => {
+                          try {
+                            return format(new Date(log.deletion_requested_at), 'MMM d, yyyy HH:mm');
+                          } catch (e) {
+                            return new Date(log.deletion_requested_at).toLocaleDateString();
+                          }
+                        })()}
                       </span>
                       <span>Account age: {log.data_summary.account_age_days || 0} days</span>
                     </div>
