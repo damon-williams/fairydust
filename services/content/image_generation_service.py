@@ -127,30 +127,60 @@ class ImageGenerationService:
         
         # Start prediction
         async with httpx.AsyncClient() as client:
-            response = await client.post(
-                f"https://api.replicate.com/v1/models/{model}/predictions",
-                headers=headers,
-                json=payload,
-                timeout=10.0
-            )
-            if response.status_code != 201:
-                error_data = response.json()
-                error_detail = error_data.get('detail', 'Unknown error')
+            try:
+                print(f"🤖 REPLICATE REQUEST: {model}")
+                print(f"   Prompt: {prompt[:100]}...")
+                print(f"   Reference People: {len(reference_people)}")
                 
-                # Handle NSFW content detection gracefully
-                if 'nsfw' in error_detail.lower() or 'inappropriate' in error_detail.lower():
+                response = await client.post(
+                    f"https://api.replicate.com/v1/models/{model}/predictions",
+                    headers=headers,
+                    json=payload,
+                    timeout=10.0
+                )
+                
+                if response.status_code != 201:
+                    error_data = response.json() if response.content else {}
+                    error_detail = error_data.get('detail', 'Unknown error')
+                    
+                    # Enhanced error logging
+                    print(f"❌ REPLICATE API ERROR: {response.status_code}")
+                    print(f"   Model: {model}")
+                    print(f"   Error Detail: {error_detail}")
+                    print(f"   Full Error Response: {error_data}")
+                    print(f"   Request Payload: {payload}")
+                    
+                    # Handle NSFW content detection gracefully
+                    if 'nsfw' in error_detail.lower() or 'inappropriate' in error_detail.lower():
+                        raise HTTPException(
+                            status_code=400,
+                            detail="Content not allowed. Please modify your prompt to avoid inappropriate content."
+                        )
+                    
                     raise HTTPException(
-                        status_code=400,
-                        detail="Content not allowed. Please modify your prompt to avoid inappropriate content."
+                        status_code=500,
+                        detail=f"Image generation service error: {error_detail}"
                     )
-                
+                    
+            except httpx.TimeoutException as e:
+                print(f"⏱️ REPLICATE TIMEOUT: Request to {model} timed out after 10s")
+                print(f"   Prompt: {prompt[:100]}...")
                 raise HTTPException(
                     status_code=500,
-                    detail=f"Image generation service error: {error_detail}"
+                    detail="Image generation service timeout - please try again"
+                )
+            except httpx.RequestError as e:
+                print(f"🌐 REPLICATE CONNECTION ERROR: {str(e)}")
+                print(f"   Model: {model}")
+                print(f"   Prompt: {prompt[:100]}...")
+                raise HTTPException(
+                    status_code=500,
+                    detail="Unable to connect to image generation service"
                 )
             
             prediction = response.json()
             prediction_id = prediction["id"]
+            print(f"✅ REPLICATE PREDICTION STARTED: {prediction_id}")
         
         # Poll for completion
         max_wait_time = 120  # 2 minutes
@@ -189,6 +219,13 @@ class ImageGenerationService:
                 elif status == "failed":
                     error_msg = result.get("error", "Unknown generation error")
                     
+                    # Enhanced error logging for failed predictions
+                    print(f"❌ REPLICATE PREDICTION FAILED: {prediction_id}")
+                    print(f"   Model: {model}")
+                    print(f"   Error Message: {error_msg}")
+                    print(f"   Full Result: {result}")
+                    print(f"   Elapsed Time: {elapsed_time}s")
+                    
                     # Handle NSFW content detection gracefully
                     if 'nsfw' in error_msg.lower() or 'inappropriate' in error_msg.lower():
                         raise HTTPException(
@@ -198,7 +235,13 @@ class ImageGenerationService:
                     
                     raise HTTPException(status_code=500, detail=f"Image generation failed: {error_msg}")
         
-        # Timeout
+        # Timeout - enhanced logging
+        print(f"⏱️ REPLICATE PREDICTION TIMEOUT: {prediction_id}")
+        print(f"   Model: {model}")
+        print(f"   Max Wait Time: {max_wait_time}s")
+        print(f"   Total Elapsed: {elapsed_time}s")
+        print(f"   Last Status: {result.get('status', 'unknown') if 'result' in locals() else 'unknown'}")
+        
         raise HTTPException(status_code=500, detail="Image generation timed out")
     
     async def _generate_with_gen4_image(
@@ -276,30 +319,60 @@ class ImageGenerationService:
         
         # Start prediction
         async with httpx.AsyncClient() as client:
-            response = await client.post(
-                f"https://api.replicate.com/v1/models/{model}/predictions",
-                headers=headers,
-                json=payload,
-                timeout=10.0
-            )
-            if response.status_code != 201:
-                error_data = response.json()
-                error_detail = error_data.get('detail', 'Unknown error')
+            try:
+                print(f"🤖 REPLICATE REQUEST: {model}")
+                print(f"   Prompt: {prompt[:100]}...")
+                print(f"   Reference People: {len(reference_people)}")
                 
-                # Handle NSFW content detection gracefully
-                if 'nsfw' in error_detail.lower() or 'inappropriate' in error_detail.lower():
+                response = await client.post(
+                    f"https://api.replicate.com/v1/models/{model}/predictions",
+                    headers=headers,
+                    json=payload,
+                    timeout=10.0
+                )
+                
+                if response.status_code != 201:
+                    error_data = response.json() if response.content else {}
+                    error_detail = error_data.get('detail', 'Unknown error')
+                    
+                    # Enhanced error logging
+                    print(f"❌ REPLICATE API ERROR: {response.status_code}")
+                    print(f"   Model: {model}")
+                    print(f"   Error Detail: {error_detail}")
+                    print(f"   Full Error Response: {error_data}")
+                    print(f"   Request Payload: {payload}")
+                    
+                    # Handle NSFW content detection gracefully
+                    if 'nsfw' in error_detail.lower() or 'inappropriate' in error_detail.lower():
+                        raise HTTPException(
+                            status_code=400,
+                            detail="Content not allowed. Please modify your prompt to avoid inappropriate content."
+                        )
+                    
                     raise HTTPException(
-                        status_code=400,
-                        detail="Content not allowed. Please modify your prompt to avoid inappropriate content."
+                        status_code=500,
+                        detail=f"Image generation service error: {error_detail}"
                     )
-                
+                    
+            except httpx.TimeoutException as e:
+                print(f"⏱️ REPLICATE TIMEOUT: Request to {model} timed out after 10s")
+                print(f"   Prompt: {prompt[:100]}...")
                 raise HTTPException(
                     status_code=500,
-                    detail=f"Image generation service error: {error_detail}"
+                    detail="Image generation service timeout - please try again"
+                )
+            except httpx.RequestError as e:
+                print(f"🌐 REPLICATE CONNECTION ERROR: {str(e)}")
+                print(f"   Model: {model}")
+                print(f"   Prompt: {prompt[:100]}...")
+                raise HTTPException(
+                    status_code=500,
+                    detail="Unable to connect to image generation service"
                 )
             
             prediction = response.json()
             prediction_id = prediction["id"]
+            print(f"✅ REPLICATE PREDICTION STARTED: {prediction_id}")
         
         # Poll for completion
         max_wait_time = 180  # 3 minutes (Gen-4 may take longer)
@@ -341,6 +414,13 @@ class ImageGenerationService:
                 elif status == "failed":
                     error_msg = result.get("error", "Unknown generation error")
                     
+                    # Enhanced error logging for failed predictions
+                    print(f"❌ REPLICATE PREDICTION FAILED: {prediction_id}")
+                    print(f"   Model: {model}")
+                    print(f"   Error Message: {error_msg}")
+                    print(f"   Full Result: {result}")
+                    print(f"   Elapsed Time: {elapsed_time}s")
+                    
                     # Handle NSFW content detection gracefully
                     if 'nsfw' in error_msg.lower() or 'inappropriate' in error_msg.lower():
                         raise HTTPException(
@@ -350,7 +430,13 @@ class ImageGenerationService:
                     
                     raise HTTPException(status_code=500, detail=f"Image generation failed: {error_msg}")
         
-        # Timeout
+        # Timeout - enhanced logging
+        print(f"⏱️ REPLICATE PREDICTION TIMEOUT: {prediction_id}")
+        print(f"   Model: {model}")
+        print(f"   Max Wait Time: {max_wait_time}s")
+        print(f"   Total Elapsed: {elapsed_time}s")
+        print(f"   Last Status: {result.get('status', 'unknown') if 'result' in locals() else 'unknown'}")
+        
         raise HTTPException(status_code=500, detail="Image generation timed out")
 
 

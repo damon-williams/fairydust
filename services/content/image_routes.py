@@ -198,6 +198,25 @@ async def generate_image(
     except HTTPException:
         raise
     except Exception as e:
+        import traceback
+        import logging
+        
+        logger = logging.getLogger(__name__)
+        
+        # Log detailed error information
+        logger.error("🎨 IMAGE GENERATION FAILED")
+        logger.error(f"   User ID: {request.user_id}")
+        logger.error(f"   Prompt: {request.prompt[:100]}..." if len(request.prompt) > 100 else f"   Prompt: {request.prompt}")
+        logger.error(f"   Style: {request.style}")
+        logger.error(f"   Image Size: {request.image_size}")
+        logger.error(f"   Reference People Count: {len(request.reference_people) if request.reference_people else 0}")
+        if request.reference_people:
+            for i, person in enumerate(request.reference_people):
+                logger.error(f"   Reference Person {i+1}: {person.person_id} - {person.description}")
+        logger.error(f"   Exception Type: {type(e).__name__}")
+        logger.error(f"   Exception Message: {str(e)}")
+        logger.error(f"   Traceback: {traceback.format_exc()}")
+        
         raise HTTPException(status_code=500, detail=f"Image generation failed: {str(e)}")
 
 
@@ -311,6 +330,22 @@ async def regenerate_image(
     except HTTPException:
         raise
     except Exception as e:
+        import traceback
+        import logging
+        
+        logger = logging.getLogger(__name__)
+        
+        # Log detailed error information
+        logger.error("🔄 IMAGE REGENERATION FAILED")
+        logger.error(f"   Original Image ID: {image_id}")
+        logger.error(f"   User ID: {request.user_id}")
+        logger.error(f"   Feedback: {request.feedback}")
+        logger.error(f"   Keep People: {request.keep_people}")
+        logger.error(f"   Style Adjustments: {request.style_adjustments}")
+        logger.error(f"   Exception Type: {type(e).__name__}")
+        logger.error(f"   Exception Message: {str(e)}")
+        logger.error(f"   Traceback: {traceback.format_exc()}")
+        
         raise HTTPException(status_code=500, detail=f"Image regeneration failed: {str(e)}")
 
 
@@ -398,6 +433,22 @@ async def get_user_images(
         )
         
     except Exception as e:
+        import traceback
+        import logging
+        
+        logger = logging.getLogger(__name__)
+        
+        # Log detailed error information for image list fetch
+        logger.error("📋 IMAGE LIST FETCH FAILED")
+        logger.error(f"   User ID: {user_id}")
+        logger.error(f"   Limit: {limit}, Offset: {offset}")
+        logger.error(f"   Favorites Only: {favorites_only}")
+        logger.error(f"   Style Filter: {style}")
+        logger.error(f"   Has People Filter: {has_people}")
+        logger.error(f"   Exception Type: {type(e).__name__}")
+        logger.error(f"   Exception Message: {str(e)}")
+        logger.error(f"   Traceback: {traceback.format_exc()}")
+        
         raise HTTPException(status_code=500, detail=f"Failed to fetch images: {str(e)}")
 
 
