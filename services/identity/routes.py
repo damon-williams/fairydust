@@ -1442,7 +1442,7 @@ async def get_terms_history(
 public_terms_router = APIRouter(prefix="/public/terms", tags=["public-terms"])
 
 
-@public_terms_router.get("/current", response_model=PublicTermsResponse)
+@public_terms_router.get("/current")
 async def get_current_terms(
     document_type: str = None,
     db: Database = Depends(get_db)
@@ -1465,7 +1465,10 @@ async def get_current_terms(
             if not document:
                 raise HTTPException(status_code=404, detail=f"No active {document_type} found")
             
-            return SingleTermsResponse(document=TermsDocument(**document))
+            return SingleTermsResponse(
+                document=TermsDocument(**document),
+                last_updated=document["created_at"]
+            )
         
         else:
             # Get both document types

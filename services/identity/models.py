@@ -255,6 +255,7 @@ class PublicTermsResponse(BaseModel):
 
 class SingleTermsResponse(BaseModel):
     document: TermsDocument
+    last_updated: datetime
 
 
 # Response models (moved after Terms models to avoid circular reference)
