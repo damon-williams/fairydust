@@ -236,7 +236,7 @@ export interface TermsDocumentCreate {
   version: string;
   title: string;
   content_url: string;
-  content_hash: string;
+  content_hash?: string; // Optional - will auto-generate if not provided
   requires_acceptance: boolean;
   effective_date: string;
 }

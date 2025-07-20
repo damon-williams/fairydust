@@ -41,7 +41,7 @@ export default function Terms() {
     version: '',
     title: '',
     content_url: '',
-    content_hash: '',
+    content_hash: '', // Optional field
     requires_acceptance: true,
     effective_date: new Date().toISOString().split('T')[0]
   });
@@ -83,7 +83,7 @@ export default function Terms() {
   const handleCreateDocument = async () => {
     try {
       if (!newDocument.version || !newDocument.title || !newDocument.content_url) {
-        toast.error('Please fill in all required fields');
+        toast.error('Please fill in all required fields (version, title, content URL)');
         return;
       }
 
@@ -219,13 +219,16 @@ export default function Terms() {
                 />
               </div>
               <div>
-                <Label htmlFor="content_hash">Content Hash (SHA-256)</Label>
+                <Label htmlFor="content_hash">Content Hash (SHA-256) <span className="text-gray-500 text-sm">- Optional</span></Label>
                 <Input
                   id="content_hash"
                   value={newDocument.content_hash}
                   onChange={(e) => setNewDocument(prev => ({ ...prev, content_hash: e.target.value }))}
-                  placeholder="SHA-256 hash of document content"
+                  placeholder="Auto-generated if left empty"
                 />
+                <p className="text-xs text-gray-500 mt-1">
+                  Leave empty to auto-generate. Only provide if you have the exact SHA-256 hash of your document content.
+                </p>
               </div>
               <div>
                 <Label htmlFor="effective_date">Effective Date</Label>

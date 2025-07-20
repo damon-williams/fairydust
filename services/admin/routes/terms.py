@@ -19,7 +19,7 @@ class TermsDocumentCreate(BaseModel):
     version: str = Field(..., max_length=20)
     title: str = Field(..., max_length=200)
     content_url: str
-    content_hash: str = Field(..., max_length=64)
+    content_hash: Optional[str] = Field(None, max_length=64)  # Optional - will auto-generate if not provided
     requires_acceptance: bool = True
     effective_date: str  # ISO date string
 
@@ -125,6 +125,15 @@ async def create_terms_document(
         except ValueError:
             raise HTTPException(status_code=400, detail="Invalid effective_date format. Use YYYY-MM-DD")
         
+        # Auto-generate content hash if not provided
+        content_hash = document.content_hash
+        if not content_hash:
+            import hashlib
+            import time
+            # Generate a hash based on URL + timestamp for uniqueness
+            hash_input = f"{document.content_url}_{document.version}_{int(time.time())}"
+            content_hash = hashlib.sha256(hash_input.encode()).hexdigest()
+        
         # Create document
         new_doc = await db.fetch_one(
             """
@@ -139,7 +148,7 @@ async def create_terms_document(
             document.version,
             document.title,
             document.content_url,
-            document.content_hash,
+            content_hash,
             document.requires_acceptance,
             effective_date,
             admin_user["user_id"]
