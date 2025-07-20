@@ -187,6 +187,7 @@ async def serve_react_app(path: str):
         or path.startswith("admin/apps")
         or path.startswith("admin/llm")
         or path.startswith("admin/referrals")
+        or path.startswith("admin/deletion-logs")
         or path.startswith("admin/system")
         or path.startswith("admin/settings")
     ):

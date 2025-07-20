@@ -49,7 +49,6 @@ export const navigation: NavigationItem[] = [
     name: 'Deletion Logs',
     href: '/admin/deletion-logs',
     icon: Trash2,
-    new: true,
   },
   {
     name: 'System Status',

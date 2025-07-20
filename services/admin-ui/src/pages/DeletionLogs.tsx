@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { AdminAPI } from '@/lib/admin-api';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -39,6 +39,7 @@ interface DeletionLog {
 export default function DeletionLogs() {
   const [logs, setLogs] = useState<DeletionLog[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [pagination, setPagination] = useState({
     total: 0,
     limit: 25,
@@ -50,9 +51,10 @@ export default function DeletionLogs() {
     reason: ''
   });
 
-  const fetchDeletionLogs = async () => {
+  const fetchDeletionLogs = useCallback(async () => {
     try {
       setLoading(true);
+      setError(null);
       const response = await AdminAPI.getDeletionLogs({
         limit: pagination.limit,
         offset: pagination.offset,
@@ -64,14 +66,15 @@ export default function DeletionLogs() {
       setPagination(response.pagination);
     } catch (error) {
       console.error('Failed to fetch deletion logs:', error);
+      setError(error instanceof Error ? error.message : 'Failed to load deletion logs');
     } finally {
       setLoading(false);
     }
-  };
+  }, [pagination.limit, pagination.offset, filters.deleted_by, filters.reason]);
 
   useEffect(() => {
     fetchDeletionLogs();
-  }, [pagination.offset, filters]);
+  }, [fetchDeletionLogs]);
 
   const handleFilterChange = (key: string, value: string) => {
     setFilters(prev => ({ ...prev, [key]: value }));
@@ -112,6 +115,30 @@ export default function DeletionLogs() {
     return (
       <div className="flex items-center justify-center h-64">
         <div className="text-muted-foreground">Loading deletion logs...</div>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="space-y-6">
+        <div>
+          <h1 className="text-3xl font-bold">Account Deletion Logs</h1>
+          <p className="text-muted-foreground">
+            View and analyze account deletion history for compliance and insights
+          </p>
+        </div>
+        <div className="flex items-center justify-center h-64">
+          <div className="text-center">
+            <p className="text-red-600 mb-4">Error: {error}</p>
+            <button 
+              onClick={fetchDeletionLogs} 
+              className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700"
+            >
+              Try Again
+            </button>
+          </div>
+        </div>
       </div>
     );
   }
