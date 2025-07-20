@@ -3,7 +3,7 @@
 
 set -e
 
-echo "🚀 Building Admin Portal v2.10.0..."
+echo "🚀 Building Admin Portal ..."
 echo "=================================="
 
 # Change to admin-ui directory

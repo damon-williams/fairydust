@@ -204,9 +204,6 @@ export default function Terms() {
                   onChange={(e) => setNewDocument(prev => ({ ...prev, content_url: e.target.value }))}
                   placeholder="https://fairydust.app/legal/terms-v1.0.0.html"
                 />
-                <p className="text-xs text-gray-500 mt-1">
-                  Title will be auto-generated based on document type and version
-                </p>
               </div>
               <div>
                 <Label htmlFor="effective_date">Effective Date</Label>
