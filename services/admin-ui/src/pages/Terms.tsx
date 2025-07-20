@@ -39,9 +39,7 @@ export default function Terms() {
   const [newDocument, setNewDocument] = useState<TermsDocumentCreate>({
     document_type: 'terms_of_service',
     version: '',
-    title: '',
     content_url: '',
-    content_hash: '', // Optional field
     requires_acceptance: true,
     effective_date: new Date().toISOString().split('T')[0]
   });
@@ -82,8 +80,8 @@ export default function Terms() {
 
   const handleCreateDocument = async () => {
     try {
-      if (!newDocument.version || !newDocument.title || !newDocument.content_url) {
-        toast.error('Please fill in all required fields (version, title, content URL)');
+      if (!newDocument.version || !newDocument.content_url) {
+        toast.error('Please fill in version and content URL');
         return;
       }
 
@@ -93,9 +91,7 @@ export default function Terms() {
       setNewDocument({
         document_type: 'terms_of_service',
         version: '',
-        title: '',
         content_url: '',
-        content_hash: '',
         requires_acceptance: true,
         effective_date: new Date().toISOString().split('T')[0]
       });
@@ -168,7 +164,7 @@ export default function Terms() {
             <DialogHeader>
               <DialogTitle>Create New Terms Document</DialogTitle>
               <DialogDescription>
-                Create a new version of terms of service or privacy policy
+                Create a new version of terms of service or privacy policy. Title and content hash will be auto-generated.
               </DialogDescription>
             </DialogHeader>
             <div className="space-y-4">
@@ -201,33 +197,15 @@ export default function Terms() {
                 </div>
               </div>
               <div>
-                <Label htmlFor="title">Title</Label>
-                <Input
-                  id="title"
-                  value={newDocument.title}
-                  onChange={(e) => setNewDocument(prev => ({ ...prev, title: e.target.value }))}
-                  placeholder="e.g., fairydust Terms of Service"
-                />
-              </div>
-              <div>
                 <Label htmlFor="content_url">Content URL</Label>
                 <Input
                   id="content_url"
                   value={newDocument.content_url}
                   onChange={(e) => setNewDocument(prev => ({ ...prev, content_url: e.target.value }))}
-                  placeholder="https://fairydust.app/legal/terms-v1.0.html"
-                />
-              </div>
-              <div>
-                <Label htmlFor="content_hash">Content Hash (SHA-256) <span className="text-gray-500 text-sm">- Optional</span></Label>
-                <Input
-                  id="content_hash"
-                  value={newDocument.content_hash}
-                  onChange={(e) => setNewDocument(prev => ({ ...prev, content_hash: e.target.value }))}
-                  placeholder="Auto-generated if left empty"
+                  placeholder="https://fairydust.app/legal/terms-v1.0.0.html"
                 />
                 <p className="text-xs text-gray-500 mt-1">
-                  Leave empty to auto-generate. Only provide if you have the exact SHA-256 hash of your document content.
+                  Title will be auto-generated based on document type and version
                 </p>
               </div>
               <div>

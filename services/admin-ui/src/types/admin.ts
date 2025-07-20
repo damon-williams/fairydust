@@ -234,9 +234,7 @@ export interface TermsDocument {
 export interface TermsDocumentCreate {
   document_type: 'terms_of_service' | 'privacy_policy';
   version: string;
-  title: string;
   content_url: string;
-  content_hash?: string; // Optional - will auto-generate if not provided
   requires_acceptance: boolean;
   effective_date: string;
 }

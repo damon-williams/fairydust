@@ -17,9 +17,7 @@ terms_router = APIRouter()
 class TermsDocumentCreate(BaseModel):
     document_type: str = Field(..., pattern="^(terms_of_service|privacy_policy)$")
     version: str = Field(..., max_length=20)
-    title: str = Field(..., max_length=200)
     content_url: str
-    content_hash: Optional[str] = Field(None, max_length=64)  # Optional - will auto-generate if not provided
     requires_acceptance: bool = True
     effective_date: str  # ISO date string
 
@@ -125,14 +123,17 @@ async def create_terms_document(
         except ValueError:
             raise HTTPException(status_code=400, detail="Invalid effective_date format. Use YYYY-MM-DD")
         
-        # Auto-generate content hash if not provided
-        content_hash = document.content_hash
-        if not content_hash:
-            import hashlib
-            import time
-            # Generate a hash based on URL + timestamp for uniqueness
-            hash_input = f"{document.content_url}_{document.version}_{int(time.time())}"
-            content_hash = hashlib.sha256(hash_input.encode()).hexdigest()
+        # Auto-generate title based on document type and version
+        if document.document_type == "terms_of_service":
+            title = f"fairydust Terms of Service v{document.version}"
+        else:  # privacy_policy
+            title = f"fairydust Privacy Policy v{document.version}"
+        
+        # Auto-generate content hash based on URL + version + timestamp for uniqueness
+        import hashlib
+        import time
+        hash_input = f"{document.content_url}_{document.version}_{int(time.time())}"
+        content_hash = hashlib.sha256(hash_input.encode()).hexdigest()
         
         # Create document
         new_doc = await db.fetch_one(
@@ -146,7 +147,7 @@ async def create_terms_document(
             """,
             document.document_type,
             document.version,
-            document.title,
+            title,
             document.content_url,
             content_hash,
             document.requires_acceptance,
