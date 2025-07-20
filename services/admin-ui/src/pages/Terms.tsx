@@ -23,7 +23,7 @@ import {
   ExternalLink
 } from 'lucide-react';
 import { TermsDocument, TermsDocumentCreate, UserTermsAcceptance, TermsComplianceStats } from '@/types/admin';
-import { adminApi } from '@/lib/admin-api';
+import { AdminAPI } from '@/lib/admin-api';
 import { toast } from 'sonner';
 
 export default function Terms() {
@@ -50,8 +50,8 @@ export default function Terms() {
     try {
       setLoading(true);
       const [docsData, statsData] = await Promise.all([
-        adminApi.getTermsDocuments(),
-        adminApi.getTermsStats()
+        AdminAPI.getTermsDocuments(),
+        AdminAPI.getTermsStats()
       ]);
       setDocuments(docsData);
       setStats(statsData);
@@ -66,7 +66,7 @@ export default function Terms() {
   const fetchAcceptances = useCallback(async (documentId: string) => {
     try {
       setAcceptancesLoading(true);
-      const data = await adminApi.getTermsAcceptances(documentId);
+      const data = await AdminAPI.getTermsAcceptances(documentId);
       setAcceptances(data);
     } catch (error) {
       console.error('Failed to fetch acceptances:', error);
@@ -87,7 +87,7 @@ export default function Terms() {
         return;
       }
 
-      await adminApi.createTermsDocument(newDocument);
+      await AdminAPI.createTermsDocument(newDocument);
       toast.success('Terms document created successfully');
       setCreateDialogOpen(false);
       setNewDocument({
@@ -108,7 +108,7 @@ export default function Terms() {
 
   const handleActivateDocument = async (documentId: string) => {
     try {
-      await adminApi.activateTermsDocument(documentId);
+      await AdminAPI.activateTermsDocument(documentId);
       toast.success('Document activated successfully');
       await fetchData();
     } catch (error) {
@@ -119,7 +119,7 @@ export default function Terms() {
 
   const handleDeactivateDocument = async (documentId: string) => {
     try {
-      await adminApi.deactivateTermsDocument(documentId);
+      await AdminAPI.deactivateTermsDocument(documentId);
       toast.success('Document deactivated successfully');
       await fetchData();
     } catch (error) {
