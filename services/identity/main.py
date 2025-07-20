@@ -10,7 +10,7 @@ from fastapi.middleware.cors import CORSMiddleware
 load_dotenv()
 
 # Import our routes and dependencies
-from routes import auth_router, user_router
+from routes import auth_router, user_router, terms_router, public_terms_router
 
 from shared.database import close_db, init_db
 from shared.redis_client import close_redis, init_redis
@@ -81,6 +81,8 @@ async def health_check():
 # Include routers
 app.include_router(auth_router, prefix="/auth", tags=["authentication"])
 app.include_router(user_router, prefix="/users", tags=["users"])
+app.include_router(terms_router, prefix="/users/me", tags=["terms"])
+app.include_router(public_terms_router, tags=["public-terms"])
 
 if __name__ == "__main__":
     port = int(os.getenv("PORT", 8001))

@@ -102,7 +102,11 @@ async def get_public_system_config_value(
         "app_store_url_android",
         "support_email",
         "terms_of_service_url",
-        "privacy_policy_url"
+        "privacy_policy_url",
+        "terms_of_service_current_version",
+        "privacy_policy_current_version",
+        "terms_enforcement_enabled",
+        "terms_grace_period_days"
     ]
     
     if key not in allowed_public_keys:
@@ -115,7 +119,11 @@ async def get_public_system_config_value(
     if not config:
         # Return default values for certain keys
         defaults = {
-            "daily_login_bonus_amount": "5"
+            "daily_login_bonus_amount": "5",
+            "terms_of_service_current_version": "1.0.0",
+            "privacy_policy_current_version": "1.0.0",
+            "terms_enforcement_enabled": "true",
+            "terms_grace_period_days": "7"
         }
         if key in defaults:
             return {"key": key, "value": defaults[key]}

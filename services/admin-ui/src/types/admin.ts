@@ -215,3 +215,48 @@ export interface PromotionalReferralRedemptionsResponse {
   page_size: number;
   has_more: boolean;
 }
+
+// Terms & Conditions types
+export interface TermsDocument {
+  id: string;
+  document_type: 'terms_of_service' | 'privacy_policy';
+  version: string;
+  title: string;
+  content_url: string;
+  content_hash: string;
+  is_active: boolean;
+  requires_acceptance: boolean;
+  effective_date: string;
+  created_by: string;
+  created_at: string;
+}
+
+export interface TermsDocumentCreate {
+  document_type: 'terms_of_service' | 'privacy_policy';
+  version: string;
+  title: string;
+  content_url: string;
+  content_hash: string;
+  requires_acceptance: boolean;
+  effective_date: string;
+}
+
+export interface UserTermsAcceptance {
+  id: string;
+  user_id: string;
+  document_id: string;
+  document_type: string;
+  document_version: string;
+  accepted_at: string;
+  ip_address?: string;
+  user_agent?: string;
+  acceptance_method: string;
+}
+
+export interface TermsComplianceStats {
+  total_documents: number;
+  active_documents: number;
+  total_acceptances: number;
+  compliance_rate: number;
+  recent_acceptances: UserTermsAcceptance[];
+}

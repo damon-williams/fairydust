@@ -6,7 +6,8 @@ import {
   Activity,
   Settings,
   UserPlus,
-  Trash2
+  Trash2,
+  FileText
 } from 'lucide-react';
 
 export interface NavigationItem {
@@ -49,6 +50,11 @@ export const navigation: NavigationItem[] = [
     name: 'Deletion Logs',
     href: '/admin/deletion-logs',
     icon: Trash2,
+  },
+  {
+    name: 'Terms & Conditions',
+    href: '/admin/terms',
+    icon: FileText,
   },
   {
     name: 'System Status',

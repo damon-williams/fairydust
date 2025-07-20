@@ -1482,4 +1482,49 @@ async def create_tables():
     except Exception as e:
         logger.warning(f"Image app creation failed (may already exist): {e}")
 
+    # Terms & Conditions system tables
+    await db.execute_schema(
+        """
+        CREATE TABLE IF NOT EXISTS terms_documents (
+            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            document_type VARCHAR(50) NOT NULL CHECK (document_type IN ('terms_of_service', 'privacy_policy')),
+            version VARCHAR(20) NOT NULL,
+            title VARCHAR(200) NOT NULL,
+            content_url TEXT NOT NULL,
+            content_hash VARCHAR(64) NOT NULL,
+            is_active BOOLEAN DEFAULT false,
+            requires_acceptance BOOLEAN DEFAULT true,
+            effective_date TIMESTAMP WITH TIME ZONE NOT NULL,
+            created_by UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+            
+            UNIQUE(document_type, version)
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_terms_documents_active ON terms_documents(document_type, is_active);
+        CREATE INDEX IF NOT EXISTS idx_terms_documents_effective ON terms_documents(effective_date);
+    """
+    )
+
+    await db.execute_schema(
+        """
+        CREATE TABLE IF NOT EXISTS user_terms_acceptance (
+            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            document_id UUID NOT NULL REFERENCES terms_documents(id) ON DELETE CASCADE,
+            document_type VARCHAR(50) NOT NULL,
+            document_version VARCHAR(20) NOT NULL,
+            accepted_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+            ip_address INET,
+            user_agent TEXT,
+            acceptance_method VARCHAR(50) DEFAULT 'app_signup' CHECK (acceptance_method IN ('app_signup', 'forced_update', 'voluntary')),
+            
+            UNIQUE(user_id, document_id)
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_user_terms_acceptance_user_type ON user_terms_acceptance(user_id, document_type);
+        CREATE INDEX IF NOT EXISTS idx_user_terms_acceptance_accepted_at ON user_terms_acceptance(accepted_at);
+    """
+    )
+
     logger.info("Database schema creation/update completed successfully")

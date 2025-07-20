@@ -6,6 +6,7 @@ import { Apps } from '@/pages/Apps';
 import { LLM } from '@/pages/LLM';
 import { Referrals } from '@/pages/Referrals';
 import DeletionLogs from '@/pages/DeletionLogs';
+import Terms from '@/pages/Terms';
 import { SystemStatus } from '@/pages/SystemStatus';
 import Settings from '@/pages/Settings';
 import { Toaster } from '@/components/ui/sonner';
@@ -32,6 +33,7 @@ function App() {
                     <Route path="llm" element={<LLM />} />
                     <Route path="referrals" element={<Referrals />} />
                     <Route path="deletion-logs" element={<DeletionLogs />} />
+                    <Route path="terms" element={<Terms />} />
                     <Route path="system" element={<SystemStatus />} />
                     <Route path="settings" element={<Settings />} />
                     {/* Default to dashboard */}

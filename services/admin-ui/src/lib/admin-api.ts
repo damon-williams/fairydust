@@ -12,7 +12,11 @@ import {
   PromotionalReferralCode,
   PromotionalReferralCodeCreate,
   PromotionalReferralCodesResponse,
-  PromotionalReferralRedemptionsResponse
+  PromotionalReferralRedemptionsResponse,
+  TermsDocument,
+  TermsDocumentCreate,
+  UserTermsAcceptance,
+  TermsComplianceStats
 } from '@/types/admin';
 
 const API_BASE = window.location.origin;
@@ -949,6 +953,112 @@ export class AdminAPI {
       throw new Error('Failed to fetch deletion stats');
     } catch (error) {
       console.error('Failed to get deletion stats:', error);
+      throw error;
+    }
+  }
+
+  // Terms & Conditions APIs
+  static async getTermsDocuments(): Promise<TermsDocument[]> {
+    try {
+      const response = await fetch(`${API_BASE}/admin/terms/documents`, {
+        credentials: 'include',
+      });
+      
+      if (response.ok) {
+        return await response.json();
+      }
+      
+      throw new Error('Failed to fetch terms documents');
+    } catch (error) {
+      console.error('Failed to get terms documents:', error);
+      throw error;
+    }
+  }
+
+  static async createTermsDocument(document: TermsDocumentCreate): Promise<TermsDocument> {
+    try {
+      const response = await fetch(`${API_BASE}/admin/terms/documents`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        credentials: 'include',
+        body: JSON.stringify(document),
+      });
+      
+      if (response.ok) {
+        return await response.json();
+      }
+      
+      throw new Error('Failed to create terms document');
+    } catch (error) {
+      console.error('Failed to create terms document:', error);
+      throw error;
+    }
+  }
+
+  static async activateTermsDocument(documentId: string): Promise<void> {
+    try {
+      const response = await fetch(`${API_BASE}/admin/terms/documents/${documentId}/activate`, {
+        method: 'POST',
+        credentials: 'include',
+      });
+      
+      if (!response.ok) {
+        throw new Error('Failed to activate terms document');
+      }
+    } catch (error) {
+      console.error('Failed to activate terms document:', error);
+      throw error;
+    }
+  }
+
+  static async deactivateTermsDocument(documentId: string): Promise<void> {
+    try {
+      const response = await fetch(`${API_BASE}/admin/terms/documents/${documentId}/deactivate`, {
+        method: 'POST',
+        credentials: 'include',
+      });
+      
+      if (!response.ok) {
+        throw new Error('Failed to deactivate terms document');
+      }
+    } catch (error) {
+      console.error('Failed to deactivate terms document:', error);
+      throw error;
+    }
+  }
+
+  static async getTermsAcceptances(documentId: string): Promise<UserTermsAcceptance[]> {
+    try {
+      const response = await fetch(`${API_BASE}/admin/terms/documents/${documentId}/acceptances`, {
+        credentials: 'include',
+      });
+      
+      if (response.ok) {
+        return await response.json();
+      }
+      
+      throw new Error('Failed to fetch terms acceptances');
+    } catch (error) {
+      console.error('Failed to get terms acceptances:', error);
+      throw error;
+    }
+  }
+
+  static async getTermsStats(): Promise<TermsComplianceStats> {
+    try {
+      const response = await fetch(`${API_BASE}/admin/terms/stats`, {
+        credentials: 'include',
+      });
+      
+      if (response.ok) {
+        return await response.json();
+      }
+      
+      throw new Error('Failed to fetch terms stats');
+    } catch (error) {
+      console.error('Failed to get terms stats:', error);
       throw error;
     }
   }

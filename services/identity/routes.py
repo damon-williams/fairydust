@@ -19,10 +19,17 @@ from models import (
     PersonInMyLife,
     PersonInMyLifeCreate,
     PersonInMyLifeUpdate,
+    PublicTermsResponse,
     ReferralCodeResponse,
     RefreshTokenRequest,
+    SingleTermsResponse,
+    TermsAcceptanceRequest,
+    TermsCheckResponse,
+    TermsDocument,
+    TermsDocumentCreate,
     Token,
     User,
+    UserTermsAcceptance,
     UserUpdate,
 )
 
@@ -1280,3 +1287,219 @@ async def get_referral_code(
 
 
 # Local data migration endpoint removed - no longer needed
+
+
+# Terms & Conditions Router
+terms_router = APIRouter(prefix="/terms", tags=["terms"])
+
+
+@terms_router.get("/check", response_model=TermsCheckResponse)
+async def check_terms_acceptance(
+    current_user: TokenData = Depends(get_current_user),
+    db: Database = Depends(get_db)
+):
+    """Check if user needs to accept new terms and conditions"""
+    try:
+        # Get currently active terms documents
+        active_terms = await db.fetch_all(
+            """
+            SELECT * FROM terms_documents 
+            WHERE is_active = true AND requires_acceptance = true
+            ORDER BY document_type, effective_date DESC
+            """
+        )
+        
+        if not active_terms:
+            return TermsCheckResponse(requires_acceptance=False)
+        
+        # Get user's accepted terms
+        user_acceptances = await db.fetch_all(
+            """
+            SELECT uta.*, td.document_type, td.version as document_version
+            FROM user_terms_acceptance uta
+            JOIN terms_documents td ON uta.document_id = td.id
+            WHERE uta.user_id = $1
+            ORDER BY uta.accepted_at DESC
+            """,
+            current_user.user_id
+        )
+        
+        # Find pending documents that require acceptance
+        accepted_doc_ids = {acc["document_id"] for acc in user_acceptances}
+        pending_documents = []
+        
+        for term_doc in active_terms:
+            if term_doc["id"] not in accepted_doc_ids:
+                pending_documents.append(TermsDocument(**term_doc))
+        
+        requires_acceptance = len(pending_documents) > 0
+        
+        # Convert user acceptances to response models
+        acceptance_models = [UserTermsAcceptance(**acc) for acc in user_acceptances]
+        
+        return TermsCheckResponse(
+            requires_acceptance=requires_acceptance,
+            pending_documents=pending_documents,
+            user_acceptances=acceptance_models
+        )
+        
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to check terms: {str(e)}")
+
+
+@terms_router.post("/accept")
+async def accept_terms(
+    request: TermsAcceptanceRequest,
+    current_user: TokenData = Depends(get_current_user),
+    db: Database = Depends(get_db)
+):
+    """Record user acceptance of specific terms document version"""
+    try:
+        # Get the specific document
+        document = await db.fetch_one(
+            """
+            SELECT * FROM terms_documents 
+            WHERE document_type = $1 AND version = $2 AND is_active = true
+            """,
+            request.document_type,
+            request.document_version
+        )
+        
+        if not document:
+            raise HTTPException(
+                status_code=404, 
+                detail=f"Terms document {request.document_type} v{request.document_version} not found or not active"
+            )
+        
+        # Check if user already accepted this specific document
+        existing_acceptance = await db.fetch_one(
+            """
+            SELECT id FROM user_terms_acceptance 
+            WHERE user_id = $1 AND document_id = $2
+            """,
+            current_user.user_id,
+            document["id"]
+        )
+        
+        if existing_acceptance:
+            return {"message": "Terms already accepted", "acceptance_id": existing_acceptance["id"]}
+        
+        # Record the acceptance
+        acceptance = await db.fetch_one(
+            """
+            INSERT INTO user_terms_acceptance (
+                user_id, document_id, document_type, document_version,
+                ip_address, user_agent, acceptance_method
+            )
+            VALUES ($1, $2, $3, $4, $5, $6, 'voluntary')
+            RETURNING *
+            """,
+            current_user.user_id,
+            document["id"],
+            request.document_type,
+            request.document_version,
+            request.ip_address,
+            request.user_agent
+        )
+        
+        return {
+            "message": "Terms accepted successfully", 
+            "acceptance_id": acceptance["id"],
+            "accepted_at": acceptance["accepted_at"]
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to record terms acceptance: {str(e)}")
+
+
+@terms_router.get("/history", response_model=list[UserTermsAcceptance])
+async def get_terms_history(
+    current_user: TokenData = Depends(get_current_user),
+    db: Database = Depends(get_db)
+):
+    """Get user's terms acceptance history"""
+    try:
+        acceptances = await db.fetch_all(
+            """
+            SELECT uta.*, td.document_type, td.version as document_version
+            FROM user_terms_acceptance uta
+            JOIN terms_documents td ON uta.document_id = td.id
+            WHERE uta.user_id = $1
+            ORDER BY uta.accepted_at DESC
+            """,
+            current_user.user_id
+        )
+        
+        return [UserTermsAcceptance(**acc) for acc in acceptances]
+        
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to fetch terms history: {str(e)}")
+
+
+# Public Terms Router (no auth required)
+public_terms_router = APIRouter(prefix="/public/terms", tags=["public-terms"])
+
+
+@public_terms_router.get("/current", response_model=PublicTermsResponse)
+async def get_current_terms(
+    document_type: str = None,
+    db: Database = Depends(get_db)
+):
+    """Get current active terms documents (public endpoint)"""
+    try:
+        # Build query based on filter
+        if document_type and document_type in ["terms_of_service", "privacy_policy"]:
+            # Get specific document type
+            document = await db.fetch_one(
+                """
+                SELECT * FROM terms_documents 
+                WHERE document_type = $1 AND is_active = true
+                ORDER BY effective_date DESC
+                LIMIT 1
+                """,
+                document_type
+            )
+            
+            if not document:
+                raise HTTPException(status_code=404, detail=f"No active {document_type} found")
+            
+            return SingleTermsResponse(document=TermsDocument(**document))
+        
+        else:
+            # Get both document types
+            terms_docs = await db.fetch_all(
+                """
+                SELECT DISTINCT ON (document_type) *
+                FROM terms_documents 
+                WHERE is_active = true
+                ORDER BY document_type, effective_date DESC
+                """
+            )
+            
+            terms_of_service = None
+            privacy_policy = None
+            latest_update = None
+            
+            for doc in terms_docs:
+                doc_model = TermsDocument(**doc)
+                if doc["document_type"] == "terms_of_service":
+                    terms_of_service = doc_model
+                elif doc["document_type"] == "privacy_policy":
+                    privacy_policy = doc_model
+                
+                # Track latest update
+                if latest_update is None or doc["created_at"] > latest_update:
+                    latest_update = doc["created_at"]
+            
+            return PublicTermsResponse(
+                terms_of_service=terms_of_service,
+                privacy_policy=privacy_policy,
+                last_updated=latest_update or datetime.now()
+            )
+            
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to fetch current terms: {str(e)}")

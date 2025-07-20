@@ -189,6 +189,9 @@ class AuthResponse(BaseModel):
     # Daily login bonus eligibility info
     is_first_login_today: bool = False
     daily_bonus_eligible: bool = False
+    # Terms & Conditions status
+    terms_acceptance_required: bool = False
+    pending_terms: list[TermsDocument] = []
 
 
 # Account deletion models
@@ -200,3 +203,69 @@ class AccountDeletionRequest(BaseModel):
 class AccountDeletionResponse(BaseModel):
     message: str
     deletion_id: str
+
+
+# Terms & Conditions models
+class TermsDocument(BaseModel):
+    id: UUID
+    document_type: Literal["terms_of_service", "privacy_policy"]
+    version: str
+    title: str
+    content_url: str
+    content_hash: str
+    is_active: bool
+    requires_acceptance: bool
+    effective_date: datetime
+    created_by: UUID
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+class TermsDocumentCreate(BaseModel):
+    document_type: Literal["terms_of_service", "privacy_policy"]
+    version: str = Field(..., max_length=20)
+    title: str = Field(..., max_length=200)
+    content_url: str
+    content_hash: str = Field(..., max_length=64)
+    requires_acceptance: bool = True
+    effective_date: datetime
+
+
+class UserTermsAcceptance(BaseModel):
+    id: UUID
+    user_id: UUID
+    document_id: UUID
+    document_type: str
+    document_version: str
+    accepted_at: datetime
+    ip_address: Optional[str] = None
+    user_agent: Optional[str] = None
+    acceptance_method: str
+
+    class Config:
+        from_attributes = True
+
+
+class TermsAcceptanceRequest(BaseModel):
+    document_type: Literal["terms_of_service", "privacy_policy"]
+    document_version: str
+    ip_address: Optional[str] = None
+    user_agent: Optional[str] = None
+
+
+class TermsCheckResponse(BaseModel):
+    requires_acceptance: bool
+    pending_documents: list[TermsDocument] = []
+    user_acceptances: list[UserTermsAcceptance] = []
+
+
+class PublicTermsResponse(BaseModel):
+    terms_of_service: Optional[TermsDocument] = None
+    privacy_policy: Optional[TermsDocument] = None
+    last_updated: datetime
+
+
+class SingleTermsResponse(BaseModel):
+    document: TermsDocument
