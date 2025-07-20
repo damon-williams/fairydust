@@ -180,20 +180,6 @@ class ReferralCodeResponse(BaseModel):
         from_attributes = True
 
 
-# Response models
-class AuthResponse(BaseModel):
-    user: User
-    token: Token
-    is_new_user: bool = False
-    dust_granted: int = 0
-    # Daily login bonus eligibility info
-    is_first_login_today: bool = False
-    daily_bonus_eligible: bool = False
-    # Terms & Conditions status
-    terms_acceptance_required: bool = False
-    pending_terms: list[TermsDocument] = []
-
-
 # Account deletion models
 class AccountDeletionRequest(BaseModel):
     reason: Literal["not_using_anymore", "privacy_concerns", "too_expensive", "switching_platform", "other"]
@@ -269,3 +255,17 @@ class PublicTermsResponse(BaseModel):
 
 class SingleTermsResponse(BaseModel):
     document: TermsDocument
+
+
+# Response models (moved after Terms models to avoid circular reference)
+class AuthResponse(BaseModel):
+    user: User
+    token: Token
+    is_new_user: bool = False
+    dust_granted: int = 0
+    # Daily login bonus eligibility info
+    is_first_login_today: bool = False
+    daily_bonus_eligible: bool = False
+    # Terms & Conditions status
+    terms_acceptance_required: bool = False
+    pending_terms: list[TermsDocument] = []
