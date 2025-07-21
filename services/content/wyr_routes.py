@@ -114,7 +114,7 @@ async def start_new_game_session(
         try:
             prompt_hash = calculate_prompt_hash(f"WYR_{request.category}_{request.game_length}")
             request_metadata = create_request_metadata(
-                action="wyr_question_generation",
+                action=f"would-you-rather-{request.game_length.value}",
                 parameters={
                     "game_length": request.game_length,
                     "category": request.category.value,

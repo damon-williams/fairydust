@@ -130,7 +130,7 @@ async def generate_recipe(
 
             # Create request metadata
             request_metadata = create_request_metadata(
-                action="recipe_generation",
+                action="recipe-generate",
                 parameters={
                     "dish": request.dish,
                     "complexity": request.complexity.value,
@@ -315,7 +315,7 @@ async def adjust_recipe(
         try:
             prompt_hash = calculate_prompt_hash(f"recipe_adjust:{request.adjustment_instructions}")
             request_metadata = create_request_metadata(
-                action="recipe_adjustment",
+                action="recipe-adjust",
                 parameters={
                     "original_recipe_id": str(request.recipe_id),
                     "adjustment_length": len(request.adjustment_instructions),

@@ -111,14 +111,20 @@ async def generate_story(
             full_prompt = _build_story_prompt(request, user_context)
             prompt_hash = calculate_prompt_hash(full_prompt)
 
+            # Determine correct action-slug based on story length and images
+            action_slug = f"story-{request.story_length.value}"
+            if request.include_images:
+                action_slug += "-illustrated"
+            
             # Create request metadata
             request_metadata = create_request_metadata(
-                action="story_generation",
+                action=action_slug,
                 parameters={
                     "story_length": request.story_length.value,
                     "target_audience": request.target_audience.value,
                     "character_count": len(request.characters),
                     "has_custom_prompt": bool(request.custom_prompt),
+                    "include_images": request.include_images,
                 },
                 user_context=user_context if user_context != "general user" else None,
                 session_id=str(request.session_id) if request.session_id else None,

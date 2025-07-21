@@ -438,7 +438,7 @@ Respond with exactly {len(activities)} entries in this JSON format:
                 try:
                     prompt_hash = calculate_prompt_hash(prompt)
                     request_metadata = create_request_metadata(
-                        action="activity_context_generation",
+                        action="find-activity",
                         parameters={
                             "batch_size": len(activities),
                             "group_context": group_context,

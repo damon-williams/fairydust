@@ -152,9 +152,10 @@ async def generate_fortune_reading(
             )
             prompt_hash = calculate_prompt_hash(full_prompt)
 
-            # Create request metadata
+            # Create request metadata with proper action slug based on reading type
+            action_slug = "fortune-daily" if request.reading_type == ReadingType.DAILY else "fortune-question"
             request_metadata = create_request_metadata(
-                action="fortune_generation",
+                action=action_slug,
                 parameters={
                     "reading_type": request.reading_type.value,
                     "zodiac_sign": zodiac_sign,
