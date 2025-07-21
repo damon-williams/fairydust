@@ -270,7 +270,9 @@ async def oauth_login(
         raise HTTPException(status_code=400, detail="Failed to get access token")
 
     # Get user info from provider
-    user_info = await auth_service.get_oauth_user_info(provider, access_token)
+    id_token = token_response.get("id_token") if provider == "apple" else None
+    apple_user_data = callback.user if provider == "apple" else None
+    user_info = await auth_service.get_oauth_user_info(provider, access_token, id_token, apple_user_data)
 
     if not user_info.get("provider_id"):
         raise HTTPException(status_code=400, detail="Failed to get user info")

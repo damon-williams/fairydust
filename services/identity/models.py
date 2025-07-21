@@ -47,6 +47,7 @@ class OAuthCallback(BaseModel):
     provider: Literal["google", "apple", "facebook"]
     code: str
     state: Optional[str] = None
+    user: Optional[dict] = None  # Apple provides user data on first sign-in
 
 
 # User models
