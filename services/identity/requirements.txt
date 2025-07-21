@@ -23,6 +23,7 @@ python-multipart==0.0.6
 
 # HTTP client
 httpx==0.25.2
+aiohttp==3.9.1
 
 # Cloud storage for R2 integration  
 boto3==1.34.0
