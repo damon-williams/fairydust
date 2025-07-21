@@ -115,6 +115,7 @@ async def generate_recipe(
             title = _extract_recipe_title(recipe_content, request.dish)
             prep_time = _extract_time(recipe_content, "Prep Time:")
             cook_time = _extract_time(recipe_content, "Cook Time:")
+            servings = request.total_people  # Use the requested serving size
             model_used = generation_metadata["model_id"]
             tokens_used = generation_metadata["tokens_used"]
             cost = generation_metadata["cost_usd"]
