@@ -604,9 +604,9 @@ async def _check_rate_limit(db: Database, user_id: uuid.UUID) -> bool:
 
 
 async def _get_user_context(db: Database, user_id: uuid.UUID) -> str:
-    """Get user context for personalization"""
+    """Get user context for personalization (interests only, NOT people)"""
     try:
-        # Get user profile data
+        # Get user profile data (interests only)
         profile_query = """
             SELECT field_name, field_value
             FROM user_profile_data
@@ -615,16 +615,8 @@ async def _get_user_context(db: Database, user_id: uuid.UUID) -> str:
 
         profile_rows = await db.fetch_all(profile_query, user_id)
 
-        # Get people in my life
-        people_query = """
-            SELECT name, relationship, birth_date, personality_description
-            FROM people_in_my_life
-            WHERE user_id = $1
-        """
-
-        people_rows = await db.fetch_all(people_query, user_id)
-
-        # Build context string
+        # Build context string - ONLY include interests, NOT people
+        # People should only be included when explicitly requested as Characters
         context_parts = []
 
         if profile_rows:
@@ -640,27 +632,8 @@ async def _get_user_context(db: Database, user_id: uuid.UUID) -> str:
             if interests:
                 context_parts.append(f"Interests: {', '.join(interests[:5])}")
 
-        if people_rows:
-            people_list = []
-            for row in people_rows:
-                person_desc = f"{row['name']} ({row['relationship']}"
-                if row["birth_date"]:
-                    # Calculate age from birth date
-                    from datetime import date
-
-                    birth = date.fromisoformat(str(row["birth_date"]))
-                    age = (date.today() - birth).days // 365
-                    person_desc += f", {age} years old"
-                
-                # Add personality description if available
-                if row["personality_description"]:
-                    person_desc += f", {row['personality_description']}"
-                
-                person_desc += ")"
-                people_list.append(person_desc)
-
-            if people_list:
-                context_parts.append(f"People: {', '.join(people_list[:3])}")
+        # REMOVED: Automatic inclusion of "My People" data
+        # My People should only be factored in when explicitly requested as Characters
 
         return "; ".join(context_parts) if context_parts else "general user"
 
