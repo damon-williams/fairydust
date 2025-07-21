@@ -353,7 +353,7 @@ async def get_user_stories(
             estimated_reading_time = _calculate_reading_time(row["word_count"] or 0)
             
             # Parse image data
-            image_data = parse_jsonb_field(row["image_data"]) or {}
+            image_data = parse_jsonb_field(row["image_data"], {}, "image_data") or {}
             image_ids = image_data.get("image_ids", []) if row["has_images"] else []
             
             story = UserStoryNew(
@@ -1260,15 +1260,27 @@ async def get_story_image_status(
         )
         
         if not image_data:
+            print(f"🔍 STORY_IMAGE_STATUS: Image {image_id} not found for story {story_id}", flush=True)
             return StoryImageStatusResponse(
                 success=False,
                 status="not_found",
                 url=None
             )
         
+        image_url = image_data["url"] if image_data["status"] == "completed" else None
+        
+        # Log the URL being returned for debugging
+        print(f"🔗 STORY_IMAGE_STATUS: Returning image status for {image_id}", flush=True)
+        print(f"   Story ID: {story_id}", flush=True)
+        print(f"   Status: {image_data['status']}", flush=True)
+        print(f"   URL: {image_url}", flush=True)
+        if image_url:
+            print(f"   URL Domain: {image_url.split('/')[2] if '://' in image_url else 'invalid-url'}", flush=True)
+            print(f"   Is images.fairydust.fun: {'images.fairydust.fun' in image_url}", flush=True)
+        
         return StoryImageStatusResponse(
             status=image_data["status"],
-            url=image_data["url"] if image_data["status"] == "completed" else None
+            url=image_url
         )
         
     except HTTPException:
@@ -1318,10 +1330,20 @@ async def get_story_images_batch_status(
         
         # Build response
         image_statuses = {}
+        print(f"🔗 STORY_IMAGE_BATCH: Processing {len(images)} images for story {story_id}", flush=True)
+        
         for image in images:
+            image_url = image["url"] if image["status"] == "completed" else None
+            
+            # Log each image URL
+            print(f"   Image {image['image_id']}: {image['status']}", flush=True)
+            if image_url:
+                print(f"     URL: {image_url}", flush=True)
+                print(f"     Domain: {image_url.split('/')[2] if '://' in image_url else 'invalid-url'}", flush=True)
+            
             image_statuses[image["image_id"]] = StoryImageStatus(
                 status=image["status"],
-                url=image["url"] if image["status"] == "completed" else None
+                url=image_url
             )
         
         # Add not_found status for missing images
