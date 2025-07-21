@@ -6,7 +6,6 @@ import uuid
 from datetime import datetime
 from typing import Optional
 
-import httpx
 from fastapi import APIRouter, Depends, HTTPException, Path, Query, Request
 from models import (
     AnswerObject,
@@ -29,8 +28,8 @@ from models import (
 from shared.auth_middleware import TokenData, get_current_user
 from shared.database import Database, get_db
 from shared.json_utils import parse_jsonb_field, safe_json_parse
-from shared.llm_pricing import calculate_llm_cost
-from shared.llm_usage_logger import calculate_prompt_hash, create_request_metadata, log_llm_usage
+from shared.llm_client import llm_client, LLMError
+from shared.llm_usage_logger import calculate_prompt_hash, create_request_metadata
 
 router = APIRouter()
 
@@ -86,14 +85,7 @@ async def start_new_game_session(
 
         # Generate questions using LLM
         print("🤖 WYR: Generating questions", flush=True)
-        (
-            questions,
-            provider_used,
-            model_used,
-            tokens_used,
-            cost,
-            latency_ms,
-        ) = await _generate_questions_llm(
+        questions, generation_metadata = await _generate_questions_llm(
             game_length=request.game_length,
             category=request.category,
             custom_request=request.custom_request,
@@ -109,40 +101,10 @@ async def start_new_game_session(
             )
 
         print(f"✅ WYR: Generated {len(questions)} questions", flush=True)
-
-        # Log LLM usage for analytics
-        try:
-            prompt_hash = calculate_prompt_hash(f"WYR_{request.category}_{request.game_length}")
-            request_metadata = create_request_metadata(
-                action=f"would-you-rather-{request.game_length.value}",
-                parameters={
-                    "game_length": request.game_length,
-                    "category": request.category.value,
-                    "has_custom_request": bool(request.custom_request),
-                },
-                user_context=None,
-                session_id=None,
-            )
-
-            await log_llm_usage(
-                user_id=request.user_id,
-                app_id="fairydust-would-you-rather",
-                provider=provider_used,
-                model_id=model_used,
-                prompt_tokens=tokens_used.get("prompt", 0),
-                completion_tokens=tokens_used.get("completion", 0),
-                total_tokens=tokens_used.get("total", 0),
-                cost_usd=cost,
-                latency_ms=latency_ms,
-                prompt_hash=prompt_hash,
-                finish_reason="stop",
-                was_fallback=False,
-                fallback_reason=None,
-                request_metadata=request_metadata,
-                auth_token=auth_token,
-            )
-        except Exception as e:
-            print(f"⚠️ WYR: Failed to log LLM usage: {str(e)}", flush=True)
+        print(f"✅ WYR: Used {generation_metadata['provider']}/{generation_metadata['model_id']}", flush=True)
+        print(f"✅ WYR: Cost: ${generation_metadata['cost_usd']:.4f}, Time: {generation_metadata['generation_time_ms']}ms", flush=True)
+        
+        # Note: LLM usage is already logged by the centralized client
 
         # Save session to database
         session_id = await _save_game_session(
@@ -306,13 +268,15 @@ async def complete_game_session(
 
         # Generate personality analysis
         print("🧠 WYR: Generating personality analysis", flush=True)
-        summary = await _generate_personality_analysis(
+        summary, analysis_metadata = await _generate_personality_analysis(
             questions=safe_json_parse(session_data["questions"], default=[], expected_type=list),
             answers=request.final_answers,
             category=session_data["category"],
             user_id=uuid.UUID(current_user.user_id),
             db=db,
         )
+        
+        print(f"✅ WYR: Analysis generated with {analysis_metadata['provider']}/{analysis_metadata['model_id']}", flush=True)
 
         # Update session as completed
         complete_query = """
@@ -697,8 +661,8 @@ async def _generate_questions_llm(
     custom_request: Optional[str],
     user_id: uuid.UUID,
     db: Database,
-) -> tuple[list[QuestionObject], str, str, dict, float, int]:
-    """Generate questions using LLM"""
+) -> tuple[list[QuestionObject], dict]:
+    """Generate questions using centralized LLM client"""
     try:
         # Get user age context
         age_context = await _get_user_age_context(db, user_id)
@@ -708,116 +672,59 @@ async def _generate_questions_llm(
 
         # Get LLM model configuration from database/cache
         model_config = await _get_wyr_llm_model_config()
-
-        provider = model_config.get("primary_provider", "anthropic")
-        model_id = model_config.get("primary_model_id", "claude-3-5-sonnet-20241022")
+        
+        # Ensure sufficient tokens for question generation (max 10 questions)
         parameters = model_config.get("primary_parameters", {})
+        parameters["max_tokens"] = max(parameters.get("max_tokens", 1000), 1500)
         
-        temperature = parameters.get("temperature", 0.7)
-        max_tokens = parameters.get("max_tokens", 1000)
-        top_p = parameters.get("top_p", 0.9)
-        
-        # Ensure sufficient tokens for question generation (max 10 questions now)
-        max_tokens = max(max_tokens, 1500)  # Sufficient for up to 10 questions
+        # Update config with adjusted parameters
+        app_config = {
+            **model_config,
+            "primary_parameters": parameters
+        }
 
-        print(f"🔧 WYR_LLM: Using provider: {provider}, model: {model_id}", flush=True)
-        print(f"🔧 WYR_LLM: Parameters - temp: {temperature}, max_tokens: {max_tokens}, top_p: {top_p}", flush=True)
+        print(f"🔧 WYR_LLM: Using {app_config['primary_provider']}/{app_config['primary_model_id']}", flush=True)
+        print(f"🔧 WYR_LLM: Parameters: {parameters}", flush=True)
 
-        start_time = datetime.now()
-        
-        if provider.lower() == "openai":
-            # OpenAI API call
-            api_key = os.getenv("OPENAI_API_KEY", "")
-            if not api_key:
-                print("❌ WYR_LLM: Missing OPENAI_API_KEY", flush=True)
-                return [], provider, model_id, {}, 0.0, 0
-
-            async with httpx.AsyncClient(timeout=30.0) as client:
-                response = await client.post(
-                    "https://api.openai.com/v1/chat/completions",
-                    headers={
-                        "Content-Type": "application/json",
-                        "Authorization": f"Bearer {api_key}",
-                    },
-                    json={
-                        "model": model_id,
-                        "max_tokens": max_tokens,
-                        "temperature": temperature,
-                        "top_p": top_p,
-                        "messages": [{"role": "user", "content": prompt}],
-                    },
-                )
-        else:
-            # Anthropic API call (default)
-            api_key = os.getenv("ANTHROPIC_API_KEY", "")
-            if not api_key:
-                print("❌ WYR_LLM: Missing ANTHROPIC_API_KEY", flush=True)
-                return [], provider, model_id, {}, 0.0, 0
-
-            async with httpx.AsyncClient(timeout=30.0) as client:
-                response = await client.post(
-                    "https://api.anthropic.com/v1/messages",
-                    headers={
-                        "Content-Type": "application/json",
-                        "x-api-key": api_key,
-                        "anthropic-version": "2023-06-01",
-                    },
-                    json={
-                        "model": model_id,
-                        "max_tokens": max_tokens,
-                        "temperature": temperature,
-                        "messages": [{"role": "user", "content": prompt}],
-                    },
-                )
-
-        latency_ms = int((datetime.now() - start_time).total_seconds() * 1000)
-
-        if response.status_code == 200:
-            result = response.json()
-            
-            # Parse content based on provider
-            if provider.lower() == "openai":
-                content = result["choices"][0]["message"]["content"].strip()
-                usage = result.get("usage", {})
-                prompt_tokens = usage.get("prompt_tokens", 0)
-                completion_tokens = usage.get("completion_tokens", 0)
-                total_tokens = usage.get("total_tokens", 0)
-            else:
-                # Anthropic format
-                content = result["content"][0]["text"].strip()
-                usage = result.get("usage", {})
-                prompt_tokens = usage.get("input_tokens", 0)
-                completion_tokens = usage.get("output_tokens", 0)
-                total_tokens = prompt_tokens + completion_tokens
-
-            # Parse questions from response
-            questions = _parse_questions_response(content, category)
-            
-            tokens_used = {
-                "prompt": prompt_tokens,
-                "completion": completion_tokens,
-                "total": total_tokens,
+        # Create request metadata for logging
+        request_metadata = {
+            "parameters": {
+                "game_length": game_length.value,
+                "category": category.value,
+                "has_custom_request": bool(custom_request),
+                "age_context": age_context,
             }
+        }
 
-            cost = calculate_llm_cost(provider, model_id, prompt_tokens, completion_tokens)
+        # Use centralized LLM client
+        completion, generation_metadata = await llm_client.generate_completion(
+            prompt=prompt,
+            app_config=app_config,
+            user_id=user_id,
+            app_id="fairydust-would-you-rather",
+            action=f"would-you-rather-{game_length.value}",
+            request_metadata=request_metadata
+        )
 
-            print(f"✅ WYR_LLM: Generated {len(questions)} questions (expected {game_length.value})", flush=True)
-            
-            # Check if we got enough complete questions
-            if len(questions) < game_length.value:
-                print(f"⚠️ WYR_LLM: Insufficient questions - got {len(questions)}, expected {game_length.value}", flush=True)
-                print(f"⚠️ WYR_LLM: This may be due to token limit ({max_tokens}) or response truncation", flush=True)
-                # Still return what we got rather than failing completely
-            
-            return questions, provider, model_id, tokens_used, cost, latency_ms
+        # Parse questions from response
+        questions = _parse_questions_response(completion, category)
+        
+        print(f"✅ WYR_LLM: Generated {len(questions)} questions (expected {game_length.value})", flush=True)
+        
+        # Check if we got enough complete questions
+        if len(questions) < game_length.value:
+            print(f"⚠️ WYR_LLM: Insufficient questions - got {len(questions)}, expected {game_length.value}", flush=True)
+            print(f"⚠️ WYR_LLM: This may be due to token limit or response truncation", flush=True)
+            # Still return what we got rather than failing completely
+        
+        return questions, generation_metadata
 
-        else:
-            print(f"❌ WYR_LLM: API error {response.status_code}: {response.text}", flush=True)
-            return [], provider, model_id, {}, 0.0, latency_ms
-
+    except LLMError as e:
+        print(f"❌ WYR_LLM: LLM error generating questions: {str(e)}", flush=True)
+        return [], {"provider": "unknown", "model_id": "unknown", "cost_usd": 0.0, "generation_time_ms": 0, "was_fallback": False, "attempt_number": 1}
     except Exception as e:
-        print(f"❌ WYR_LLM: Error generating questions: {str(e)}", flush=True)
-        return [], "anthropic", "claude-3-5-sonnet-20241022", {}, 0.0, 0
+        print(f"❌ WYR_LLM: Unexpected error generating questions: {str(e)}", flush=True)
+        return [], {"provider": "unknown", "model_id": "unknown", "cost_usd": 0.0, "generation_time_ms": 0, "was_fallback": False, "attempt_number": 1}
 
 
 def _build_questions_prompt(
@@ -1116,8 +1023,8 @@ async def _generate_personality_analysis(
     category: str,
     user_id: uuid.UUID,
     db: Database,
-) -> str:
-    """Generate personality analysis based on user's answers"""
+) -> tuple[str, dict]:
+    """Generate personality analysis using centralized LLM client"""
     try:
         # Get user age context for appropriate language
         age_context = await _get_user_age_context(db, user_id)
@@ -1125,38 +1032,45 @@ async def _generate_personality_analysis(
         # Build analysis prompt
         prompt = _build_analysis_prompt(questions, answers, category, age_context)
 
-        # Make LLM API call
-        api_key = os.getenv("ANTHROPIC_API_KEY", "")
-        if not api_key:
-            return "Analysis temporarily unavailable"
+        # Use simpler config for analysis - fixed model with appropriate parameters
+        app_config = {
+            "primary_provider": "anthropic",
+            "primary_model_id": "claude-3-5-sonnet-20241022",
+            "primary_parameters": {
+                "max_tokens": 300,  # Sufficient for personality analysis
+                "temperature": 0.7,
+                "top_p": 0.9
+            }
+        }
 
-        async with httpx.AsyncClient(timeout=30.0) as client:
-            response = await client.post(
-                "https://api.anthropic.com/v1/messages",
-                headers={
-                    "Content-Type": "application/json",
-                    "x-api-key": api_key,
-                    "anthropic-version": "2023-06-01",
-                },
-                json={
-                    "model": "claude-3-5-sonnet-20241022",
-                    "max_tokens": 250,
-                    "temperature": 0.7,
-                    "messages": [{"role": "user", "content": prompt}],
-                },
-            )
+        # Create request metadata for logging
+        request_metadata = {
+            "parameters": {
+                "category": category,
+                "age_context": age_context,
+                "num_questions": len(questions),
+                "num_answers": len(answers)
+            }
+        }
 
-        if response.status_code == 200:
-            result = response.json()
-            analysis = result["content"][0]["text"].strip()
-            return analysis
-        else:
-            print(f"❌ WYR_ANALYSIS: API error {response.status_code}", flush=True)
-            return "Analysis temporarily unavailable"
+        # Use centralized LLM client
+        analysis, generation_metadata = await llm_client.generate_completion(
+            prompt=prompt,
+            app_config=app_config,
+            user_id=user_id,
+            app_id="fairydust-would-you-rather",
+            action="would-you-rather-analysis",
+            request_metadata=request_metadata
+        )
 
+        return analysis, generation_metadata
+
+    except LLMError as e:
+        print(f"❌ WYR_ANALYSIS: LLM error generating analysis: {str(e)}", flush=True)
+        return "Analysis temporarily unavailable", {"provider": "unknown", "model_id": "unknown", "cost_usd": 0.0, "generation_time_ms": 0, "was_fallback": False, "attempt_number": 1}
     except Exception as e:
-        print(f"❌ WYR_ANALYSIS: Error generating analysis: {str(e)}", flush=True)
-        return "Analysis temporarily unavailable"
+        print(f"❌ WYR_ANALYSIS: Unexpected error generating analysis: {str(e)}", flush=True)
+        return "Analysis temporarily unavailable", {"provider": "unknown", "model_id": "unknown", "cost_usd": 0.0, "generation_time_ms": 0, "was_fallback": False, "attempt_number": 1}
 
 
 def _build_analysis_prompt(questions: list[dict], answers: list[AnswerObject], category: str, age_context: str) -> str:

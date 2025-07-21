@@ -2,8 +2,6 @@
 import json
 import os
 import uuid
-
-import httpx
 from fastapi import APIRouter, Depends, HTTPException, Request
 from models import (
     Activity,
@@ -16,8 +14,8 @@ from tripadvisor_service import TripAdvisorService
 
 from shared.auth_middleware import TokenData, get_current_user
 from shared.database import Database, get_db
-from shared.llm_pricing import calculate_llm_cost
-from shared.llm_usage_logger import calculate_prompt_hash, create_request_metadata, log_llm_usage
+from shared.llm_client import llm_client, LLMError
+from shared.llm_usage_logger import create_request_metadata
 
 router = APIRouter()
 
@@ -322,7 +320,7 @@ async def _get_llm_model_config() -> dict:
 async def _generate_batch_contexts(
     activities: list[dict], group_context: str, user_id: uuid.UUID, auth_token: str
 ) -> list[dict]:
-    """Generate AI contexts for a batch of activities"""
+    """Generate AI contexts for a batch of activities using centralized LLM client"""
     try:
         # Get LLM configuration
         model_config = await _get_llm_model_config()
@@ -352,136 +350,48 @@ Respond with exactly {len(activities)} entries in this JSON format:
   }}
 ]"""
 
-        # Build request based on provider
-        provider = model_config.get("primary_provider", "anthropic")
-        model_id = model_config.get("primary_model_id", "claude-3-haiku-20240307")
-        parameters = model_config.get("primary_parameters", {})
+        # Create request metadata
+        request_metadata = create_request_metadata(
+            action="find-activity",
+            parameters={
+                "batch_size": len(activities),
+                "group_context": group_context,
+            },
+        )
 
-        # Make API call to generate contexts
-        async with httpx.AsyncClient(timeout=30.0) as client:
-            if provider == "anthropic":
-                response = await client.post(
-                    "https://api.anthropic.com/v1/messages",
-                    headers={
-                        "Content-Type": "application/json",
-                        "x-api-key": os.getenv("ANTHROPIC_API_KEY", ""),
-                        "anthropic-version": "2023-06-01",
-                    },
-                    json={
-                        "model": model_id,
-                        "max_tokens": parameters.get("max_tokens", 1000),
-                        "temperature": parameters.get("temperature", 0.7),
-                        "top_p": parameters.get("top_p", 0.9),
-                        "messages": [{"role": "user", "content": prompt}],
-                    },
-                )
-            elif provider == "openai":
-                response = await client.post(
-                    "https://api.openai.com/v1/chat/completions",
-                    headers={
-                        "Content-Type": "application/json",
-                        "Authorization": f"Bearer {os.getenv('OPENAI_API_KEY', '')}",
-                    },
-                    json={
-                        "model": model_id,
-                        "max_tokens": parameters.get("max_tokens", 1000),
-                        "temperature": parameters.get("temperature", 0.7),
-                        "top_p": parameters.get("top_p", 0.9),
-                        "messages": [{"role": "user", "content": prompt}],
-                    },
-                )
-            else:
-                print(
-                    f"⚠️ ACTIVITY_AI: Unsupported provider {provider}, falling back to Anthropic",
-                    flush=True,
-                )
-                response = await client.post(
-                    "https://api.anthropic.com/v1/messages",
-                    headers={
-                        "Content-Type": "application/json",
-                        "x-api-key": os.getenv("ANTHROPIC_API_KEY", ""),
-                        "anthropic-version": "2023-06-01",
-                    },
-                    json={
-                        "model": "claude-3-haiku-20240307",
-                        "max_tokens": 1000,
-                        "messages": [{"role": "user", "content": prompt}],
-                    },
-                )
+        # Use centralized LLM client
+        content, generation_metadata = await llm_client.generate_completion(
+            prompt=prompt,
+            app_config=model_config,
+            user_id=user_id,
+            app_id="fairydust-activity",
+            action="find-activity",
+            request_metadata=request_metadata
+        )
 
-            if response.status_code == 200:
-                result = response.json()
+        print(
+            f"✅ ACTIVITY_AI: Generated contexts using {generation_metadata['provider']}/{generation_metadata['model_id']}",
+            flush=True
+        )
+        
+        if generation_metadata.get('was_fallback'):
+            print(f"⚠️ ACTIVITY_AI: Used fallback provider after primary failed", flush=True)
 
-                # Handle different response formats based on provider
-                if provider == "anthropic":
-                    content = result["content"][0]["text"]
-                    usage = result.get("usage", {})
-                    prompt_tokens = usage.get("input_tokens", 0)
-                    completion_tokens = usage.get("output_tokens", 0)
-                elif provider == "openai":
-                    content = result["choices"][0]["message"]["content"]
-                    usage = result.get("usage", {})
-                    prompt_tokens = usage.get("prompt_tokens", 0)
-                    completion_tokens = usage.get("completion_tokens", 0)
-                else:
-                    # Fallback case
-                    content = result["content"][0]["text"]
-                    usage = result.get("usage", {})
-                    prompt_tokens = usage.get("input_tokens", 0)
-                    completion_tokens = usage.get("output_tokens", 0)
+        # Try to parse JSON response
+        try:
+            contexts = json.loads(content)
+            if isinstance(contexts, list) and len(contexts) == len(activities):
+                return contexts
+        except json.JSONDecodeError:
+            print("⚠️ ACTIVITY_AI: Failed to parse AI response as JSON", flush=True)
 
-                total_tokens = prompt_tokens + completion_tokens
-
-                cost = calculate_llm_cost(provider, model_id, prompt_tokens, completion_tokens)
-
-                # Log LLM usage (don't block on logging failures)
-                try:
-                    prompt_hash = calculate_prompt_hash(prompt)
-                    request_metadata = create_request_metadata(
-                        action="find-activity",
-                        parameters={
-                            "batch_size": len(activities),
-                            "group_context": group_context,
-                        },
-                    )
-
-                    await log_llm_usage(
-                        user_id=user_id,
-                        app_id="fairydust-activity",
-                        provider=provider,
-                        model_id=model_id,
-                        prompt_tokens=prompt_tokens,
-                        completion_tokens=completion_tokens,
-                        total_tokens=total_tokens,
-                        cost_usd=cost,
-                        latency_ms=0,  # Activity routes don't track latency yet
-                        prompt_hash=prompt_hash,
-                        finish_reason="stop",
-                        was_fallback=False,
-                        fallback_reason=None,
-                        request_metadata=request_metadata,
-                        auth_token=auth_token,
-                    )
-                except Exception as e:
-                    print(f"⚠️ ACTIVITY_AI: Failed to log LLM usage: {str(e)}", flush=True)
-
-                # Try to parse JSON response
-                try:
-                    contexts = json.loads(content)
-                    if isinstance(contexts, list) and len(contexts) == len(activities):
-                        return contexts
-                except json.JSONDecodeError:
-                    print("⚠️ ACTIVITY_AI: Failed to parse AI response as JSON", flush=True)
-            else:
-                print(
-                    f"⚠️ ACTIVITY_AI: AI API error {response.status_code}: {response.text}",
-                    flush=True,
-                )
-
+    except LLMError as e:
+        print(f"❌ ACTIVITY_AI: LLM error generating contexts: {str(e)}", flush=True)
     except Exception as e:
-        print(f"⚠️ ACTIVITY_AI: Error generating AI contexts: {str(e)}", flush=True)
+        print(f"❌ ACTIVITY_AI: Unexpected error generating AI contexts: {str(e)}", flush=True)
 
     # Fallback contexts
+    print(f"⚠️ ACTIVITY_AI: Using fallback contexts for {len(activities)} activities", flush=True)
     fallback_contexts = []
     for activity in activities:
         fallback_contexts.append(

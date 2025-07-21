@@ -361,3 +361,133 @@ async def get_available_models(admin_user: dict = Depends(get_current_admin_user
             "gpt-3.5-turbo-16k",
         ],
     }
+
+
+@llm_router.get("/fallback-analytics")
+async def get_fallback_analytics(
+    timeframe: str = "7d",
+    admin_user: dict = Depends(get_current_admin_user),
+    db: Database = Depends(get_db),
+):
+    """Get LLM fallback usage analytics and provider reliability metrics"""
+    
+    # Map timeframe to SQL interval
+    interval_map = {"1d": "1 day", "7d": "7 days", "30d": "30 days", "90d": "90 days"}
+    interval = interval_map.get(timeframe, "7 days")
+    
+    # Get overall fallback statistics
+    fallback_stats = await db.fetch_one(
+        f"""
+        SELECT
+            COUNT(*) as total_requests,
+            COUNT(*) FILTER (WHERE was_fallback = true) as fallback_requests,
+            COUNT(*) FILTER (WHERE was_fallback = false) as primary_requests,
+            ROUND(
+                (COUNT(*) FILTER (WHERE was_fallback = true)::float / COUNT(*)) * 100, 2
+            ) as fallback_percentage
+        FROM llm_usage_logs
+        WHERE created_at >= NOW() - INTERVAL '{interval}'
+        """
+    )
+    
+    # Get fallback breakdown by provider
+    provider_reliability = await db.fetch_all(
+        f"""
+        SELECT
+            provider,
+            COUNT(*) as total_requests,
+            COUNT(*) FILTER (WHERE was_fallback = false) as primary_success,
+            COUNT(*) FILTER (WHERE was_fallback = true) as fallback_usage,
+            ROUND(
+                (COUNT(*) FILTER (WHERE was_fallback = false)::float / COUNT(*)) * 100, 2
+            ) as reliability_percentage,
+            AVG(latency_ms) as avg_latency_ms,
+            SUM(cost_usd) as total_cost
+        FROM llm_usage_logs
+        WHERE created_at >= NOW() - INTERVAL '{interval}'
+        GROUP BY provider
+        ORDER BY total_requests DESC
+        """
+    )
+    
+    # Get fallback reasons breakdown
+    fallback_reasons = await db.fetch_all(
+        f"""
+        SELECT
+            fallback_reason,
+            COUNT(*) as occurrences,
+            ROUND((COUNT(*)::float / 
+                (SELECT COUNT(*) FROM llm_usage_logs 
+                 WHERE was_fallback = true 
+                 AND created_at >= NOW() - INTERVAL '{interval}')
+            ) * 100, 2) as percentage_of_fallbacks
+        FROM llm_usage_logs
+        WHERE was_fallback = true 
+          AND created_at >= NOW() - INTERVAL '{interval}'
+          AND fallback_reason IS NOT NULL
+        GROUP BY fallback_reason
+        ORDER BY occurrences DESC
+        """
+    )
+    
+    # Get daily fallback trends
+    if timeframe in ["1d", "7d"]:
+        group_by = "DATE(created_at)"
+        date_format = "%Y-%m-%d"
+    else:
+        group_by = "DATE_TRUNC('week', created_at)"
+        date_format = "%Y-%m-%d"
+    
+    daily_trends = await db.fetch_all(
+        f"""
+        SELECT
+            {group_by} as date,
+            COUNT(*) as total_requests,
+            COUNT(*) FILTER (WHERE was_fallback = true) as fallback_requests,
+            ROUND(
+                (COUNT(*) FILTER (WHERE was_fallback = true)::float / COUNT(*)) * 100, 2
+            ) as fallback_rate
+        FROM llm_usage_logs
+        WHERE created_at >= NOW() - INTERVAL '{interval}'
+        GROUP BY {group_by}
+        ORDER BY date
+        """
+    )
+    
+    # Get app-specific fallback usage
+    app_fallback_usage = await db.fetch_all(
+        f"""
+        SELECT
+            a.name as app_name,
+            a.slug as app_slug,
+            COUNT(l.id) as total_requests,
+            COUNT(l.id) FILTER (WHERE l.was_fallback = true) as fallback_requests,
+            ROUND(
+                (COUNT(l.id) FILTER (WHERE l.was_fallback = true)::float / COUNT(l.id)) * 100, 2
+            ) as fallback_percentage,
+            AVG(l.cost_usd) as avg_cost_per_request
+        FROM apps a
+        LEFT JOIN llm_usage_logs l ON a.id = l.app_id
+            AND l.created_at >= NOW() - INTERVAL '{interval}'
+        WHERE l.id IS NOT NULL
+        GROUP BY a.id, a.name, a.slug
+        ORDER BY fallback_percentage DESC, total_requests DESC
+        """
+    )
+    
+    return {
+        "timeframe": timeframe,
+        "overall_stats": dict(fallback_stats) if fallback_stats else {},
+        "provider_reliability": [dict(row) for row in provider_reliability],
+        "fallback_reasons": [dict(row) for row in fallback_reasons],
+        "daily_trends": [
+            {
+                "date": row["date"].strftime(date_format), 
+                "total_requests": row["total_requests"],
+                "fallback_requests": row["fallback_requests"],
+                "fallback_rate": float(row["fallback_rate"]) if row["fallback_rate"] else 0
+            }
+            for row in daily_trends
+        ],
+        "app_fallback_usage": [dict(row) for row in app_fallback_usage]
+    }

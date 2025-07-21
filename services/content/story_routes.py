@@ -8,7 +8,6 @@ import uuid
 from datetime import datetime
 from typing import Optional
 
-import httpx
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 
 # Content service no longer manages DUST - all DUST handling is external
@@ -33,8 +32,8 @@ from models import (
 from shared.auth_middleware import TokenData, get_current_user
 from shared.database import Database, get_db
 from shared.json_utils import parse_jsonb_field
-from shared.llm_pricing import calculate_llm_cost
-from shared.llm_usage_logger import calculate_prompt_hash, create_request_metadata, log_llm_usage
+from shared.llm_usage_logger import calculate_prompt_hash, create_request_metadata
+from shared.llm_client import llm_client, LLMError
 from story_image_service import story_image_service
 from story_image_generator import story_image_generator
 
@@ -104,53 +103,7 @@ async def generate_story(
             return StoryErrorResponse(error="Failed to generate story. Please try again.")
 
         print(f"🤖 STORY: Generated story: {title}", flush=True)
-
-        # Log LLM usage for analytics (background task)
-        try:
-            # Calculate prompt hash for the story generation
-            full_prompt = _build_story_prompt(request, user_context)
-            prompt_hash = calculate_prompt_hash(full_prompt)
-
-            # Determine correct action-slug based on story length and images
-            action_slug = f"story-{request.story_length.value}"
-            if request.include_images:
-                action_slug += "-illustrated"
-            
-            # Create request metadata
-            request_metadata = create_request_metadata(
-                action=action_slug,
-                parameters={
-                    "story_length": request.story_length.value,
-                    "target_audience": request.target_audience.value,
-                    "character_count": len(request.characters),
-                    "has_custom_prompt": bool(request.custom_prompt),
-                    "include_images": request.include_images,
-                },
-                user_context=user_context if user_context != "general user" else None,
-                session_id=str(request.session_id) if request.session_id else None,
-            )
-
-            # Log usage asynchronously (don't block story generation on logging failures)
-            await log_llm_usage(
-                user_id=request.user_id,
-                app_id="fairydust-story",
-                provider=provider_used,
-                model_id=model_used,
-                prompt_tokens=tokens_used.get("prompt", 0),
-                completion_tokens=tokens_used.get("completion", 0),
-                total_tokens=tokens_used.get("total", 0),
-                cost_usd=cost,
-                latency_ms=latency_ms,
-                prompt_hash=prompt_hash,
-                finish_reason="stop",
-                was_fallback=False,
-                fallback_reason=None,
-                request_metadata=request_metadata,
-                auth_token=None,  # No auth token needed for LLM logging
-            )
-        except Exception as e:
-            print(f"⚠️ STORY: Failed to log LLM usage: {str(e)}", flush=True)
-            # Continue with story generation even if logging fails
+        # LLM usage logging is now handled by the centralized client
 
         # Save story to database
         story_id = await _save_story(
@@ -900,20 +853,13 @@ async def _generate_story_llm(
     request: StoryGenerationRequest,
     user_context: str,
 ) -> tuple[Optional[str], str, int, str, str, dict, float, int, str]:
-    """Generate story using LLM - returns (content, title, word_count, reading_time, model_id, tokens, cost, latency_ms, provider)"""
+    """Generate story using centralized LLM client - returns (content, title, word_count, reading_time, model_id, tokens, cost, latency_ms, provider)"""
     try:
         # Get LLM model configuration from database/cache
         model_config = await _get_llm_model_config()
-
-        provider = model_config.get("primary_provider", "anthropic")
-        model_id = model_config.get("primary_model_id", "claude-3-5-sonnet-20241022")
-        parameters = model_config.get("primary_parameters", {})
-
-        temperature = parameters.get("temperature", 0.8)
-        base_max_tokens = parameters.get("max_tokens", 2000)
-        top_p = parameters.get("top_p", 0.9)
         
         # Adjust max_tokens based on story length to prevent truncation
+        base_max_tokens = model_config.get("primary_parameters", {}).get("max_tokens", 2000)
         story_length_multipliers = {
             StoryLength.QUICK: 1.0,    # ~500 words = ~667 tokens
             StoryLength.MEDIUM: 1.8,   # ~1200 words = ~1600 tokens  
@@ -921,202 +867,87 @@ async def _generate_story_llm(
         }
         
         max_tokens = int(base_max_tokens * story_length_multipliers.get(request.story_length, 1.0))
+        max_tokens = max(1000, min(max_tokens, 8000))  # Ensure reasonable bounds
         
-        # Ensure minimum token count and reasonable maximum
-        max_tokens = max(1000, min(max_tokens, 8000))
+        # Update parameters with adjusted max_tokens
+        adjusted_config = model_config.copy()
+        if "primary_parameters" not in adjusted_config:
+            adjusted_config["primary_parameters"] = {}
+        adjusted_config["primary_parameters"]["max_tokens"] = max_tokens
         
         print(f"🔧 STORY_LLM: Adjusted max_tokens to {max_tokens} for {request.story_length.value} story", flush=True)
 
         # Build prompt
         prompt = _build_story_prompt(request, user_context)
+        
+        # Calculate prompt hash for logging
+        prompt_hash = calculate_prompt_hash(prompt)
+        
+        # Determine action slug for logging
+        action_slug = f"story-{request.story_length.value}"
+        if request.include_images:
+            action_slug += "-illustrated"
+        
+        # Create request metadata
+        request_metadata = create_request_metadata(
+            action=action_slug,
+            parameters={
+                "story_length": request.story_length.value,
+                "target_audience": request.target_audience.value,
+                "character_count": len(request.characters),
+                "has_custom_prompt": bool(request.custom_prompt),
+                "include_images": request.include_images,
+            },
+            user_context=user_context if user_context != "general user" else None,
+            session_id=str(request.session_id) if request.session_id else None,
+        )
+        
+        # Add prompt hash to metadata
+        request_metadata["prompt_hash"] = prompt_hash
 
-        print(f"🤖 STORY_LLM: Generating with {provider} model {model_id}", flush=True)
-
-        # Check API key based on provider
-        if provider == "anthropic":
-            api_key = os.getenv("ANTHROPIC_API_KEY", "")
-            if not api_key:
-                print("❌ STORY_LLM: Missing ANTHROPIC_API_KEY environment variable", flush=True)
-                return None, "", 0, "", model_id, {}, 0.0, 0, provider
-        elif provider == "openai":
-            api_key = os.getenv("OPENAI_API_KEY", "")
-            if not api_key:
-                print("❌ STORY_LLM: Missing OPENAI_API_KEY environment variable", flush=True)
-                return None, "", 0, "", model_id, {}, 0.0, 0, provider
-        else:
-            print(f"❌ STORY_LLM: Unsupported provider: {provider}", flush=True)
-            return None, "", 0, "", model_id, {}, 0.0, 0
-
-        print(
-            f"🔑 STORY_LLM: {provider.upper()} API key configured (length: {len(api_key)})",
-            flush=True,
+        # Use centralized client for generation
+        generated_text, generation_metadata = await llm_client.generate_completion(
+            prompt=prompt,
+            app_config=adjusted_config,
+            user_id=request.user_id,
+            app_id="fairydust-story",
+            action=action_slug,
+            request_metadata=request_metadata
+        )
+        
+        # Extract title and content from generated text
+        title, content = _extract_title_and_content(generated_text)
+        word_count = _count_words(content)
+        estimated_reading_time = _calculate_reading_time(word_count)
+        
+        # Extract metadata from generation result
+        provider = generation_metadata["provider"]
+        model_id = generation_metadata["model_id"]
+        tokens_used = generation_metadata["tokens_used"]
+        cost = generation_metadata["cost_usd"]
+        latency_ms = generation_metadata["generation_time_ms"]
+        
+        print(f"✅ STORY_LLM: Generated story successfully with {provider}/{model_id} (latency: {latency_ms}ms)", flush=True)
+        
+        return (
+            content,
+            title,
+            word_count,
+            estimated_reading_time,
+            model_id,
+            tokens_used,
+            cost,
+            latency_ms,
+            provider,
         )
 
-        # Track request latency
-        start_time = time.time()
-
-        # Make API call based on provider
-        async with httpx.AsyncClient(timeout=60.0) as client:
-            if provider == "anthropic":
-                response = await client.post(
-                    "https://api.anthropic.com/v1/messages",
-                    headers={
-                        "Content-Type": "application/json",
-                        "x-api-key": api_key,
-                        "anthropic-version": "2023-06-01",
-                    },
-                    json={
-                        "model": model_id,
-                        "max_tokens": max_tokens,
-                        "temperature": temperature,
-                        "top_p": top_p,
-                        "messages": [{"role": "user", "content": prompt}],
-                    },
-                )
-
-                if response.status_code == 200:
-                    result = response.json()
-                    generated_text = result["content"][0]["text"].strip()
-
-                    # Extract title and content
-                    title, content = _extract_title_and_content(generated_text)
-                    word_count = _count_words(content)
-                    estimated_reading_time = _calculate_reading_time(word_count)
-
-                    # Calculate tokens and cost
-                    usage = result.get("usage", {})
-                    prompt_tokens = usage.get("input_tokens", 0)
-                    completion_tokens = usage.get("output_tokens", 0)
-                    total_tokens = prompt_tokens + completion_tokens
-
-                    tokens_used = {
-                        "prompt": prompt_tokens,
-                        "completion": completion_tokens,
-                        "total": total_tokens,
-                    }
-
-                    cost = calculate_llm_cost(
-                        "anthropic", model_id, prompt_tokens, completion_tokens
-                    )
-
-                    # Calculate latency
-                    latency_ms = int((time.time() - start_time) * 1000)
-
-                    print(
-                        f"✅ STORY_LLM: Generated story successfully (latency: {latency_ms}ms)",
-                        flush=True,
-                    )
-                    return (
-                        content,
-                        title,
-                        word_count,
-                        estimated_reading_time,
-                        model_id,
-                        tokens_used,
-                        cost,
-                        latency_ms,
-                    )
-
-                else:
-                    error_detail = response.text
-                    try:
-                        error_json = response.json()
-                        error_detail = error_json.get("error", {}).get("message", response.text)
-                    except:
-                        pass
-                    print(
-                        f"❌ STORY_LLM: Anthropic API error {response.status_code}: {error_detail}",
-                        flush=True,
-                    )
-                    latency_ms = int((time.time() - start_time) * 1000)
-                    return None, "", 0, "", model_id, {}, 0.0, latency_ms, provider
-
-            elif provider == "openai":
-                response = await client.post(
-                    "https://api.openai.com/v1/chat/completions",
-                    headers={
-                        "Content-Type": "application/json",
-                        "Authorization": f"Bearer {os.getenv('OPENAI_API_KEY', '')}",
-                    },
-                    json={
-                        "model": model_id,
-                        "max_tokens": max_tokens,
-                        "temperature": temperature,
-                        "top_p": top_p,
-                        "messages": [{"role": "user", "content": prompt}],
-                    },
-                )
-
-                if response.status_code == 200:
-                    result = response.json()
-                    content = result["choices"][0]["message"]["content"].strip()
-
-                    # Calculate tokens and cost
-                    usage = result.get("usage", {})
-                    prompt_tokens = usage.get("prompt_tokens", 0)
-                    completion_tokens = usage.get("completion_tokens", 0)
-                    total_tokens = usage.get("total_tokens", prompt_tokens + completion_tokens)
-
-                    tokens_used = {
-                        "prompt": prompt_tokens,
-                        "completion": completion_tokens,
-                        "total": total_tokens,
-                    }
-
-                    cost = calculate_llm_cost(
-                        provider="openai",
-                        model_id=model_id,
-                        input_tokens=prompt_tokens,
-                        output_tokens=completion_tokens,
-                    )
-
-                    latency_ms = int((time.time() - start_time) * 1000)
-
-                    # Extract title and validate content
-                    title, story_content = _extract_title_and_content(content)
-                    word_count = len(story_content.split())
-                    estimated_reading_time = _calculate_reading_time(word_count)
-
-                    return (
-                        story_content,
-                        title,
-                        word_count,
-                        estimated_reading_time,
-                        model_id,
-                        tokens_used,
-                        cost,
-                        latency_ms,
-                        provider,
-                    )
-
-                else:
-                    error_detail = response.text
-                    try:
-                        error_json = response.json()
-                        error_detail = error_json.get("error", {}).get("message", response.text)
-                    except:
-                        pass
-                    print(
-                        f"❌ STORY_LLM: OpenAI API error {response.status_code}: {error_detail}",
-                        flush=True,
-                    )
-                    latency_ms = int((time.time() - start_time) * 1000)
-                    return None, "", 0, "", model_id, {}, 0.0, latency_ms, provider
-
-            else:
-                print(
-                    f"❌ STORY_LLM: Unsupported provider {provider}",
-                    flush=True,
-                )
-                latency_ms = int((time.time() - start_time) * 1000)
-                return None, "", 0, "", model_id, {}, 0.0, latency_ms, provider
-
+    except LLMError as e:
+        print(f"❌ STORY_LLM: LLM error: {str(e)}", flush=True)
+        return None, "", 0, "", "claude-3-5-sonnet-20241022", {}, 0.0, 0, "anthropic"
     except Exception as e:
-        print(f"❌ STORY_LLM: Error generating story: {str(e)}", flush=True)
+        print(f"❌ STORY_LLM: Unexpected error generating story: {str(e)}", flush=True)
         print(f"❌ STORY_LLM: Error type: {type(e).__name__}", flush=True)
-        print(f"❌ STORY_LLM: Error details: {repr(e)}", flush=True)
         import traceback
-
         print(f"❌ STORY_LLM: Traceback: {traceback.format_exc()}", flush=True)
         return None, "", 0, "", "claude-3-5-sonnet-20241022", {}, 0.0, 0, "anthropic"
 

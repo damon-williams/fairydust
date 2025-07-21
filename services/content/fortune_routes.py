@@ -1,11 +1,9 @@
 # services/content/fortune_routes.py
 import json
-import os
 import uuid
 from datetime import datetime
 from typing import Optional
 
-import httpx
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from models import (
     FortuneDeleteResponse,
@@ -24,8 +22,8 @@ from models import (
 
 from shared.auth_middleware import TokenData, get_current_user
 from shared.database import Database, get_db
-from shared.llm_pricing import calculate_llm_cost
-from shared.llm_usage_logger import calculate_prompt_hash, create_request_metadata, log_llm_usage
+from shared.llm_client import llm_client, LLMError
+from shared.llm_usage_logger import calculate_prompt_hash, create_request_metadata
 
 router = APIRouter()
 
@@ -117,77 +115,40 @@ async def generate_fortune_reading(
 
         # Generate fortune reading using LLM
         print("🤖 FORTUNE: Starting LLM generation", flush=True)
-        (
-            reading_content,
-            provider_used,
-            model_used,
-            tokens_used,
-            cost,
-            latency_ms,
-        ) = await _generate_fortune_llm(
-            request=request,
-            zodiac_sign=zodiac_sign,
-            zodiac_element=zodiac_element,
-            ruling_planet=ruling_planet,
-            life_path_number=life_path_number,
-        )
-
-        if not reading_content:
-            print("❌ FORTUNE: LLM generation failed", flush=True)
+        try:
+            result = await _generate_fortune_llm(
+                request=request,
+                zodiac_sign=zodiac_sign,
+                zodiac_element=zodiac_element,
+                ruling_planet=ruling_planet,
+                life_path_number=life_path_number,
+                auth_token=auth_token,
+            )
+            
+            if not result:
+                print("❌ FORTUNE: LLM generation failed", flush=True)
+                return FortuneErrorResponse(
+                    error="Failed to generate fortune reading. Please try again."
+                )
+            
+            reading_content, generation_metadata = result
+            provider_used = generation_metadata["provider"]
+            model_used = generation_metadata["model_id"]
+            tokens_used = generation_metadata["tokens_used"]
+            cost = generation_metadata["cost_usd"]
+            
+            print("🤖 FORTUNE: Generated reading successfully", flush=True)
+            
+        except LLMError as e:
+            print(f"❌ FORTUNE: LLM generation failed: {str(e)}", flush=True)
             return FortuneErrorResponse(
                 error="Failed to generate fortune reading. Please try again."
             )
-
-        print("🤖 FORTUNE: Generated reading successfully", flush=True)
-
-        # Log LLM usage for analytics
-        try:
-            # Calculate prompt hash for the fortune generation
-            full_prompt = _build_fortune_prompt(
-                request,
-                zodiac_sign,
-                zodiac_element,
-                ruling_planet,
-                life_path_number,
-            )
-            prompt_hash = calculate_prompt_hash(full_prompt)
-
-            # Create request metadata with proper action slug based on reading type
-            action_slug = "fortune-daily" if request.reading_type == ReadingType.DAILY else "fortune-question"
-            request_metadata = create_request_metadata(
-                action=action_slug,
-                parameters={
-                    "reading_type": request.reading_type.value,
-                    "zodiac_sign": zodiac_sign,
-                    "life_path_number": life_path_number,
-                    "has_question": bool(request.question),
-                    "has_birth_time": bool(request.birth_time),
-                    "has_birth_location": bool(request.birth_location),
-                },
-                user_context=f"Fortune reading for {request.name}",
-                session_id=None,
-            )
-
-            # Log usage asynchronously
-            await log_llm_usage(
-                user_id=request.user_id,
-                app_id="fairydust-fortune-teller",
-                provider=provider_used,
-                model_id=model_used,
-                prompt_tokens=tokens_used.get("prompt", 0),
-                completion_tokens=tokens_used.get("completion", 0),
-                total_tokens=tokens_used.get("total", 0),
-                cost_usd=cost,
-                latency_ms=latency_ms,
-                prompt_hash=prompt_hash,
-                finish_reason="stop",
-                was_fallback=False,
-                fallback_reason=None,
-                request_metadata=request_metadata,
-                auth_token=auth_token,
-            )
         except Exception as e:
-            print(f"⚠️ FORTUNE: Failed to log LLM usage: {str(e)}", flush=True)
+            print(f"❌ FORTUNE: Unexpected error during generation: {str(e)}", flush=True)
+            return FortuneErrorResponse(
+                error="Failed to generate fortune reading. Please try again."
+            )
 
         # Save reading to database
         # For self-readings, set target_person_id to NULL
@@ -226,9 +187,9 @@ async def generate_fortune_reading(
             reading=reading,
             model_used=model_used,
             tokens_used=TokenUsage(
-                prompt=tokens_used.get("prompt", 0),
-                completion=tokens_used.get("completion", 0),
-                total=tokens_used.get("total", 0),
+                prompt=tokens_used.get("prompt_tokens", 0),
+                completion=tokens_used.get("completion_tokens", 0),
+                total=tokens_used.get("total_tokens", 0),
             ),
             cost=cost,
         )
@@ -540,8 +501,9 @@ async def _generate_fortune_llm(
     zodiac_element: str,
     ruling_planet: str,
     life_path_number: int,
-) -> tuple[Optional[str], str, str, dict, float, int]:
-    """Generate fortune reading using LLM"""
+    auth_token: str,
+) -> Optional[tuple[str, dict]]:
+    """Generate fortune reading using centralized LLM client"""
     try:
         # Build prompt
         full_prompt = _build_fortune_prompt(
@@ -554,117 +516,41 @@ async def _generate_fortune_llm(
 
         # Get model configuration
         model_config = await _get_llm_model_config()
-        provider = model_config.get("primary_provider", "anthropic")
-        model_id = model_config.get("primary_model_id", "claude-3-5-sonnet-20241022")
-        parameters = model_config.get("primary_parameters", {})
 
-        max_tokens = parameters.get("max_tokens", 400)
-        temperature = parameters.get("temperature", 0.8)
-        top_p = parameters.get("top_p", 0.9)
+        # Create request metadata with proper action slug based on reading type
+        action_slug = "fortune-daily" if request.reading_type == ReadingType.DAILY else "fortune-question"
+        request_metadata = create_request_metadata(
+            action=action_slug,
+            parameters={
+                "reading_type": request.reading_type.value,
+                "zodiac_sign": zodiac_sign,
+                "life_path_number": life_path_number,
+                "has_question": bool(request.question),
+                "has_birth_time": bool(request.birth_time),
+                "has_birth_location": bool(request.birth_location),
+            },
+            user_context=f"Fortune reading for {request.name}",
+            session_id=None,
+        )
 
-        print(f"🤖 FORTUNE_LLM: Generating with {provider} {model_id}", flush=True)
+        # Use centralized LLM client which handles retries, fallbacks, and logging
+        completion, generation_metadata = await llm_client.generate_completion(
+            prompt=full_prompt,
+            app_config=model_config,
+            user_id=request.user_id,
+            app_id="fairydust-fortune-teller",
+            action=action_slug,
+            request_metadata=request_metadata
+        )
 
-        # Make API call based on provider
-        start_time = datetime.now()
-        async with httpx.AsyncClient(timeout=30.0) as client:
-            if provider == "anthropic":
-                response = await client.post(
-                    "https://api.anthropic.com/v1/messages",
-                    headers={
-                        "Content-Type": "application/json",
-                        "x-api-key": os.getenv("ANTHROPIC_API_KEY", ""),
-                        "anthropic-version": "2023-06-01",
-                    },
-                    json={
-                        "model": model_id,
-                        "max_tokens": max_tokens,
-                        "temperature": temperature,
-                        "top_p": top_p,
-                        "messages": [{"role": "user", "content": full_prompt}],
-                    },
-                )
-            elif provider == "openai":
-                response = await client.post(
-                    "https://api.openai.com/v1/chat/completions",
-                    headers={
-                        "Content-Type": "application/json",
-                        "Authorization": f"Bearer {os.getenv('OPENAI_API_KEY', '')}",
-                    },
-                    json={
-                        "model": model_id,
-                        "max_tokens": max_tokens,
-                        "temperature": temperature,
-                        "top_p": top_p,
-                        "messages": [{"role": "user", "content": full_prompt}],
-                    },
-                )
-            else:
-                print(
-                    f"⚠️ FORTUNE_LLM: Unsupported provider {provider}, falling back to Anthropic",
-                    flush=True,
-                )
-                response = await client.post(
-                    "https://api.anthropic.com/v1/messages",
-                    headers={
-                        "Content-Type": "application/json",
-                        "x-api-key": os.getenv("ANTHROPIC_API_KEY", ""),
-                        "anthropic-version": "2023-06-01",
-                    },
-                    json={
-                        "model": "claude-3-5-sonnet-20241022",
-                        "max_tokens": 400,
-                        "temperature": 0.8,
-                        "top_p": 0.9,
-                        "messages": [{"role": "user", "content": full_prompt}],
-                    },
-                )
+        return completion, generation_metadata
 
-        latency_ms = int((datetime.now() - start_time).total_seconds() * 1000)
-
-        if response.status_code == 200:
-            result = response.json()
-
-            # Handle different response formats based on provider
-            if provider == "anthropic":
-                content = result["content"][0]["text"].strip()
-                usage = result.get("usage", {})
-                prompt_tokens = usage.get("input_tokens", 0)
-                completion_tokens = usage.get("output_tokens", 0)
-            elif provider == "openai":
-                content = result["choices"][0]["message"]["content"].strip()
-                usage = result.get("usage", {})
-                prompt_tokens = usage.get("prompt_tokens", 0)
-                completion_tokens = usage.get("completion_tokens", 0)
-            else:
-                # Fallback case
-                content = result["content"][0]["text"].strip()
-                usage = result.get("usage", {})
-                prompt_tokens = usage.get("input_tokens", 0)
-                completion_tokens = usage.get("output_tokens", 0)
-
-            total_tokens = prompt_tokens + completion_tokens
-
-            tokens_used = {
-                "prompt": prompt_tokens,
-                "completion": completion_tokens,
-                "total": total_tokens,
-            }
-
-            cost = calculate_llm_cost(provider, model_id, prompt_tokens, completion_tokens)
-
-            print("✅ FORTUNE_LLM: Generated fortune successfully", flush=True)
-            return content, provider, model_id, tokens_used, cost, latency_ms
-
-        else:
-            print(
-                f"❌ FORTUNE_LLM: {provider} API error {response.status_code}: {response.text}",
-                flush=True,
-            )
-            return None, provider, model_id, {}, 0.0, latency_ms
-
+    except LLMError as e:
+        print(f"❌ FORTUNE_LLM: LLM client error: {str(e)}", flush=True)
+        raise
     except Exception as e:
-        print(f"❌ FORTUNE_LLM: Error generating fortune: {str(e)}", flush=True)
-        return None, "anthropic", "claude-3-5-sonnet-20241022", {}, 0.0, 0
+        print(f"❌ FORTUNE_LLM: Unexpected error generating fortune: {str(e)}", flush=True)
+        raise
 
 
 async def _save_fortune_reading(
@@ -685,7 +571,7 @@ async def _save_fortune_reading(
 
         metadata = {
             "model_used": model_used,
-            "tokens_used": tokens_used.get("total", 0),
+            "tokens_used": tokens_used.get("total_tokens", 0),
             "cost_usd": cost,
         }
 

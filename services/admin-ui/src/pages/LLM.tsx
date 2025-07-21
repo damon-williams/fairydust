@@ -78,11 +78,50 @@ interface ActionAnalytics {
   cost_per_dust: number | null;
 }
 
+interface FallbackAnalytics {
+  timeframe: string;
+  overall_stats: {
+    total_requests: number;
+    fallback_requests: number;
+    primary_requests: number;
+    fallback_percentage: number;
+  };
+  provider_reliability: Array<{
+    provider: string;
+    total_requests: number;
+    primary_success: number;
+    fallback_usage: number;
+    reliability_percentage: number;
+    avg_latency_ms: number;
+    total_cost: number;
+  }>;
+  fallback_reasons: Array<{
+    fallback_reason: string;
+    occurrences: number;
+    percentage_of_fallbacks: number;
+  }>;
+  daily_trends: Array<{
+    date: string;
+    total_requests: number;
+    fallback_requests: number;
+    fallback_rate: number;
+  }>;
+  app_fallback_usage: Array<{
+    app_name: string;
+    app_slug: string;
+    total_requests: number;
+    fallback_requests: number;
+    fallback_percentage: number;
+    avg_cost_per_request: number;
+  }>;
+}
+
 
 export function LLM() {
   const [metrics, setMetrics] = useState<LLMUsageMetrics | null>(null);
   const [modelUsage, setModelUsage] = useState<ModelUsage[]>([]);
   const [actionAnalytics, setActionAnalytics] = useState<ActionAnalytics[]>([]);
+  const [fallbackAnalytics, setFallbackAnalytics] = useState<FallbackAnalytics | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [timeframe, setTimeframe] = useState('7d');
@@ -93,15 +132,17 @@ export function LLM() {
       setLoading(true);
       setError(null);
       
-      const [metricsData, modelUsageData, actionData] = await Promise.all([
+      const [metricsData, modelUsageData, actionData, fallbackData] = await Promise.all([
         AdminAPI.getLLMUsageMetrics(timeframe),
         AdminAPI.getLLMModelUsage(),
         AdminAPI.getActionAnalytics(timeframe),
+        AdminAPI.getFallbackAnalytics(timeframe),
       ]);
       
       setMetrics(metricsData);
       setModelUsage(modelUsageData);
       setActionAnalytics(actionData.action_analytics || []);
+      setFallbackAnalytics(fallbackData);
     } catch (err) {
       console.error('Failed to load LLM data:', err);
       setError('Failed to load LLM data. Please try again.');
@@ -179,6 +220,7 @@ export function LLM() {
           <TabsTrigger value="models">Model Usage</TabsTrigger>
           <TabsTrigger value="apps">App Usage</TabsTrigger>
           <TabsTrigger value="actions">Action Analytics</TabsTrigger>
+          <TabsTrigger value="reliability">Provider Reliability</TabsTrigger>
         </TabsList>
 
         <TabsContent value="overview" className="space-y-6">
@@ -403,6 +445,243 @@ export function LLM() {
                     <TableRow>
                       <TableCell colSpan={8} className="text-center text-muted-foreground">
                         No action analytics data available for the selected timeframe
+                      </TableCell>
+                    </TableRow>
+                  )}
+                </TableBody>
+              </Table>
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        <TabsContent value="reliability" className="space-y-6">
+          {/* Overall Fallback Stats */}
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+            <Card>
+              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                <CardTitle className="text-sm font-medium">Total Requests</CardTitle>
+                <Brain className="h-4 w-4 text-muted-foreground" />
+              </CardHeader>
+              <CardContent>
+                <div className="text-2xl font-bold">
+                  {fallbackAnalytics?.overall_stats.total_requests?.toLocaleString() || 0}
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  in the last {timeframe === '1d' ? 'day' : timeframe === '7d' ? 'week' : timeframe === '30d' ? 'month' : '3 months'}
+                </p>
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                <CardTitle className="text-sm font-medium">Primary Success</CardTitle>
+                <TrendingUp className="h-4 w-4 text-green-600" />
+              </CardHeader>
+              <CardContent>
+                <div className="text-2xl font-bold">
+                  {fallbackAnalytics?.overall_stats.primary_requests?.toLocaleString() || 0}
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  successful primary requests
+                </p>
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                <CardTitle className="text-sm font-medium">Fallback Usage</CardTitle>
+                <AlertTriangle className="h-4 w-4 text-orange-600" />
+              </CardHeader>
+              <CardContent>
+                <div className="text-2xl font-bold">
+                  {fallbackAnalytics?.overall_stats.fallback_requests?.toLocaleString() || 0}
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  requests used fallback
+                </p>
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                <CardTitle className="text-sm font-medium">Fallback Rate</CardTitle>
+                <DollarSign className="h-4 w-4 text-red-600" />
+              </CardHeader>
+              <CardContent>
+                <div className="text-2xl font-bold">
+                  {fallbackAnalytics?.overall_stats.fallback_percentage?.toFixed(1) || 0}%
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  of total requests
+                </p>
+              </CardContent>
+            </Card>
+          </div>
+
+          {/* Provider Reliability Table */}
+          <Card>
+            <CardHeader>
+              <CardTitle>Provider Reliability</CardTitle>
+              <p className="text-sm text-muted-foreground">
+                Monitor which providers are most reliable and when fallbacks occur
+              </p>
+            </CardHeader>
+            <CardContent>
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Provider</TableHead>
+                    <TableHead>Total Requests</TableHead>
+                    <TableHead>Success Rate</TableHead>
+                    <TableHead>Fallback Usage</TableHead>
+                    <TableHead>Avg Latency</TableHead>
+                    <TableHead>Total Cost</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {fallbackAnalytics?.provider_reliability.map((provider, index) => (
+                    <TableRow key={index}>
+                      <TableCell className="font-medium">
+                        <Badge 
+                          variant="outline" 
+                          className={`capitalize ${
+                            provider.provider === 'anthropic' ? 'border-blue-200 text-blue-700' : 'border-green-200 text-green-700'
+                          }`}
+                        >
+                          {provider.provider}
+                        </Badge>
+                      </TableCell>
+                      <TableCell>{provider.total_requests.toLocaleString()}</TableCell>
+                      <TableCell>
+                        <div className="flex items-center gap-2">
+                          <div 
+                            className={`w-2 h-2 rounded-full ${
+                              provider.reliability_percentage >= 95 ? 'bg-green-500' : 
+                              provider.reliability_percentage >= 90 ? 'bg-yellow-500' : 'bg-red-500'
+                            }`} 
+                          />
+                          <span className={
+                            provider.reliability_percentage >= 95 ? 'text-green-700' : 
+                            provider.reliability_percentage >= 90 ? 'text-yellow-700' : 'text-red-700'
+                          }>
+                            {provider.reliability_percentage.toFixed(1)}%
+                          </span>
+                        </div>
+                      </TableCell>
+                      <TableCell>
+                        <span className={provider.fallback_usage > 0 ? 'text-orange-600' : 'text-green-600'}>
+                          {provider.fallback_usage.toLocaleString()}
+                        </span>
+                      </TableCell>
+                      <TableCell>{provider.avg_latency_ms.toFixed(0)}ms</TableCell>
+                      <TableCell>${provider.total_cost.toFixed(4)}</TableCell>
+                    </TableRow>
+                  )) || []}
+                  {(!fallbackAnalytics?.provider_reliability || fallbackAnalytics.provider_reliability.length === 0) && (
+                    <TableRow>
+                      <TableCell colSpan={6} className="text-center text-muted-foreground">
+                        No provider reliability data available for the selected timeframe
+                      </TableCell>
+                    </TableRow>
+                  )}
+                </TableBody>
+              </Table>
+            </CardContent>
+          </Card>
+
+          {/* Fallback Reasons */}
+          {fallbackAnalytics?.fallback_reasons && fallbackAnalytics.fallback_reasons.length > 0 && (
+            <Card>
+              <CardHeader>
+                <CardTitle>Fallback Reasons</CardTitle>
+                <p className="text-sm text-muted-foreground">
+                  Why providers failed and triggered fallbacks
+                </p>
+              </CardHeader>
+              <CardContent>
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Reason</TableHead>
+                      <TableHead>Occurrences</TableHead>
+                      <TableHead>% of Fallbacks</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {fallbackAnalytics.fallback_reasons.map((reason, index) => (
+                      <TableRow key={index}>
+                        <TableCell className="font-medium">{reason.fallback_reason}</TableCell>
+                        <TableCell>{reason.occurrences.toLocaleString()}</TableCell>
+                        <TableCell>
+                          <Badge variant="secondary">
+                            {reason.percentage_of_fallbacks.toFixed(1)}%
+                          </Badge>
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </CardContent>
+            </Card>
+          )}
+
+          {/* App Fallback Usage */}
+          <Card>
+            <CardHeader>
+              <CardTitle>App Fallback Usage</CardTitle>
+              <p className="text-sm text-muted-foreground">
+                Which apps experience the most provider failures
+              </p>
+            </CardHeader>
+            <CardContent>
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>App</TableHead>
+                    <TableHead>Total Requests</TableHead>
+                    <TableHead>Fallback Usage</TableHead>
+                    <TableHead>Fallback Rate</TableHead>
+                    <TableHead>Avg Cost/Request</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {fallbackAnalytics?.app_fallback_usage.map((app, index) => (
+                    <TableRow key={index}>
+                      <TableCell>
+                        <div>
+                          <div className="font-medium">{app.app_name}</div>
+                          <div className="text-sm text-muted-foreground">{app.app_slug}</div>
+                        </div>
+                      </TableCell>
+                      <TableCell>{app.total_requests.toLocaleString()}</TableCell>
+                      <TableCell>
+                        <span className={app.fallback_requests > 0 ? 'text-orange-600' : 'text-green-600'}>
+                          {app.fallback_requests.toLocaleString()}
+                        </span>
+                      </TableCell>
+                      <TableCell>
+                        <div className="flex items-center gap-2">
+                          <div 
+                            className={`w-2 h-2 rounded-full ${
+                              app.fallback_percentage <= 5 ? 'bg-green-500' : 
+                              app.fallback_percentage <= 15 ? 'bg-yellow-500' : 'bg-red-500'
+                            }`} 
+                          />
+                          <span className={
+                            app.fallback_percentage <= 5 ? 'text-green-700' : 
+                            app.fallback_percentage <= 15 ? 'text-yellow-700' : 'text-red-700'
+                          }>
+                            {app.fallback_percentage ? app.fallback_percentage.toFixed(1) : 0}%
+                          </span>
+                        </div>
+                      </TableCell>
+                      <TableCell>${app.avg_cost_per_request.toFixed(6)}</TableCell>
+                    </TableRow>
+                  )) || []}
+                  {(!fallbackAnalytics?.app_fallback_usage || fallbackAnalytics.app_fallback_usage.length === 0) && (
+                    <TableRow>
+                      <TableCell colSpan={5} className="text-center text-muted-foreground">
+                        No app fallback data available for the selected timeframe
                       </TableCell>
                     </TableRow>
                   )}
