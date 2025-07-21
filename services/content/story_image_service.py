@@ -154,7 +154,9 @@ class StoryImageService:
         # Add audience-appropriate style context
         if target_audience == TargetAudience.KIDS:
             prompt += ", children's book illustration, colorful, friendly, safe for children"
-        else:
+        elif target_audience == TargetAudience.TEEN:
+            prompt += ", young adult book illustration, dynamic, modern, teen-appropriate, relatable style"
+        else:  # adults
             prompt += ", detailed illustration, sophisticated art style, narrative illustration"
         
         # Add quality enhancers for Replicate

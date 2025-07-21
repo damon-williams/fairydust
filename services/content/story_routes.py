@@ -781,8 +781,14 @@ def _build_story_prompt(request: StoryGenerationRequest, user_context: str) -> s
         else "No specific characters required - create original characters as needed."
     )
 
-    # Create varied, unpredictable prompt
-    prompt = f"""You are a master storyteller with infinite creativity. Create a truly unique and surprising story for {request.target_audience.value} audience that takes about {length_descriptions[request.story_length]} to read.
+    # Create varied, unpredictable prompt with audience-specific guidance
+    audience_guidance = {
+        TargetAudience.KIDS: "children (ages 4-12). Focus on adventure, friendship, learning, and wonder. Keep language simple and positive.",
+        TargetAudience.TEEN: "teenagers (ages 13-17). Explore themes of identity, relationships, growing up, and self-discovery. Use contemporary language and relatable situations.",
+        TargetAudience.ADULTS: "adults (18+). Delve into complex emotions, relationships, life challenges, and sophisticated themes. Use mature language and nuanced storytelling."
+    }
+    
+    prompt = f"""You are a master storyteller with infinite creativity. Create a truly unique and surprising story for {audience_guidance[request.target_audience]} The story should take about {length_descriptions[request.story_length]} to read.
 
 {character_text}"""
 

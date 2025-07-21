@@ -77,6 +77,11 @@ class ImageGenerationService:
     ) -> Tuple[str, dict]:
         """Generate image using standard FLUX model (text-only)"""
         
+        print(f"🎭 FLUX GENERATION STARTING")
+        print(f"   Original prompt: {prompt}")
+        print(f"   Style: {style.value}")
+        print(f"   Image size: {image_size.value}")
+        
         # Map our styles to FLUX-optimized prompts
         style_prompts = {
             ImageStyle.REALISTIC: "photorealistic, professional photography, high detail, sharp focus, studio lighting",
@@ -96,6 +101,7 @@ class ImageGenerationService:
             for person in reference_people:
                 people_descriptions.append(f"person ({person.description})")
             enhanced_prompt += f", featuring {', '.join(people_descriptions)}"
+            print(f"   Added {len(reference_people)} people descriptions")
         
         # Add quality enhancers for FLUX
         enhanced_prompt += ", high quality, detailed, professional"
@@ -129,8 +135,15 @@ class ImageGenerationService:
         async with httpx.AsyncClient() as client:
             try:
                 print(f"🤖 REPLICATE REQUEST: {model}")
-                print(f"   Prompt: {prompt[:100]}...")
-                print(f"   Reference People: {len(reference_people)}")
+                print(f"🎨 FULL ENHANCED PROMPT: {enhanced_prompt}")
+                print(f"📏 PROMPT LENGTH: {len(enhanced_prompt)} characters")
+                print(f"👥 REFERENCE PEOPLE: {len(reference_people)}")
+                if 'width' in locals() and 'height' in locals():
+                    print(f"🖼️ IMAGE SIZE: {width}x{height}")
+                elif 'dimensions' in locals():
+                    print(f"🖼️ IMAGE SIZE: {dimensions.get('width', 'unknown')}x{dimensions.get('height', 'unknown')}")
+                print(f"⚙️ REQUEST PAYLOAD:")
+                print(json.dumps(payload, indent=2))
                 
                 response = await client.post(
                     f"https://api.replicate.com/v1/models/{model}/predictions",
@@ -321,8 +334,15 @@ class ImageGenerationService:
         async with httpx.AsyncClient() as client:
             try:
                 print(f"🤖 REPLICATE REQUEST: {model}")
-                print(f"   Prompt: {prompt[:100]}...")
-                print(f"   Reference People: {len(reference_people)}")
+                print(f"🎨 FULL ENHANCED PROMPT: {enhanced_prompt}")
+                print(f"📏 PROMPT LENGTH: {len(enhanced_prompt)} characters")
+                print(f"👥 REFERENCE PEOPLE: {len(reference_people)}")
+                if 'width' in locals() and 'height' in locals():
+                    print(f"🖼️ IMAGE SIZE: {width}x{height}")
+                elif 'dimensions' in locals():
+                    print(f"🖼️ IMAGE SIZE: {dimensions.get('width', 'unknown')}x{dimensions.get('height', 'unknown')}")
+                print(f"⚙️ REQUEST PAYLOAD:")
+                print(json.dumps(payload, indent=2))
                 
                 response = await client.post(
                     f"https://api.replicate.com/v1/models/{model}/predictions",

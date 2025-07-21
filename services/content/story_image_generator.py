@@ -133,6 +133,12 @@ class StoryImageGenerator:
                 target_audience
             )
             
+            logger.info(f"📝 STORY IMAGE PROMPT GENERATION:")
+            logger.info(f"   Scene description: {scene['scene_description']}")
+            logger.info(f"   Characters in scene: {[char.name for char in characters_in_scene]}")
+            logger.info(f"   Target audience: {target_audience.value}")
+            logger.info(f"   Generated prompt: {enhanced_prompt}")
+            
             # Prepare reference people (smart character selection)
             reference_people = []
             if characters_in_scene:
@@ -271,7 +277,11 @@ class StoryImageGenerator:
                     prompt_to_use = self._sanitize_prompt_for_retry(
                         original_prompt, scene, characters_in_scene, target_audience, attempt
                     )
-                    logger.info(f"🔄 RETRY {attempt}: Using sanitized prompt: {prompt_to_use[:100]}...")
+                    logger.info(f"🔄 RETRY {attempt}: Using sanitized prompt:")
+                    logger.info(f"   FULL SANITIZED PROMPT: {prompt_to_use}")
+                else:
+                    logger.info(f"🎯 ATTEMPT {attempt + 1}: Using original prompt:")
+                    logger.info(f"   FULL ORIGINAL PROMPT: {prompt_to_use}")
                 
                 # Try to generate with current prompt
                 image_url, generation_metadata = await image_generation_service.generate_image(

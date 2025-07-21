@@ -82,6 +82,7 @@ class StoryLength(str, Enum):
 
 class TargetAudience(str, Enum):
     KIDS = "kids"
+    TEEN = "teen"
     ADULTS = "adults"
 
 
