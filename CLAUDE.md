@@ -14,6 +14,10 @@ fairydust is a **mobile app backend** that powers a collection of AI-powered min
 - `GOOGLE_PLACES_API_KEY`: Restaurant discovery (content service)
 - `TRIPADVISOR_API_KEY`: Activity search (content service)
 
+### HubSpot CRM Integration
+- `ZAPIER_HUBSPOT_WEBHOOK`: Zapier webhook URL for syncing users to HubSpot
+- `HUBSPOT_WEBHOOK_ENABLED`: Enable/disable HubSpot webhook (optional, default: true)
+
 ### Service Authentication
 - `SERVICE_JWT_TOKEN`: JWT token for service-to-service authentication (apps → ledger)
   - Must be an admin user JWT token for ledger service operations

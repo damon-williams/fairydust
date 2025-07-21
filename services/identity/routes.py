@@ -39,6 +39,7 @@ from shared.redis_client import get_redis
 from shared.sms_service import send_otp_sms
 from shared.daily_bonus_utils import check_daily_bonus_eligibility
 from shared.storage_service import upload_person_photo, delete_person_photo, upload_user_avatar, delete_user_avatar, delete_user_assets
+from shared.hubspot_webhook import send_user_created_webhook, send_user_updated_webhook
 
 
 async def get_daily_bonus_amount(db: Database) -> int:
@@ -206,6 +207,15 @@ async def verify_otp(
             0,  # Starting balance is 0, app will handle initial grants
             "otp",
         )
+        
+        # Send HubSpot webhook for new user (non-blocking)
+        try:
+            await send_user_created_webhook(dict(user))
+        except Exception as e:
+            # Log error but don't block user registration
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.warning(f"HubSpot webhook failed for new user {user['fairyname']}: {e}")
 
     # Check daily login bonus eligibility
     is_bonus_eligible, current_time = await check_daily_bonus_eligibility(
@@ -321,6 +331,15 @@ async def oauth_login(
             provider,
             user_info["provider_id"],
         )
+        
+        # Send HubSpot webhook for new user (non-blocking)
+        try:
+            await send_user_created_webhook(dict(user))
+        except Exception as e:
+            # Log error but don't block user registration
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.warning(f"HubSpot webhook failed for new OAuth user {user['fairyname']}: {e}")
 
     # Check daily login bonus eligibility
     is_bonus_eligible, current_time = await check_daily_bonus_eligibility(
@@ -447,6 +466,9 @@ async def update_user_profile(
     db: Database = Depends(get_db),
 ):
     """Update current user profile"""
+    # Track changed fields for HubSpot webhook
+    changed_fields = []
+    
     # Build update query dynamically
     updates = []
     values = []
@@ -464,21 +486,25 @@ async def update_user_profile(
 
         updates.append(f"fairyname = ${param_count}")
         values.append(update_data.fairyname)
+        changed_fields.append("fairyname")
         param_count += 1
 
     if update_data.email is not None:
         updates.append(f"email = ${param_count}")
         values.append(update_data.email)
+        changed_fields.append("email")
         param_count += 1
 
     if update_data.phone is not None:
         updates.append(f"phone = ${param_count}")
         values.append(update_data.phone)
+        changed_fields.append("phone")
         param_count += 1
 
     if update_data.first_name is not None:
         updates.append(f"first_name = ${param_count}")
         values.append(update_data.first_name)
+        changed_fields.append("first_name")
         param_count += 1
 
     if update_data.birth_date is not None:
@@ -489,6 +515,7 @@ async def update_user_profile(
         except ValueError:
             raise HTTPException(status_code=400, detail="Invalid birth_date format. Use YYYY-MM-DD")
         values.append(birth_date_obj)
+        changed_fields.append("birth_date")
         param_count += 1
 
     if update_data.is_onboarding_completed is not None:
@@ -498,6 +525,7 @@ async def update_user_profile(
         )
         updates.append(f"is_onboarding_completed = ${param_count}")
         values.append(update_data.is_onboarding_completed)
+        changed_fields.append("is_onboarding_completed")
         param_count += 1
 
     if not updates:
@@ -522,6 +550,16 @@ async def update_user_profile(
         f"✅ USER_UPDATE: Updated user {current_user.user_id} - is_onboarding_completed: {user.get('is_onboarding_completed')}",
         flush=True,
     )
+
+    # Send HubSpot webhook for user update (non-blocking)
+    if changed_fields:  # Only send if there were actual changes
+        try:
+            await send_user_updated_webhook(dict(user), changed_fields)
+        except Exception as e:
+            # Log error but don't block user update
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.warning(f"HubSpot webhook failed for user update {user['fairyname']}: {e}")
 
     return User(**user)
 
