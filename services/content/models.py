@@ -105,6 +105,7 @@ class StoryGenerationRequest(BaseModel):
     custom_prompt: Optional[str] = Field(None, max_length=1000)
     target_audience: TargetAudience = TargetAudience.KIDS
     session_id: Optional[UUID] = None
+    include_images: bool = False
 
 
 class StoryGenerationMetadata(BaseModel):
@@ -185,6 +186,9 @@ class UserStoryNew(BaseModel):
     created_at: datetime
     is_favorited: bool = False
     metadata: dict = Field(default_factory=dict)
+    has_images: bool = False
+    images_complete: bool = False
+    image_ids: Optional[list[str]] = Field(default_factory=list)
 
     class Config:
         from_attributes = True
@@ -229,6 +233,23 @@ class StoryErrorResponse(BaseModel):
     valid_genres: Optional[list[str]] = None
     valid_lengths: Optional[list[dict]] = None
     story_id: Optional[UUID] = None
+
+
+# Story Image Models
+class StoryImageStatus(BaseModel):
+    status: str  # "pending", "generating", "completed", "failed"
+    url: Optional[str] = None
+
+
+class StoryImageStatusResponse(BaseModel):
+    success: bool = True
+    status: str
+    url: Optional[str] = None
+
+
+class StoryImageBatchResponse(BaseModel):
+    success: bool = True
+    images: dict[str, StoryImageStatus]
 
 
 # Fortune Teller App Models

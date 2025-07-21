@@ -20,6 +20,9 @@ from models import (
     StoryFavoriteResponse,
     StoryGenerationRequest,
     StoryGenerationResponseNew,
+    StoryImageStatusResponse,
+    StoryImageBatchResponse,
+    StoryImageStatus,
     StoryLength,
     TargetAudience,
     TokenUsage,
@@ -31,6 +34,8 @@ from shared.database import Database, get_db
 from shared.json_utils import parse_jsonb_field
 from shared.llm_pricing import calculate_llm_cost
 from shared.llm_usage_logger import calculate_prompt_hash, create_request_metadata, log_llm_usage
+from story_image_service import story_image_service
+from story_image_generator import story_image_generator
 
 router = APIRouter()
 
@@ -159,11 +164,52 @@ async def generate_story(
 
         print(f"✅ STORY: Generated story for user {request.user_id}", flush=True)
 
+        # Handle image generation if requested
+        final_content = story_content
+        image_ids = []
+        has_images = False
+        
+        if request.include_images:
+            print(f"🎨 STORY: Processing images for story {story_id}", flush=True)
+            try:
+                # Extract scenes for image generation
+                scenes = story_image_service.extract_image_scenes(
+                    story_content, request.story_length, request.characters
+                )
+                
+                # Insert image markers into story content
+                final_content = story_image_service.insert_image_markers(story_content, scenes)
+                image_ids = [scene['image_id'] for scene in scenes]
+                has_images = True
+                
+                # Update story in database with image markers and metadata
+                await _update_story_with_images(db, story_id, final_content, image_ids, has_images)
+                
+                # Start background image generation (don't await - let it run async)
+                asyncio.create_task(
+                    story_image_generator.generate_story_images_background(
+                        story_id=str(story_id),
+                        user_id=str(request.user_id),
+                        scenes=scenes,
+                        characters=request.characters,
+                        target_audience=request.target_audience,
+                        db=db
+                    )
+                )
+                
+                print(f"🚀 STORY: Started background image generation for {len(scenes)} images", flush=True)
+                
+            except Exception as e:
+                print(f"❌ STORY: Failed to process images: {str(e)}", flush=True)
+                # Continue without images rather than failing the whole request
+                has_images = False
+                image_ids = []
+
         # Build response
         story = UserStoryNew(
             id=story_id,
             title=title,
-            content=story_content,
+            content=final_content,
             story_length=request.story_length,
             target_audience=request.target_audience,
             word_count=word_count,
@@ -174,6 +220,9 @@ async def generate_story(
                 "characters": [char.dict() for char in request.characters],
                 "custom_prompt": request.custom_prompt,
             },
+            has_images=has_images,
+            images_complete=False,  # Images are generating in background
+            image_ids=image_ids if has_images else None,
         )
 
         return StoryGenerationResponseNew(
@@ -226,7 +275,8 @@ async def get_user_stories(
         # Build query with filters
         base_query = """
             SELECT id, title, content, story_length, target_audience,
-                   word_count, is_favorited, created_at, metadata
+                   word_count, is_favorited, created_at, metadata,
+                   has_images, images_complete, image_data
             FROM user_stories
             WHERE user_id = $1
         """
@@ -300,6 +350,11 @@ async def get_user_stories(
         stories = []
         for row in rows:
             estimated_reading_time = _calculate_reading_time(row["word_count"] or 0)
+            
+            # Parse image data
+            image_data = parse_jsonb_field(row["image_data"]) or {}
+            image_ids = image_data.get("image_ids", []) if row["has_images"] else []
+            
             story = UserStoryNew(
                 id=row["id"],
                 title=row["title"],
@@ -311,6 +366,9 @@ async def get_user_stories(
                 created_at=row["created_at"],
                 is_favorited=row["is_favorited"],
                 metadata=parse_jsonb_field(row["metadata"]) or {},
+                has_images=row["has_images"] or False,
+                images_complete=row["images_complete"] or False,
+                image_ids=image_ids if image_ids else None,
             )
             stories.append(story)
 
@@ -757,7 +815,9 @@ def _build_story_prompt(request: StoryGenerationRequest, user_context: str) -> s
     if request.custom_prompt:
         prompt += f"\nSpecial request: {request.custom_prompt}"
 
-    if user_context != "general user":
+    # Only add personalization context if no specific characters are provided
+    # This avoids confusion between character list and people context
+    if user_context != "general user" and not request.characters:
         prompt += f"\nPersonalization context: {user_context}"
 
     prompt += f"""
@@ -1132,3 +1192,149 @@ async def _save_story(
     except Exception as e:
         print(f"❌ STORY_SAVE: Error saving story: {str(e)}", flush=True)
         raise HTTPException(status_code=500, detail="Failed to save story")
+
+
+async def _update_story_with_images(
+    db: Database, 
+    story_id: uuid.UUID, 
+    final_content: str, 
+    image_ids: list[str], 
+    has_images: bool
+):
+    """Update story with image markers and metadata"""
+    try:
+        image_data = {
+            "image_ids": image_ids,
+            "has_images": has_images,
+            "images_complete": False
+        }
+        
+        await db.execute(
+            """
+            UPDATE user_stories 
+            SET content = $1, has_images = $2, images_complete = $3, image_data = $4
+            WHERE id = $5
+            """,
+            final_content,
+            has_images,
+            False,  # images_complete starts as False
+            json.dumps(image_data),
+            story_id
+        )
+        
+        print(f"✅ STORY_IMAGE_UPDATE: Updated story {story_id} with image metadata", flush=True)
+        
+    except Exception as e:
+        print(f"❌ STORY_IMAGE_UPDATE: Failed to update story with images: {str(e)}", flush=True)
+        raise
+
+
+# Story Image Status Endpoints
+@router.get("/stories/{story_id}/images/{image_id}", response_model=StoryImageStatusResponse)
+async def get_story_image_status(
+    story_id: str,
+    image_id: str,
+    current_user: TokenData = Depends(get_current_user),
+    db: Database = Depends(get_db),
+):
+    """Get status and URL of specific story image"""
+    
+    try:
+        # Verify the story belongs to the user
+        story = await db.fetch_one(
+            "SELECT user_id FROM user_stories WHERE id = $1",
+            story_id
+        )
+        
+        if not story:
+            raise HTTPException(status_code=404, detail="Story not found")
+        
+        if current_user.user_id != str(story["user_id"]) and not current_user.is_admin:
+            raise HTTPException(status_code=403, detail="Access denied")
+        
+        # Get image status
+        image_data = await db.fetch_one(
+            "SELECT url, status FROM story_images WHERE story_id = $1 AND image_id = $2",
+            story_id, image_id
+        )
+        
+        if not image_data:
+            return StoryImageStatusResponse(
+                success=False,
+                status="not_found",
+                url=None
+            )
+        
+        return StoryImageStatusResponse(
+            status=image_data["status"],
+            url=image_data["url"] if image_data["status"] == "completed" else None
+        )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"❌ STORY_IMAGE_STATUS: Error getting image status: {str(e)}", flush=True)
+        raise HTTPException(status_code=500, detail="Failed to get image status")
+
+
+@router.get("/stories/{story_id}/images/batch", response_model=StoryImageBatchResponse)
+async def get_story_images_batch_status(
+    story_id: str,
+    ids: str = Query(..., description="Comma-separated list of image IDs"),
+    current_user: TokenData = Depends(get_current_user),
+    db: Database = Depends(get_db),
+):
+    """Get status and URLs of multiple story images at once"""
+    
+    try:
+        # Verify the story belongs to the user
+        story = await db.fetch_one(
+            "SELECT user_id FROM user_stories WHERE id = $1",
+            story_id
+        )
+        
+        if not story:
+            raise HTTPException(status_code=404, detail="Story not found")
+        
+        if current_user.user_id != str(story["user_id"]) and not current_user.is_admin:
+            raise HTTPException(status_code=403, detail="Access denied")
+        
+        # Parse image IDs
+        image_ids = [img_id.strip() for img_id in ids.split(",") if img_id.strip()]
+        
+        if not image_ids:
+            return StoryImageBatchResponse(images={})
+        
+        # Get all image statuses
+        images = await db.fetch_all(
+            """
+            SELECT image_id, url, status 
+            FROM story_images 
+            WHERE story_id = $1 AND image_id = ANY($2)
+            """,
+            story_id, image_ids
+        )
+        
+        # Build response
+        image_statuses = {}
+        for image in images:
+            image_statuses[image["image_id"]] = StoryImageStatus(
+                status=image["status"],
+                url=image["url"] if image["status"] == "completed" else None
+            )
+        
+        # Add not_found status for missing images
+        for image_id in image_ids:
+            if image_id not in image_statuses:
+                image_statuses[image_id] = StoryImageStatus(
+                    status="not_found",
+                    url=None
+                )
+        
+        return StoryImageBatchResponse(images=image_statuses)
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"❌ STORY_IMAGE_BATCH: Error getting batch image status: {str(e)}", flush=True)
+        raise HTTPException(status_code=500, detail="Failed to get batch image status")

@@ -673,6 +673,15 @@ async def create_tables():
         """
     )
 
+    # Add image support columns to user_stories table
+    await db.execute_schema(
+        """
+        ALTER TABLE user_stories ADD COLUMN IF NOT EXISTS has_images BOOLEAN DEFAULT FALSE;
+        ALTER TABLE user_stories ADD COLUMN IF NOT EXISTS images_complete BOOLEAN DEFAULT FALSE;
+        ALTER TABLE user_stories ADD COLUMN IF NOT EXISTS image_data JSONB DEFAULT '{}';
+        """
+    )
+
     # Create index for target_audience after column is added
     await db.execute_schema(
         """
@@ -781,6 +790,31 @@ async def create_tables():
         CREATE INDEX IF NOT EXISTS idx_story_logs_user_id ON story_generation_logs(user_id);
         CREATE INDEX IF NOT EXISTS idx_story_logs_created_at ON story_generation_logs(created_at DESC);
         CREATE INDEX IF NOT EXISTS idx_story_logs_success ON story_generation_logs(success, created_at DESC);
+    """
+    )
+
+    # Story images table for tracking individual image generation
+    await db.execute_schema(
+        """
+        CREATE TABLE IF NOT EXISTS story_images (
+            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            story_id UUID NOT NULL REFERENCES user_stories(id) ON DELETE CASCADE,
+            user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            image_id VARCHAR(50) NOT NULL,
+            url TEXT,
+            prompt TEXT NOT NULL,
+            scene_description TEXT NOT NULL,
+            status VARCHAR(20) NOT NULL DEFAULT 'pending',
+            generation_metadata JSONB DEFAULT '{}',
+            created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE(story_id, image_id)
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_story_images_story_id ON story_images(story_id);
+        CREATE INDEX IF NOT EXISTS idx_story_images_user_id ON story_images(user_id);
+        CREATE INDEX IF NOT EXISTS idx_story_images_status ON story_images(status);
+        CREATE INDEX IF NOT EXISTS idx_story_images_created_at ON story_images(created_at DESC);
     """
     )
 
