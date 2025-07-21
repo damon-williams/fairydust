@@ -321,7 +321,7 @@ class ImageGenerationService:
                 "reference_images": reference_images,
                 "reference_tags": reference_tags,
                 "aspect_ratio": aspect_ratio,
-                "resolution": "1080p"
+                "resolution": "720p"
             }
         }
         

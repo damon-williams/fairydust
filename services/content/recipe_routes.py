@@ -4,7 +4,8 @@ import os
 import re
 import uuid
 from datetime import datetime
-from typing import Optional
+from typing import Optional, Tuple, Dict
+from uuid import UUID
 
 import httpx
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
@@ -33,6 +34,7 @@ from shared.database import Database, get_db
 from shared.json_utils import parse_jsonb_field
 from shared.llm_pricing import calculate_llm_cost
 from shared.llm_usage_logger import calculate_prompt_hash, create_request_metadata, log_llm_usage
+from shared.llm_client import llm_client, LLMError
 
 router = APIRouter()
 
@@ -96,77 +98,35 @@ async def generate_recipe(
         )
         print("🥗 RECIPE: Retrieved dietary preferences", flush=True)
 
-        # Generate recipe using LLM
-        (
-            recipe_content,
-            title,
-            servings,
-            prep_time,
-            cook_time,
-            model_used,
-            tokens_used,
-            cost,
-            provider,
-        ) = await _generate_recipe_llm(
-            dish=request.dish,
-            complexity=request.complexity,
-            include_ingredients=request.include_ingredients,
-            exclude_ingredients=request.exclude_ingredients,
-            total_people=request.total_people,
-            user_context=user_context,
-            dietary_preferences=dietary_preferences,
-        )
-
-        if not recipe_content:
+        # Generate recipe using centralized LLM client
+        try:
+            recipe_content, generation_metadata = await _generate_recipe_llm_new(
+                dish=request.dish,
+                complexity=request.complexity,
+                include_ingredients=request.include_ingredients,
+                exclude_ingredients=request.exclude_ingredients,
+                total_people=request.total_people,
+                user_context=user_context,
+                dietary_preferences=dietary_preferences,
+                user_id=request.user_id,
+            )
+            
+            # Extract metadata
+            title = _extract_recipe_title(recipe_content, request.dish)
+            prep_time = _extract_time(recipe_content, "Prep Time:")
+            cook_time = _extract_time(recipe_content, "Cook Time:")
+            model_used = generation_metadata["model_id"]
+            tokens_used = generation_metadata["tokens_used"]
+            cost = generation_metadata["cost_usd"]
+            provider = generation_metadata["provider"]
+            
+        except LLMError as e:
+            print(f"❌ RECIPE: LLM generation failed: {e}")
             return RecipeErrorResponse(error="Failed to generate recipe. Please try again.")
 
-        print(f"🤖 RECIPE: Generated recipe: {title}", flush=True)
+        print(f"🤖 RECIPE: Generated recipe: {title} (using {provider}/{model_used})", flush=True)
 
-        # Log LLM usage for analytics (background task)
-        try:
-            # Use a simple prompt hash based on key parameters
-            prompt_components = f"{request.dish or 'any'}_{request.complexity}_{request.total_people}_{request.include_ingredients or ''}_{request.exclude_ingredients or ''}"
-            prompt_hash = calculate_prompt_hash(prompt_components)
-
-            # Create request metadata
-            request_metadata = create_request_metadata(
-                action="recipe-generate",
-                parameters={
-                    "dish": request.dish,
-                    "complexity": request.complexity.value,
-                    "include_ingredients": request.include_ingredients,
-                    "exclude_ingredients": request.exclude_ingredients,
-                    "total_people": request.total_people,
-                    "has_selected_people": bool(request.selected_people),
-                    "selected_people_count": len(request.selected_people)
-                    if request.selected_people
-                    else 0,
-                },
-                user_context=user_context if user_context != "general user" else None,
-                session_id=str(request.session_id) if request.session_id else None,
-            )
-
-            # Log usage asynchronously (don't block recipe generation on logging failures)
-            await log_llm_usage(
-                user_id=request.user_id,
-                app_id="fairydust-recipe",
-                provider=provider,
-                model_id=model_used,
-                prompt_tokens=tokens_used.get("prompt", 0),
-                completion_tokens=tokens_used.get("completion", 0),
-                total_tokens=tokens_used.get("total", 0),
-                cost_usd=cost,
-                latency_ms=0,  # Recipe routes don't track latency yet
-                prompt_hash=prompt_hash,
-                finish_reason="stop",
-                was_fallback=False,
-                fallback_reason=None,
-                request_metadata=request_metadata,
-                auth_token=auth_token,
-            )
-        except Exception as e:
-            print(f"⚠️ RECIPE: Failed to log LLM usage: {str(e)}", flush=True)
-            # Continue with recipe generation even if logging fails
+        # LLM usage is automatically logged by the centralized client
 
         # Save recipe to database
         recipe_metadata = {
@@ -1637,3 +1597,103 @@ IMPORTANT:
     except Exception as e:
         print(f"❌ RECIPE_ADJUST_LLM: Error adjusting recipe: {str(e)}", flush=True)
         return None, None, None, None, None, "unknown", {}, 0.0, 0, "unknown"
+
+
+async def _generate_recipe_llm_new(
+    dish: Optional[str],
+    complexity: RecipeComplexity,
+    include_ingredients: Optional[str],
+    exclude_ingredients: Optional[str],
+    total_people: int,
+    user_context: str,
+    dietary_preferences: list[str],
+    user_id: UUID,
+) -> Tuple[str, Dict]:
+    """
+    Generate recipe using centralized LLM client with automatic retry and fallback.
+    
+    Returns:
+        Tuple[str, Dict]: (recipe_content, generation_metadata)
+    """
+    
+    # Get app configuration
+    app_config = await _get_llm_model_config()
+    
+    # Build prompt (same logic as original function)
+    dish_text = f" for {dish}" if dish else ""
+    servings_text = "person" if total_people == 1 else "people"
+    
+    preferences_text = ""
+    if include_ingredients:
+        preferences_text += f" that includes {include_ingredients}"
+    
+    dietary_text = ""
+    if dietary_preferences:
+        dietary_text = f" accommodating these dietary needs: {', '.join(dietary_preferences)}"
+    
+    personalization_text = ""
+    if user_context and user_context != "general user":
+        personalization_text = f"\n\nPersonalization Context: {user_context}"
+    
+    # Build complexity-specific guidance
+    complexity_guidance = {
+        RecipeComplexity.SIMPLE: "Focus on easy-to-find ingredients and basic cooking techniques. Instructions should be beginner-friendly with simple steps. Avoid specialized equipment or advanced techniques.",
+        RecipeComplexity.MEDIUM: "Use moderate cooking techniques and some specialty ingredients. Include techniques like sautéing, roasting, or braising. May require basic kitchen skills and equipment.",
+        RecipeComplexity.GOURMET: "Create an elevated, restaurant-quality dish with sophisticated flavors and advanced techniques. Use high-quality ingredients, complex flavor profiles, specialized equipment, and professional cooking methods. Include techniques like reduction sauces, proper knife work, temperature control, plating presentation, and culinary terminology. This should be a dish worthy of a fine dining establishment.",
+    }
+    
+    complexity_instruction = complexity_guidance[complexity]
+    
+    prompt = f"""Generate a {complexity.value} recipe{dish_text} that serves {total_people} {servings_text}{preferences_text}{dietary_text}{personalization_text}
+
+{complexity_instruction}
+
+Provide the recipe in this exact format:
+
+🍽️ **Recipe Name**
+
+**Prep Time:** X minutes
+**Cook Time:** X minutes
+**Servings:** {total_people}
+
+**Ingredients:**
+• List ingredients with amounts for {total_people} servings
+• Use bullet points with exact amounts
+• Scale ingredients appropriately for the serving size
+
+**Instructions:**
+1. Step-by-step instructions
+2. Clear and easy to follow
+3. Include cooking times and temperatures
+
+**Nutritional Info:** Per serving - 450 calories | Protein: 25g | Carbs: 35g | Fat: 18g | Fiber: 3g
+
+**Cooking Tip:**
+One helpful tip for success with this recipe.
+
+IMPORTANT: Always include the Nutritional Info section with estimated values."""
+    
+    # Create request metadata for logging
+    request_metadata = {
+        "parameters": {
+            "dish": dish,
+            "complexity": complexity.value,
+            "include_ingredients": include_ingredients,
+            "exclude_ingredients": exclude_ingredients,
+            "total_people": total_people,
+            "has_dietary_preferences": bool(dietary_preferences),
+        },
+        "user_context": user_context if user_context != "general user" else None,
+    }
+    
+    # Generate using centralized client
+    completion, metadata = await llm_client.generate_completion(
+        prompt=prompt,
+        app_config=app_config,
+        user_id=user_id,
+        app_id="fairydust-recipe",
+        action="recipe-generate",
+        request_metadata=request_metadata
+    )
+    
+    return completion, metadata
