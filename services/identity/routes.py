@@ -263,9 +263,9 @@ async def oauth_login(
 ):
     """Handle OAuth callback and create/login user"""
     
-    # Handle native Apple Sign-In (mobile apps)
-    if provider == "apple" and callback.id_token and not callback.code:
-        # Native flow - ID token provided directly
+    # Handle native Apple Sign-In (mobile apps) - prioritize this for Apple
+    if provider == "apple" and callback.id_token:
+        # Native flow - ID token provided directly (prioritize over code for Apple)
         print(f"📱 APPLE: Native Sign-In flow detected (ID token provided)")
         access_token = None  # Not used in native flow
         id_token = callback.id_token
@@ -310,57 +310,94 @@ async def oauth_login(
     is_new_user = False
 
     if not user:
-        # Create new user
-        is_new_user = True
-
-        user_id = uuid4()
-        fairyname = generate_fairyname()
-
-        # Check fairyname uniqueness with limited retries to prevent infinite loops
-        max_retries = 10
-        for _ in range(max_retries):
-            if not await db.fetch_one("SELECT id FROM users WHERE fairyname = $1", fairyname):
-                break
-            fairyname = generate_fairyname()
-        else:
-            # If we couldn't find unique name after 10 tries, add timestamp
-            import time
-
-            fairyname = f"{fairyname}{int(time.time() % 10000)}"
-
-        # Create user
-        user = await db.fetch_one(
-            """
-            INSERT INTO users (id, fairyname, email, dust_balance, auth_provider)
-            VALUES ($1, $2, $3, $4, $5)
-            RETURNING *
-            """,
-            user_id,
-            fairyname,
-            user_info.get("email"),
-            0,  # Starting balance is 0, app will handle initial grants
-            provider,
-        )
-
-        # Link OAuth provider
-        await db.execute(
-            """
-            INSERT INTO user_auth_providers (user_id, provider, provider_user_id)
-            VALUES ($1, $2, $3)
-            """,
-            user_id,
-            provider,
-            user_info["provider_id"],
+        # Check if user exists with this email (for account linking)
+        existing_user = await db.fetch_one(
+            "SELECT * FROM users WHERE email = $1",
+            user_info.get("email")
         )
         
-        # Send HubSpot webhook for new user (non-blocking)
-        try:
-            await send_user_created_webhook(dict(user))
-        except Exception as e:
-            # Log error but don't block user registration
-            import logging
-            logger = logging.getLogger(__name__)
-            logger.warning(f"HubSpot webhook failed for new OAuth user {user['fairyname']}: {e}")
+        if existing_user:
+            # Link OAuth provider to existing user account
+            print(f"🔗 OAUTH: Linking {provider} to existing user account with email {user_info.get('email')}")
+            
+            # Check if this OAuth provider is already linked
+            existing_link = await db.fetch_one(
+                "SELECT * FROM user_auth_providers WHERE user_id = $1 AND provider = $2",
+                existing_user["id"],
+                provider
+            )
+            
+            if not existing_link:
+                # Link the OAuth provider to existing user
+                await db.execute(
+                    """
+                    INSERT INTO user_auth_providers (user_id, provider, provider_user_id)
+                    VALUES ($1, $2, $3)
+                    """,
+                    existing_user["id"],
+                    provider,
+                    user_info["provider_id"],
+                )
+                print(f"✅ OAUTH: Successfully linked {provider} to existing user {existing_user['fairyname']}")
+            else:
+                print(f"ℹ️ OAUTH: {provider} already linked to user {existing_user['fairyname']}")
+            
+            user = existing_user
+            is_new_user = False
+        else:
+            # Create new user
+            is_new_user = True
+
+            user_id = uuid4()
+            fairyname = generate_fairyname()
+
+            # Check fairyname uniqueness with limited retries to prevent infinite loops
+            max_retries = 10
+            for _ in range(max_retries):
+                if not await db.fetch_one("SELECT id FROM users WHERE fairyname = $1", fairyname):
+                    break
+                fairyname = generate_fairyname()
+            else:
+                # If we couldn't find unique name after 10 tries, add timestamp
+                import time
+
+                fairyname = f"{fairyname}{int(time.time() % 10000)}"
+
+            # Create user
+            user = await db.fetch_one(
+                """
+                INSERT INTO users (id, fairyname, email, dust_balance, auth_provider)
+                VALUES ($1, $2, $3, $4, $5)
+                RETURNING *
+                """,
+                user_id,
+                fairyname,
+                user_info.get("email"),
+                0,  # Starting balance is 0, app will handle initial grants
+                provider,
+            )
+
+            # Link OAuth provider
+            await db.execute(
+                """
+                INSERT INTO user_auth_providers (user_id, provider, provider_user_id)
+                VALUES ($1, $2, $3)
+                """,
+                user_id,
+                provider,
+                user_info["provider_id"],
+            )
+            
+            print(f"👤 OAUTH: Created new user {fairyname} with {provider} authentication")
+            
+            # Send HubSpot webhook for new user (non-blocking)
+            try:
+                await send_user_created_webhook(dict(user))
+            except Exception as e:
+                # Log error but don't block user registration
+                import logging
+                logger = logging.getLogger(__name__)
+                logger.warning(f"HubSpot webhook failed for new OAuth user {user['fairyname']}: {e}")
 
     # Check daily login bonus eligibility
     is_bonus_eligible, current_time = await check_daily_bonus_eligibility(
