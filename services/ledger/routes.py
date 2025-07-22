@@ -16,6 +16,7 @@ from models import (
     BulkGrantRequest,
     ConsumeRequest,
     GrantRequest,
+    InAppPurchaseRequest,
     PromotionalGrantRequest,
     PurchaseRequest,
     RefundRequest,
@@ -194,6 +195,41 @@ async def record_purchase(
         dust_amount=request.amount,
         payment_id=request.payment_id,
         payment_amount_cents=request.payment_amount_cents,
+    )
+
+
+@transaction_router.post("/purchase/in-app", response_model=TransactionResponse)
+async def process_in_app_purchase(
+    request: InAppPurchaseRequest,
+    current_user: TokenData = Depends(get_current_user),
+    ledger: LedgerService = Depends(get_ledger_service),
+):
+    """Process in-app purchase from mobile app stores"""
+    # Users can only make purchases for themselves
+    user_id = UUID(current_user.user_id)
+    
+    # Map product IDs to DUST amounts
+    dust_amounts = {
+        "dust_50": 50,
+        "dust_100": 100,
+        "dust_200": 200,
+        "dust_500": 500,
+        "dust_1000": 1000,
+    }
+    
+    dust_amount = dust_amounts[request.product_id]
+    
+    # For now, we'll create the transaction without receipt verification
+    # TODO: Add Apple/Google receipt verification
+    import secrets
+    purchase_id = f"{request.platform}_{request.product_id}_{secrets.token_hex(8)}"
+    
+    # Record the purchase
+    return await ledger.record_purchase(
+        user_id=user_id,
+        dust_amount=dust_amount,
+        payment_id=purchase_id,
+        payment_amount_cents=dust_amount,  # 1 DUST = 1 cent for mapping purposes
     )
 
 

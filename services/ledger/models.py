@@ -184,6 +184,26 @@ class PurchaseRequest(BaseModel):
     payment_amount_cents: int = Field(..., gt=0, description="Amount paid in cents")
 
 
+class InAppPurchaseRequest(BaseModel):
+    product_id: str = Field(..., description="Product ID from app store")
+    receipt_data: str = Field(..., description="Base64 encoded receipt data")
+    platform: str = Field(..., description="Platform: 'ios' or 'android'")
+    
+    @validator("product_id")
+    def validate_product_id(cls, v):
+        # Validate against known DUST purchase product IDs
+        valid_products = {"dust_50", "dust_100", "dust_200", "dust_500", "dust_1000"}
+        if v not in valid_products:
+            raise ValueError(f"Invalid product_id. Must be one of: {', '.join(valid_products)}")
+        return v
+    
+    @validator("platform")
+    def validate_platform(cls, v):
+        if v not in ["ios", "android"]:
+            raise ValueError("Platform must be 'ios' or 'android'")
+        return v
+
+
 # Response models
 class Balance(BaseModel):
     user_id: UUID
