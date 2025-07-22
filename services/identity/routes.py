@@ -262,16 +262,35 @@ async def oauth_login(
     auth_service: AuthService = Depends(lambda r=Depends(get_redis): AuthService(r)),
 ):
     """Handle OAuth callback and create/login user"""
-    # Exchange code for token
-    token_response = await auth_service.get_oauth_token(provider, callback.code)
-    access_token = token_response.get("access_token")
-
-    if not access_token:
-        raise HTTPException(status_code=400, detail="Failed to get access token")
-
+    
+    # Handle native Apple Sign-In (mobile apps)
+    if provider == "apple" and callback.id_token and not callback.code:
+        # Native flow - ID token provided directly
+        print(f"📱 APPLE: Native Sign-In flow detected (ID token provided)")
+        access_token = None  # Not used in native flow
+        id_token = callback.id_token
+        apple_user_data = callback.user
+        
+    # Handle web OAuth flows (including web Apple Sign-In)
+    elif callback.code:
+        # Web OAuth flow - exchange code for tokens
+        print(f"🌐 {provider.upper()}: Web OAuth flow detected (authorization code provided)")
+        token_response = await auth_service.get_oauth_token(provider, callback.code)
+        access_token = token_response.get("access_token")
+        
+        if not access_token:
+            raise HTTPException(status_code=400, detail="Failed to get access token")
+        
+        id_token = token_response.get("id_token") if provider == "apple" else None
+        apple_user_data = callback.user if provider == "apple" else None
+    
+    else:
+        raise HTTPException(
+            status_code=400, 
+            detail="Either 'code' (web OAuth) or 'id_token' (native Apple Sign-In) must be provided"
+        )
+    
     # Get user info from provider
-    id_token = token_response.get("id_token") if provider == "apple" else None
-    apple_user_data = callback.user if provider == "apple" else None
     user_info = await auth_service.get_oauth_user_info(provider, access_token, id_token, apple_user_data)
 
     if not user_info.get("provider_id"):

@@ -181,15 +181,21 @@ class AuthService:
             try:
                 # Decode ID token without verification (Apple's public keys would be needed for full verification)
                 # In production, you should verify the signature using Apple's public keys
+                print(f"🔍 APPLE: Decoding ID token for user info extraction")
                 decoded_token = jwt.decode(id_token, options={"verify_signature": False})
+                print(f"📄 APPLE: Decoded token claims: {list(decoded_token.keys())}")
                 
                 normalized["provider_id"] = decoded_token.get("sub")
                 normalized["email"] = decoded_token.get("email")
                 
+                print(f"👤 APPLE: Provider ID: {normalized['provider_id']}")
+                print(f"📧 APPLE: Email: {normalized['email']}")
+                
                 # Apple provides name only in the first authorization request
                 # Check user_data first, then fallback to token
                 if user_data and user_data.get("name"):
-                    # User data from first sign-in
+                    # User data from first sign-in (native apps)
+                    print(f"📝 APPLE: Using name from user_data: {user_data['name']}")
                     name_data = user_data["name"]
                     if isinstance(name_data, dict):
                         # Format: {"firstName": "John", "lastName": "Doe"}
@@ -200,12 +206,17 @@ class AuthService:
                         normalized["name"] = str(name_data)
                 else:
                     # Fallback to token (usually empty after first sign-in)
-                    normalized["name"] = decoded_token.get("name")
+                    token_name = decoded_token.get("name")
+                    print(f"📝 APPLE: Using name from token: {token_name}")
+                    normalized["name"] = token_name
                 
                 # Apple doesn't provide profile pictures
                 normalized["picture"] = None
                 
+                print(f"✅ APPLE: Normalized user info: {normalized}")
+                
             except jwt.InvalidTokenError as e:
+                print(f"❌ APPLE: JWT decode error: {str(e)}")
                 raise HTTPException(status_code=400, detail=f"Invalid Apple ID token: {str(e)}")
         
         else:

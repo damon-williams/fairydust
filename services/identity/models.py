@@ -45,9 +45,19 @@ class RefreshTokenRequest(BaseModel):
 
 class OAuthCallback(BaseModel):
     provider: Literal["google", "apple", "facebook"]
-    code: str
+    code: Optional[str] = None  # Web OAuth flow
+    id_token: Optional[str] = None  # Native Apple Sign-In flow
     state: Optional[str] = None
     user: Optional[dict] = None  # Apple provides user data on first sign-in
+    
+    @field_validator('code', 'id_token')
+    @classmethod
+    def validate_auth_data(cls, v, info):
+        # At least one of code or id_token must be provided
+        values = info.data
+        if not values.get('code') and not values.get('id_token'):
+            raise ValueError('Either code (web OAuth) or id_token (native Apple Sign-In) must be provided')
+        return v
 
 
 # User models
