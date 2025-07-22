@@ -10,14 +10,17 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from ledger_service import LedgerService
 from models import (
     AppInitialGrantRequest,
-    AppStreakGrantRequest,
+    DailyBonusGrantRequest,
     Balance,
     BalanceAdjustment,
     BulkGrantRequest,
     ConsumeRequest,
     GrantRequest,
+    InAppPurchaseRequest,
+    PromotionalGrantRequest,
     PurchaseRequest,
     RefundRequest,
+    ReferralRewardGrantRequest,
     TransactionList,
     TransactionResponse,
     TransactionType,
@@ -192,6 +195,41 @@ async def record_purchase(
         dust_amount=request.amount,
         payment_id=request.payment_id,
         payment_amount_cents=request.payment_amount_cents,
+    )
+
+
+@transaction_router.post("/purchase/in-app", response_model=TransactionResponse)
+async def process_in_app_purchase(
+    request: InAppPurchaseRequest,
+    current_user: TokenData = Depends(get_current_user),
+    ledger: LedgerService = Depends(get_ledger_service),
+):
+    """Process in-app purchase from mobile app stores"""
+    # Users can only make purchases for themselves
+    user_id = UUID(current_user.user_id)
+    
+    # Map product IDs to DUST amounts
+    dust_amounts = {
+        "dust_50": 50,
+        "dust_100": 100,
+        "dust_200": 200,
+        "dust_500": 500,
+        "dust_1000": 1000,
+    }
+    
+    dust_amount = dust_amounts[request.product_id]
+    
+    # For now, we'll create the transaction without receipt verification
+    # TODO: Add Apple/Google receipt verification
+    import secrets
+    purchase_id = f"{request.platform}_{request.product_id}_{secrets.token_hex(8)}"
+    
+    # Record the purchase
+    return await ledger.record_purchase(
+        user_id=user_id,
+        dust_amount=dust_amount,
+        payment_id=purchase_id,
+        payment_amount_cents=dust_amount,  # 1 DUST = 1 cent for mapping purposes
     )
 
 
@@ -572,19 +610,19 @@ async def grant_initial_dust(
     )
 
 
-@grants_router.post("/app-streak", response_model=TransactionResponse)
-async def grant_streak_bonus(
-    request: AppStreakGrantRequest,
+@grants_router.post("/daily-bonus", response_model=TransactionResponse)
+async def grant_daily_bonus(
+    request: DailyBonusGrantRequest,
     current_user: TokenData = Depends(get_current_user),
     ledger: LedgerService = Depends(get_ledger_service),
     db: Database = Depends(get_db),
     cache: redis.Redis = Depends(get_redis),
 ):
-    """Grant daily streak bonus to user (app-initiated)"""
+    """Grant daily login bonus to user (app-initiated)"""
 
     # Resolve app slug to UUID if needed
     app_uuid = await resolve_app_id(request.app_id, db, cache)
-    print(f"🎨 GRANT_STREAK: Resolved app '{request.app_id}' to UUID {app_uuid}", flush=True)
+    print(f"🎨 GRANT_DAILY_BONUS: Resolved app '{request.app_id}' to UUID {app_uuid}", flush=True)
 
     # Validate the app
     app_validation = await validate_app(app_uuid)
@@ -597,11 +635,86 @@ async def grant_streak_bonus(
             status_code=status.HTTP_403_FORBIDDEN, detail="App is not active or not approved"
         )
 
-    # Apps can grant streak bonuses to any user
-    return await ledger.grant_streak_bonus(
+    # Get daily bonus amount from system config
+    config_result = await db.fetch_one(
+        "SELECT value FROM system_config WHERE key = 'daily_login_bonus_amount'"
+    )
+    
+    if not config_result:
+        raise HTTPException(status_code=500, detail="Daily bonus not configured")
+    
+    bonus_amount = int(config_result["value"])
+
+    # Apps can grant daily bonuses to any user
+    return await ledger.grant_daily_bonus(
         user_id=request.user_id,
         app_id=app_uuid,
-        amount=request.amount,
-        streak_days=request.streak_days,
+        amount=bonus_amount,
         idempotency_key=request.idempotency_key,
+    )
+
+
+@grants_router.post("/referral-reward", response_model=TransactionResponse)
+async def grant_referral_reward(
+    request: ReferralRewardGrantRequest,
+    current_user: TokenData = Depends(get_current_user),
+    ledger: LedgerService = Depends(get_ledger_service),
+    db: Database = Depends(get_db),
+    cache: redis.Redis = Depends(get_redis),
+):
+    """Grant DUST for referral rewards"""
+
+    # Get fairydust-invite app UUID
+    invite_app_uuid = await resolve_app_id("fairydust-invite", db, cache)
+    print(f"🎁 REFERRAL_REWARD: Using fairydust-invite app UUID {invite_app_uuid}", flush=True)
+
+    # Validate the invite app exists
+    app_validation = await validate_app(invite_app_uuid)
+
+    if not app_validation["is_valid"]:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Invite app not found")
+
+    if not app_validation["is_active"]:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN, detail="Invite app is not active"
+        )
+
+    # Create transaction description based on reward reason
+    reason_descriptions = {
+        "referral_bonus": f"Referral bonus for successful invite",
+        "referee_bonus": f"Welcome bonus for using referral code",
+        "milestone_bonus": f"Milestone bonus for {request.amount} DUST achievement",
+    }
+    
+    description = reason_descriptions.get(request.reason, f"Referral reward: {request.reason}")
+
+    # Grant the referral reward using the standard grant mechanism
+    return await ledger.grant_dust(
+        user_id=request.user_id,
+        amount=request.amount,
+        reason=description,
+        metadata={
+            "reward_type": request.reason,
+            "referral_id": str(request.referral_id),
+        },
+    )
+
+
+@grants_router.post("/promotional", response_model=TransactionResponse)
+async def grant_promotional_dust(
+    request: PromotionalGrantRequest,
+    current_user: TokenData = Depends(get_current_user),
+    ledger: LedgerService = Depends(get_ledger_service),
+):
+    """Grant DUST for promotional code redemption (service-to-service)"""
+    
+    # Grant promotional DUST using the standard grant mechanism
+    return await ledger.grant_dust(
+        user_id=request.user_id,
+        amount=request.amount,
+        reason=request.reason,
+        metadata={
+            "promotional_code": request.promotional_code,
+            "idempotency_key": request.idempotency_key,
+        },
     )

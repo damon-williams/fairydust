@@ -19,34 +19,15 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
-} from '@/components/ui/dialog';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { Textarea } from '@/components/ui/textarea';
-import { Switch } from '@/components/ui/switch';
 import { 
   Brain, 
   DollarSign, 
   Clock, 
   TrendingUp, 
-  Settings,
   AlertTriangle,
-  RefreshCw,
-  Plus,
-  Trash2,
-  Save
+  RefreshCw
 } from 'lucide-react';
 import { AdminAPI } from '@/lib/admin-api';
-import { toast } from 'sonner';
-import { formatDistanceToNow } from 'date-fns';
 
 interface LLMUsageMetrics {
   timeframe: string;
@@ -76,18 +57,6 @@ interface LLMUsageMetrics {
   }>;
 }
 
-interface AppConfig {
-  app_id: string;
-  app_name: string;
-  app_slug: string;
-  primary_provider: string;
-  primary_model_id: string;
-  primary_parameters: any;
-  fallback_models: any[];
-  cost_limits: any;
-  feature_flags: any;
-  updated_at: string;
-}
 
 interface ModelUsage {
   model: string;
@@ -96,82 +65,84 @@ interface ModelUsage {
   avg_latency: number;
 }
 
-interface ConfigFormData {
-  primary_provider: string;
-  primary_model_id: string;
-  primary_parameters: {
-    temperature: number;
-    max_tokens: number;
-    top_p: number;
-  };
-  fallback_models: Array<{
-    provider: string;
-    model_id: string;
-    trigger: string;
-    parameters: {
-      temperature: number;
-      max_tokens: number;
-    };
-  }>;
-  cost_limits: {
-    per_request_max: number;
-    daily_max: number;
-    monthly_max: number;
-  };
-  feature_flags: {
-    streaming_enabled: boolean;
-    cache_responses: boolean;
-    log_prompts: boolean;
-  };
+interface ActionAnalytics {
+  action_slug: string;
+  app_name: string;
+  total_requests: number;
+  avg_cost_per_request: number;
+  total_cost: number;
+  avg_total_tokens: number;
+  avg_latency_ms: number;
+  current_dust_cost: number;
+  cost_efficiency: number;
+  cost_per_dust: number | null;
 }
+
+interface FallbackAnalytics {
+  timeframe: string;
+  overall_stats: {
+    total_requests: number;
+    fallback_requests: number;
+    primary_requests: number;
+    fallback_percentage: number;
+  };
+  provider_reliability: Array<{
+    provider: string;
+    total_requests: number;
+    primary_success: number;
+    fallback_usage: number;
+    reliability_percentage: number;
+    avg_latency_ms: number;
+    total_cost: number;
+  }>;
+  fallback_reasons: Array<{
+    fallback_reason: string;
+    occurrences: number;
+    percentage_of_fallbacks: number;
+  }>;
+  daily_trends: Array<{
+    date: string;
+    total_requests: number;
+    fallback_requests: number;
+    fallback_rate: number;
+  }>;
+  app_fallback_usage: Array<{
+    app_name: string;
+    app_slug: string;
+    total_requests: number;
+    fallback_requests: number;
+    fallback_percentage: number;
+    avg_cost_per_request: number;
+  }>;
+}
+
 
 export function LLM() {
   const [metrics, setMetrics] = useState<LLMUsageMetrics | null>(null);
-  const [appConfigs, setAppConfigs] = useState<AppConfig[]>([]);
   const [modelUsage, setModelUsage] = useState<ModelUsage[]>([]);
-  const [availableModels, setAvailableModels] = useState<Record<string, string[]>>({});
+  const [actionAnalytics, setActionAnalytics] = useState<ActionAnalytics[]>([]);
+  const [fallbackAnalytics, setFallbackAnalytics] = useState<FallbackAnalytics | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [timeframe, setTimeframe] = useState('7d');
-  const [configDialogOpen, setConfigDialogOpen] = useState(false);
-  const [selectedConfig, setSelectedConfig] = useState<AppConfig | null>(null);
-  const [configForm, setConfigForm] = useState<ConfigFormData>({
-    primary_provider: 'anthropic',
-    primary_model_id: 'claude-3-5-haiku-20241022',
-    primary_parameters: {
-      temperature: 0.8,
-      max_tokens: 150,
-      top_p: 0.9
-    },
-    fallback_models: [],
-    cost_limits: {
-      per_request_max: 0.05,
-      daily_max: 10.0,
-      monthly_max: 100.0
-    },
-    feature_flags: {
-      streaming_enabled: true,
-      cache_responses: true,
-      log_prompts: false
-    }
-  });
+  const [activeTab, setActiveTab] = useState('overview');
 
   const loadData = async () => {
     try {
       setLoading(true);
       setError(null);
       
-      const [metricsData, configsData, modelUsageData, modelsData] = await Promise.all([
+      const [metricsData, modelUsageData, actionData, fallbackData] = await Promise.all([
         AdminAPI.getLLMUsageMetrics(timeframe),
-        AdminAPI.getLLMAppConfigs(),
         AdminAPI.getLLMModelUsage(),
-        AdminAPI.getAvailableModels(),
+        AdminAPI.getActionAnalytics(timeframe),
+        AdminAPI.getFallbackAnalytics(timeframe),
       ]);
       
       setMetrics(metricsData);
-      setAppConfigs(configsData);
       setModelUsage(modelUsageData);
-      setAvailableModels(modelsData);
+      setActionAnalytics(actionData.action_analytics || []);
+      setFallbackAnalytics(fallbackData);
     } catch (err) {
       console.error('Failed to load LLM data:', err);
       setError('Failed to load LLM data. Please try again.');
@@ -180,66 +151,6 @@ export function LLM() {
     }
   };
 
-  const openConfigDialog = (config: AppConfig) => {
-    setSelectedConfig(config);
-    setConfigForm({
-      primary_provider: config.primary_provider || 'anthropic',
-      primary_model_id: config.primary_model_id || 'claude-3-5-haiku-20241022',
-      primary_parameters: config.primary_parameters || {
-        temperature: 0.8,
-        max_tokens: 150,
-        top_p: 0.9
-      },
-      fallback_models: config.fallback_models || [],
-      cost_limits: config.cost_limits || {
-        per_request_max: 0.05,
-        daily_max: 10.0,
-        monthly_max: 100.0
-      },
-      feature_flags: config.feature_flags || {
-        streaming_enabled: true,
-        cache_responses: true,
-        log_prompts: false
-      }
-    });
-    setConfigDialogOpen(true);
-  };
-
-  const saveConfig = async () => {
-    if (!selectedConfig) return;
-    
-    try {
-      await AdminAPI.updateLLMAppConfig(selectedConfig.app_id, configForm);
-      toast.success('Configuration updated successfully');
-      setConfigDialogOpen(false);
-      loadData(); // Reload to show updated config
-    } catch (err) {
-      console.error('Failed to update config:', err);
-      toast.error('Failed to update configuration');
-    }
-  };
-
-  const addFallbackModel = () => {
-    setConfigForm((prev: ConfigFormData) => ({
-      ...prev,
-      fallback_models: [
-        ...prev.fallback_models,
-        {
-          provider: 'openai',
-          model_id: 'gpt-4o-mini',
-          trigger: 'provider_error',
-          parameters: { temperature: 0.8, max_tokens: 150 }
-        }
-      ]
-    }));
-  };
-
-  const removeFallbackModel = (index: number) => {
-    setConfigForm((prev: ConfigFormData) => ({
-      ...prev,
-      fallback_models: prev.fallback_models.filter((_: any, i: number) => i !== index)
-    }));
-  };
 
   useEffect(() => {
     loadData();
@@ -303,12 +214,13 @@ export function LLM() {
         </div>
       </div>
 
-      <Tabs defaultValue="overview" className="space-y-6">
+      <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
         <TabsList>
           <TabsTrigger value="overview">Overview</TabsTrigger>
           <TabsTrigger value="models">Model Usage</TabsTrigger>
           <TabsTrigger value="apps">App Usage</TabsTrigger>
-          <TabsTrigger value="config">Configuration</TabsTrigger>
+          <TabsTrigger value="actions">Action Analytics</TabsTrigger>
+          <TabsTrigger value="reliability">Provider Reliability</TabsTrigger>
         </TabsList>
 
         <TabsContent value="overview" className="space-y-6">
@@ -480,54 +392,299 @@ export function LLM() {
           </Card>
         </TabsContent>
 
-        <TabsContent value="config" className="space-y-6">
+        <TabsContent value="actions" className="space-y-6">
           <Card>
             <CardHeader>
-              <CardTitle>App Model Configurations</CardTitle>
+              <CardTitle>Action Cost Analytics</CardTitle>
+              <p className="text-sm text-muted-foreground">
+                Analyze token costs by action-slug to optimize DUST pricing
+              </p>
+            </CardHeader>
+            <CardContent>
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Action</TableHead>
+                    <TableHead>App</TableHead>
+                    <TableHead>Requests</TableHead>
+                    <TableHead>Avg Cost/Request</TableHead>
+                    <TableHead>Current DUST Cost</TableHead>
+                    <TableHead>Cost per DUST</TableHead>
+                    <TableHead>Avg Tokens</TableHead>
+                    <TableHead>Total Cost</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {actionAnalytics.map((action, index) => (
+                    <TableRow key={index}>
+                      <TableCell className="font-medium">{action.action_slug}</TableCell>
+                      <TableCell>
+                        <Badge variant="outline">{action.app_name}</Badge>
+                      </TableCell>
+                      <TableCell>{action.total_requests.toLocaleString()}</TableCell>
+                      <TableCell>${action.avg_cost_per_request.toFixed(6)}</TableCell>
+                      <TableCell>
+                        <Badge variant={action.current_dust_cost > 0 ? "default" : "secondary"}>
+                          {action.current_dust_cost} DUST
+                        </Badge>
+                      </TableCell>
+                      <TableCell>
+                        {action.cost_per_dust !== null ? (
+                          <span className={action.cost_per_dust > 0.001 ? "text-red-600" : "text-green-600"}>
+                            ${action.cost_per_dust.toFixed(6)}/DUST
+                          </span>
+                        ) : (
+                          <span className="text-gray-400">No pricing</span>
+                        )}
+                      </TableCell>
+                      <TableCell>{action.avg_total_tokens.toFixed(0)}</TableCell>
+                      <TableCell>${action.total_cost.toFixed(4)}</TableCell>
+                    </TableRow>
+                  ))}
+                  {actionAnalytics.length === 0 && (
+                    <TableRow>
+                      <TableCell colSpan={8} className="text-center text-muted-foreground">
+                        No action analytics data available for the selected timeframe
+                      </TableCell>
+                    </TableRow>
+                  )}
+                </TableBody>
+              </Table>
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        <TabsContent value="reliability" className="space-y-6">
+          {/* Overall Fallback Stats */}
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+            <Card>
+              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                <CardTitle className="text-sm font-medium">Total Requests</CardTitle>
+                <Brain className="h-4 w-4 text-muted-foreground" />
+              </CardHeader>
+              <CardContent>
+                <div className="text-2xl font-bold">
+                  {fallbackAnalytics?.overall_stats.total_requests?.toLocaleString() || 0}
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  in the last {timeframe === '1d' ? 'day' : timeframe === '7d' ? 'week' : timeframe === '30d' ? 'month' : '3 months'}
+                </p>
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                <CardTitle className="text-sm font-medium">Primary Success</CardTitle>
+                <TrendingUp className="h-4 w-4 text-green-600" />
+              </CardHeader>
+              <CardContent>
+                <div className="text-2xl font-bold">
+                  {fallbackAnalytics?.overall_stats.primary_requests?.toLocaleString() || 0}
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  successful primary requests
+                </p>
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                <CardTitle className="text-sm font-medium">Fallback Usage</CardTitle>
+                <AlertTriangle className="h-4 w-4 text-orange-600" />
+              </CardHeader>
+              <CardContent>
+                <div className="text-2xl font-bold">
+                  {fallbackAnalytics?.overall_stats.fallback_requests?.toLocaleString() || 0}
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  requests used fallback
+                </p>
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                <CardTitle className="text-sm font-medium">Fallback Rate</CardTitle>
+                <DollarSign className="h-4 w-4 text-red-600" />
+              </CardHeader>
+              <CardContent>
+                <div className="text-2xl font-bold">
+                  {fallbackAnalytics?.overall_stats.fallback_percentage?.toFixed(1) || 0}%
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  of total requests
+                </p>
+              </CardContent>
+            </Card>
+          </div>
+
+          {/* Provider Reliability Table */}
+          <Card>
+            <CardHeader>
+              <CardTitle>Provider Reliability</CardTitle>
+              <p className="text-sm text-muted-foreground">
+                Monitor which providers are most reliable and when fallbacks occur
+              </p>
+            </CardHeader>
+            <CardContent>
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Provider</TableHead>
+                    <TableHead>Total Requests</TableHead>
+                    <TableHead>Success Rate</TableHead>
+                    <TableHead>Fallback Usage</TableHead>
+                    <TableHead>Avg Latency</TableHead>
+                    <TableHead>Total Cost</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {fallbackAnalytics?.provider_reliability.map((provider, index) => (
+                    <TableRow key={index}>
+                      <TableCell className="font-medium">
+                        <Badge 
+                          variant="outline" 
+                          className={`capitalize ${
+                            provider.provider === 'anthropic' ? 'border-blue-200 text-blue-700' : 'border-green-200 text-green-700'
+                          }`}
+                        >
+                          {provider.provider}
+                        </Badge>
+                      </TableCell>
+                      <TableCell>{provider.total_requests.toLocaleString()}</TableCell>
+                      <TableCell>
+                        <div className="flex items-center gap-2">
+                          <div 
+                            className={`w-2 h-2 rounded-full ${
+                              provider.reliability_percentage >= 95 ? 'bg-green-500' : 
+                              provider.reliability_percentage >= 90 ? 'bg-yellow-500' : 'bg-red-500'
+                            }`} 
+                          />
+                          <span className={
+                            provider.reliability_percentage >= 95 ? 'text-green-700' : 
+                            provider.reliability_percentage >= 90 ? 'text-yellow-700' : 'text-red-700'
+                          }>
+                            {provider.reliability_percentage.toFixed(1)}%
+                          </span>
+                        </div>
+                      </TableCell>
+                      <TableCell>
+                        <span className={provider.fallback_usage > 0 ? 'text-orange-600' : 'text-green-600'}>
+                          {provider.fallback_usage.toLocaleString()}
+                        </span>
+                      </TableCell>
+                      <TableCell>{provider.avg_latency_ms.toFixed(0)}ms</TableCell>
+                      <TableCell>${provider.total_cost.toFixed(4)}</TableCell>
+                    </TableRow>
+                  )) || []}
+                  {(!fallbackAnalytics?.provider_reliability || fallbackAnalytics.provider_reliability.length === 0) && (
+                    <TableRow>
+                      <TableCell colSpan={6} className="text-center text-muted-foreground">
+                        No provider reliability data available for the selected timeframe
+                      </TableCell>
+                    </TableRow>
+                  )}
+                </TableBody>
+              </Table>
+            </CardContent>
+          </Card>
+
+          {/* Fallback Reasons */}
+          {fallbackAnalytics?.fallback_reasons && fallbackAnalytics.fallback_reasons.length > 0 && (
+            <Card>
+              <CardHeader>
+                <CardTitle>Fallback Reasons</CardTitle>
+                <p className="text-sm text-muted-foreground">
+                  Why providers failed and triggered fallbacks
+                </p>
+              </CardHeader>
+              <CardContent>
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Reason</TableHead>
+                      <TableHead>Occurrences</TableHead>
+                      <TableHead>% of Fallbacks</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {fallbackAnalytics.fallback_reasons.map((reason, index) => (
+                      <TableRow key={index}>
+                        <TableCell className="font-medium">{reason.fallback_reason}</TableCell>
+                        <TableCell>{reason.occurrences.toLocaleString()}</TableCell>
+                        <TableCell>
+                          <Badge variant="secondary">
+                            {reason.percentage_of_fallbacks.toFixed(1)}%
+                          </Badge>
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </CardContent>
+            </Card>
+          )}
+
+          {/* App Fallback Usage */}
+          <Card>
+            <CardHeader>
+              <CardTitle>App Fallback Usage</CardTitle>
+              <p className="text-sm text-muted-foreground">
+                Which apps experience the most provider failures
+              </p>
             </CardHeader>
             <CardContent>
               <Table>
                 <TableHeader>
                   <TableRow>
                     <TableHead>App</TableHead>
-                    <TableHead>Provider</TableHead>
-                    <TableHead>Model</TableHead>
-                    <TableHead>Last Updated</TableHead>
-                    <TableHead>Actions</TableHead>
+                    <TableHead>Total Requests</TableHead>
+                    <TableHead>Fallback Usage</TableHead>
+                    <TableHead>Fallback Rate</TableHead>
+                    <TableHead>Avg Cost/Request</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {appConfigs.map((config) => (
-                    <TableRow key={config.app_id}>
+                  {fallbackAnalytics?.app_fallback_usage.map((app, index) => (
+                    <TableRow key={index}>
                       <TableCell>
                         <div>
-                          <div className="font-medium">{config.app_name}</div>
-                          <div className="text-sm text-muted-foreground">{config.app_slug}</div>
+                          <div className="font-medium">{app.app_name}</div>
+                          <div className="text-sm text-muted-foreground">{app.app_slug}</div>
                         </div>
                       </TableCell>
+                      <TableCell>{app.total_requests.toLocaleString()}</TableCell>
                       <TableCell>
-                        <Badge variant="outline" className="capitalize">
-                          {config.primary_provider || 'Not configured'}
-                        </Badge>
-                      </TableCell>
-                      <TableCell>{config.primary_model_id || 'Not configured'}</TableCell>
-                      <TableCell>
-                        {config.updated_at ? 
-                          formatDistanceToNow(new Date(config.updated_at), { addSuffix: true }) : 
-                          'Never'
-                        }
+                        <span className={app.fallback_requests > 0 ? 'text-orange-600' : 'text-green-600'}>
+                          {app.fallback_requests.toLocaleString()}
+                        </span>
                       </TableCell>
                       <TableCell>
-                        <Button 
-                          size="sm" 
-                          onClick={() => openConfigDialog(config)}
-                        >
-                          <Settings className="h-4 w-4 mr-2" />
-                          Configure
-                        </Button>
+                        <div className="flex items-center gap-2">
+                          <div 
+                            className={`w-2 h-2 rounded-full ${
+                              app.fallback_percentage <= 5 ? 'bg-green-500' : 
+                              app.fallback_percentage <= 15 ? 'bg-yellow-500' : 'bg-red-500'
+                            }`} 
+                          />
+                          <span className={
+                            app.fallback_percentage <= 5 ? 'text-green-700' : 
+                            app.fallback_percentage <= 15 ? 'text-yellow-700' : 'text-red-700'
+                          }>
+                            {app.fallback_percentage ? app.fallback_percentage.toFixed(1) : 0}%
+                          </span>
+                        </div>
+                      </TableCell>
+                      <TableCell>${app.avg_cost_per_request.toFixed(6)}</TableCell>
+                    </TableRow>
+                  )) || []}
+                  {(!fallbackAnalytics?.app_fallback_usage || fallbackAnalytics.app_fallback_usage.length === 0) && (
+                    <TableRow>
+                      <TableCell colSpan={5} className="text-center text-muted-foreground">
+                        No app fallback data available for the selected timeframe
                       </TableCell>
                     </TableRow>
-                  ))}
+                  )}
                 </TableBody>
               </Table>
             </CardContent>
@@ -535,308 +692,6 @@ export function LLM() {
         </TabsContent>
       </Tabs>
 
-      {/* Configuration Dialog */}
-      <Dialog open={configDialogOpen} onOpenChange={setConfigDialogOpen}>
-        <DialogContent className="max-w-4xl max-h-[80vh] overflow-y-auto">
-          <DialogHeader>
-            <DialogTitle>Configure {selectedConfig?.app_name}</DialogTitle>
-            <DialogDescription>
-              Manage LLM settings, fallback models, and cost limits for this app
-            </DialogDescription>
-          </DialogHeader>
-          
-          <div className="space-y-6">
-            {/* Primary Model */}
-            <div className="space-y-4">
-              <h4 className="font-medium">Primary Model</h4>
-              <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <Label>Provider</Label>
-                  <Select 
-                    value={configForm.primary_provider} 
-                    onValueChange={(value) => setConfigForm((prev: ConfigFormData) => ({ ...prev, primary_provider: value }))}
-                  >
-                    <SelectTrigger>
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="anthropic">Anthropic</SelectItem>
-                      <SelectItem value="openai">OpenAI</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div className="space-y-2">
-                  <Label>Model</Label>
-                  <Select 
-                    value={configForm.primary_model_id} 
-                    onValueChange={(value) => setConfigForm((prev: ConfigFormData) => ({ ...prev, primary_model_id: value }))}
-                  >
-                    <SelectTrigger>
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {availableModels[configForm.primary_provider]?.map(model => (
-                        <SelectItem key={model} value={model}>{model}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-              </div>
-              
-              <div className="grid grid-cols-3 gap-4">
-                <div className="space-y-2">
-                  <Label>Temperature</Label>
-                  <Input 
-                    type="number" 
-                    step="0.1" 
-                    min="0" 
-                    max="2"
-                    value={configForm.primary_parameters?.temperature || 0.8}
-                    onChange={(e) => setConfigForm((prev: ConfigFormData) => ({
-                      ...prev,
-                      primary_parameters: {
-                        ...prev.primary_parameters,
-                        temperature: parseFloat(e.target.value)
-                      }
-                    }))}
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label>Max Tokens</Label>
-                  <Input 
-                    type="number" 
-                    min="1" 
-                    max="4000"
-                    value={configForm.primary_parameters?.max_tokens || 150}
-                    onChange={(e) => setConfigForm((prev: ConfigFormData) => ({
-                      ...prev,
-                      primary_parameters: {
-                        ...prev.primary_parameters,
-                        max_tokens: parseInt(e.target.value)
-                      }
-                    }))}
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label>Top P</Label>
-                  <Input 
-                    type="number" 
-                    step="0.1" 
-                    min="0" 
-                    max="1"
-                    value={configForm.primary_parameters?.top_p || 0.9}
-                    onChange={(e) => setConfigForm((prev: ConfigFormData) => ({
-                      ...prev,
-                      primary_parameters: {
-                        ...prev.primary_parameters,
-                        top_p: parseFloat(e.target.value)
-                      }
-                    }))}
-                  />
-                </div>
-              </div>
-            </div>
-
-            {/* Cost Limits */}
-            <div className="space-y-4">
-              <h4 className="font-medium">Cost Limits</h4>
-              <div className="grid grid-cols-3 gap-4">
-                <div className="space-y-2">
-                  <Label>Per Request Max ($)</Label>
-                  <Input 
-                    type="number" 
-                    step="0.01"
-                    value={configForm.cost_limits?.per_request_max || 0.05}
-                    onChange={(e) => setConfigForm((prev: ConfigFormData) => ({
-                      ...prev,
-                      cost_limits: {
-                        ...prev.cost_limits,
-                        per_request_max: parseFloat(e.target.value)
-                      }
-                    }))}
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label>Daily Max ($)</Label>
-                  <Input 
-                    type="number" 
-                    step="0.01"
-                    value={configForm.cost_limits?.daily_max || 10.0}
-                    onChange={(e) => setConfigForm((prev: ConfigFormData) => ({
-                      ...prev,
-                      cost_limits: {
-                        ...prev.cost_limits,
-                        daily_max: parseFloat(e.target.value)
-                      }
-                    }))}
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label>Monthly Max ($)</Label>
-                  <Input 
-                    type="number" 
-                    step="0.01"
-                    value={configForm.cost_limits?.monthly_max || 100.0}
-                    onChange={(e) => setConfigForm((prev: ConfigFormData) => ({
-                      ...prev,
-                      cost_limits: {
-                        ...prev.cost_limits,
-                        monthly_max: parseFloat(e.target.value)
-                      }
-                    }))}
-                  />
-                </div>
-              </div>
-            </div>
-
-            {/* Feature Flags */}
-            <div className="space-y-4">
-              <h4 className="font-medium">Feature Flags</h4>
-              <div className="space-y-3">
-                <div className="flex items-center justify-between">
-                  <Label htmlFor="streaming">Streaming Enabled</Label>
-                  <Switch 
-                    id="streaming"
-                    checked={configForm.feature_flags?.streaming_enabled || false}
-                    onCheckedChange={(checked) => setConfigForm((prev: ConfigFormData) => ({
-                      ...prev,
-                      feature_flags: {
-                        ...prev.feature_flags,
-                        streaming_enabled: checked
-                      }
-                    }))}
-                  />
-                </div>
-                <div className="flex items-center justify-between">
-                  <Label htmlFor="cache">Cache Responses</Label>
-                  <Switch 
-                    id="cache"
-                    checked={configForm.feature_flags?.cache_responses || false}
-                    onCheckedChange={(checked) => setConfigForm((prev: ConfigFormData) => ({
-                      ...prev,
-                      feature_flags: {
-                        ...prev.feature_flags,
-                        cache_responses: checked
-                      }
-                    }))}
-                  />
-                </div>
-                <div className="flex items-center justify-between">
-                  <Label htmlFor="log">Log Prompts</Label>
-                  <Switch 
-                    id="log"
-                    checked={configForm.feature_flags?.log_prompts || false}
-                    onCheckedChange={(checked) => setConfigForm((prev: ConfigFormData) => ({
-                      ...prev,
-                      feature_flags: {
-                        ...prev.feature_flags,
-                        log_prompts: checked
-                      }
-                    }))}
-                  />
-                </div>
-              </div>
-            </div>
-
-            {/* Fallback Models */}
-            <div className="space-y-4">
-              <div className="flex items-center justify-between">
-                <h4 className="font-medium">Fallback Models</h4>
-                <Button size="sm" onClick={addFallbackModel}>
-                  <Plus className="h-4 w-4 mr-2" />
-                  Add Fallback
-                </Button>
-              </div>
-              {configForm.fallback_models?.map((fallback: ConfigFormData['fallback_models'][0], index: number) => (
-                <div key={index} className="border rounded-lg p-4 space-y-4">
-                  <div className="flex items-center justify-between">
-                    <h5 className="font-medium">Fallback {index + 1}</h5>
-                    <Button 
-                      size="sm" 
-                      variant="outline" 
-                      onClick={() => removeFallbackModel(index)}
-                    >
-                      <Trash2 className="h-4 w-4" />
-                    </Button>
-                  </div>
-                  <div className="grid grid-cols-3 gap-4">
-                    <div className="space-y-2">
-                      <Label>Provider</Label>
-                      <Select 
-                        value={fallback.provider} 
-                        onValueChange={(value) => {
-                          const newFallbacks = [...configForm.fallback_models];
-                          newFallbacks[index].provider = value;
-                          setConfigForm((prev: ConfigFormData) => ({ ...prev, fallback_models: newFallbacks }));
-                        }}
-                      >
-                        <SelectTrigger>
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="anthropic">Anthropic</SelectItem>
-                          <SelectItem value="openai">OpenAI</SelectItem>
-                        </SelectContent>
-                      </Select>
-                    </div>
-                    <div className="space-y-2">
-                      <Label>Model</Label>
-                      <Select 
-                        value={fallback.model_id} 
-                        onValueChange={(value) => {
-                          const newFallbacks = [...configForm.fallback_models];
-                          newFallbacks[index].model_id = value;
-                          setConfigForm((prev: ConfigFormData) => ({ ...prev, fallback_models: newFallbacks }));
-                        }}
-                      >
-                        <SelectTrigger>
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {availableModels[fallback.provider]?.map(model => (
-                            <SelectItem key={model} value={model}>{model}</SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    </div>
-                    <div className="space-y-2">
-                      <Label>Trigger</Label>
-                      <Select 
-                        value={fallback.trigger} 
-                        onValueChange={(value) => {
-                          const newFallbacks = [...configForm.fallback_models];
-                          newFallbacks[index].trigger = value;
-                          setConfigForm((prev: ConfigFormData) => ({ ...prev, fallback_models: newFallbacks }));
-                        }}
-                      >
-                        <SelectTrigger>
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="provider_error">Provider Error</SelectItem>
-                          <SelectItem value="cost_threshold_exceeded">Cost Threshold Exceeded</SelectItem>
-                          <SelectItem value="rate_limit">Rate Limit</SelectItem>
-                          <SelectItem value="model_unavailable">Model Unavailable</SelectItem>
-                        </SelectContent>
-                      </Select>
-                    </div>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setConfigDialogOpen(false)}>
-              Cancel
-            </Button>
-            <Button onClick={saveConfig}>
-              <Save className="h-4 w-4 mr-2" />
-              Save Configuration
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
     </div>
   );
 }

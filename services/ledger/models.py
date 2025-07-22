@@ -101,11 +101,9 @@ class AppInitialGrantRequest(BaseModel):
         return v
 
 
-class AppStreakGrantRequest(BaseModel):
+class DailyBonusGrantRequest(BaseModel):
     user_id: UUID
     app_id: str = Field(..., description="App UUID or slug")
-    amount: int = Field(..., ge=1, le=25, description="Daily bonus amount (max 25)")
-    streak_days: int = Field(..., ge=1, le=5, description="Current streak for validation")
     idempotency_key: str = Field(..., min_length=1, max_length=128)
 
     @validator("app_id")
@@ -134,6 +132,45 @@ class AppStreakGrantRequest(BaseModel):
         return v
 
 
+class ReferralRewardGrantRequest(BaseModel):
+    user_id: UUID
+    amount: int = Field(..., ge=1, le=100, description="Referral reward amount")
+    reason: str = Field(..., description="Type of referral reward: referral_bonus|referee_bonus|milestone_bonus")
+    referral_id: UUID = Field(..., description="Referral redemption ID for tracking")
+    idempotency_key: str = Field(..., min_length=1, max_length=128)
+
+    @validator("reason")
+    def validate_reason(cls, v):
+        allowed_reasons = ["referral_bonus", "referee_bonus", "milestone_bonus"]
+        if v not in allowed_reasons:
+            raise ValueError(f"Reason must be one of: {', '.join(allowed_reasons)}")
+        return v
+
+    @validator("idempotency_key")
+    def validate_idempotency_key(cls, v):
+        import re
+
+        if not re.match(r"^[a-zA-Z0-9_\-:]+$", v):
+            raise ValueError("Idempotency key must be alphanumeric with -_: allowed")
+        return v
+
+
+class PromotionalGrantRequest(BaseModel):
+    user_id: UUID
+    amount: int = Field(..., ge=1, le=1000, description="Promotional grant amount")
+    reason: str = Field(..., min_length=1, max_length=255)
+    promotional_code: str = Field(..., min_length=1, max_length=50)
+    idempotency_key: str = Field(..., min_length=1, max_length=128)
+
+    @validator("idempotency_key")
+    def validate_idempotency_key(cls, v):
+        import re
+
+        if not re.match(r"^[a-zA-Z0-9_\-:]+$", v):
+            raise ValueError("Idempotency key must be alphanumeric with -_: allowed")
+        return v
+
+
 class RefundRequest(BaseModel):
     transaction_id: UUID
     reason: str = Field(..., min_length=1, max_length=255)
@@ -145,6 +182,26 @@ class PurchaseRequest(BaseModel):
     amount: int = Field(..., gt=0, description="Amount of DUST purchased")
     payment_id: str = Field(..., description="Stripe payment intent ID")
     payment_amount_cents: int = Field(..., gt=0, description="Amount paid in cents")
+
+
+class InAppPurchaseRequest(BaseModel):
+    product_id: str = Field(..., description="Product ID from app store")
+    receipt_data: str = Field(..., description="Base64 encoded receipt data")
+    platform: str = Field(..., description="Platform: 'ios' or 'android'")
+    
+    @validator("product_id")
+    def validate_product_id(cls, v):
+        # Validate against known DUST purchase product IDs
+        valid_products = {"dust_50", "dust_100", "dust_200", "dust_500", "dust_1000"}
+        if v not in valid_products:
+            raise ValueError(f"Invalid product_id. Must be one of: {', '.join(valid_products)}")
+        return v
+    
+    @validator("platform")
+    def validate_platform(cls, v):
+        if v not in ["ios", "android"]:
+            raise ValueError("Platform must be 'ios' or 'android'")
+        return v
 
 
 # Response models

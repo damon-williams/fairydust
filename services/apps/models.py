@@ -32,9 +32,6 @@ class AppCreate(BaseModel):
     description: str = Field(..., min_length=1, max_length=1000)
     icon_url: Optional[str] = None
     category: AppCategory
-    website_url: Optional[str] = None
-    demo_url: Optional[str] = None
-    callback_url: Optional[str] = None
 
 
 class App(BaseModel):
@@ -45,12 +42,8 @@ class App(BaseModel):
     description: str
     icon_url: Optional[str]
     category: AppCategory
-    website_url: Optional[str]
-    demo_url: Optional[str]
-    callback_url: Optional[str]
     status: AppStatus
     is_active: bool
-    admin_notes: Optional[str]
     created_at: datetime
     updated_at: datetime
 
@@ -187,3 +180,75 @@ class LLMUsageStats(BaseModel):
     model_breakdown: dict[str, dict[str, int | float]]
     period_start: datetime
     period_end: datetime
+
+
+# Referral models
+class ReferralValidateRequest(BaseModel):
+    referral_code: str = Field(..., min_length=6, max_length=10)
+
+
+class ReferralValidateResponse(BaseModel):
+    valid: bool
+    expired: bool
+    referrer_user_id: Optional[UUID] = None
+    referrer_name: Optional[str] = None
+    referee_bonus: int
+    referrer_bonus: int
+
+
+class ReferralCompleteRequest(BaseModel):
+    referral_code: str = Field(..., min_length=6, max_length=10)
+    referee_user_id: UUID
+
+
+class ReferralCompleteResponse(BaseModel):
+    success: bool
+    referrer_user_id: UUID
+    referee_bonus_granted: int
+    referrer_bonus_granted: int
+    milestone_bonus: int = 0
+
+
+# Promotional referral code models
+class PromotionalReferralValidateRequest(BaseModel):
+    promotional_code: str = Field(..., min_length=3, max_length=20)
+
+
+class PromotionalReferralValidateResponse(BaseModel):
+    valid: bool
+    expired: bool
+    max_uses_reached: bool
+    already_redeemed: bool
+    dust_bonus: int
+    description: str
+
+
+class PromotionalReferralRedeemRequest(BaseModel):
+    promotional_code: str = Field(..., min_length=3, max_length=20)
+    user_id: UUID
+
+
+class PromotionalReferralRedeemResponse(BaseModel):
+    success: bool
+    dust_bonus_granted: int
+    description: str
+
+
+class RecentReferral(BaseModel):
+    id: UUID
+    referee_name: str
+    completed_at: datetime
+    dust_earned: int
+
+
+class MilestoneReward(BaseModel):
+    referral_count: int
+    bonus_amount: int
+
+
+class ReferralStatsResponse(BaseModel):
+    has_referral_code: bool
+    successful_referrals: int
+    total_dust_earned: int
+    next_milestone: Optional[MilestoneReward] = None
+    recent_referrals: list[RecentReferral]

@@ -1,4 +1,5 @@
 # services/content/story_routes.py
+import asyncio
 import json
 import os
 import re
@@ -7,7 +8,6 @@ import uuid
 from datetime import datetime
 from typing import Optional
 
-import httpx
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 
 # Content service no longer manages DUST - all DUST handling is external
@@ -20,6 +20,9 @@ from models import (
     StoryFavoriteResponse,
     StoryGenerationRequest,
     StoryGenerationResponseNew,
+    StoryImageStatusResponse,
+    StoryImageBatchResponse,
+    StoryImageStatus,
     StoryLength,
     TargetAudience,
     TokenUsage,
@@ -29,8 +32,10 @@ from models import (
 from shared.auth_middleware import TokenData, get_current_user
 from shared.database import Database, get_db
 from shared.json_utils import parse_jsonb_field
-from shared.llm_pricing import calculate_llm_cost
-from shared.llm_usage_logger import calculate_prompt_hash, create_request_metadata, log_llm_usage
+from shared.llm_usage_logger import calculate_prompt_hash, create_request_metadata
+from shared.llm_client import llm_client, LLMError
+from story_image_service import story_image_service
+from story_image_generator import story_image_generator
 
 router = APIRouter()
 
@@ -98,47 +103,7 @@ async def generate_story(
             return StoryErrorResponse(error="Failed to generate story. Please try again.")
 
         print(f"🤖 STORY: Generated story: {title}", flush=True)
-
-        # Log LLM usage for analytics (background task)
-        try:
-            # Calculate prompt hash for the story generation
-            full_prompt = _build_story_prompt(request, user_context)
-            prompt_hash = calculate_prompt_hash(full_prompt)
-
-            # Create request metadata
-            request_metadata = create_request_metadata(
-                action="story_generation",
-                parameters={
-                    "story_length": request.story_length.value,
-                    "target_audience": request.target_audience.value,
-                    "character_count": len(request.characters),
-                    "has_custom_prompt": bool(request.custom_prompt),
-                },
-                user_context=user_context if user_context != "general user" else None,
-                session_id=str(request.session_id) if request.session_id else None,
-            )
-
-            # Log usage asynchronously (don't block story generation on logging failures)
-            await log_llm_usage(
-                user_id=request.user_id,
-                app_id="fairydust-story",
-                provider=provider_used,
-                model_id=model_used,
-                prompt_tokens=tokens_used.get("prompt", 0),
-                completion_tokens=tokens_used.get("completion", 0),
-                total_tokens=tokens_used.get("total", 0),
-                cost_usd=cost,
-                latency_ms=latency_ms,
-                prompt_hash=prompt_hash,
-                finish_reason="stop",
-                was_fallback=False,
-                fallback_reason=None,
-                request_metadata=request_metadata,
-                auth_token=None,  # No auth token needed for LLM logging
-            )
-        except Exception as e:
-            print(f"⚠️ STORY: Failed to log LLM usage: {str(e)}", flush=True)
-            # Continue with story generation even if logging fails
+        # LLM usage logging is now handled by the centralized client
 
         # Save story to database
         story_id = await _save_story(
@@ -159,11 +124,52 @@ async def generate_story(
 
         print(f"✅ STORY: Generated story for user {request.user_id}", flush=True)
 
+        # Handle image generation if requested
+        final_content = story_content
+        image_ids = []
+        has_images = False
+        
+        if request.include_images:
+            print(f"🎨 STORY: Processing images for story {story_id}", flush=True)
+            try:
+                # Extract scenes for image generation
+                scenes = story_image_service.extract_image_scenes(
+                    story_content, request.story_length, request.characters
+                )
+                
+                # Insert image markers into story content
+                final_content = story_image_service.insert_image_markers(story_content, scenes)
+                image_ids = [scene['image_id'] for scene in scenes]
+                has_images = True
+                
+                # Update story in database with image markers and metadata
+                await _update_story_with_images(db, story_id, final_content, image_ids, has_images)
+                
+                # Start background image generation (don't await - let it run async)
+                asyncio.create_task(
+                    story_image_generator.generate_story_images_background(
+                        story_id=str(story_id),
+                        user_id=str(request.user_id),
+                        scenes=scenes,
+                        characters=request.characters,
+                        target_audience=request.target_audience,
+                        db=db
+                    )
+                )
+                
+                print(f"🚀 STORY: Started background image generation for {len(scenes)} images", flush=True)
+                
+            except Exception as e:
+                print(f"❌ STORY: Failed to process images: {str(e)}", flush=True)
+                # Continue without images rather than failing the whole request
+                has_images = False
+                image_ids = []
+
         # Build response
         story = UserStoryNew(
             id=story_id,
             title=title,
-            content=story_content,
+            content=final_content,
             story_length=request.story_length,
             target_audience=request.target_audience,
             word_count=word_count,
@@ -174,6 +180,9 @@ async def generate_story(
                 "characters": [char.dict() for char in request.characters],
                 "custom_prompt": request.custom_prompt,
             },
+            has_images=has_images,
+            images_complete=False,  # Images are generating in background
+            image_ids=image_ids if has_images else None,
         )
 
         return StoryGenerationResponseNew(
@@ -226,7 +235,8 @@ async def get_user_stories(
         # Build query with filters
         base_query = """
             SELECT id, title, content, story_length, target_audience,
-                   word_count, is_favorited, created_at, metadata
+                   word_count, is_favorited, created_at, metadata,
+                   has_images, images_complete, image_data
             FROM user_stories
             WHERE user_id = $1
         """
@@ -300,6 +310,11 @@ async def get_user_stories(
         stories = []
         for row in rows:
             estimated_reading_time = _calculate_reading_time(row["word_count"] or 0)
+            
+            # Parse image data
+            image_data = parse_jsonb_field(row["image_data"], {}, "image_data") or {}
+            image_ids = image_data.get("image_ids", []) if row["has_images"] else []
+            
             story = UserStoryNew(
                 id=row["id"],
                 title=row["title"],
@@ -311,6 +326,9 @@ async def get_user_stories(
                 created_at=row["created_at"],
                 is_favorited=row["is_favorited"],
                 metadata=parse_jsonb_field(row["metadata"]) or {},
+                has_images=row["has_images"] or False,
+                images_complete=row["images_complete"] or False,
+                image_ids=image_ids if image_ids else None,
             )
             stories.append(story)
 
@@ -545,9 +563,9 @@ async def _check_rate_limit(db: Database, user_id: uuid.UUID) -> bool:
 
 
 async def _get_user_context(db: Database, user_id: uuid.UUID) -> str:
-    """Get user context for personalization"""
+    """Get user context for personalization (interests only, NOT people)"""
     try:
-        # Get user profile data
+        # Get user profile data (interests only)
         profile_query = """
             SELECT field_name, field_value
             FROM user_profile_data
@@ -556,16 +574,8 @@ async def _get_user_context(db: Database, user_id: uuid.UUID) -> str:
 
         profile_rows = await db.fetch_all(profile_query, user_id)
 
-        # Get people in my life
-        people_query = """
-            SELECT name, relationship, birth_date
-            FROM people_in_my_life
-            WHERE user_id = $1
-        """
-
-        people_rows = await db.fetch_all(people_query, user_id)
-
-        # Build context string
+        # Build context string - ONLY include interests, NOT people
+        # People should only be included when explicitly requested as Characters
         context_parts = []
 
         if profile_rows:
@@ -581,22 +591,8 @@ async def _get_user_context(db: Database, user_id: uuid.UUID) -> str:
             if interests:
                 context_parts.append(f"Interests: {', '.join(interests[:5])}")
 
-        if people_rows:
-            people_list = []
-            for row in people_rows:
-                person_desc = f"{row['name']} ({row['relationship']}"
-                if row["birth_date"]:
-                    # Calculate age from birth date
-                    from datetime import date
-
-                    birth = date.fromisoformat(str(row["birth_date"]))
-                    age = (date.today() - birth).days // 365
-                    person_desc += f", {age} years old"
-                person_desc += ")"
-                people_list.append(person_desc)
-
-            if people_list:
-                context_parts.append(f"People: {', '.join(people_list[:3])}")
+        # REMOVED: Automatic inclusion of "My People" data
+        # My People should only be factored in when explicitly requested as Characters
 
         return "; ".join(context_parts) if context_parts else "general user"
 
@@ -744,15 +740,23 @@ def _build_story_prompt(request: StoryGenerationRequest, user_context: str) -> s
         else "No specific characters required - create original characters as needed."
     )
 
-    # Create varied, unpredictable prompt
-    prompt = f"""You are a master storyteller with infinite creativity. Create a truly unique and surprising story for {request.target_audience.value} audience that takes about {length_descriptions[request.story_length]} to read.
+    # Create varied, unpredictable prompt with audience-specific guidance
+    audience_guidance = {
+        TargetAudience.KIDS: "children (ages 4-12). Focus on adventure, friendship, learning, and wonder. Keep language simple and positive.",
+        TargetAudience.TEEN: "teenagers (ages 13-17). Explore themes of identity, relationships, growing up, and self-discovery. Use contemporary language and relatable situations.",
+        TargetAudience.ADULTS: "adults (18+). Delve into complex emotions, relationships, life challenges, and sophisticated themes. Use mature language and nuanced storytelling."
+    }
+    
+    prompt = f"""You are a master storyteller with infinite creativity. Create a truly unique and surprising story for {audience_guidance[request.target_audience]} The story should take about {length_descriptions[request.story_length]} to read.
 
 {character_text}"""
 
     if request.custom_prompt:
         prompt += f"\nSpecial request: {request.custom_prompt}"
 
-    if user_context != "general user":
+    # Only add personalization context if no specific characters are provided
+    # This avoids confusion between character list and people context
+    if user_context != "general user" and not request.characters:
         prompt += f"\nPersonalization context: {user_context}"
 
     prompt += f"""
@@ -849,20 +853,13 @@ async def _generate_story_llm(
     request: StoryGenerationRequest,
     user_context: str,
 ) -> tuple[Optional[str], str, int, str, str, dict, float, int, str]:
-    """Generate story using LLM - returns (content, title, word_count, reading_time, model_id, tokens, cost, latency_ms, provider)"""
+    """Generate story using centralized LLM client - returns (content, title, word_count, reading_time, model_id, tokens, cost, latency_ms, provider)"""
     try:
         # Get LLM model configuration from database/cache
         model_config = await _get_llm_model_config()
-
-        provider = model_config.get("primary_provider", "anthropic")
-        model_id = model_config.get("primary_model_id", "claude-3-5-sonnet-20241022")
-        parameters = model_config.get("primary_parameters", {})
-
-        temperature = parameters.get("temperature", 0.8)
-        base_max_tokens = parameters.get("max_tokens", 2000)
-        top_p = parameters.get("top_p", 0.9)
         
         # Adjust max_tokens based on story length to prevent truncation
+        base_max_tokens = model_config.get("primary_parameters", {}).get("max_tokens", 2000)
         story_length_multipliers = {
             StoryLength.QUICK: 1.0,    # ~500 words = ~667 tokens
             StoryLength.MEDIUM: 1.8,   # ~1200 words = ~1600 tokens  
@@ -870,202 +867,87 @@ async def _generate_story_llm(
         }
         
         max_tokens = int(base_max_tokens * story_length_multipliers.get(request.story_length, 1.0))
+        max_tokens = max(1000, min(max_tokens, 8000))  # Ensure reasonable bounds
         
-        # Ensure minimum token count and reasonable maximum
-        max_tokens = max(1000, min(max_tokens, 8000))
+        # Update parameters with adjusted max_tokens
+        adjusted_config = model_config.copy()
+        if "primary_parameters" not in adjusted_config:
+            adjusted_config["primary_parameters"] = {}
+        adjusted_config["primary_parameters"]["max_tokens"] = max_tokens
         
         print(f"🔧 STORY_LLM: Adjusted max_tokens to {max_tokens} for {request.story_length.value} story", flush=True)
 
         # Build prompt
         prompt = _build_story_prompt(request, user_context)
+        
+        # Calculate prompt hash for logging
+        prompt_hash = calculate_prompt_hash(prompt)
+        
+        # Determine action slug for logging
+        action_slug = f"story-{request.story_length.value}"
+        if request.include_images:
+            action_slug += "-illustrated"
+        
+        # Create request metadata
+        request_metadata = create_request_metadata(
+            action=action_slug,
+            parameters={
+                "story_length": request.story_length.value,
+                "target_audience": request.target_audience.value,
+                "character_count": len(request.characters),
+                "has_custom_prompt": bool(request.custom_prompt),
+                "include_images": request.include_images,
+            },
+            user_context=user_context if user_context != "general user" else None,
+            session_id=str(request.session_id) if request.session_id else None,
+        )
+        
+        # Add prompt hash to metadata
+        request_metadata["prompt_hash"] = prompt_hash
 
-        print(f"🤖 STORY_LLM: Generating with {provider} model {model_id}", flush=True)
-
-        # Check API key based on provider
-        if provider == "anthropic":
-            api_key = os.getenv("ANTHROPIC_API_KEY", "")
-            if not api_key:
-                print("❌ STORY_LLM: Missing ANTHROPIC_API_KEY environment variable", flush=True)
-                return None, "", 0, "", model_id, {}, 0.0, 0, provider
-        elif provider == "openai":
-            api_key = os.getenv("OPENAI_API_KEY", "")
-            if not api_key:
-                print("❌ STORY_LLM: Missing OPENAI_API_KEY environment variable", flush=True)
-                return None, "", 0, "", model_id, {}, 0.0, 0, provider
-        else:
-            print(f"❌ STORY_LLM: Unsupported provider: {provider}", flush=True)
-            return None, "", 0, "", model_id, {}, 0.0, 0
-
-        print(
-            f"🔑 STORY_LLM: {provider.upper()} API key configured (length: {len(api_key)})",
-            flush=True,
+        # Use centralized client for generation
+        generated_text, generation_metadata = await llm_client.generate_completion(
+            prompt=prompt,
+            app_config=adjusted_config,
+            user_id=request.user_id,
+            app_id="fairydust-story",
+            action=action_slug,
+            request_metadata=request_metadata
+        )
+        
+        # Extract title and content from generated text
+        title, content = _extract_title_and_content(generated_text)
+        word_count = _count_words(content)
+        estimated_reading_time = _calculate_reading_time(word_count)
+        
+        # Extract metadata from generation result
+        provider = generation_metadata["provider"]
+        model_id = generation_metadata["model_id"]
+        tokens_used = generation_metadata["tokens_used"]
+        cost = generation_metadata["cost_usd"]
+        latency_ms = generation_metadata["generation_time_ms"]
+        
+        print(f"✅ STORY_LLM: Generated story successfully with {provider}/{model_id} (latency: {latency_ms}ms)", flush=True)
+        
+        return (
+            content,
+            title,
+            word_count,
+            estimated_reading_time,
+            model_id,
+            tokens_used,
+            cost,
+            latency_ms,
+            provider,
         )
 
-        # Track request latency
-        start_time = time.time()
-
-        # Make API call based on provider
-        async with httpx.AsyncClient(timeout=60.0) as client:
-            if provider == "anthropic":
-                response = await client.post(
-                    "https://api.anthropic.com/v1/messages",
-                    headers={
-                        "Content-Type": "application/json",
-                        "x-api-key": api_key,
-                        "anthropic-version": "2023-06-01",
-                    },
-                    json={
-                        "model": model_id,
-                        "max_tokens": max_tokens,
-                        "temperature": temperature,
-                        "top_p": top_p,
-                        "messages": [{"role": "user", "content": prompt}],
-                    },
-                )
-
-                if response.status_code == 200:
-                    result = response.json()
-                    generated_text = result["content"][0]["text"].strip()
-
-                    # Extract title and content
-                    title, content = _extract_title_and_content(generated_text)
-                    word_count = _count_words(content)
-                    estimated_reading_time = _calculate_reading_time(word_count)
-
-                    # Calculate tokens and cost
-                    usage = result.get("usage", {})
-                    prompt_tokens = usage.get("input_tokens", 0)
-                    completion_tokens = usage.get("output_tokens", 0)
-                    total_tokens = prompt_tokens + completion_tokens
-
-                    tokens_used = {
-                        "prompt": prompt_tokens,
-                        "completion": completion_tokens,
-                        "total": total_tokens,
-                    }
-
-                    cost = calculate_llm_cost(
-                        "anthropic", model_id, prompt_tokens, completion_tokens
-                    )
-
-                    # Calculate latency
-                    latency_ms = int((time.time() - start_time) * 1000)
-
-                    print(
-                        f"✅ STORY_LLM: Generated story successfully (latency: {latency_ms}ms)",
-                        flush=True,
-                    )
-                    return (
-                        content,
-                        title,
-                        word_count,
-                        estimated_reading_time,
-                        model_id,
-                        tokens_used,
-                        cost,
-                        latency_ms,
-                    )
-
-                else:
-                    error_detail = response.text
-                    try:
-                        error_json = response.json()
-                        error_detail = error_json.get("error", {}).get("message", response.text)
-                    except:
-                        pass
-                    print(
-                        f"❌ STORY_LLM: Anthropic API error {response.status_code}: {error_detail}",
-                        flush=True,
-                    )
-                    latency_ms = int((time.time() - start_time) * 1000)
-                    return None, "", 0, "", model_id, {}, 0.0, latency_ms, provider
-
-            elif provider == "openai":
-                response = await client.post(
-                    "https://api.openai.com/v1/chat/completions",
-                    headers={
-                        "Content-Type": "application/json",
-                        "Authorization": f"Bearer {os.getenv('OPENAI_API_KEY', '')}",
-                    },
-                    json={
-                        "model": model_id,
-                        "max_tokens": max_tokens,
-                        "temperature": temperature,
-                        "top_p": top_p,
-                        "messages": [{"role": "user", "content": prompt}],
-                    },
-                )
-
-                if response.status_code == 200:
-                    result = response.json()
-                    content = result["choices"][0]["message"]["content"].strip()
-
-                    # Calculate tokens and cost
-                    usage = result.get("usage", {})
-                    prompt_tokens = usage.get("prompt_tokens", 0)
-                    completion_tokens = usage.get("completion_tokens", 0)
-                    total_tokens = usage.get("total_tokens", prompt_tokens + completion_tokens)
-
-                    tokens_used = {
-                        "prompt": prompt_tokens,
-                        "completion": completion_tokens,
-                        "total": total_tokens,
-                    }
-
-                    cost = calculate_llm_cost(
-                        provider="openai",
-                        model_id=model_id,
-                        input_tokens=prompt_tokens,
-                        output_tokens=completion_tokens,
-                    )
-
-                    latency_ms = int((time.time() - start_time) * 1000)
-
-                    # Extract title and validate content
-                    title, story_content = _extract_title_and_content(content)
-                    word_count = len(story_content.split())
-                    estimated_reading_time = _calculate_reading_time(word_count)
-
-                    return (
-                        story_content,
-                        title,
-                        word_count,
-                        estimated_reading_time,
-                        model_id,
-                        tokens_used,
-                        cost,
-                        latency_ms,
-                        provider,
-                    )
-
-                else:
-                    error_detail = response.text
-                    try:
-                        error_json = response.json()
-                        error_detail = error_json.get("error", {}).get("message", response.text)
-                    except:
-                        pass
-                    print(
-                        f"❌ STORY_LLM: OpenAI API error {response.status_code}: {error_detail}",
-                        flush=True,
-                    )
-                    latency_ms = int((time.time() - start_time) * 1000)
-                    return None, "", 0, "", model_id, {}, 0.0, latency_ms, provider
-
-            else:
-                print(
-                    f"❌ STORY_LLM: Unsupported provider {provider}",
-                    flush=True,
-                )
-                latency_ms = int((time.time() - start_time) * 1000)
-                return None, "", 0, "", model_id, {}, 0.0, latency_ms, provider
-
+    except LLMError as e:
+        print(f"❌ STORY_LLM: LLM error: {str(e)}", flush=True)
+        return None, "", 0, "", "claude-3-5-sonnet-20241022", {}, 0.0, 0, "anthropic"
     except Exception as e:
-        print(f"❌ STORY_LLM: Error generating story: {str(e)}", flush=True)
+        print(f"❌ STORY_LLM: Unexpected error generating story: {str(e)}", flush=True)
         print(f"❌ STORY_LLM: Error type: {type(e).__name__}", flush=True)
-        print(f"❌ STORY_LLM: Error details: {repr(e)}", flush=True)
         import traceback
-
         print(f"❌ STORY_LLM: Traceback: {traceback.format_exc()}", flush=True)
         return None, "", 0, "", "claude-3-5-sonnet-20241022", {}, 0.0, 0, "anthropic"
 
@@ -1127,3 +1009,171 @@ async def _save_story(
     except Exception as e:
         print(f"❌ STORY_SAVE: Error saving story: {str(e)}", flush=True)
         raise HTTPException(status_code=500, detail="Failed to save story")
+
+
+async def _update_story_with_images(
+    db: Database, 
+    story_id: uuid.UUID, 
+    final_content: str, 
+    image_ids: list[str], 
+    has_images: bool
+):
+    """Update story with image markers and metadata"""
+    try:
+        image_data = {
+            "image_ids": image_ids,
+            "has_images": has_images,
+            "images_complete": False
+        }
+        
+        await db.execute(
+            """
+            UPDATE user_stories 
+            SET content = $1, has_images = $2, images_complete = $3, image_data = $4
+            WHERE id = $5
+            """,
+            final_content,
+            has_images,
+            False,  # images_complete starts as False
+            json.dumps(image_data),
+            story_id
+        )
+        
+        print(f"✅ STORY_IMAGE_UPDATE: Updated story {story_id} with image metadata", flush=True)
+        
+    except Exception as e:
+        print(f"❌ STORY_IMAGE_UPDATE: Failed to update story with images: {str(e)}", flush=True)
+        raise
+
+
+# Story Image Status Endpoints
+@router.get("/stories/{story_id}/images/{image_id}", response_model=StoryImageStatusResponse)
+async def get_story_image_status(
+    story_id: str,
+    image_id: str,
+    current_user: TokenData = Depends(get_current_user),
+    db: Database = Depends(get_db),
+):
+    """Get status and URL of specific story image"""
+    
+    try:
+        # Verify the story belongs to the user
+        story = await db.fetch_one(
+            "SELECT user_id FROM user_stories WHERE id = $1",
+            story_id
+        )
+        
+        if not story:
+            raise HTTPException(status_code=404, detail="Story not found")
+        
+        if current_user.user_id != str(story["user_id"]) and not current_user.is_admin:
+            raise HTTPException(status_code=403, detail="Access denied")
+        
+        # Get image status
+        image_data = await db.fetch_one(
+            "SELECT url, status FROM story_images WHERE story_id = $1 AND image_id = $2",
+            story_id, image_id
+        )
+        
+        if not image_data:
+            print(f"🔍 STORY_IMAGE_STATUS: Image {image_id} not found for story {story_id}", flush=True)
+            return StoryImageStatusResponse(
+                success=False,
+                status="not_found",
+                url=None
+            )
+        
+        image_url = image_data["url"] if image_data["status"] == "completed" else None
+        
+        # Log the URL being returned for debugging
+        print(f"🔗 STORY_IMAGE_STATUS: Returning image status for {image_id}", flush=True)
+        print(f"   Story ID: {story_id}", flush=True)
+        print(f"   Status: {image_data['status']}", flush=True)
+        print(f"   URL: {image_url}", flush=True)
+        if image_url:
+            print(f"   URL Domain: {image_url.split('/')[2] if '://' in image_url else 'invalid-url'}", flush=True)
+            print(f"   Is images.fairydust.fun: {'images.fairydust.fun' in image_url}", flush=True)
+        
+        return StoryImageStatusResponse(
+            status=image_data["status"],
+            url=image_url
+        )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"❌ STORY_IMAGE_STATUS: Error getting image status: {str(e)}", flush=True)
+        raise HTTPException(status_code=500, detail="Failed to get image status")
+
+
+@router.get("/stories/{story_id}/images/batch", response_model=StoryImageBatchResponse)
+async def get_story_images_batch_status(
+    story_id: str,
+    ids: str = Query(..., description="Comma-separated list of image IDs"),
+    current_user: TokenData = Depends(get_current_user),
+    db: Database = Depends(get_db),
+):
+    """Get status and URLs of multiple story images at once"""
+    
+    try:
+        # Verify the story belongs to the user
+        story = await db.fetch_one(
+            "SELECT user_id FROM user_stories WHERE id = $1",
+            story_id
+        )
+        
+        if not story:
+            raise HTTPException(status_code=404, detail="Story not found")
+        
+        if current_user.user_id != str(story["user_id"]) and not current_user.is_admin:
+            raise HTTPException(status_code=403, detail="Access denied")
+        
+        # Parse image IDs
+        image_ids = [img_id.strip() for img_id in ids.split(",") if img_id.strip()]
+        
+        if not image_ids:
+            return StoryImageBatchResponse(images={})
+        
+        # Get all image statuses
+        images = await db.fetch_all(
+            """
+            SELECT image_id, url, status 
+            FROM story_images 
+            WHERE story_id = $1 AND image_id = ANY($2)
+            """,
+            story_id, image_ids
+        )
+        
+        # Build response
+        image_statuses = {}
+        print(f"🔗 STORY_IMAGE_BATCH: Processing {len(images)} images for story {story_id}", flush=True)
+        
+        for image in images:
+            image_url = image["url"] if image["status"] == "completed" else None
+            
+            # Log each image URL
+            print(f"   Image {image['image_id']}: {image['status']}", flush=True)
+            if image_url:
+                print(f"     URL: {image_url}", flush=True)
+                print(f"     Domain: {image_url.split('/')[2] if '://' in image_url else 'invalid-url'}", flush=True)
+            
+            image_statuses[image["image_id"]] = StoryImageStatus(
+                status=image["status"],
+                url=image_url
+            )
+        
+        # Add not_found status for missing images
+        for image_id in image_ids:
+            if image_id not in image_statuses:
+                image_statuses[image_id] = StoryImageStatus(
+                    status="not_found",
+                    url=None
+                )
+        
+        return StoryImageBatchResponse(images=image_statuses)
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"❌ STORY_IMAGE_BATCH: Error getting batch image status: {str(e)}", flush=True)
+        raise HTTPException(status_code=500, detail="Failed to get batch image status")

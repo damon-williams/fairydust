@@ -45,8 +45,10 @@ class RefreshTokenRequest(BaseModel):
 
 class OAuthCallback(BaseModel):
     provider: Literal["google", "apple", "facebook"]
-    code: str
+    code: Optional[str] = None  # Web OAuth flow
+    id_token: Optional[str] = None  # Native Apple Sign-In flow
     state: Optional[str] = None
+    user: Optional[dict] = None  # Apple provides user data on first sign-in
 
 
 # User models
@@ -76,12 +78,17 @@ class User(BaseModel):
     first_name: Optional[str] = None
     birth_date: Optional[date] = None
     is_onboarding_completed: bool = False
-    streak_days: int = 0
     last_login_date: Optional[datetime] = None
     auth_provider: Optional[str] = None
+    avatar_url: Optional[str] = None
+    avatar_uploaded_at: Optional[datetime] = None
+    avatar_size_bytes: Optional[int] = None
     created_at: datetime
     updated_at: datetime
     dust_balance: int = 0  # Denormalized for performance
+    # Calculated daily bonus fields (not stored in database)
+    daily_bonus_eligible: Optional[bool] = None
+    daily_bonus_amount: Optional[int] = None
 
     class Config:
         from_attributes = True
@@ -109,12 +116,14 @@ class PersonInMyLifeCreate(BaseModel):
     name: str = Field(..., max_length=100)
     birth_date: Optional[str] = Field(None, pattern=r"^\d{4}-\d{2}-\d{2}$")
     relationship: Optional[str] = Field(None, max_length=100)
+    personality_description: Optional[str] = Field(None, max_length=200)
 
 
 class PersonInMyLifeUpdate(BaseModel):
     name: Optional[str] = Field(None, max_length=100)
     birth_date: Optional[str] = Field(None, pattern=r"^\d{4}-\d{2}-\d{2}$")
     relationship: Optional[str] = Field(None, max_length=100)
+    personality_description: Optional[str] = Field(None, max_length=200)
 
 
 class PersonInMyLife(BaseModel):
@@ -123,6 +132,10 @@ class PersonInMyLife(BaseModel):
     name: str
     birth_date: Optional[date] = None
     relationship: Optional[str] = None
+    personality_description: Optional[str] = None
+    photo_url: Optional[str] = None
+    photo_uploaded_at: Optional[datetime] = None
+    photo_size_bytes: Optional[int] = None
     created_at: datetime
     updated_at: datetime
 
@@ -159,7 +172,95 @@ class OnboardTrackingUpdate(BaseModel):
     has_seen_onboarding_complete_tip: Optional[bool] = None
 
 
-# Response models
+# Referral models
+class ReferralCodeResponse(BaseModel):
+    referral_code: str
+    created_at: datetime
+    expires_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+# Account deletion models
+class AccountDeletionRequest(BaseModel):
+    reason: Literal["not_using_anymore", "privacy_concerns", "too_expensive", "switching_platform", "other"]
+    feedback: Optional[str] = Field(None, max_length=1000)
+
+
+class AccountDeletionResponse(BaseModel):
+    message: str
+    deletion_id: str
+
+
+# Terms & Conditions models
+class TermsDocument(BaseModel):
+    id: UUID
+    document_type: Literal["terms_of_service", "privacy_policy"]
+    version: str
+    title: str
+    content_url: str
+    content_hash: str
+    is_active: bool
+    requires_acceptance: bool
+    effective_date: datetime
+    created_by: UUID
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+class TermsDocumentCreate(BaseModel):
+    document_type: Literal["terms_of_service", "privacy_policy"]
+    version: str = Field(..., max_length=20)
+    title: str = Field(..., max_length=200)
+    content_url: str
+    content_hash: str = Field(..., max_length=64)
+    requires_acceptance: bool = True
+    effective_date: datetime
+
+
+class UserTermsAcceptance(BaseModel):
+    id: UUID
+    user_id: UUID
+    document_id: UUID
+    document_type: str
+    document_version: str
+    accepted_at: datetime
+    ip_address: Optional[str] = None
+    user_agent: Optional[str] = None
+    acceptance_method: str
+
+    class Config:
+        from_attributes = True
+
+
+class TermsAcceptanceRequest(BaseModel):
+    document_type: Literal["terms_of_service", "privacy_policy"]
+    document_version: str
+    ip_address: Optional[str] = None
+    user_agent: Optional[str] = None
+
+
+class TermsCheckResponse(BaseModel):
+    requires_acceptance: bool
+    pending_documents: list[TermsDocument] = []
+    user_acceptances: list[UserTermsAcceptance] = []
+
+
+class PublicTermsResponse(BaseModel):
+    terms_of_service: Optional[TermsDocument] = None
+    privacy_policy: Optional[TermsDocument] = None
+    last_updated: datetime
+
+
+class SingleTermsResponse(BaseModel):
+    document: TermsDocument
+    last_updated: datetime
+
+
+# Response models (moved after Terms models to avoid circular reference)
 class AuthResponse(BaseModel):
     user: User
     token: Token
@@ -167,5 +268,7 @@ class AuthResponse(BaseModel):
     dust_granted: int = 0
     # Daily login bonus eligibility info
     is_first_login_today: bool = False
-    streak_bonus_eligible: bool = False
-    previous_streak_days: int = 0
+    daily_bonus_eligible: bool = False
+    # Terms & Conditions status
+    terms_acceptance_required: bool = False
+    pending_terms: list[TermsDocument] = []

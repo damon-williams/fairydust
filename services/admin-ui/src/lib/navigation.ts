@@ -4,7 +4,10 @@ import {
   Smartphone,
   Brain,
   Activity,
-  Settings
+  Settings,
+  UserPlus,
+  Trash2,
+  FileText
 } from 'lucide-react';
 
 export interface NavigationItem {
@@ -37,6 +40,21 @@ export const navigation: NavigationItem[] = [
     name: 'LLM Analytics',
     href: '/admin/llm',
     icon: Brain,
+  },
+  {
+    name: 'Referrals',
+    href: '/admin/referrals',
+    icon: UserPlus,
+  },
+  {
+    name: 'Deletion Logs',
+    href: '/admin/deletion-logs',
+    icon: Trash2,
+  },
+  {
+    name: 'Terms & Conditions',
+    href: '/admin/terms',
+    icon: FileText,
   },
   {
     name: 'System Status',

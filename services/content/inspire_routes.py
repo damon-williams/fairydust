@@ -1,4 +1,5 @@
 # services/content/inspire_routes.py
+# Service URL configuration based on environment
 import os
 import uuid
 from datetime import datetime
@@ -21,8 +22,13 @@ from models import (
 
 from shared.auth_middleware import TokenData, get_current_user
 from shared.database import Database, get_db
-from shared.llm_pricing import calculate_llm_cost
-from shared.llm_usage_logger import calculate_prompt_hash, create_request_metadata, log_llm_usage
+from shared.llm_client import llm_client, LLMError
+from shared.llm_usage_logger import calculate_prompt_hash, create_request_metadata
+
+# Service URL configuration
+environment = os.getenv("ENVIRONMENT", "staging")
+base_url_suffix = "production" if environment == "production" else "staging"
+ledger_url = f"https://fairydust-ledger-{base_url_suffix}.up.railway.app"
 
 router = APIRouter()
 
@@ -90,21 +96,51 @@ async def generate_inspiration(
         user_context = await _get_user_context(db, request.user_id)
         print("👤 INSPIRE: Retrieved user context", flush=True)
 
-        # Generate inspiration using LLM
+        # Get user's recent inspirations to avoid duplicates
+        recent_inspirations = await _get_recent_inspirations(db, request.user_id, request.category)
+        print(f"🔍 INSPIRE: Found {len(recent_inspirations)} recent inspirations to avoid", flush=True)
+
+        # Generate inspiration using LLM with enhanced duplicate prevention and retry logic
         print(
             f"🤖 INSPIRE DEBUG: Starting LLM generation for category: {request.category}", flush=True
         )
-        inspiration_content, model_used, tokens_used, cost = await _generate_inspiration_llm(
-            category=request.category,
-            used_suggestions=request.used_suggestions,
-            user_context=user_context,
-        )
+        
+        max_retries = 3
+        inspiration_content = None
+        model_used = None
+        tokens_used = {}
+        total_cost = 0.0
+        
+        for attempt in range(max_retries):
+            print(f"🔄 INSPIRE DEBUG: Generation attempt {attempt + 1}/{max_retries}", flush=True)
+            
+            content, model, tokens, cost = await _generate_inspiration_llm_with_user(
+                category=request.category,
+                used_suggestions=request.used_suggestions,
+                user_context=user_context,
+                recent_inspirations=recent_inspirations,
+                user_id=request.user_id,
+            )
+            
+            total_cost += cost
+            if content:  # Success - no duplicate detected
+                inspiration_content = content
+                model_used = model
+                tokens_used = tokens
+                break
+            else:
+                print(f"⚠️ INSPIRE DEBUG: Attempt {attempt + 1} failed (duplicate or error)", flush=True)
+                if attempt < max_retries - 1:
+                    print("🔄 INSPIRE DEBUG: Retrying with more specific anti-duplicate instructions...", flush=True)
 
         if not inspiration_content:
-            print("❌ INSPIRE DEBUG: LLM generation failed", flush=True)
+            print("❌ INSPIRE DEBUG: All generation attempts failed", flush=True)
             return InspirationErrorResponse(
-                error="Failed to generate inspiration. Please try again."
+                error="Failed to generate unique inspiration. Please try again."
             )
+        
+        # Use total cost from all attempts
+        cost = total_cost
 
         print(f"🤖 INSPIRE DEBUG: Generated inspiration: {inspiration_content[:50]}...", flush=True)
         print(
@@ -112,50 +148,8 @@ async def generate_inspiration(
             flush=True,
         )
 
-        # Log LLM usage for analytics (background task)
-        try:
-            # Calculate prompt hash for the inspiration generation
-            full_prompt = _build_inspiration_prompt(
-                category=request.category,
-                used_suggestions=request.used_suggestions,
-                user_context=user_context,
-            )
-            prompt_hash = calculate_prompt_hash(full_prompt)
-
-            # Create request metadata
-            request_metadata = create_request_metadata(
-                action="inspiration_generation",
-                parameters={
-                    "category": request.category.value,
-                    "used_suggestions_count": len(request.used_suggestions)
-                    if request.used_suggestions
-                    else 0,
-                },
-                user_context=user_context if user_context != "general user" else None,
-                session_id=str(request.session_id) if request.session_id else None,
-            )
-
-            # Log usage asynchronously (don't block inspiration generation on logging failures)
-            await log_llm_usage(
-                user_id=request.user_id,
-                app_id="fairydust-inspire",
-                provider=provider,
-                model_id=model_used,
-                prompt_tokens=tokens_used.get("prompt", 0),
-                completion_tokens=tokens_used.get("completion", 0),
-                total_tokens=tokens_used.get("total", 0),
-                cost_usd=cost,
-                latency_ms=0,  # Inspire routes don't track latency yet
-                prompt_hash=prompt_hash,
-                finish_reason="stop",
-                was_fallback=False,
-                fallback_reason=None,
-                request_metadata=request_metadata,
-                auth_token=auth_token,
-            )
-        except Exception as e:
-            print(f"⚠️ INSPIRE: Failed to log LLM usage: {str(e)}", flush=True)
-            # Continue with inspiration generation even if logging fails
+        # LLM usage logging is now handled by the centralized client
+        print("📊 INSPIRE DEBUG: LLM usage logged by centralized client", flush=True)
 
         # Save inspiration to database
         inspiration_id = await _save_inspiration(
@@ -478,6 +472,65 @@ async def _check_rate_limit(db: Database, user_id: uuid.UUID) -> bool:
         return False
 
 
+async def _get_recent_inspirations(db: Database, user_id: uuid.UUID, category: InspirationCategory) -> list[str]:
+    """Get user's recent inspirations to avoid duplicates"""
+    try:
+        # Get recent inspirations from the same category (last 30 days)
+        query = """
+            SELECT content
+            FROM user_inspirations
+            WHERE user_id = $1 
+            AND category = $2
+            AND deleted_at IS NULL
+            AND created_at > NOW() - INTERVAL '30 days'
+            ORDER BY created_at DESC
+            LIMIT 20
+        """
+        
+        rows = await db.fetch_all(query, user_id, category.value)
+        recent_content = [row["content"] for row in rows]
+        
+        print(f"🔍 INSPIRE_RECENT: Found {len(recent_content)} recent inspirations for {category.value}", flush=True)
+        return recent_content
+        
+    except Exception as e:
+        print(f"⚠️ INSPIRE_RECENT: Error getting recent inspirations: {str(e)}", flush=True)
+        return []
+
+
+def _is_duplicate_content(new_content: str, previous_content: list[str]) -> bool:
+    """Check if new content is too similar to previous content"""
+    if not previous_content or not new_content:
+        return False
+        
+    new_content_lower = new_content.lower().strip()
+    
+    for prev_content in previous_content:
+        prev_content_lower = prev_content.lower().strip()
+        
+        # Check for exact matches
+        if new_content_lower == prev_content_lower:
+            return True
+            
+        # Check for very high similarity (90%+ word overlap)
+        new_words = set(new_content_lower.split())
+        prev_words = set(prev_content_lower.split())
+        
+        if len(new_words) > 0 and len(prev_words) > 0:
+            overlap = len(new_words.intersection(prev_words))
+            similarity = overlap / max(len(new_words), len(prev_words))
+            
+            if similarity > 0.9:  # 90% similarity threshold
+                return True
+                
+        # Check for substring matches (one is contained in the other)
+        if len(new_content_lower) > 10 and len(prev_content_lower) > 10:
+            if new_content_lower in prev_content_lower or prev_content_lower in new_content_lower:
+                return True
+    
+    return False
+
+
 async def _get_user_context(db: Database, user_id: uuid.UUID) -> str:
     """Get user context for personalization"""
     try:
@@ -492,7 +545,7 @@ async def _get_user_context(db: Database, user_id: uuid.UUID) -> str:
 
         # Get people in my life
         people_query = """
-            SELECT name, relationship, birth_date
+            SELECT name, relationship, birth_date, personality_description
             FROM people_in_my_life
             WHERE user_id = $1
         """
@@ -526,6 +579,11 @@ async def _get_user_context(db: Database, user_id: uuid.UUID) -> str:
                     birth = date.fromisoformat(str(row["birth_date"]))
                     age = (date.today() - birth).days // 365
                     person_desc += f", {age} years old"
+                
+                # Add personality description if available
+                if row["personality_description"]:
+                    person_desc += f", {row['personality_description']}"
+                
                 person_desc += ")"
                 people_list.append(person_desc)
 
@@ -623,164 +681,90 @@ async def _get_llm_model_config() -> dict:
     return default_config
 
 
-def _build_inspiration_prompt(
-    category: InspirationCategory, used_suggestions: list[str], user_context: str
-) -> str:
-    """Build the full prompt for inspiration generation"""
-    # Build prompt using the same logic as in _generate_inspiration_llm
-    base_prompt = CATEGORY_PROMPTS[category]
-
-    # Add context and anti-duplication
-    context_prompt = f"Context: User is a {user_context}. "
-
-    anti_dup_prompt = ""
-    if used_suggestions:
-        suggestions_text = "\n".join([f"- {s}" for s in used_suggestions[-10:]])
-        anti_dup_prompt = f"\n\nAvoid suggesting anything similar to these recent suggestions:\n{suggestions_text}\n\n"
-
-    return f"{context_prompt}{base_prompt}{anti_dup_prompt}Respond with just the inspiration text, nothing else."
+# _build_inspiration_prompt function removed - prompt building now handled in _generate_inspiration_llm_with_user
 
 
-async def _generate_inspiration_llm(
+async def _generate_inspiration_llm_with_user(
     category: InspirationCategory,
     used_suggestions: list[str],
     user_context: str,
+    recent_inspirations: list[str] = None,
+    user_id: uuid.UUID = None,
 ) -> tuple[Optional[str], str, dict, float]:
-    """Generate inspiration using LLM"""
+    """Generate inspiration using centralized LLM client with user ID for logging"""
     try:
         # Get LLM model configuration from database/cache
         model_config = await _get_llm_model_config()
 
-        provider = model_config.get("primary_provider", "anthropic")
-        model_id = model_config.get("primary_model_id", "claude-3-haiku-20240307")
-        parameters = model_config.get("primary_parameters", {})
-
-        temperature = parameters.get("temperature", 0.8)
-        max_tokens = parameters.get("max_tokens", 150)
-        top_p = parameters.get("top_p", 0.9)
-
         # Build prompt
         base_prompt = CATEGORY_PROMPTS[category]
 
-        # Add context and anti-duplication
+        # Add context and enhanced anti-duplication
         context_prompt = f"Context: User is a {user_context}. "
 
         anti_dup_prompt = ""
+        
+        # Combine recent database content with used_suggestions for comprehensive duplicate prevention
+        all_previous_content = []
+        if recent_inspirations:
+            all_previous_content.extend(recent_inspirations)
         if used_suggestions:
-            suggestions_text = "\n".join([f"- {s}" for s in used_suggestions[-10:]])
-            anti_dup_prompt = f"\n\nAvoid suggesting anything similar to these recent suggestions:\n{suggestions_text}\n\n"
+            all_previous_content.extend(used_suggestions)
+            
+        if all_previous_content:
+            # Use the most recent 15 items to avoid overly long prompts
+            recent_items = list(set(all_previous_content))[-15:]  # Remove duplicates and limit
+            suggestions_text = "\n".join([f"- {s}" for s in recent_items])
+            anti_dup_prompt = f"\n\nIMPORTANT: Avoid generating anything identical or very similar to these previous inspirations:\n{suggestions_text}\n\nGenerate something completely fresh and unique.\n\n"
 
         full_prompt = f"{context_prompt}{base_prompt}{anti_dup_prompt}Respond with just the inspiration text, nothing else."
 
-        print(f"🤖 INSPIRE_LLM: Generating with {provider} model {model_id}", flush=True)
+        print(f"🤖 INSPIRE_LLM: Generating with centralized LLM client", flush=True)
 
-        # Make API call based on provider
-        async with httpx.AsyncClient(timeout=30.0) as client:
-            if provider == "anthropic":
-                response = await client.post(
-                    "https://api.anthropic.com/v1/messages",
-                    headers={
-                        "Content-Type": "application/json",
-                        "x-api-key": os.getenv("ANTHROPIC_API_KEY", ""),
-                        "anthropic-version": "2023-06-01",
-                    },
-                    json={
-                        "model": model_id,
-                        "max_tokens": max_tokens,
-                        "temperature": temperature,
-                        "top_p": top_p,
-                        "messages": [{"role": "user", "content": full_prompt}],
-                    },
-                )
+        # Create request metadata for logging
+        request_metadata = {
+            "parameters": {
+                "category": category.value,
+                "used_suggestions_count": len(used_suggestions) if used_suggestions else 0,
+            },
+            "user_context": user_context if user_context != "general user" else None,
+        }
 
-                if response.status_code == 200:
-                    result = response.json()
-                    content = result["content"][0]["text"].strip()
+        # Use centralized LLM client
+        completion, metadata = await llm_client.generate_completion(
+            prompt=full_prompt,
+            app_config=model_config,
+            user_id=user_id or uuid.uuid4(),
+            app_id="fairydust-inspire",
+            action="inspiration_generation",
+            request_metadata=request_metadata
+        )
 
-                    # Calculate tokens and cost
-                    usage = result.get("usage", {})
-                    prompt_tokens = usage.get("input_tokens", 0)
-                    completion_tokens = usage.get("output_tokens", 0)
-                    total_tokens = prompt_tokens + completion_tokens
+        # Extract data from metadata
+        model_id = metadata["model_id"]
+        tokens_used = metadata["tokens_used"]
+        cost = metadata["cost_usd"]
 
-                    tokens_used = {
-                        "prompt": prompt_tokens,
-                        "completion": completion_tokens,
-                        "total": total_tokens,
-                    }
+        # Convert tokens format to match existing code
+        tokens_dict = {
+            "prompt": tokens_used["prompt_tokens"],
+            "completion": tokens_used["completion_tokens"],
+            "total": tokens_used["total_tokens"],
+        }
 
-                    cost = calculate_llm_cost(
-                        "anthropic", model_id, prompt_tokens, completion_tokens
-                    )
+        # Check for duplicates before returning
+        if _is_duplicate_content(completion, all_previous_content):
+            print(f"⚠️ INSPIRE_LLM: Generated content is too similar to previous inspiration", flush=True)
+            print(f"🔄 INSPIRE_LLM: Generated: {completion[:50]}...", flush=True)
+            # Return None to trigger retry at higher level
+            return None, model_id, tokens_dict, cost
+        
+        print("✅ INSPIRE_LLM: Generated inspiration successfully", flush=True)
+        return completion, model_id, tokens_dict, cost
 
-                    print("✅ INSPIRE_LLM: Generated inspiration successfully", flush=True)
-                    return content, model_id, tokens_used, cost
-
-                else:
-                    print(
-                        f"❌ INSPIRE_LLM: Anthropic API error {response.status_code}: {response.text}",
-                        flush=True,
-                    )
-                    return None, model_id, {}, 0.0
-
-            elif provider == "openai":
-                response = await client.post(
-                    "https://api.openai.com/v1/chat/completions",
-                    headers={
-                        "Content-Type": "application/json",
-                        "Authorization": f"Bearer {os.getenv('OPENAI_API_KEY', '')}",
-                    },
-                    json={
-                        "model": model_id,
-                        "max_tokens": max_tokens,
-                        "temperature": temperature,
-                        "top_p": top_p,
-                        "messages": [{"role": "user", "content": full_prompt}],
-                    },
-                )
-
-                if response.status_code == 200:
-                    result = response.json()
-                    content = result["choices"][0]["message"]["content"].strip()
-
-                    # Calculate tokens and cost
-                    usage = result.get("usage", {})
-                    prompt_tokens = usage.get("prompt_tokens", 0)
-                    completion_tokens = usage.get("completion_tokens", 0)
-                    total_tokens = usage.get("total_tokens", prompt_tokens + completion_tokens)
-
-                    tokens_used = {
-                        "prompt": prompt_tokens,
-                        "completion": completion_tokens,
-                        "total": total_tokens,
-                    }
-
-                    # Calculate cost using shared pricing module
-                    cost = calculate_llm_cost("openai", model_id, prompt_tokens, completion_tokens)
-
-                    print("✅ INSPIRE_LLM: Generated inspiration successfully", flush=True)
-                    return content, model_id, tokens_used, cost
-
-                else:
-                    print(
-                        f"❌ INSPIRE_LLM: OpenAI API error {response.status_code}: {response.text}",
-                        flush=True,
-                    )
-                    return None, model_id, {}, 0.0
-
-            else:
-                print(
-                    f"⚠️ INSPIRE_LLM: Unsupported provider {provider}, using default response",
-                    flush=True,
-                )
-                # Return default inspiration instead of recursive call
-                return (
-                    "Stay positive and keep moving forward! ✨",
-                    "claude-3-haiku-20240307",
-                    {},
-                    0.0,
-                )
-
+    except LLMError as e:
+        print(f"❌ INSPIRE_LLM: LLM error: {str(e)}", flush=True)
+        return None, "claude-3-haiku-20240307", {}, 0.0
     except Exception as e:
         print(f"❌ INSPIRE_LLM: Error generating inspiration: {str(e)}", flush=True)
         return None, "claude-3-haiku-20240307", {}, 0.0

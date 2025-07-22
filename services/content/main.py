@@ -25,11 +25,13 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from fortune_routes import router as fortune_router
+from image_routes import image_router
 from inspire_routes import router as inspire_router
 from recipe_routes import router as recipe_router
 from restaurant_routes import router as restaurant_router
 from routes import content_router
 from story_routes import router as story_router
+from wyr_routes import router as wyr_router
 
 # Import modules with minimal logging
 from shared.database import close_db, init_db
@@ -98,6 +100,9 @@ endpoint_limits = {
     "/apps/story/generate": 50 * 1024,  # 50KB for story generation requests
     "/apps/fortune-teller/generate": 50 * 1024,  # 50KB for fortune generation requests
     "/users/*/characters": 10 * 1024,  # 10KB for character management requests
+    "/apps/would-you-rather/*": 20 * 1024,  # 20KB for would-you-rather requests
+    "/images/generate": 100 * 1024,  # 100KB for image generation requests
+    "/images/*/regenerate": 100 * 1024,  # 100KB for image regeneration requests
 }
 
 add_middleware_to_app(
@@ -109,13 +114,62 @@ add_middleware_to_app(
 )
 
 
-# Simple request logging (only errors)
+# Enhanced request logging with detailed error information
 @app.middleware("http")
 async def log_requests(request, call_next):
-    response = await call_next(request)
-    if response.status_code >= 400:
-        logger.error(f"{request.method} {request.url.path} - {response.status_code}")
-    return response
+    import traceback
+    import time
+    
+    start_time = time.time()
+    
+    try:
+        response = await call_next(request)
+        
+        # Log errors with detailed information
+        if response.status_code >= 400:
+            duration_ms = int((time.time() - start_time) * 1000)
+            
+            # Get client info
+            client_ip = request.client.host if request.client else "unknown"
+            user_agent = request.headers.get("user-agent", "unknown")
+            
+            # Log basic request info
+            logger.error(
+                f"🔥 {request.method} {request.url.path} - {response.status_code} "
+                f"({duration_ms}ms) from {client_ip}"
+            )
+            
+            # Log query parameters if present
+            if request.query_params:
+                logger.error(f"   Query params: {dict(request.query_params)}")
+            
+            # Log headers (excluding sensitive ones)
+            safe_headers = {
+                k: v for k, v in request.headers.items() 
+                if k.lower() not in ["authorization", "cookie", "x-api-key"]
+            }
+            if safe_headers:
+                logger.error(f"   Headers: {safe_headers}")
+            
+            # For 500 errors, try to read the response body for additional context
+            if response.status_code >= 500:
+                logger.error(f"   User-Agent: {user_agent}")
+                
+        return response
+        
+    except Exception as e:
+        duration_ms = int((time.time() - start_time) * 1000)
+        client_ip = request.client.host if request.client else "unknown"
+        
+        logger.error(
+            f"💥 UNHANDLED EXCEPTION {request.method} {request.url.path} "
+            f"({duration_ms}ms) from {client_ip}: {str(e)}"
+        )
+        logger.error(f"   Exception type: {type(e).__name__}")
+        logger.error(f"   Traceback: {traceback.format_exc()}")
+        
+        # Re-raise the exception
+        raise
 
 
 # Include routers
@@ -127,6 +181,8 @@ app.include_router(inspire_router, tags=["inspire"])
 app.include_router(recipe_router, tags=["recipes-new"])
 app.include_router(fortune_router, tags=["fortune-teller"])
 app.include_router(character_router, tags=["characters"])
+app.include_router(wyr_router, tags=["would-you-rather"])
+app.include_router(image_router, tags=["images"])
 
 
 @app.get("/")

@@ -39,6 +39,7 @@ OAUTH_CONFIGS = {
         "key_id": os.getenv("APPLE_KEY_ID"),
         "private_key": os.getenv("APPLE_PRIVATE_KEY"),
         "redirect_uri": os.getenv("APPLE_REDIRECT_URI"),
+        "token_url": "https://appleid.apple.com/auth/token",
     },
     "facebook": {
         "client_id": os.getenv("FACEBOOK_APP_ID"),
@@ -144,46 +145,144 @@ class AuthService:
 
         elif provider == "apple":
             # Apple Sign In requires JWT client secret
-            # This is a simplified version - full implementation would generate JWT
-            raise HTTPException(status_code=501, detail="Apple Sign In not yet implemented")
+            client_secret = self._create_apple_client_secret(config)
+            data = {
+                "code": code,
+                "client_id": config["client_id"],
+                "client_secret": client_secret,
+                "redirect_uri": config["redirect_uri"],
+                "grant_type": "authorization_code",
+            }
+            response = await self.http_client.post(
+                config["token_url"], 
+                data=data,
+                headers={"Content-Type": "application/x-www-form-urlencoded"}
+            )
 
         if response.status_code != 200:
-            raise HTTPException(status_code=400, detail="Failed to get OAuth token")
+            error_text = response.text
+            print(f"OAuth token error for {provider}: {response.status_code} - {error_text}")
+            raise HTTPException(status_code=400, detail=f"Failed to get OAuth token for {provider}: {error_text[:200]}")
 
         return response.json()
 
-    async def get_oauth_user_info(self, provider: str, access_token: str) -> dict[str, Any]:
+    async def get_oauth_user_info(self, provider: str, access_token: str, id_token: str = None, user_data: dict = None) -> dict[str, Any]:
         """Get user info from OAuth provider"""
         config = OAUTH_CONFIGS.get(provider)
-        if not config or "userinfo_url" not in config:
-            raise HTTPException(
-                status_code=400, detail=f"Cannot get user info for provider: {provider}"
-            )
-
-        headers = {"Authorization": f"Bearer {access_token}"}
-        response = await self.http_client.get(config["userinfo_url"], headers=headers)
-
-        if response.status_code != 200:
-            raise HTTPException(status_code=400, detail="Failed to get user info")
-
-        user_data = response.json()
-
+        
         # Normalize user data across providers
         normalized = {"provider_id": None, "email": None, "name": None, "picture": None}
+        
+        if provider == "apple":
+            # Apple provides user info in the ID token
+            if not id_token:
+                raise HTTPException(status_code=400, detail="Apple Sign In requires id_token")
+            
+            try:
+                # Decode ID token without verification (Apple's public keys would be needed for full verification)
+                # In production, you should verify the signature using Apple's public keys
+                print(f"🔍 APPLE: Decoding ID token for user info extraction")
+                decoded_token = jwt.decode(id_token, options={"verify_signature": False})
+                print(f"📄 APPLE: Decoded token claims: {list(decoded_token.keys())}")
+                
+                normalized["provider_id"] = decoded_token.get("sub")
+                normalized["email"] = decoded_token.get("email")
+                
+                print(f"👤 APPLE: Provider ID: {normalized['provider_id']}")
+                print(f"📧 APPLE: Email: {normalized['email']}")
+                
+                # Apple provides name only in the first authorization request
+                # Check user_data first, then fallback to token
+                if user_data and user_data.get("name"):
+                    # User data from first sign-in (native apps)
+                    print(f"📝 APPLE: Using name from user_data: {user_data['name']}")
+                    name_data = user_data["name"]
+                    if isinstance(name_data, dict):
+                        # Format: {"firstName": "John", "lastName": "Doe"}
+                        first_name = name_data.get("firstName", "")
+                        last_name = name_data.get("lastName", "")
+                        normalized["name"] = f"{first_name} {last_name}".strip()
+                    else:
+                        normalized["name"] = str(name_data)
+                else:
+                    # Fallback to token (usually empty after first sign-in)
+                    token_name = decoded_token.get("name")
+                    print(f"📝 APPLE: Using name from token: {token_name}")
+                    normalized["name"] = token_name
+                
+                # Apple doesn't provide profile pictures
+                normalized["picture"] = None
+                
+                print(f"✅ APPLE: Normalized user info: {normalized}")
+                
+            except jwt.InvalidTokenError as e:
+                print(f"❌ APPLE: JWT decode error: {str(e)}")
+                raise HTTPException(status_code=400, detail=f"Invalid Apple ID token: {str(e)}")
+        
+        else:
+            # Google and Facebook use userinfo endpoints
+            if not config or "userinfo_url" not in config:
+                raise HTTPException(
+                    status_code=400, detail=f"Cannot get user info for provider: {provider}"
+                )
 
-        if provider == "google":
-            normalized["provider_id"] = user_data.get("id")
-            normalized["email"] = user_data.get("email")
-            normalized["name"] = user_data.get("name")
-            normalized["picture"] = user_data.get("picture")
+            headers = {"Authorization": f"Bearer {access_token}"}
+            response = await self.http_client.get(config["userinfo_url"], headers=headers)
 
-        elif provider == "facebook":
-            normalized["provider_id"] = user_data.get("id")
-            normalized["email"] = user_data.get("email")
-            normalized["name"] = user_data.get("name")
-            normalized["picture"] = user_data.get("picture", {}).get("data", {}).get("url")
+            if response.status_code != 200:
+                raise HTTPException(status_code=400, detail="Failed to get user info")
+
+            user_data = response.json()
+
+            if provider == "google":
+                normalized["provider_id"] = user_data.get("id")
+                normalized["email"] = user_data.get("email")
+                normalized["name"] = user_data.get("name")
+                normalized["picture"] = user_data.get("picture")
+
+            elif provider == "facebook":
+                normalized["provider_id"] = user_data.get("id")
+                normalized["email"] = user_data.get("email")
+                normalized["name"] = user_data.get("name")
+                normalized["picture"] = user_data.get("picture", {}).get("data", {}).get("url")
 
         return normalized
+
+    def _create_apple_client_secret(self, config: dict) -> str:
+        """Create JWT client secret for Apple Sign In"""
+        if not all([config.get("team_id"), config.get("key_id"), config.get("private_key"), config.get("client_id")]):
+            raise HTTPException(
+                status_code=500, 
+                detail="Missing Apple configuration: team_id, key_id, private_key, or client_id"
+            )
+        
+        # Apple private key should be provided as a string with newlines
+        private_key = config["private_key"].replace("\\n", "\n")
+        
+        # JWT header
+        headers = {
+            "alg": "ES256",
+            "kid": config["key_id"],
+        }
+        
+        # JWT payload
+        now = datetime.utcnow()
+        payload = {
+            "iss": config["team_id"],
+            "iat": int(now.timestamp()),
+            "exp": int((now + timedelta(minutes=5)).timestamp()),  # Apple requires expiration within 6 months, we use 5 minutes
+            "aud": "https://appleid.apple.com",
+            "sub": config["client_id"],
+        }
+        
+        # Create and return JWT
+        try:
+            return jwt.encode(payload, private_key, algorithm="ES256", headers=headers)
+        except Exception as e:
+            raise HTTPException(
+                status_code=500,
+                detail=f"Failed to create Apple client secret: {str(e)}"
+            )
 
     async def __del__(self):
         await self.http_client.aclose()
@@ -196,15 +295,9 @@ async def get_current_user(
     """Dependency to get current user from JWT token"""
     from shared.redis_client import get_redis
 
-    print(
-        f"🔐 AUTH: get_current_user called with credentials present: {bool(credentials)}", flush=True
-    )
-
     redis_client = await get_redis()
     auth_service = AuthService(redis_client)
     token_data = await auth_service.decode_token(credentials.credentials)
-
-    print(f"🔐 AUTH: Token decoded successfully for user {token_data.user_id}", flush=True)
 
     # Optionally check if token is revoked
     if token_data.user_id:
@@ -212,8 +305,6 @@ async def get_current_user(
         if is_revoked:
             print(f"🔐 AUTH: Token revoked for user {token_data.user_id}", flush=True)
             raise HTTPException(status_code=401, detail="Token has been revoked")
-
-    print(f"🔐 AUTH: Returning token data for user {token_data.user_id}", flush=True)
     return token_data
 
 

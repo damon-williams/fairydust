@@ -14,6 +14,7 @@ from models import (
 
 from shared.database import Database
 from shared.redis_client import RedisCache
+from shared.daily_bonus_utils import update_last_login_for_bonus
 
 
 class LedgerService:
@@ -57,7 +58,7 @@ class LedgerService:
 
         return balance
 
-    async def _acquire_balance_lock(self, user_id: UUID, timeout: int = 5) -> bool:
+    async def _acquire_balance_lock(self, user_id: UUID, timeout: int = 2) -> bool:
         """Acquire a distributed lock for balance operations"""
         lock_key = f"{self.lock_prefix}:{user_id}"
         lock_value = str(uuid4())
@@ -142,9 +143,9 @@ class LedgerService:
         try:
             # Start transaction
             async with self.db.transaction() as conn:
-                # Get current balance with lock
+                # Get current balance (Redis lock provides concurrency control)
                 user = await conn.fetchrow(
-                    "SELECT id, dust_balance FROM users WHERE id = $1 FOR UPDATE", user_id
+                    "SELECT id, dust_balance FROM users WHERE id = $1", user_id
                 )
 
                 if not user:
@@ -234,9 +235,9 @@ class LedgerService:
 
         try:
             async with self.db.transaction() as conn:
-                # Get current balance with lock
+                # Get current balance (Redis lock provides concurrency control)
                 user = await conn.fetchrow(
-                    "SELECT id, dust_balance FROM users WHERE id = $1 FOR UPDATE", user_id
+                    "SELECT id, dust_balance FROM users WHERE id = $1", user_id
                 )
 
                 if not user:
@@ -421,15 +422,53 @@ class LedgerService:
         # Idempotency check removed for testing - allow duplicate requests
 
         # Acquire lock
+        print(f"🔒 GRANT_INITIAL_LOCK_ATTEMPT: Trying to acquire lock for user {user_id}, idempotency_key: {idempotency_key}", flush=True)
         lock_acquired = await self._acquire_balance_lock(user_id)
         if not lock_acquired:
+            print(f"🔒 GRANT_INITIAL_LOCK_FAILED: Could not acquire lock for user {user_id}, idempotency_key: {idempotency_key}", flush=True)
             raise HTTPException(status_code=409, detail="Balance operation in progress")
+        
+        print(f"✅ GRANT_INITIAL_LOCK_ACQUIRED: Successfully acquired lock for user {user_id}", flush=True)
 
         try:
+            # First check if user already has this grant to avoid constraint violation
+            existing_grant = await self.db.fetch_one(
+                "SELECT id FROM app_grants WHERE user_id = $1 AND app_id = $2 AND grant_type = 'initial'",
+                user_id,
+                app_id,
+            )
+            
+            if existing_grant:
+                print(f"✅ GRANT_INITIAL_ALREADY_EXISTS: User {user_id} already has initial grant for app {app_id}, returning existing", flush=True)
+                
+                # Find and return the existing transaction
+                existing_transaction = await self.db.fetch_one(
+                    """
+                    SELECT dt.* FROM dust_transactions dt
+                    JOIN app_grants ag ON ag.metadata->>'transaction_id' = dt.id::text
+                    WHERE ag.user_id = $1 AND ag.app_id = $2 AND ag.grant_type = 'initial'
+                    ORDER BY dt.created_at DESC
+                    LIMIT 1
+                    """,
+                    user_id,
+                    app_id,
+                )
+                
+                if existing_transaction:
+                    # Get current balance
+                    current_balance = await self.get_balance(user_id)
+                    
+                    transaction_data = self._parse_transaction_data(existing_transaction)
+                    return TransactionResponse(
+                        transaction=Transaction(**transaction_data),
+                        new_balance=current_balance,
+                        previous_balance=current_balance - existing_transaction["amount"],
+                    )
+
             async with self.db.transaction() as conn:
-                # Verify user exists
+                # Verify user exists (Redis lock provides concurrency control)
                 user = await conn.fetchrow(
-                    "SELECT id, dust_balance FROM users WHERE id = $1 FOR UPDATE", user_id
+                    "SELECT id, dust_balance FROM users WHERE id = $1", user_id
                 )
 
                 if not user:
@@ -491,32 +530,26 @@ class LedgerService:
                 )
 
         finally:
+            print(f"🔓 GRANT_INITIAL_LOCK_RELEASE: Releasing lock for user {user_id}", flush=True)
             await self._release_balance_lock(user_id)
 
-    async def grant_streak_bonus(
+    async def grant_daily_bonus(
         self,
         user_id: UUID,
         app_id: UUID,
         amount: int,
-        streak_days: int,
         idempotency_key: str,
     ) -> TransactionResponse:
-        """Grant daily streak bonus to user (max 25)"""
+        """Grant daily login bonus to user"""
 
         # Validate amount
-        if amount > 25:
-            raise HTTPException(status_code=400, detail="Streak bonus cannot exceed 25 DUST")
+        if amount > 100:
+            raise HTTPException(status_code=400, detail="Daily bonus cannot exceed 100 DUST")
 
-        # Validate streak days
-        if streak_days < 1 or streak_days > 5:
-            raise HTTPException(status_code=400, detail="Streak days must be between 1 and 5")
+        # Use UTC date to ensure consistency across timezones
+        from datetime import date, datetime
 
-        # No daily streak limits - allow multiple streak bonuses per day
-        from datetime import date
-
-        today = date.today()
-
-        # Idempotency check removed for testing - allow duplicate requests
+        today = datetime.utcnow().date()
 
         # Acquire lock
         lock_acquired = await self._acquire_balance_lock(user_id)
@@ -525,20 +558,26 @@ class LedgerService:
 
         try:
             async with self.db.transaction() as conn:
-                # Verify user exists
+                # Verify user exists and get current info
                 user = await conn.fetchrow(
-                    "SELECT id, dust_balance FROM users WHERE id = $1 FOR UPDATE", user_id
+                    "SELECT id, dust_balance, last_login_date FROM users WHERE id = $1", user_id
                 )
 
                 if not user:
                     raise HTTPException(status_code=404, detail="User not found")
+                
+                # Update last login date
+                current_time = datetime.utcnow()
+                await update_last_login_for_bonus(conn, str(user_id), current_time)
 
                 current_balance = user["dust_balance"]
                 new_balance = current_balance + amount
 
                 # Update balance
                 await conn.execute(
-                    "UPDATE users SET dust_balance = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2",
+                    """UPDATE users 
+                       SET dust_balance = $1, updated_at = CURRENT_TIMESTAMP 
+                       WHERE id = $2""",
                     new_balance,
                     user_id,
                 )
@@ -557,28 +596,39 @@ class LedgerService:
                     amount,
                     TransactionType.GRANT.value,
                     TransactionStatus.COMPLETED.value,
-                    f"Daily streak bonus (day {streak_days})",
+                    "Daily login bonus",
                     app_id,
                     json.dumps(
-                        {"grant_type": "streak", "streak_days": streak_days, "app_id": str(app_id)}
+                        {"grant_type": "daily_bonus", "app_id": str(app_id)}
                     ),
                 )
 
                 # Record grant in app_grants table
-                await conn.execute(
-                    """
-                    INSERT INTO app_grants (
-                        user_id, app_id, grant_type, amount, granted_date, idempotency_key, metadata
-                    ) VALUES ($1, $2, $3, $4, $5, $6, $7)
-                    """,
-                    user_id,
-                    app_id,
-                    "streak",
-                    amount,
-                    today,
-                    idempotency_key,
-                    json.dumps({"transaction_id": str(transaction_id), "streak_days": streak_days}),
-                )
+                try:
+                    await conn.execute(
+                        """
+                        INSERT INTO app_grants (
+                            user_id, app_id, grant_type, amount, granted_date, idempotency_key, metadata
+                        ) VALUES ($1, $2, $3, $4, $5, $6, $7)
+                        """,
+                        user_id,
+                        app_id,
+                        "daily_bonus",
+                        amount,
+                        today,
+                        idempotency_key,
+                        json.dumps({"transaction_id": str(transaction_id)}),
+                    )
+                except Exception as e:
+                    # Check for unique constraint violation (already claimed today)
+                    if "duplicate key value violates unique constraint" in str(e) and ("app_grants_user_id_app_id_grant_type" in str(e) or "granted_date" in str(e)):
+                        raise HTTPException(
+                            status_code=409, 
+                            detail=f"Daily bonus already claimed today for this app"
+                        )
+                    else:
+                        # Re-raise other database errors
+                        raise
 
                 # Invalidate cache
                 await self.balance_cache.delete(str(user_id))

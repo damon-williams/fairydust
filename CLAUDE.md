@@ -9,10 +9,20 @@ fairydust is a **mobile app backend** that powers a collection of AI-powered min
 ## Environment Variables
 
 ### Required API Keys
-- `ANTHROPIC_API_KEY`: Primary LLM provider for content generation
-- `OPENAI_API_KEY`: Secondary LLM provider (fallback)
+- `ANTHROPIC_API_KEY`: LLM provider for content generation
+- `OPENAI_API_KEY`: LLM provider for content generation,
 - `GOOGLE_PLACES_API_KEY`: Restaurant discovery (content service)
 - `TRIPADVISOR_API_KEY`: Activity search (content service)
+
+### HubSpot CRM Integration
+- `ZAPIER_HUBSPOT_WEBHOOK`: Zapier webhook URL for syncing users to HubSpot
+- `HUBSPOT_WEBHOOK_ENABLED`: Enable/disable HubSpot webhook (optional, default: true)
+
+### Service Authentication
+- `SERVICE_JWT_TOKEN`: JWT token for service-to-service authentication (apps → ledger)
+  - Must be an admin user JWT token for ledger service operations
+  - Used for referral/promotional code DUST grants
+  - Falls back to user token if not set
 
 ## Commands
 
@@ -38,12 +48,24 @@ fairydust is a **mobile app backend** that powers a collection of AI-powered min
 
 ### Admin Portal Deployment
 ```bash
-# React app requires manual build/deploy
+# React app requires manual build/deploy EVERY TIME
 cd services/admin-ui
 npm run build
 cp -r dist/* ../admin/static/
 git add . && git commit -m "Update admin portal"
 ```
+
+### CRITICAL DEPLOYMENT REMINDERS
+⚠️ **Admin Portal Static Files**: The React admin UI builds to `dist/` but must be manually copied to `../admin/static/` and committed. If changes don't appear, check:
+1. Did you run `npm run build`?
+2. Did you copy with `cp -r dist/* ../admin/static/`?
+3. Did you commit the static files with `git add ../admin/static/`?
+4. Version number should be updated in 3 places: `package.json`, `main.py`, and `Sidebar.tsx`
+
+⚠️ **Version Bumping**: Always increment version in ALL three files when making admin portal changes:
+- `services/admin-ui/package.json` 
+- `services/admin/main.py` 
+- `services/admin-ui/src/components/layout/Sidebar.tsx`
 
 ### Environment Variables
 ```bash

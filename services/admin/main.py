@@ -2,9 +2,11 @@ import os
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, JSONResponse
+from fastapi.exceptions import RequestValidationError
+from pydantic import ValidationError
 
 from shared.database import close_db, init_db
 from shared.redis_client import close_redis, init_redis
@@ -20,9 +22,9 @@ async def lifespan(app: FastAPI):
     try:
         logger.info("Starting admin service initialization...")
 
-        # Set environment variable to skip schema init for admin service
-        # since other services will create the tables
-        os.environ.setdefault("SKIP_SCHEMA_INIT", "true")
+        # Allow schema init for admin service to ensure system_config table exists
+        # since admin service needs access to system configuration
+        os.environ.setdefault("SKIP_SCHEMA_INIT", "false")
 
         await init_db()
         logger.info("Database initialized successfully")
@@ -46,8 +48,8 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(
     title="fairydust Admin Portal",
-    version="2.1.16",
-    description="Admin portal for fairydust platform",
+    version="2.14.0",
+    description="Admin portal for fairydust platform with system configuration management",
     lifespan=lifespan,
 )
 
@@ -59,13 +61,48 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# Add validation error handler for better debugging
+@app.exception_handler(RequestValidationError)
+async def validation_exception_handler(request: Request, exc: RequestValidationError):
+    import logging
+    logger = logging.getLogger(__name__)
+    
+    # Log detailed validation error information
+    logger.error(f"Validation error on {request.method} {request.url}")
+    logger.error(f"Validation errors: {exc.errors()}")
+    
+    # Try to log the request body if possible
+    try:
+        body = await request.body()
+        if body:
+            import json
+            try:
+                body_json = json.loads(body)
+                logger.error(f"Request body: {body_json}")
+            except:
+                logger.error(f"Request body (raw): {body.decode()}")
+    except Exception as e:
+        logger.warning(f"Could not read request body: {e}")
+    
+    # Return detailed error response
+    return JSONResponse(
+        status_code=422,
+        content={
+            "detail": exc.errors(),
+            "body": "See server logs for request body details"
+        }
+    )
+
 from routes import (
     apps_router,
     auth_router,
     dashboard_router,
     llm_router,
+    referrals_router,
+    system_router,
     users_router,
 )
+from routes.terms import terms_router
 
 # Include all route modules FIRST
 app.include_router(auth_router, prefix="/admin")
@@ -73,6 +110,9 @@ app.include_router(dashboard_router, prefix="/admin")
 app.include_router(users_router, prefix="/admin/users")
 app.include_router(apps_router, prefix="/admin/apps")
 app.include_router(llm_router, prefix="/admin/llm")
+app.include_router(referrals_router, prefix="/admin/referrals")
+app.include_router(terms_router, prefix="/admin/terms")
+app.include_router(system_router, prefix="/admin/system")
 
 # Dynamic asset serving for any file with cache-busting
 static_dir = Path(__file__).parent / "static"
@@ -148,6 +188,9 @@ async def serve_react_app(path: str):
         or path.startswith("admin/users")
         or path.startswith("admin/apps")
         or path.startswith("admin/llm")
+        or path.startswith("admin/referrals")
+        or path.startswith("admin/deletion-logs")
+        or path.startswith("admin/terms")
         or path.startswith("admin/system")
         or path.startswith("admin/settings")
     ):

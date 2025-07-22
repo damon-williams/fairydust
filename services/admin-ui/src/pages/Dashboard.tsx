@@ -1,29 +1,23 @@
 import { useState, useEffect } from 'react';
 import { StatsCard } from '@/components/dashboard/StatsCard';
 import { RecentActivity } from '@/components/dashboard/RecentActivity';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
-import { Badge } from '@/components/ui/badge';
 import { 
   Users, 
-  Smartphone, 
-  Clock, 
   Sparkles,
-  AlertTriangle,
   Activity,
   DollarSign,
   TrendingUp,
-  RefreshCw
+  RefreshCw,
+  AlertTriangle
 } from 'lucide-react';
-import { DashboardStats, User, App, SystemHealth } from '@/types/admin';
+import { DashboardStats, User } from '@/types/admin';
 import { AdminAPI } from '@/lib/admin-api';
 
 export function Dashboard() {
   const [stats, setStats] = useState<DashboardStats | null>(null);
   const [recentUsers, setRecentUsers] = useState<User[]>([]);
-  const [recentApps, setRecentApps] = useState<App[]>([]);
-  const [systemHealth, setSystemHealth] = useState<SystemHealth | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -32,17 +26,13 @@ export function Dashboard() {
       setLoading(true);
       setError(null);
       
-      const [statsData, healthData, usersData, appsData] = await Promise.all([
+      const [statsData, usersData] = await Promise.all([
         AdminAPI.getDashboardStats(),
-        AdminAPI.getSystemHealth(),
         AdminAPI.getRecentUsers(),
-        AdminAPI.getRecentApps(),
       ]);
       
       setStats(statsData);
-      setSystemHealth(healthData);
       setRecentUsers(usersData);
-      setRecentApps(appsData);
     } catch (err) {
       console.error('Failed to load dashboard data:', err);
       setError('Failed to load dashboard data. Please try again.');
@@ -55,7 +45,6 @@ export function Dashboard() {
     loadDashboardData();
   }, []);
 
-  const hasSystemIssues = systemHealth && Object.values(systemHealth).some(status => status !== 'online');
 
   if (loading) {
     return (
@@ -97,28 +86,6 @@ export function Dashboard() {
         <p className="text-slate-500">Welcome to the fairydust admin portal.</p>
       </div>
 
-      {/* System Health Alert */}
-      {hasSystemIssues && (
-        <Alert className="border-yellow-200 bg-yellow-50">
-          <AlertTriangle className="h-4 w-4 text-yellow-600" />
-          <AlertTitle className="text-yellow-800">System Status Alert</AlertTitle>
-          <AlertDescription className="text-yellow-700">
-            Some services are experiencing issues. 
-            <Button 
-              variant="link" 
-              className="p-0 ml-1 text-yellow-800 underline"
-              onClick={() => {
-                // Scroll to system health section
-                document.getElementById('system-health-section')?.scrollIntoView({ behavior: 'smooth' });
-              }}
-            >
-              View System Status
-            </Button>
-          </AlertDescription>
-        </Alert>
-      )}
-
-      {/* Removed pending apps alert - auto-approval workflow */}
 
       {/* Top Row Stats */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
@@ -179,38 +146,7 @@ export function Dashboard() {
       </div>
 
       {/* Recent Activity */}
-      <RecentActivity recentUsers={recentUsers} recentApps={recentApps} />
-
-      {/* System Health Overview */}
-      <Card id="system-health-section">
-        <CardHeader>
-          <CardTitle className="flex items-center">
-            <Activity className="mr-2 h-5 w-5" />
-            System Health
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
-            {systemHealth && Object.entries(systemHealth).map(([service, status]) => (
-              <div key={service} className="text-center">
-                <div className="capitalize font-medium text-sm text-slate-700 mb-2">
-                  {service}
-                </div>
-                <Badge
-                  variant={
-                    status === 'online' ? 'default' :
-                    status === 'degraded' ? 'secondary' :
-                    'destructive'
-                  }
-                  className="w-full justify-center"
-                >
-                  {status as string}
-                </Badge>
-              </div>
-            ))}
-          </div>
-        </CardContent>
-      </Card>
+      <RecentActivity recentUsers={recentUsers} />
     </div>
   );
 }

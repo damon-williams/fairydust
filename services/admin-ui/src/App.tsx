@@ -4,7 +4,11 @@ import { Dashboard } from '@/pages/Dashboard';
 import { Users } from '@/pages/Users';
 import { Apps } from '@/pages/Apps';
 import { LLM } from '@/pages/LLM';
+import { Referrals } from '@/pages/Referrals';
+import DeletionLogs from '@/pages/DeletionLogs';
+import Terms from '@/pages/Terms';
 import { SystemStatus } from '@/pages/SystemStatus';
+import Settings from '@/pages/Settings';
 import { Toaster } from '@/components/ui/sonner';
 import { AuthProvider } from '@/contexts/AuthContext';
 import { ProtectedRoute } from '@/components/auth/ProtectedRoute';
@@ -27,12 +31,11 @@ function App() {
                     <Route path="users" element={<Users />} />
                     <Route path="apps" element={<Apps />} />
                     <Route path="llm" element={<LLM />} />
+                    <Route path="referrals" element={<Referrals />} />
+                    <Route path="deletion-logs" element={<DeletionLogs />} />
+                    <Route path="terms" element={<Terms />} />
                     <Route path="system" element={<SystemStatus />} />
-                    <Route path="settings" element={
-                      <div className="flex items-center justify-center h-64">
-                        <p className="text-slate-500">Settings page coming soon...</p>
-                      </div>
-                    } />
+                    <Route path="settings" element={<Settings />} />
                     {/* Default to dashboard */}
                     <Route path="*" element={<Navigate to="/admin/dashboard" replace />} />
                   </Routes>

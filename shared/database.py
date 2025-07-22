@@ -202,7 +202,7 @@ async def create_tables():
         CREATE INDEX IF NOT EXISTS idx_users_fairyname ON users(fairyname);
         CREATE INDEX IF NOT EXISTS idx_users_email ON users(email);
         CREATE INDEX IF NOT EXISTS idx_users_phone ON users(phone);
-        CREATE INDEX IF NOT EXISTS idx_users_streak_login ON users(id, last_login_date, streak_days);
+        CREATE INDEX IF NOT EXISTS idx_users_login ON users(id, last_login_date);
     """
     )
 
@@ -213,14 +213,17 @@ async def create_tables():
         ALTER TABLE users ADD COLUMN IF NOT EXISTS birth_date DATE;
         ALTER TABLE users ADD COLUMN IF NOT EXISTS city VARCHAR(100);
         ALTER TABLE users ADD COLUMN IF NOT EXISTS country VARCHAR(100) DEFAULT 'US';
-        ALTER TABLE users ADD COLUMN IF NOT EXISTS last_profiling_session TIMESTAMP;
-        ALTER TABLE users ADD COLUMN IF NOT EXISTS total_profiling_sessions INTEGER DEFAULT 0;
-        ALTER TABLE users ADD COLUMN IF NOT EXISTS streak_days INTEGER DEFAULT 0;
         ALTER TABLE users ADD COLUMN IF NOT EXISTS last_login_date TIMESTAMP WITH TIME ZONE;
         ALTER TABLE users ADD COLUMN IF NOT EXISTS is_onboarding_completed BOOLEAN DEFAULT FALSE;
+        ALTER TABLE users ADD COLUMN IF NOT EXISTS avatar_uploaded_at TIMESTAMP WITH TIME ZONE;
+        ALTER TABLE users ADD COLUMN IF NOT EXISTS avatar_size_bytes INTEGER;
 
         -- Drop old age_range column (replaced with birth_date)
         ALTER TABLE users DROP COLUMN IF EXISTS age_range;
+        
+        -- Drop old profiling columns (no longer used)
+        ALTER TABLE users DROP COLUMN IF EXISTS last_profiling_session;
+        ALTER TABLE users DROP COLUMN IF EXISTS total_profiling_sessions;
     """
     )
 
@@ -274,14 +277,9 @@ async def create_tables():
             slug VARCHAR(255) UNIQUE NOT NULL,
             description TEXT NOT NULL,
             icon_url TEXT,
-            dust_per_use INTEGER NOT NULL DEFAULT 5,
             status VARCHAR(50) NOT NULL DEFAULT 'pending',
             category VARCHAR(100) NOT NULL,
-            website_url TEXT,
-            demo_url TEXT,
-            callback_url TEXT,
             is_active BOOLEAN DEFAULT FALSE,
-            admin_notes TEXT,
             created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
             updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
         );
@@ -290,6 +288,17 @@ async def create_tables():
         CREATE INDEX IF NOT EXISTS idx_apps_slug ON apps(slug);
         CREATE INDEX IF NOT EXISTS idx_apps_status ON apps(status);
         CREATE INDEX IF NOT EXISTS idx_apps_category ON apps(category);
+        
+        -- Remove unused columns from apps table
+        ALTER TABLE apps DROP COLUMN IF EXISTS dust_per_use;
+        ALTER TABLE apps DROP COLUMN IF EXISTS website_url;
+        ALTER TABLE apps DROP COLUMN IF EXISTS demo_url;
+        ALTER TABLE apps DROP COLUMN IF EXISTS callback_url;
+        ALTER TABLE apps DROP COLUMN IF EXISTS admin_notes;
+        ALTER TABLE apps DROP COLUMN IF EXISTS is_approved;
+        ALTER TABLE apps DROP COLUMN IF EXISTS registration_source;
+        ALTER TABLE apps DROP COLUMN IF EXISTS registered_by_service;
+        ALTER TABLE apps DROP COLUMN IF EXISTS registration_metadata;
     """
     )
 
@@ -345,6 +354,9 @@ async def create_tables():
             name VARCHAR(100) NOT NULL,
             birth_date DATE,
             relationship VARCHAR(100),
+            photo_url TEXT,
+            photo_uploaded_at TIMESTAMP WITH TIME ZONE,
+            photo_size_bytes INTEGER,
             created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
             updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
         );
@@ -353,6 +365,14 @@ async def create_tables():
 
         -- Add birth_date column to existing people_in_my_life table
         ALTER TABLE people_in_my_life ADD COLUMN IF NOT EXISTS birth_date DATE;
+
+        -- Add photo-related columns to existing people_in_my_life table
+        ALTER TABLE people_in_my_life ADD COLUMN IF NOT EXISTS photo_url TEXT;
+        ALTER TABLE people_in_my_life ADD COLUMN IF NOT EXISTS photo_uploaded_at TIMESTAMP WITH TIME ZONE;
+        ALTER TABLE people_in_my_life ADD COLUMN IF NOT EXISTS photo_size_bytes INTEGER;
+
+        -- Add personality description column for Story app character enhancement
+        ALTER TABLE people_in_my_life ADD COLUMN IF NOT EXISTS personality_description TEXT;
 
         -- Drop old age_range column from people_in_my_life (replaced with birth_date)
         ALTER TABLE people_in_my_life DROP COLUMN IF EXISTS age_range;
@@ -653,6 +673,15 @@ async def create_tables():
         """
     )
 
+    # Add image support columns to user_stories table
+    await db.execute_schema(
+        """
+        ALTER TABLE user_stories ADD COLUMN IF NOT EXISTS has_images BOOLEAN DEFAULT FALSE;
+        ALTER TABLE user_stories ADD COLUMN IF NOT EXISTS images_complete BOOLEAN DEFAULT FALSE;
+        ALTER TABLE user_stories ADD COLUMN IF NOT EXISTS image_data JSONB DEFAULT '{}';
+        """
+    )
+
     # Create index for target_audience after column is added
     await db.execute_schema(
         """
@@ -764,6 +793,31 @@ async def create_tables():
     """
     )
 
+    # Story images table for tracking individual image generation
+    await db.execute_schema(
+        """
+        CREATE TABLE IF NOT EXISTS story_images (
+            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            story_id UUID NOT NULL REFERENCES user_stories(id) ON DELETE CASCADE,
+            user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            image_id VARCHAR(50) NOT NULL,
+            url TEXT,
+            prompt TEXT NOT NULL,
+            scene_description TEXT NOT NULL,
+            status VARCHAR(20) NOT NULL DEFAULT 'pending',
+            generation_metadata JSONB DEFAULT '{}',
+            created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE(story_id, image_id)
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_story_images_story_id ON story_images(story_id);
+        CREATE INDEX IF NOT EXISTS idx_story_images_user_id ON story_images(user_id);
+        CREATE INDEX IF NOT EXISTS idx_story_images_status ON story_images(status);
+        CREATE INDEX IF NOT EXISTS idx_story_images_created_at ON story_images(created_at DESC);
+    """
+    )
+
     # Restaurant App Tables - Execute each statement separately for better error handling
     try:
         await db.execute_schema(
@@ -830,9 +884,8 @@ async def create_tables():
         await db.execute_schema(
             """
             INSERT INTO apps (
-                id, builder_id, name, slug, description, icon_url, dust_per_use,
-                status, category, website_url, demo_url, callback_url,
-                is_active, admin_notes, created_at, updated_at
+                id, builder_id, name, slug, description, icon_url,
+                status, category, is_active, created_at, updated_at
             )
             SELECT
                 gen_random_uuid(),
@@ -841,14 +894,9 @@ async def create_tables():
                 'fairydust-restaurant',
                 'Find restaurants based on your group''s preferences',
                 NULL,
-                3,
                 'approved',
                 'lifestyle',
-                NULL,
-                NULL,
-                NULL,
                 true,
-                'Auto-created for mobile app implementation',
                 CURRENT_TIMESTAMP,
                 CURRENT_TIMESTAMP
             WHERE NOT EXISTS (
@@ -864,9 +912,8 @@ async def create_tables():
         await db.execute_schema(
             """
             INSERT INTO apps (
-                id, builder_id, name, slug, description, icon_url, dust_per_use,
-                status, category, website_url, demo_url, callback_url,
-                is_active, admin_notes, created_at, updated_at
+                id, builder_id, name, slug, description, icon_url,
+                status, category, is_active, created_at, updated_at
             )
             SELECT
                 gen_random_uuid(),
@@ -875,14 +922,9 @@ async def create_tables():
                 'fairydust-activity',
                 'Discover personalized activities and attractions based on your location and preferences',
                 NULL,
-                3,
                 'approved',
                 'lifestyle',
-                NULL,
-                NULL,
-                NULL,
                 true,
-                'Auto-created for mobile app implementation',
                 CURRENT_TIMESTAMP,
                 CURRENT_TIMESTAMP
             WHERE NOT EXISTS (
@@ -924,9 +966,8 @@ async def create_tables():
         await db.execute_schema(
             """
             INSERT INTO apps (
-                id, builder_id, name, slug, description, icon_url, dust_per_use,
-                status, category, website_url, demo_url, callback_url,
-                is_active, admin_notes, created_at, updated_at
+                id, builder_id, name, slug, description, icon_url,
+                status, category, is_active, created_at, updated_at
             )
             SELECT
                 gen_random_uuid(),
@@ -935,14 +976,9 @@ async def create_tables():
                 'fairydust-inspire',
                 'Get personalized inspirations and challenges for daily motivation',
                 NULL,
-                2,
                 'approved',
                 'lifestyle',
-                NULL,
-                NULL,
-                NULL,
                 true,
-                'Auto-created for mobile app implementation',
                 CURRENT_TIMESTAMP,
                 CURRENT_TIMESTAMP
             WHERE NOT EXISTS (
@@ -988,9 +1024,8 @@ async def create_tables():
         await db.execute_schema(
             """
             INSERT INTO apps (
-                id, builder_id, name, slug, description, icon_url, dust_per_use,
-                status, category, website_url, demo_url, callback_url,
-                is_active, admin_notes, created_at, updated_at
+                id, builder_id, name, slug, description, icon_url,
+                status, category, is_active, created_at, updated_at
             )
             SELECT
                 gen_random_uuid(),
@@ -999,14 +1034,9 @@ async def create_tables():
                 'fairydust-fortune-teller',
                 'Get personalized mystical guidance and fortune readings based on astrology and numerology',
                 NULL,
-                3,
                 'approved',
                 'lifestyle',
-                NULL,
-                NULL,
-                NULL,
                 true,
-                'Auto-created for mobile app implementation',
                 CURRENT_TIMESTAMP,
                 CURRENT_TIMESTAMP
             WHERE NOT EXISTS (
@@ -1057,9 +1087,8 @@ async def create_tables():
         await db.execute_schema(
             """
             INSERT INTO apps (
-                id, builder_id, name, slug, description, icon_url, dust_per_use,
-                status, category, website_url, demo_url, callback_url,
-                is_active, admin_notes, created_at, updated_at
+                id, builder_id, name, slug, description, icon_url,
+                status, category, is_active, created_at, updated_at
             )
             SELECT
                 gen_random_uuid(),
@@ -1068,14 +1097,9 @@ async def create_tables():
                 'fairydust-recipe',
                 'Generate personalized recipes based on dietary preferences and group needs',
                 NULL,
-                3,
                 'approved',
                 'lifestyle',
-                NULL,
-                NULL,
-                NULL,
                 true,
-                'Auto-created for mobile app implementation',
                 CURRENT_TIMESTAMP,
                 CURRENT_TIMESTAMP
             WHERE NOT EXISTS (
@@ -1101,8 +1125,9 @@ async def create_tables():
             created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
 
             -- Constraints to prevent duplicate grants
-            UNIQUE(user_id, app_id, grant_type),
-            UNIQUE(user_id, grant_type, granted_date),
+            -- For initial grants: one per user per app (no date constraint)
+            -- For streak grants: one per user per app per day
+            UNIQUE(user_id, app_id, grant_type, granted_date),
             UNIQUE(idempotency_key)
         );
 
@@ -1113,6 +1138,34 @@ async def create_tables():
         CREATE INDEX IF NOT EXISTS idx_app_grants_user_type_date ON app_grants(user_id, grant_type, granted_date);
     """
     )
+    
+    # Fix for streak constraint bug - remove old constraint and ensure correct one exists
+    try:
+        # Drop the problematic constraint that prevents daily streak bonuses
+        await db.execute("ALTER TABLE app_grants DROP CONSTRAINT IF EXISTS app_grants_user_id_app_id_grant_type_key")
+        logger.info("Dropped old app_grants constraint that prevented daily streak bonuses")
+    except Exception as e:
+        # Constraint might not exist, which is fine
+        logger.debug(f"Old constraint drop (expected if doesn't exist): {e}")
+    
+    # Ensure the correct constraint exists (CREATE TABLE IF NOT EXISTS above should have created it)
+    # but add it if migrating from old schema
+    try:
+        await db.execute("""
+            DO $$
+            BEGIN
+                IF NOT EXISTS (
+                    SELECT 1 FROM pg_constraint 
+                    WHERE conname = 'app_grants_user_id_app_id_grant_type_granted_date_key'
+                ) THEN
+                    ALTER TABLE app_grants ADD CONSTRAINT app_grants_user_id_app_id_grant_type_granted_date_key 
+                        UNIQUE(user_id, app_id, grant_type, granted_date);
+                END IF;
+            END $$;
+        """)
+        logger.info("Ensured correct app_grants constraint exists for daily streak bonuses")
+    except Exception as e:
+        logger.warning(f"Error ensuring constraint (may already exist): {e}")
 
     # Action-based DUST pricing table
     await db.execute_schema(
@@ -1151,6 +1204,360 @@ async def create_tables():
 
         CREATE INDEX IF NOT EXISTS idx_custom_characters_user_id ON custom_characters(user_id);
         CREATE INDEX IF NOT EXISTS idx_custom_characters_active ON custom_characters(user_id, is_active);
+    """
+    )
+
+    # Would You Rather game tables
+    await db.execute_schema(
+        """
+        CREATE TABLE IF NOT EXISTS wyr_game_sessions (
+            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            game_length INTEGER NOT NULL CHECK (game_length IN (5, 10, 20)),
+            category VARCHAR(50) NOT NULL,
+            custom_request TEXT,
+            status VARCHAR(20) NOT NULL DEFAULT 'in_progress' CHECK (status IN ('in_progress', 'completed')),
+            current_question INTEGER DEFAULT 1,
+            started_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+            completed_at TIMESTAMP WITH TIME ZONE,
+            summary TEXT,
+            questions JSONB NOT NULL DEFAULT '[]',
+            answers JSONB NOT NULL DEFAULT '[]',
+            created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_wyr_sessions_user_id ON wyr_game_sessions(user_id);
+        CREATE INDEX IF NOT EXISTS idx_wyr_sessions_status ON wyr_game_sessions(user_id, status);
+        CREATE INDEX IF NOT EXISTS idx_wyr_sessions_created ON wyr_game_sessions(created_at DESC);
+    """
+    )
+
+    # Referral System Tables
+    await db.execute_schema(
+        """
+        CREATE TABLE IF NOT EXISTS referral_codes (
+            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            referral_code VARCHAR(10) UNIQUE NOT NULL,
+            created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+            expires_at TIMESTAMP WITH TIME ZONE NOT NULL,
+            is_active BOOLEAN DEFAULT true
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_referral_codes_code ON referral_codes(referral_code);
+        CREATE INDEX IF NOT EXISTS idx_referral_codes_user ON referral_codes(user_id);
+        CREATE INDEX IF NOT EXISTS idx_referral_codes_active ON referral_codes(is_active, expires_at);
+    """
+    )
+
+    await db.execute_schema(
+        """
+        CREATE TABLE IF NOT EXISTS referral_redemptions (
+            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            referral_code VARCHAR(10) NOT NULL,
+            referrer_user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            referee_user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            redeemed_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+            referee_bonus INTEGER NOT NULL,
+            referrer_bonus INTEGER NOT NULL,
+            milestone_bonus INTEGER DEFAULT 0
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_referral_redemptions_referrer ON referral_redemptions(referrer_user_id);
+        CREATE INDEX IF NOT EXISTS idx_referral_redemptions_referee ON referral_redemptions(referee_user_id);
+        CREATE INDEX IF NOT EXISTS idx_referral_redemptions_code ON referral_redemptions(referral_code);
+        CREATE INDEX IF NOT EXISTS idx_referral_redemptions_redeemed ON referral_redemptions(redeemed_at DESC);
+    """
+    )
+
+    # Promotional Referral Codes table
+    await db.execute_schema(
+        """
+        CREATE TABLE IF NOT EXISTS promotional_referral_codes (
+            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            code VARCHAR(20) UNIQUE NOT NULL,
+            description TEXT NOT NULL,
+            dust_bonus INTEGER NOT NULL,
+            max_uses INTEGER,
+            current_uses INTEGER DEFAULT 0,
+            created_by UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+            expires_at TIMESTAMP WITH TIME ZONE NOT NULL,
+            is_active BOOLEAN DEFAULT true
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_promotional_codes_code ON promotional_referral_codes(code);
+        CREATE INDEX IF NOT EXISTS idx_promotional_codes_active ON promotional_referral_codes(is_active, expires_at);
+        CREATE INDEX IF NOT EXISTS idx_promotional_codes_usage ON promotional_referral_codes(current_uses, max_uses);
+    """
+    )
+
+    # Promotional Referral Redemptions table
+    await db.execute_schema(
+        """
+        CREATE TABLE IF NOT EXISTS promotional_referral_redemptions (
+            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            promotional_code VARCHAR(20) NOT NULL,
+            user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            dust_bonus INTEGER NOT NULL,
+            redeemed_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE(promotional_code, user_id)
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_promotional_redemptions_code ON promotional_referral_redemptions(promotional_code);
+        CREATE INDEX IF NOT EXISTS idx_promotional_redemptions_user ON promotional_referral_redemptions(user_id);
+        CREATE INDEX IF NOT EXISTS idx_promotional_redemptions_redeemed ON promotional_referral_redemptions(redeemed_at DESC);
+    """
+    )
+
+    # Referral System Configuration table
+    await db.execute_schema(
+        """
+        CREATE TABLE IF NOT EXISTS referral_system_config (
+            id INTEGER PRIMARY KEY DEFAULT 1,
+            referee_bonus INTEGER NOT NULL DEFAULT 15,
+            referrer_bonus INTEGER NOT NULL DEFAULT 15,
+            milestone_rewards JSONB NOT NULL DEFAULT '[{"referral_count": 5, "bonus_amount": 25}, {"referral_count": 10, "bonus_amount": 50}]'::jsonb,
+            code_expiry_days INTEGER NOT NULL DEFAULT 30,
+            max_referrals_per_user INTEGER NOT NULL DEFAULT 100,
+            system_enabled BOOLEAN NOT NULL DEFAULT true,
+            created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+        );
+
+        -- Insert default configuration if none exists
+        INSERT INTO referral_system_config (id) VALUES (1) ON CONFLICT (id) DO NOTHING;
+    """
+    )
+
+    # Insert fairydust-invite app if it doesn't exist
+    try:
+        await db.execute_schema(
+            """
+            INSERT INTO apps (
+                id, builder_id, name, slug, description, icon_url,
+                status, category, is_active, created_at, updated_at
+            )
+            SELECT
+                gen_random_uuid(),
+                (SELECT id FROM users WHERE is_builder = true LIMIT 1),
+                'Friend Invitations',
+                'fairydust-invite',
+                'Invite friends to fairydust and earn DUST rewards together',
+                NULL,
+                'approved',
+                'social',
+                true,
+                CURRENT_TIMESTAMP,
+                CURRENT_TIMESTAMP
+            WHERE NOT EXISTS (
+                SELECT 1 FROM apps WHERE slug = 'fairydust-invite'
+            );
+        """
+        )
+    except Exception as e:
+        logger.warning(f"Invite app creation failed (may already exist): {e}")
+
+    # System Configuration table for admin-configurable values
+    await db.execute_schema(
+        """
+        CREATE TABLE IF NOT EXISTS system_config (
+            key VARCHAR(100) PRIMARY KEY,
+            value TEXT NOT NULL,
+            description TEXT,
+            updated_by UUID REFERENCES users(id),
+            created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+        );
+        
+        -- Insert default daily bonus configuration
+        INSERT INTO system_config (key, value, description) 
+        VALUES ('daily_login_bonus_amount', '5', 'Amount of DUST granted for daily login bonus')
+        ON CONFLICT (key) DO NOTHING;
+    """
+    )
+
+    # Account Deletion Logs table for audit trail and compliance
+    await db.execute_schema(
+        """
+        CREATE TABLE IF NOT EXISTS account_deletion_logs (
+            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            user_id UUID NOT NULL,
+            fairyname VARCHAR(255),
+            email VARCHAR(255),
+            deletion_reason VARCHAR(50),
+            deletion_feedback TEXT,
+            deleted_by VARCHAR(50) NOT NULL DEFAULT 'self',
+            deleted_by_user_id UUID,
+            user_created_at TIMESTAMP WITH TIME ZONE,
+            deletion_requested_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+            deletion_completed_at TIMESTAMP WITH TIME ZONE,
+            data_summary JSONB,
+            created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+            CONSTRAINT deletion_reason_check CHECK (deletion_reason IN (
+                'not_using_anymore', 'privacy_concerns', 'too_expensive', 
+                'switching_platform', 'other'
+            )),
+            CONSTRAINT deleted_by_check CHECK (deleted_by IN ('self', 'admin'))
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_account_deletion_logs_user_id ON account_deletion_logs(user_id);
+        CREATE INDEX IF NOT EXISTS idx_account_deletion_logs_deletion_requested_at ON account_deletion_logs(deletion_requested_at DESC);
+        CREATE INDEX IF NOT EXISTS idx_account_deletion_logs_deleted_by ON account_deletion_logs(deleted_by);
+        CREATE INDEX IF NOT EXISTS idx_account_deletion_logs_reason ON account_deletion_logs(deletion_reason);
+    """
+    )
+
+    # Clean up streak-related columns and constraints safely
+    try:
+        # Drop old index that references streak_days first
+        await db.execute_schema(
+            """
+            DROP INDEX IF EXISTS idx_users_streak_login;
+            """
+        )
+        logger.info("Dropped old streak login index")
+    except Exception as e:
+        logger.debug(f"Index cleanup (expected if index doesn't exist): {e}")
+    
+    try:
+        await db.execute_schema(
+            """
+            -- Remove old streak columns (they may not exist in all environments)
+            ALTER TABLE users DROP COLUMN IF EXISTS streak_days;
+            ALTER TABLE users DROP COLUMN IF EXISTS timezone;
+            """
+        )
+        logger.info("Removed streak_days and timezone columns from users table")
+    except Exception as e:
+        logger.debug(f"Column cleanup (expected if columns don't exist): {e}")
+
+    # Clean up app_grants table for daily bonus only (remove streak logic)
+    try:
+        # First drop the constraint, then update data, then recreate constraint
+        await db.execute_schema(
+            """
+            -- Drop the existing constraint first
+            ALTER TABLE app_grants DROP CONSTRAINT IF EXISTS app_grants_grant_type_check;
+            """
+        )
+        logger.info("Dropped existing app_grants constraint")
+        
+        # Update existing data
+        await db.execute_schema(
+            """
+            UPDATE app_grants SET grant_type = 'daily_bonus' WHERE grant_type = 'streak';
+            """
+        )
+        logger.info("Updated existing streak grants to daily_bonus")
+        
+        # Add the new constraint with all valid grant types
+        await db.execute_schema(
+            """
+            ALTER TABLE app_grants ADD CONSTRAINT app_grants_grant_type_check 
+                CHECK (grant_type IN ('initial', 'referral_bonus', 'referee_bonus', 'milestone_bonus', 'promotional', 'daily_bonus'));
+            """
+        )
+        logger.info("Added updated app_grants constraint for daily bonus system")
+    except Exception as e:
+        logger.warning(f"App grants cleanup failed: {e}")
+
+    # User Images table for Image app
+    await db.execute_schema(
+        """
+        CREATE TABLE IF NOT EXISTS user_images (
+            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            url TEXT NOT NULL,
+            prompt TEXT NOT NULL,
+            style VARCHAR(20) NOT NULL CHECK (style IN ('realistic', 'artistic', 'cartoon', 'abstract', 'vintage', 'modern')),
+            image_size VARCHAR(10) NOT NULL CHECK (image_size IN ('standard', 'large', 'square')),
+            is_favorited BOOLEAN DEFAULT FALSE,
+            reference_people JSONB DEFAULT '[]',
+            metadata JSONB DEFAULT '{}',
+            created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_user_images_user_id ON user_images(user_id);
+        CREATE INDEX IF NOT EXISTS idx_user_images_created_at ON user_images(created_at DESC);
+        CREATE INDEX IF NOT EXISTS idx_user_images_style ON user_images(style);
+        CREATE INDEX IF NOT EXISTS idx_user_images_favorited ON user_images(user_id, is_favorited);
+        CREATE INDEX IF NOT EXISTS idx_user_images_has_people ON user_images(user_id) WHERE jsonb_array_length(reference_people) > 0;
+    """
+    )
+
+    # Insert Image app if it doesn't exist
+    try:
+        await db.execute_schema(
+            """
+            INSERT INTO apps (
+                id, builder_id, name, slug, description, icon_url,
+                status, category, is_active, created_at, updated_at
+            )
+            SELECT
+                gen_random_uuid(),
+                (SELECT id FROM users WHERE is_builder = true LIMIT 1),
+                'Image',
+                'fairydust-image',
+                'Generate AI images from text prompts with optional reference people',
+                NULL,
+                'approved',
+                'creative',
+                true,
+                CURRENT_TIMESTAMP,
+                CURRENT_TIMESTAMP
+            WHERE NOT EXISTS (
+                SELECT 1 FROM apps WHERE slug = 'fairydust-image'
+            );
+        """
+        )
+    except Exception as e:
+        logger.warning(f"Image app creation failed (may already exist): {e}")
+
+    # Terms & Conditions system tables
+    await db.execute_schema(
+        """
+        CREATE TABLE IF NOT EXISTS terms_documents (
+            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            document_type VARCHAR(50) NOT NULL CHECK (document_type IN ('terms_of_service', 'privacy_policy')),
+            version VARCHAR(20) NOT NULL,
+            title VARCHAR(200) NOT NULL,
+            content_url TEXT NOT NULL,
+            content_hash VARCHAR(64) NOT NULL,
+            is_active BOOLEAN DEFAULT false,
+            requires_acceptance BOOLEAN DEFAULT true,
+            effective_date TIMESTAMP WITH TIME ZONE NOT NULL,
+            created_by UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+            
+            UNIQUE(document_type, version)
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_terms_documents_active ON terms_documents(document_type, is_active);
+        CREATE INDEX IF NOT EXISTS idx_terms_documents_effective ON terms_documents(effective_date);
+    """
+    )
+
+    await db.execute_schema(
+        """
+        CREATE TABLE IF NOT EXISTS user_terms_acceptance (
+            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            document_id UUID NOT NULL REFERENCES terms_documents(id) ON DELETE CASCADE,
+            document_type VARCHAR(50) NOT NULL,
+            document_version VARCHAR(20) NOT NULL,
+            accepted_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+            ip_address INET,
+            user_agent TEXT,
+            acceptance_method VARCHAR(50) DEFAULT 'app_signup' CHECK (acceptance_method IN ('app_signup', 'forced_update', 'voluntary')),
+            
+            UNIQUE(user_id, document_id)
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_user_terms_acceptance_user_type ON user_terms_acceptance(user_id, document_type);
+        CREATE INDEX IF NOT EXISTS idx_user_terms_acceptance_accepted_at ON user_terms_acceptance(accepted_at);
     """
     )
 

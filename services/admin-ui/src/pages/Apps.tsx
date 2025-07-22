@@ -32,7 +32,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { App, ActionPricing } from '@/types/admin';
-import { MoreHorizontal, CheckCircle, XCircle, Clock, RefreshCw, AlertTriangle, Plus, Settings, Edit } from 'lucide-react';
+import { MoreHorizontal, CheckCircle, XCircle, Clock, RefreshCw, AlertTriangle, Plus, Settings, Edit, Trash2 } from 'lucide-react';
 import { formatDistanceToNow } from 'date-fns';
 import { AdminAPI } from '@/lib/admin-api';
 import { toast } from 'sonner';
@@ -74,11 +74,7 @@ export function Apps() {
     description: '',
     category: '',
     builder_id: '',
-    dust_per_use: 5,
     icon_url: '',
-    website_url: '',
-    demo_url: '',
-    callback_url: '',
   });
 
   // Action Pricing state
@@ -137,11 +133,7 @@ export function Apps() {
         description: '',
         category: '',
         builder_id: '',
-        dust_per_use: 5,
         icon_url: '',
-        website_url: '',
-        demo_url: '',
-        callback_url: '',
       });
       toast.success('App created successfully');
     } catch (err) {
@@ -232,12 +224,33 @@ export function Apps() {
   const handleUpdatePricing = async () => {
     if (!editingPricing) return;
 
+    // Client-side validation
+    if (!editingPricing.action_slug?.trim()) {
+      toast.error('Action slug is required');
+      return;
+    }
+    
+    if (!editingPricing.description?.trim()) {
+      toast.error('Description is required');
+      return;
+    }
+
     try {
-      await AdminAPI.updateActionPricing(editingPricing.action_slug, {
+      console.log('🎯 Action pricing operation:', isCreatingAction ? 'CREATE' : 'UPDATE', editingPricing);
+      
+      const pricingData = {
         dust_cost: editingPricing.dust_cost,
-        description: editingPricing.description,
+        description: editingPricing.description.trim(),
         is_active: editingPricing.is_active,
-      });
+      };
+      
+      if (isCreatingAction) {
+        // Use POST for creating new actions
+        await AdminAPI.createActionPricing(editingPricing.action_slug, pricingData);
+      } else {
+        // Use PUT for updating existing actions
+        await AdminAPI.updateActionPricing(editingPricing.action_slug, pricingData);
+      }
       
       toast.success(isCreatingAction ? 'Action created successfully' : 'Pricing updated successfully');
       setPricingDialogOpen(false);
@@ -246,7 +259,26 @@ export function Apps() {
       await loadActionPricing();
     } catch (err) {
       console.error('Failed to update pricing:', err);
-      toast.error('Failed to update pricing');
+      toast.error(isCreatingAction ? 'Failed to create action' : 'Failed to update pricing');
+    }
+  };
+
+  const handleDeleteAction = async () => {
+    if (!editingPricing?.action_slug || isCreatingAction) return;
+
+    if (!confirm(`Are you sure you want to delete the action "${editingPricing.action_slug}"? This cannot be undone.`)) {
+      return;
+    }
+
+    try {
+      await AdminAPI.deleteActionPricing(editingPricing.action_slug);
+      toast.success('Action deleted successfully');
+      setPricingDialogOpen(false);
+      setEditingPricing(null);
+      await loadActionPricing();
+    } catch (err) {
+      console.error('Failed to delete action:', err);
+      toast.error('Failed to delete action');
     }
   };
 
@@ -361,50 +393,12 @@ export function Apps() {
                 </Select>
               </div>
               <div className="space-y-2">
-                <Label htmlFor="dust_per_use">DUST per Use</Label>
-                <Input
-                  id="dust_per_use"
-                  type="number"
-                  min="1"
-                  max="100"
-                  value={newApp.dust_per_use}
-                  onChange={(e) => setNewApp(prev => ({ ...prev, dust_per_use: parseInt(e.target.value) || 5 }))}
-                />
-              </div>
-              <div className="space-y-2">
                 <Label htmlFor="icon_url">Icon URL</Label>
                 <Input
                   id="icon_url"
                   value={newApp.icon_url}
                   onChange={(e) => setNewApp(prev => ({ ...prev, icon_url: e.target.value }))}
                   placeholder="https://example.com/icon.png"
-                />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="website_url">Website URL</Label>
-                <Input
-                  id="website_url"
-                  value={newApp.website_url}
-                  onChange={(e) => setNewApp(prev => ({ ...prev, website_url: e.target.value }))}
-                  placeholder="https://example.com"
-                />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="demo_url">Demo URL</Label>
-                <Input
-                  id="demo_url"
-                  value={newApp.demo_url}
-                  onChange={(e) => setNewApp(prev => ({ ...prev, demo_url: e.target.value }))}
-                  placeholder="https://demo.example.com"
-                />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="callback_url">Callback URL</Label>
-                <Input
-                  id="callback_url"
-                  value={newApp.callback_url}
-                  onChange={(e) => setNewApp(prev => ({ ...prev, callback_url: e.target.value }))}
-                  placeholder="https://api.example.com/callback"
                 />
               </div>
             </div>
@@ -824,7 +818,7 @@ export function Apps() {
             <DialogContent className="max-w-md">
               <DialogHeader>
                 <DialogTitle>
-                  {isCreatingAction ? 'Create New Action' : 'Edit Action Pricing'}
+                  {isCreatingAction ? 'Create New Action' : 'Edit Action'}
                 </DialogTitle>
                 <DialogDescription>
                   {isCreatingAction 
@@ -864,7 +858,7 @@ export function Apps() {
                     />
                   </div>
                   <div className="space-y-2">
-                    <Label htmlFor="description">Description</Label>
+                    <Label htmlFor="description">Description *</Label>
                     <Textarea
                       id="description"
                       value={editingPricing.description}
@@ -872,7 +866,9 @@ export function Apps() {
                         ...prev,
                         description: e.target.value
                       } : null)}
+                      placeholder="Describe what this action does (e.g., 'Generate a Would You Rather question')"
                       rows={3}
+                      required
                     />
                   </div>
                   <div className="space-y-2">
@@ -895,20 +891,34 @@ export function Apps() {
                   </div>
                 </div>
               )}
-              <DialogFooter>
-                <Button variant="outline" onClick={() => {
-                  setPricingDialogOpen(false);
-                  setIsCreatingAction(false);
-                  setEditingPricing(null);
-                }}>
-                  Cancel
-                </Button>
-                <Button 
-                  onClick={handleUpdatePricing}
-                  disabled={!editingPricing?.action_slug}
-                >
-                  {isCreatingAction ? 'Create Action' : 'Save Changes'}
-                </Button>
+              <DialogFooter className="flex justify-between">
+                <div>
+                  {!isCreatingAction && (
+                    <Button 
+                      variant="destructive" 
+                      onClick={handleDeleteAction}
+                      className="mr-auto"
+                    >
+                      <Trash2 className="h-4 w-4 mr-2" />
+                      Delete Action
+                    </Button>
+                  )}
+                </div>
+                <div className="flex space-x-2">
+                  <Button variant="outline" onClick={() => {
+                    setPricingDialogOpen(false);
+                    setIsCreatingAction(false);
+                    setEditingPricing(null);
+                  }}>
+                    Cancel
+                  </Button>
+                  <Button 
+                    onClick={handleUpdatePricing}
+                    disabled={!editingPricing?.action_slug || !editingPricing?.description?.trim()}
+                  >
+                    {isCreatingAction ? 'Create Action' : 'Save Changes'}
+                  </Button>
+                </div>
               </DialogFooter>
             </DialogContent>
           </Dialog>

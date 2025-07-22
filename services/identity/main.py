@@ -10,7 +10,7 @@ from fastapi.middleware.cors import CORSMiddleware
 load_dotenv()
 
 # Import our routes and dependencies
-from routes import auth_router, user_router
+from routes import auth_router, user_router, terms_router, public_terms_router
 
 from shared.database import close_db, init_db
 from shared.redis_client import close_redis, init_redis
@@ -19,13 +19,8 @@ from shared.redis_client import close_redis, init_redis
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # Startup
-    print(
-        "🚀 IDENTITY SERVICE: Starting with debugging logs for is_onboarding_completed (v2.1.12)",
-        flush=True,
-    )
     await init_db()
     await init_redis()
-    print("✅ IDENTITY SERVICE: Startup complete - ready to serve requests", flush=True)
     yield
     # Shutdown
     await close_db()
@@ -59,12 +54,14 @@ endpoint_limits = {
     "/auth/otp/verify": 1024,  # 1KB limit for OTP verification
     "/users/profile": 50 * 1024,  # 50KB for profile data
     "/users/people": 10 * 1024,  # 10KB for people data
+    "/users/*/people/*/photo": 6 * 1024 * 1024,  # 6MB for people photos
+    "/users/me/avatar": 6 * 1024 * 1024,  # 6MB for user avatars
 }
 
 add_middleware_to_app(
     app=app,
     service_name="identity",
-    max_request_size=1 * 1024 * 1024,  # 1MB default for identity service
+    max_request_size=6 * 1024 * 1024,  # 6MB default for identity service (to support photo uploads)
     endpoint_limits=endpoint_limits,
     log_requests=True,
 )
@@ -79,6 +76,8 @@ async def health_check():
 # Include routers
 app.include_router(auth_router, prefix="/auth", tags=["authentication"])
 app.include_router(user_router, prefix="/users", tags=["users"])
+app.include_router(terms_router, prefix="/users/me", tags=["terms"])
+app.include_router(public_terms_router, tags=["public-terms"])
 
 if __name__ == "__main__":
     port = int(os.getenv("PORT", 8001))
