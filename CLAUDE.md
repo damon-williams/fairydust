@@ -9,8 +9,8 @@ fairydust is a **mobile app backend** that powers a collection of AI-powered min
 ## Environment Variables
 
 ### Required API Keys
-- `ANTHROPIC_API_KEY`: Primary LLM provider for content generation
-- `OPENAI_API_KEY`: Secondary LLM provider (fallback)
+- `ANTHROPIC_API_KEY`: LLM provider for content generation
+- `OPENAI_API_KEY`: LLM provider for content generation,
 - `GOOGLE_PLACES_API_KEY`: Restaurant discovery (content service)
 - `TRIPADVISOR_API_KEY`: Activity search (content service)
 
