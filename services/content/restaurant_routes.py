@@ -1141,6 +1141,12 @@ async def search_restaurants_with_text(
         )
 
         print(f"🔍 RESTAURANT_TEXT_SEARCH: Got {len(restaurants_data)} restaurants from New Places API")
+        if not restaurants_data:
+            print("🔍 RESTAURANT_TEXT_SEARCH: ⚠️ No restaurants returned from New Places API - this could be:")
+            print("  1. New Places API not enabled in Google Console")
+            print("  2. Invalid query or location")
+            print("  3. API quota/billing issues")
+            print("  4. Too restrictive filters")
 
         # Convert to enhanced restaurant objects
         restaurants = []

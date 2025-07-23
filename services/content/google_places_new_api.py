@@ -53,9 +53,13 @@ class GooglePlacesNewAPIService:
         print(f"🔍 GOOGLE_PLACES_NEW: Searching with text query: '{text_query}'")
         print(f"🔍 GOOGLE_PLACES_NEW: Location: {latitude}, {longitude} within {radius_miles} miles")
 
-        # Build request body
+        # Build request body - enhance text query for better restaurant matching
+        enhanced_query = text_query
+        if not any(word in text_query.lower() for word in ["restaurant", "cafe", "dining", "food", "eat"]):
+            enhanced_query = f"{text_query} restaurants"
+        
         request_body = {
-            "textQuery": f"{text_query} restaurants",
+            "textQuery": enhanced_query,
             "locationBias": {
                 "circle": {
                     "center": {
@@ -70,13 +74,28 @@ class GooglePlacesNewAPIService:
             "rankPreference": "RELEVANCE",
             "languageCode": "en",
         }
+        
+        print(f"🔍 GOOGLE_PLACES_NEW: Enhanced query: '{enhanced_query}'")
 
         # Add optional filters
         if open_now:
             request_body["openNow"] = True
 
+        # Validate and add price levels
         if price_levels:
-            request_body["includedPriceLevels"] = price_levels
+            valid_price_levels = [
+                "PRICE_LEVEL_FREE",
+                "PRICE_LEVEL_INEXPENSIVE", 
+                "PRICE_LEVEL_MODERATE",
+                "PRICE_LEVEL_EXPENSIVE",
+                "PRICE_LEVEL_VERY_EXPENSIVE"
+            ]
+            filtered_price_levels = [p for p in price_levels if p in valid_price_levels]
+            if filtered_price_levels:
+                request_body["includedPriceLevels"] = filtered_price_levels
+                print(f"🔍 GOOGLE_PLACES_NEW: Using price levels: {filtered_price_levels}")
+            else:
+                print(f"🔍 GOOGLE_PLACES_NEW: ⚠️ Invalid price levels ignored: {price_levels}")
 
         if min_rating:
             request_body["minRating"] = min_rating
@@ -121,9 +140,12 @@ class GooglePlacesNewAPIService:
 
                 if response.status_code != 200:
                     print(f"🔍 GOOGLE_PLACES_NEW: API error: {response.text}")
+                    print(f"🔍 GOOGLE_PLACES_NEW: Request body sent: {request_body}")
+                    print(f"🔍 GOOGLE_PLACES_NEW: Headers sent: {headers}")
                     return []
 
                 data = response.json()
+                print(f"🔍 GOOGLE_PLACES_NEW: Full API response: {data}")
                 places = data.get("places", [])
                 print(f"🔍 GOOGLE_PLACES_NEW: Found {len(places)} places from API")
 
