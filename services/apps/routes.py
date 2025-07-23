@@ -822,7 +822,6 @@ async def create_app_api(
         description = app_data.get("description")
         category = app_data.get("category")
         builder_id = app_data.get("builder_id")
-        dust_per_use = app_data.get("dust_per_use", 5)
         icon_url = app_data.get("icon_url", "")
         website_url = app_data.get("website_url", "")
         demo_url = app_data.get("demo_url", "")
@@ -844,9 +843,6 @@ async def create_app_api(
         if existing_app:
             raise HTTPException(status_code=400, detail="App slug already exists")
 
-        # Validate dust_per_use
-        if dust_per_use < 1 or dust_per_use > 100:
-            raise HTTPException(status_code=400, detail="DUST per use must be between 1 and 100")
 
         # Create the app
         app_id = uuid4()
@@ -854,10 +850,10 @@ async def create_app_api(
         await db.execute(
             """
             INSERT INTO apps (
-                id, builder_id, name, slug, description, icon_url, dust_per_use,
+                id, builder_id, name, slug, description, icon_url,
                 status, category, website_url, demo_url, callback_url,
                 is_active, admin_notes
-            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
             """,
             app_id,
             UUID(builder_id),
@@ -865,7 +861,6 @@ async def create_app_api(
             slug,
             description,
             icon_url if icon_url else None,
-            dust_per_use,
             "approved",  # Apps are auto-approved
             category,
             website_url if website_url else None,
