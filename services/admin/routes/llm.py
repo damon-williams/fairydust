@@ -382,9 +382,12 @@ async def get_fallback_analytics(
             COUNT(*) as total_requests,
             COUNT(*) FILTER (WHERE was_fallback = true) as fallback_requests,
             COUNT(*) FILTER (WHERE was_fallback = false) as primary_requests,
-            ROUND(
-                (COUNT(*) FILTER (WHERE was_fallback = true)::numeric / COUNT(*)) * 100, 2
-            ) as fallback_percentage
+            CASE 
+                WHEN COUNT(*) = 0 THEN 0
+                ELSE ROUND(
+                    (COUNT(*) FILTER (WHERE was_fallback = true)::numeric / COUNT(*)) * 100, 2
+                )
+            END as fallback_percentage
         FROM llm_usage_logs
         WHERE created_at >= NOW() - INTERVAL '{interval}'
         """
@@ -398,9 +401,12 @@ async def get_fallback_analytics(
             COUNT(*) as total_requests,
             COUNT(*) FILTER (WHERE was_fallback = false) as primary_success,
             COUNT(*) FILTER (WHERE was_fallback = true) as fallback_usage,
-            ROUND(
-                (COUNT(*) FILTER (WHERE was_fallback = false)::numeric / COUNT(*)) * 100, 2
-            ) as reliability_percentage,
+            CASE 
+                WHEN COUNT(*) = 0 THEN 0
+                ELSE ROUND(
+                    (COUNT(*) FILTER (WHERE was_fallback = false)::numeric / COUNT(*)) * 100, 2
+                )
+            END as reliability_percentage,
             AVG(latency_ms) as avg_latency_ms,
             SUM(cost_usd) as total_cost
         FROM llm_usage_logs
@@ -416,11 +422,16 @@ async def get_fallback_analytics(
         SELECT
             fallback_reason,
             COUNT(*) as occurrences,
-            ROUND((COUNT(*)::numeric / 
-                (SELECT COUNT(*) FROM llm_usage_logs 
-                 WHERE was_fallback = true 
-                 AND created_at >= NOW() - INTERVAL '{interval}')
-            ) * 100, 2) as percentage_of_fallbacks
+            CASE 
+                WHEN (SELECT COUNT(*) FROM llm_usage_logs 
+                     WHERE was_fallback = true 
+                     AND created_at >= NOW() - INTERVAL '{interval}') = 0 THEN 0
+                ELSE ROUND((COUNT(*)::numeric / 
+                    (SELECT COUNT(*) FROM llm_usage_logs 
+                     WHERE was_fallback = true 
+                     AND created_at >= NOW() - INTERVAL '{interval}')
+                ) * 100, 2)
+            END as percentage_of_fallbacks
         FROM llm_usage_logs
         WHERE was_fallback = true 
           AND created_at >= NOW() - INTERVAL '{interval}'
@@ -444,9 +455,12 @@ async def get_fallback_analytics(
             {group_by} as date,
             COUNT(*) as total_requests,
             COUNT(*) FILTER (WHERE was_fallback = true) as fallback_requests,
-            ROUND(
-                (COUNT(*) FILTER (WHERE was_fallback = true)::numeric / COUNT(*)) * 100, 2
-            ) as fallback_rate
+            CASE 
+                WHEN COUNT(*) = 0 THEN 0
+                ELSE ROUND(
+                    (COUNT(*) FILTER (WHERE was_fallback = true)::numeric / COUNT(*)) * 100, 2
+                )
+            END as fallback_rate
         FROM llm_usage_logs
         WHERE created_at >= NOW() - INTERVAL '{interval}'
         GROUP BY {group_by}
@@ -462,9 +476,12 @@ async def get_fallback_analytics(
             a.slug as app_slug,
             COUNT(l.id) as total_requests,
             COUNT(l.id) FILTER (WHERE l.was_fallback = true) as fallback_requests,
-            ROUND(
-                (COUNT(l.id) FILTER (WHERE l.was_fallback = true)::numeric / COUNT(l.id)) * 100, 2
-            ) as fallback_percentage,
+            CASE 
+                WHEN COUNT(l.id) = 0 THEN 0
+                ELSE ROUND(
+                    (COUNT(l.id) FILTER (WHERE l.was_fallback = true)::numeric / COUNT(l.id)) * 100, 2
+                )
+            END as fallback_percentage,
             AVG(l.cost_usd) as avg_cost_per_request
         FROM apps a
         LEFT JOIN llm_usage_logs l ON a.id = l.app_id
