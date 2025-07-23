@@ -14,15 +14,19 @@ identity_url = f"https://fairydust-identity-{base_url_suffix}.up.railway.app"
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.security import HTTPBearer
 from google_places_http import get_google_places_http_service
+from google_places_new_api import get_google_places_new_api_service
 
 # from google_places_service import get_google_places_service  # Removed - using HTTP implementation only
 from models import (
+    EnhancedRestaurant,
     OpenTableInfo,
     PersonRestaurantPreferences,
     Restaurant,
     RestaurantGenerateRequest,
     RestaurantRegenerateRequest,
     RestaurantResponse,
+    RestaurantTextSearchRequest,
+    RestaurantTextSearchResponse,
     UserRestaurantPreferences,
     UserRestaurantPreferencesUpdate,
 )
@@ -1052,3 +1056,251 @@ async def update_restaurant_preferences(
         flush=True,
     )
     return await get_restaurant_preferences(user_id, current_user, db)
+
+
+# ============================================================================
+# NEW PLACES API TEXT SEARCH ENDPOINT
+# ============================================================================
+
+@router.post("/search-text", response_model=RestaurantTextSearchResponse)
+async def search_restaurants_with_text(
+    request: RestaurantTextSearchRequest,
+    current_user: TokenData = Depends(get_current_user),
+    db: Database = Depends(get_db),
+):
+    """
+    Search restaurants using natural language queries with the new Google Places API
+    
+    Examples:
+    - "kid-friendly italian restaurants with outdoor seating"
+    - "romantic dinner spots for anniversary" 
+    - "casual brunch places with vegetarian options"
+    - "budget-friendly tacos near me"
+    """
+    print("🚨 RESTAURANT_TEXT_SEARCH: /restaurant/search-text endpoint reached!")
+    print(f"🚨 RESTAURANT_TEXT_SEARCH: User: {request.user_id}")
+    print(f"🚨 RESTAURANT_TEXT_SEARCH: Query: '{request.text_query}'")
+    print(f"🚨 RESTAURANT_TEXT_SEARCH: Location: {request.location}")
+    print(f"🚨 RESTAURANT_TEXT_SEARCH: Max results: {request.max_results}")
+
+    # Verify user matches the request
+    if str(current_user.user_id) != str(request.user_id):
+        print("🚨 RESTAURANT_TEXT_SEARCH: ❌ User mismatch!")
+        raise HTTPException(status_code=403, detail="Cannot search restaurants for other users")
+
+    # Rate limiting check
+    await check_api_rate_limit_only(current_user.user_id)
+
+    try:
+        # Get people data for personalization
+        people_data = await get_people_data(request.user_id, request.selected_people)
+        print(f"🔍 RESTAURANT_TEXT_SEARCH: Got {len(people_data)} people for personalization")
+
+        # Create or get session
+        session_id = request.session_id or uuid4()
+        session_expires = datetime.utcnow() + timedelta(hours=24)
+
+        # Store session in database
+        await db.execute(
+            """
+            INSERT INTO restaurant_sessions (id, user_id, session_data, excluded_restaurants, expires_at)
+            VALUES ($1, $2, $3, $4, $5)
+            ON CONFLICT (id) DO UPDATE SET
+                session_data = EXCLUDED.session_data,
+                expires_at = EXCLUDED.expires_at
+        """,
+            session_id,
+            request.user_id,
+            safe_json_dumps({
+                "location": request.location.dict(), 
+                "text_query": request.text_query,
+                "search_params": {
+                    "max_results": request.max_results,
+                    "min_rating": request.min_rating,
+                    "price_levels": request.price_levels,
+                    "open_now": request.open_now
+                }
+            }),
+            [],
+            session_expires,
+        )
+
+        # Use new Places API for text search
+        places_service = get_google_places_new_api_service()
+        print("🔍 RESTAURANT_TEXT_SEARCH: Using Google Places API (New) for text search")
+        
+        restaurants_data = await places_service.search_restaurants_text(
+            text_query=request.text_query,
+            latitude=request.location.latitude,
+            longitude=request.location.longitude,
+            radius_miles=5,  # Default 5 mile radius
+            max_results=request.max_results,
+            min_rating=request.min_rating,
+            price_levels=request.price_levels,
+            open_now=request.open_now
+        )
+
+        print(f"🔍 RESTAURANT_TEXT_SEARCH: Got {len(restaurants_data)} restaurants from New Places API")
+
+        # Convert to enhanced restaurant objects
+        restaurants = []
+        for restaurant_data in restaurants_data:
+            # Generate OpenTable info
+            restaurant_name = restaurant_data.get("name", "Unknown Restaurant")
+            city_address = request.location.address
+            party_size = 2  # Default since not specified in text search
+
+            opentable_info = generate_opentable_info(
+                restaurant_name, get_city_key(city_address), None, party_size
+            )
+
+            # Generate AI highlights using existing function
+            try:
+                highlights = await generate_ai_highlights(
+                    restaurant_data, {"party_size": party_size}, people_data
+                )
+            except Exception as e:
+                print(f"🔍 RESTAURANT_TEXT_SEARCH: ⚠️ Error generating highlights: {e}")
+                highlights = []
+
+            # Create enhanced restaurant object
+            try:
+                restaurant = EnhancedRestaurant(
+                    id=restaurant_data.get("id", f"unknown_{len(restaurants)}"),
+                    name=restaurant_data.get("name", "Unknown Restaurant"),
+                    cuisine=restaurant_data.get("cuisine", "Restaurant"),
+                    address=restaurant_data.get("address", "Address not available"),
+                    distance_miles=restaurant_data.get("distance_miles", 0.0),
+                    price_level=restaurant_data.get("price_level", "$$"),
+                    rating=restaurant_data.get("rating", 0.0),
+                    user_rating_count=restaurant_data.get("user_rating_count", 0),
+                    phone=restaurant_data.get("phone"),
+                    google_place_id=restaurant_data.get("google_place_id"),
+                    opentable=opentable_info,
+                    highlights=highlights,
+                    features=restaurant_data.get("features", [])  # New API features
+                )
+                restaurants.append(restaurant)
+                print(f"🔍 RESTAURANT_TEXT_SEARCH: ✅ Created enhanced restaurant: {restaurant_name}")
+            except Exception as e:
+                print(f"🔍 RESTAURANT_TEXT_SEARCH: ❌ Error creating restaurant object: {e}")
+                continue
+
+        print(f"🚨 RESTAURANT_TEXT_SEARCH: Returning {len(restaurants)} restaurants")
+
+        # Create response
+        response = RestaurantTextSearchResponse(
+            restaurants=restaurants,
+            session_id=session_id,
+            generated_at=datetime.utcnow(),
+            search_query=request.text_query,
+            api_version="new"
+        )
+        
+        print("🚨 RESTAURANT_TEXT_SEARCH: ✅ Response created successfully")
+        return response
+
+    except Exception as e:
+        print(f"🚨 RESTAURANT_TEXT_SEARCH: ❌ Error: {e}")
+        import traceback
+        print(f"🚨 RESTAURANT_TEXT_SEARCH: Traceback: {traceback.format_exc()}")
+        
+        # Fallback to legacy endpoint if new API fails
+        print("🚨 RESTAURANT_TEXT_SEARCH: Falling back to legacy API with basic query parsing")
+        try:
+            # Basic parsing of text query to legacy format
+            fallback_preferences = _parse_text_query_to_legacy_format(request.text_query)
+            
+            # Create legacy request
+            legacy_request = RestaurantGenerateRequest(
+                user_id=request.user_id,
+                location=request.location,
+                preferences=fallback_preferences,
+                selected_people=request.selected_people,
+                session_id=request.session_id
+            )
+            
+            # Use legacy endpoint logic
+            legacy_response = await generate_restaurants(legacy_request, current_user, db)
+            
+            # Convert to new format
+            enhanced_restaurants = [
+                EnhancedRestaurant(
+                    id=r.id,
+                    name=r.name,
+                    cuisine=r.cuisine,
+                    address=r.address,
+                    distance_miles=r.distance_miles,
+                    price_level=r.price_level,
+                    rating=r.rating,
+                    user_rating_count=0,  # Legacy doesn't have this
+                    phone=r.phone,
+                    google_place_id=r.google_place_id,
+                    opentable=r.opentable,
+                    highlights=r.highlights,
+                    features=[]  # Legacy doesn't have features
+                )
+                for r in legacy_response.restaurants
+            ]
+            
+            return RestaurantTextSearchResponse(
+                restaurants=enhanced_restaurants,
+                session_id=legacy_response.session_id,
+                generated_at=legacy_response.generated_at,
+                search_query=request.text_query,
+                api_version="legacy_fallback"
+            )
+            
+        except Exception as fallback_error:
+            print(f"🚨 RESTAURANT_TEXT_SEARCH: ❌ Fallback also failed: {fallback_error}")
+            raise HTTPException(
+                status_code=500, 
+                detail="Restaurant search failed. Please try again or use the standard search."
+            )
+
+
+def _parse_text_query_to_legacy_format(text_query: str) -> "RestaurantPreferences":
+    """
+    Basic parsing of text query to legacy RestaurantPreferences format
+    This is a simple fallback - the new API is much better at understanding queries
+    """
+    from models import RestaurantPreferences
+    
+    query_lower = text_query.lower()
+    
+    # Extract cuisine types
+    cuisine_types = []
+    cuisine_keywords = ["italian", "chinese", "mexican", "japanese", "indian", "thai", "french", "american", "seafood"]
+    for cuisine in cuisine_keywords:
+        if cuisine in query_lower:
+            cuisine_types.append(cuisine)
+    
+    # Extract party size indicators
+    party_size = 2  # default
+    if any(word in query_lower for word in ["family", "group", "large"]):
+        party_size = 6
+    elif any(word in query_lower for word in ["couple", "date", "romantic"]):
+        party_size = 2
+    
+    # Extract special occasions
+    special_occasion = None
+    if any(word in query_lower for word in ["romantic", "date", "anniversary"]):
+        special_occasion = "romantic dinner"
+    elif any(word in query_lower for word in ["birthday", "celebration"]):
+        special_occasion = "birthday"
+    elif any(word in query_lower for word in ["family", "kid"]):
+        special_occasion = "family"
+    
+    # Extract time preferences
+    time_preference = None
+    if "now" in query_lower or "open" in query_lower:
+        time_preference = "now"
+    
+    return RestaurantPreferences(
+        party_size=party_size,
+        cuisine_types=cuisine_types,
+        opentable_only=False,
+        time_preference=time_preference,
+        special_occasion=special_occasion,
+        max_results=20
+    )
