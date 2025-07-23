@@ -823,9 +823,6 @@ async def create_app_api(
         category = app_data.get("category")
         builder_id = app_data.get("builder_id")
         icon_url = app_data.get("icon_url", "")
-        website_url = app_data.get("website_url", "")
-        demo_url = app_data.get("demo_url", "")
-        callback_url = app_data.get("callback_url", "")
 
         # Validate required fields
         if not all([name, slug, description, category, builder_id]):
@@ -851,9 +848,8 @@ async def create_app_api(
             """
             INSERT INTO apps (
                 id, builder_id, name, slug, description, icon_url,
-                status, category, website_url, demo_url, callback_url,
-                is_active, admin_notes
-            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+                status, category, is_active
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
             """,
             app_id,
             UUID(builder_id),
@@ -863,11 +859,7 @@ async def create_app_api(
             icon_url if icon_url else None,
             "approved",  # Apps are auto-approved
             category,
-            website_url if website_url else None,
-            demo_url if demo_url else None,
-            callback_url if callback_url else None,
             True,  # is_active = true for approved apps
-            f"Created by admin {admin_user.fairyname}",
         )
 
         # Return created app
