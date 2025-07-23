@@ -885,18 +885,17 @@ async def get_user_onboard_tracking(
 
     if not tracking:
         # Create default tracking record if it doesn't exist
-        try:
-            tracking = await db.fetch_one(
-                """
-                INSERT INTO user_onboard_tracking (user_id)
-                VALUES ($1)
-                RETURNING *
-                """,
-                current_user.user_id,
-            )
-        except Exception as e:
-            print(f"❌ ONBOARD_TRACKING: Error creating tracking record: {str(e)}", flush=True)
-            raise HTTPException(status_code=500, detail="Failed to create onboard tracking record")
+        # Use INSERT ... ON CONFLICT to handle race conditions
+        tracking = await db.fetch_one(
+            """
+            INSERT INTO user_onboard_tracking (user_id)
+            VALUES ($1)
+            ON CONFLICT (user_id) DO UPDATE SET 
+                updated_at = CURRENT_TIMESTAMP
+            RETURNING *
+            """,
+            current_user.user_id,
+        )
     return OnboardTracking(**tracking)
 
 

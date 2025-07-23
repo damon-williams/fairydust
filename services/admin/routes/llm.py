@@ -383,7 +383,7 @@ async def get_fallback_analytics(
             COUNT(*) FILTER (WHERE was_fallback = true) as fallback_requests,
             COUNT(*) FILTER (WHERE was_fallback = false) as primary_requests,
             ROUND(
-                (COUNT(*) FILTER (WHERE was_fallback = true)::float / COUNT(*)) * 100, 2
+                (COUNT(*) FILTER (WHERE was_fallback = true)::numeric / COUNT(*)) * 100, 2
             ) as fallback_percentage
         FROM llm_usage_logs
         WHERE created_at >= NOW() - INTERVAL '{interval}'
@@ -399,7 +399,7 @@ async def get_fallback_analytics(
             COUNT(*) FILTER (WHERE was_fallback = false) as primary_success,
             COUNT(*) FILTER (WHERE was_fallback = true) as fallback_usage,
             ROUND(
-                (COUNT(*) FILTER (WHERE was_fallback = false)::float / COUNT(*)) * 100, 2
+                (COUNT(*) FILTER (WHERE was_fallback = false)::numeric / COUNT(*)) * 100, 2
             ) as reliability_percentage,
             AVG(latency_ms) as avg_latency_ms,
             SUM(cost_usd) as total_cost
@@ -416,7 +416,7 @@ async def get_fallback_analytics(
         SELECT
             fallback_reason,
             COUNT(*) as occurrences,
-            ROUND((COUNT(*)::float / 
+            ROUND((COUNT(*)::numeric / 
                 (SELECT COUNT(*) FROM llm_usage_logs 
                  WHERE was_fallback = true 
                  AND created_at >= NOW() - INTERVAL '{interval}')
@@ -445,7 +445,7 @@ async def get_fallback_analytics(
             COUNT(*) as total_requests,
             COUNT(*) FILTER (WHERE was_fallback = true) as fallback_requests,
             ROUND(
-                (COUNT(*) FILTER (WHERE was_fallback = true)::float / COUNT(*)) * 100, 2
+                (COUNT(*) FILTER (WHERE was_fallback = true)::numeric / COUNT(*)) * 100, 2
             ) as fallback_rate
         FROM llm_usage_logs
         WHERE created_at >= NOW() - INTERVAL '{interval}'
@@ -463,7 +463,7 @@ async def get_fallback_analytics(
             COUNT(l.id) as total_requests,
             COUNT(l.id) FILTER (WHERE l.was_fallback = true) as fallback_requests,
             ROUND(
-                (COUNT(l.id) FILTER (WHERE l.was_fallback = true)::float / COUNT(l.id)) * 100, 2
+                (COUNT(l.id) FILTER (WHERE l.was_fallback = true)::numeric / COUNT(l.id)) * 100, 2
             ) as fallback_percentage,
             AVG(l.cost_usd) as avg_cost_per_request
         FROM apps a
