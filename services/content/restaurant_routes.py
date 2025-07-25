@@ -365,10 +365,32 @@ async def get_restaurants_from_google_places(
             )
             return await get_mock_restaurants(location, preferences, people_data, excluded_ids)
 
+        # Enhance search with pet-friendly terms if pets are present
+        special_occasion = preferences.get("special_occasion", "")
+        pets_present = [p for p in people_data if p.get("entry_type") == "pet"]
+        if pets_present:
+            pet_terms = []
+            for pet in pets_present:
+                species = pet.get("species", "").lower()
+                if "dog" in species:
+                    pet_terms.append("dog-friendly")
+                else:
+                    pet_terms.append("pet-friendly")
+            
+            # Add unique pet terms to special occasion
+            unique_pet_terms = list(set(pet_terms))
+            if unique_pet_terms:
+                enhanced_occasion = f"{special_occasion} {' '.join(unique_pet_terms)}".strip()
+                print(f"🐾 RESTAURANT_DEBUG: Enhanced search for {len(pets_present)} pets: '{enhanced_occasion}'")
+            else:
+                enhanced_occasion = special_occasion
+        else:
+            enhanced_occasion = special_occasion
+
         # Get restaurants from Google Places
         print("🔍 RESTAURANT_DEBUG: Calling Google Places API...")
         print(
-            f"🔍 RESTAURANT_DEBUG: API Parameters - cuisine_types: {preferences.get('cuisine_types', [])}, open_now: {preferences.get('time_preference') == 'now'}"
+            f"🔍 RESTAURANT_DEBUG: API Parameters - cuisine_types: {preferences.get('cuisine_types', [])}, open_now: {preferences.get('time_preference') == 'now'}, special_occasion: '{enhanced_occasion}'"
         )
 
         if use_http_service:
@@ -380,7 +402,7 @@ async def get_restaurants_from_google_places(
                 open_now=preferences.get("time_preference") == "now",
                 min_rating=3.5,
                 max_results=20,
-                special_occasion=preferences.get("special_occasion"),
+                special_occasion=enhanced_occasion,
             )
         else:
             google_restaurants = places_service.search_restaurants(
@@ -391,7 +413,7 @@ async def get_restaurants_from_google_places(
                 open_now=preferences.get("time_preference") == "now",
                 min_rating=3.5,
                 max_results=20,
-                special_occasion=preferences.get("special_occasion"),
+                special_occasion=enhanced_occasion,
             )
 
         print(
@@ -686,9 +708,22 @@ async def generate_ai_highlights(
     elif "date" in special_occasion:
         highlights.append("Perfect for dates")
 
-    # People preferences
+    # People and pets preferences
+    has_pets = False
     for person in people_data:
         if isinstance(person, dict):
+            # Check if this is a pet
+            if person.get("entry_type") == "pet":
+                has_pets = True
+                species = person.get("species", "").lower()
+                if "dog" in species:
+                    highlights.append("Dog-friendly patio")
+                elif "cat" in species:
+                    highlights.append("Pet-friendly seating")
+                else:
+                    highlights.append("Pet-friendly venue")
+            
+            # Check dining preferences notes
             notes_raw = person.get("notes")
             notes = notes_raw.lower() if notes_raw else ""
             if "high chair" in notes or "kids" in notes:
@@ -697,6 +732,10 @@ async def generate_ai_highlights(
                 highlights.append("Vegetarian options")
             if "gluten" in notes:
                 highlights.append("Gluten-free options")
+    
+    # General pet-friendly highlight if pets are present but no specific species highlights added
+    if has_pets and not any("pet" in h.lower() or "dog" in h.lower() for h in highlights):
+        highlights.append("Pet-friendly venue")
 
     return highlights[:3]  # Limit to 3 highlights
 
@@ -743,6 +782,8 @@ async def get_people_data(user_id: UUID, selected_people: list[UUID]) -> list[di
                                 "id": person.get("id", ""),
                                 "name": person.get("name", ""),
                                 "relationship": person.get("relationship", ""),
+                                "entry_type": person.get("entry_type", "person"),  # Include pet type
+                                "species": person.get("species"),  # Pet species info
                                 "notes": dining_prefs.get("dining_preferences", {}).get(
                                     "notes", ""
                                 ),
@@ -1125,12 +1166,30 @@ async def search_restaurants_with_text(
             session_expires,
         )
 
+        # Enhance query with pet-friendly terms if pets are present
+        enhanced_query = request.text_query
+        pets_present = [p for p in people_data if p.get("entry_type") == "pet"]
+        if pets_present:
+            pet_terms = []
+            for pet in pets_present:
+                species = pet.get("species", "").lower()
+                if "dog" in species:
+                    pet_terms.append("dog-friendly")
+                else:
+                    pet_terms.append("pet-friendly")
+            
+            # Add unique pet terms to the query
+            unique_pet_terms = list(set(pet_terms))
+            if unique_pet_terms:
+                enhanced_query = f"{request.text_query} {' '.join(unique_pet_terms)}"
+                print(f"🐾 RESTAURANT_TEXT_SEARCH: Enhanced query for {len(pets_present)} pets: '{enhanced_query}'")
+        
         # Use new Places API for text search
         places_service = get_google_places_new_api_service()
         print("🔍 RESTAURANT_TEXT_SEARCH: Using Google Places API (New) for text search")
         
         restaurants_data = await places_service.search_restaurants_text(
-            text_query=request.text_query,
+            text_query=enhanced_query,
             latitude=request.location.latitude,
             longitude=request.location.longitude,
             radius_miles=5,  # Default 5 mile radius

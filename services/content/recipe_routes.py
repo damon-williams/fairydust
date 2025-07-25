@@ -899,10 +899,10 @@ async def _get_user_context(
             if interests:
                 context_parts.append(f"Interests: {', '.join(interests[:5])}")
 
-        # Get selected people information
+        # Get selected people and pets information
         if selected_people:
             people_query = """
-                SELECT name, relationship, birth_date, personality_description
+                SELECT name, relationship, birth_date, personality_description, entry_type, species
                 FROM people_in_my_life
                 WHERE user_id = $1 AND id = ANY($2)
             """
@@ -911,24 +911,46 @@ async def _get_user_context(
 
             if people_rows:
                 people_list = []
+                pets_list = []
+                
                 for row in people_rows:
-                    person_desc = f"{row['name']} ({row['relationship']}"
-                    if row["birth_date"]:
-                        # Calculate age from birth date
-                        from datetime import date
-
-                        birth = date.fromisoformat(str(row["birth_date"]))
-                        age = (date.today() - birth).days // 365
-                        person_desc += f", {age} years old"
+                    entry_type = row.get("entry_type", "person")
                     
-                    # Add personality description if available
-                    if row["personality_description"]:
-                        person_desc += f", {row['personality_description']}"
-                    
-                    person_desc += ")"
-                    people_list.append(person_desc)
+                    if entry_type == "pet":
+                        # Handle pets differently - no age calculation, include species
+                        pet_desc = f"{row['name']} ({row.get('species', 'pet')}"
+                        if row["relationship"]:
+                            pet_desc += f", {row['relationship']}"
+                        pet_desc += ")"
+                        pets_list.append(pet_desc)
+                        print(f"🐾 RECIPE_CONTEXT: Including pet {row['name']} in context")
+                    else:
+                        # Handle people as before
+                        person_desc = f"{row['name']} ({row['relationship']}"
+                        if row["birth_date"]:
+                            # Calculate age from birth date
+                            from datetime import date
 
-                context_parts.append(f"Cooking for: {', '.join(people_list)}")
+                            birth = date.fromisoformat(str(row["birth_date"]))
+                            age = (date.today() - birth).days // 365
+                            person_desc += f", {age} years old"
+                        
+                        # Add personality description if available
+                        if row["personality_description"]:
+                            person_desc += f", {row['personality_description']}"
+                        
+                        person_desc += ")"
+                        people_list.append(person_desc)
+
+                # Build context strings for people and pets separately
+                if people_list and pets_list:
+                    context_parts.append(f"Cooking for: {', '.join(people_list)}")
+                    context_parts.append(f"Note: Also cooking for pets: {', '.join(pets_list)} (ensure pet-safe ingredients)")
+                elif people_list:
+                    context_parts.append(f"Cooking for: {', '.join(people_list)}")
+                elif pets_list:
+                    context_parts.append(f"Cooking for pets: {', '.join(pets_list)} (focus on pet-safe ingredients only)")
+                    print("🐾 RECIPE_CONTEXT: Recipe context set for pets only - enabling pet safety mode")
 
         return "; ".join(context_parts) if context_parts else "general user"
 

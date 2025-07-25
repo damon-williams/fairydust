@@ -174,15 +174,18 @@ class StoryImageService:
         reference_people = []
         
         for character in characters_in_scene[:3]:  # Limit to 3 for Gen-4 model
-            # In a real implementation, you'd fetch the photo_url from the character data
-            # For now, we'll create a placeholder structure
-            if hasattr(character, 'photo_url') and character.photo_url:
+            # Use photo URL from My People if available
+            if character.photo_url:
+                print(f"📸 STORY_IMAGE: Using photo reference for {character.name} - {character.photo_url}")
                 reference_people.append(ImageReferencePerson(
-                    person_id=uuid.UUID(user_id),  # This would be character.id in real implementation
+                    person_id=character.person_id or uuid.uuid4(),  # Use actual person_id if available
                     photo_url=character.photo_url,
                     description=f"{character.name} ({character.relationship})"
                 ))
+            else:
+                print(f"📝 STORY_IMAGE: No photo available for {character.name} - will use text description only")
         
+        print(f"📸 STORY_IMAGE: Prepared {len(reference_people)} photo references out of {len(characters_in_scene)} characters")
         return reference_people
     
     def select_most_important_characters(

@@ -1,9 +1,16 @@
 import re
 from datetime import date, datetime
+from enum import Enum
 from typing import Literal, Optional
 from uuid import UUID
 
 from pydantic import BaseModel, EmailStr, Field, field_validator
+
+
+# Enums for My People system
+class EntryType(str, Enum):
+    PERSON = "person"
+    PET = "pet"
 
 
 # Auth models
@@ -114,24 +121,52 @@ class TokenData(BaseModel):
 
 class PersonInMyLifeCreate(BaseModel):
     name: str = Field(..., max_length=100)
+    entry_type: EntryType = Field(EntryType.PERSON, description="Whether this is a person or pet")
     birth_date: Optional[str] = Field(None, pattern=r"^\d{4}-\d{2}-\d{2}$")
-    relationship: Optional[str] = Field(None, max_length=100)
-    personality_description: Optional[str] = Field(None, max_length=200)
+    relationship: Optional[str] = Field(None, max_length=100, description="For people: 'mom', 'friend'. For pets: relationship to family")
+    species: Optional[str] = Field(None, max_length=50, description="For pets: breed, animal type (e.g., 'Golden Retriever', 'Tabby Cat')")
+    personality_description: Optional[str] = Field(None, max_length=200, description="Character traits for story generation")
+
+    @field_validator("species")
+    @classmethod
+    def validate_species(cls, v, info):
+        # Species is required for pets, optional for people
+        if hasattr(info, "data"):
+            entry_type = info.data.get("entry_type")
+            if entry_type == EntryType.PET and not v:
+                raise ValueError("Species is required for pets")
+            elif entry_type == EntryType.PERSON and v:
+                raise ValueError("Species should only be provided for pets")
+        return v
 
 
 class PersonInMyLifeUpdate(BaseModel):
     name: Optional[str] = Field(None, max_length=100)
+    entry_type: Optional[EntryType] = Field(None, description="Whether this is a person or pet")
     birth_date: Optional[str] = Field(None, pattern=r"^\d{4}-\d{2}-\d{2}$")
     relationship: Optional[str] = Field(None, max_length=100)
+    species: Optional[str] = Field(None, max_length=50, description="For pets: breed, animal type")
     personality_description: Optional[str] = Field(None, max_length=200)
+
+    @field_validator("species")
+    @classmethod
+    def validate_species_update(cls, v, info):
+        # If species is being set, ensure it's appropriate for the entry type
+        if v and hasattr(info, "data"):
+            entry_type = info.data.get("entry_type")
+            if entry_type == EntryType.PERSON:
+                raise ValueError("Species should only be provided for pets")
+        return v
 
 
 class PersonInMyLife(BaseModel):
     id: UUID
     user_id: UUID
     name: str
+    entry_type: EntryType = EntryType.PERSON
     birth_date: Optional[date] = None
     relationship: Optional[str] = None
+    species: Optional[str] = None
     personality_description: Optional[str] = None
     photo_url: Optional[str] = None
     photo_uploaded_at: Optional[datetime] = None

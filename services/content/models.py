@@ -91,6 +91,10 @@ class StoryCharacter(BaseModel):
     relationship: str = Field(..., min_length=1, max_length=100)
     birth_date: Optional[str] = Field(None, pattern=r"^\d{4}-\d{2}-\d{2}$")
     traits: list[str] = Field(default_factory=list, max_items=10)
+    photo_url: Optional[str] = Field(None, description="Photo URL from My People entry (for image generation)")
+    person_id: Optional[UUID] = Field(None, description="My People person ID if this character comes from My People")
+    entry_type: Optional[str] = Field("person", description="Whether this is a 'person' or 'pet'")
+    species: Optional[str] = Field(None, description="For pets: breed/animal type (e.g., 'Golden Retriever', 'Tabby Cat')")
 
 
 class TokenUsage(BaseModel):
@@ -103,6 +107,7 @@ class StoryGenerationRequest(BaseModel):
     user_id: UUID
     story_length: StoryLength  # Reading time instead of word count
     characters: list[StoryCharacter] = Field(default_factory=list, max_items=8)
+    selected_people: list[UUID] = Field(default_factory=list, max_items=5, description="My People entries to include as story characters (with photos if available)")
     custom_prompt: Optional[str] = Field(None, max_length=1000)
     target_audience: TargetAudience = TargetAudience.KIDS
     session_id: Optional[UUID] = None

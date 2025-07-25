@@ -2,10 +2,11 @@ import secrets
 import string
 import json
 from datetime import datetime
+from typing import Optional
 from uuid import uuid4
 
 from auth import AuthService, TokenData, get_current_user
-from fastapi import APIRouter, BackgroundTasks, Depends, File, HTTPException, Security, UploadFile
+from fastapi import APIRouter, BackgroundTasks, Depends, File, HTTPException, Query, Security, UploadFile
 from fastapi.security import HTTPBearer
 from models import (
     AccountDeletionRequest,
@@ -976,7 +977,7 @@ async def add_person_to_life(
     current_user: TokenData = Depends(get_current_user),
     db: Database = Depends(get_db),
 ):
-    """Add person to user's life"""
+    """Add person or pet to user's life"""
     if current_user.user_id != user_id and not current_user.is_admin:
         raise HTTPException(status_code=403, detail="Access denied")
 
@@ -988,16 +989,22 @@ async def add_person_to_life(
         except ValueError:
             raise HTTPException(status_code=400, detail="Invalid birth_date format. Use YYYY-MM-DD")
 
+    print(f"🐾 PEOPLE_API: Adding {person.entry_type.value} '{person.name}' for user {user_id}")
+    if person.entry_type.value == "pet":
+        print(f"🐾 PEOPLE_API: Pet species: {person.species}")
+
     new_person = await db.fetch_one(
         """
-        INSERT INTO people_in_my_life (user_id, name, birth_date, relationship, personality_description)
-        VALUES ($1, $2, $3, $4, $5)
+        INSERT INTO people_in_my_life (user_id, name, entry_type, birth_date, relationship, species, personality_description)
+        VALUES ($1, $2, $3, $4, $5, $6, $7)
         RETURNING *
         """,
         user_id,
         person.name,
+        person.entry_type.value,
         birth_date_obj,
         person.relationship,
+        person.species,
         person.personality_description,
     )
 
@@ -1007,18 +1014,34 @@ async def add_person_to_life(
 @user_router.get("/{user_id}/people", response_model=list[PersonInMyLife])
 async def get_people_in_my_life(
     user_id: str,
+    type_filter: Optional[str] = Query(None, alias="type", description="Filter by type: 'person', 'pet', or omit for all"),
     current_user: TokenData = Depends(get_current_user),
     db: Database = Depends(get_db),
 ):
-    """Get all people in user's life"""
+    """Get people and/or pets in user's life with optional type filtering"""
     if current_user.user_id != user_id and not current_user.is_admin:
         raise HTTPException(status_code=403, detail="Access denied")
 
-    people = await db.fetch_all(
-        "SELECT * FROM people_in_my_life WHERE user_id = $1 ORDER BY created_at ASC", user_id
-    )
+    # Build query with optional type filtering
+    if type_filter:
+        if type_filter not in ["person", "pet"]:
+            raise HTTPException(status_code=400, detail="Invalid type filter. Use 'person' or 'pet'")
+        
+        print(f"🐾 PEOPLE_API: Filtering for {type_filter}s only for user {user_id}")
+        people = await db.fetch_all(
+            "SELECT * FROM people_in_my_life WHERE user_id = $1 AND entry_type = $2 ORDER BY created_at ASC", 
+            user_id, type_filter
+        )
+    else:
+        print(f"🐾 PEOPLE_API: Getting all people and pets for user {user_id}")
+        people = await db.fetch_all(
+            "SELECT * FROM people_in_my_life WHERE user_id = $1 ORDER BY created_at ASC", user_id
+        )
 
-    return [PersonInMyLife(**person) for person in people]
+    result = [PersonInMyLife(**person) for person in people]
+    print(f"🐾 PEOPLE_API: Returning {len(result)} entries ({len([p for p in result if p.entry_type.value == 'person'])} people, {len([p for p in result if p.entry_type.value == 'pet'])} pets)")
+    
+    return result
 
 
 @user_router.patch("/{user_id}/people/{person_id}", response_model=PersonInMyLife)
@@ -1069,6 +1092,16 @@ async def update_person_in_my_life(
     if person_update.personality_description is not None:
         updates.append(f"personality_description = ${param_count}")
         values.append(person_update.personality_description)
+        param_count += 1
+
+    if person_update.entry_type is not None:
+        updates.append(f"entry_type = ${param_count}")
+        values.append(person_update.entry_type.value)
+        param_count += 1
+
+    if person_update.species is not None:
+        updates.append(f"species = ${param_count}")
+        values.append(person_update.species)
         param_count += 1
 
     if not updates:
