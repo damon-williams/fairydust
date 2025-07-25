@@ -376,6 +376,23 @@ async def create_tables():
 
         -- Drop old age_range column from people_in_my_life (replaced with birth_date)
         ALTER TABLE people_in_my_life DROP COLUMN IF EXISTS age_range;
+
+        -- Pet support extensions
+        -- Add entry_type to distinguish between people and pets
+        DO $$ 
+        BEGIN
+            IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'entry_type_enum') THEN
+                CREATE TYPE entry_type_enum AS ENUM ('person', 'pet');
+            END IF;
+        END $$;
+        
+        ALTER TABLE people_in_my_life ADD COLUMN IF NOT EXISTS entry_type entry_type_enum NOT NULL DEFAULT 'person';
+        
+        -- Add species field for pets (breed, animal type, etc.)
+        ALTER TABLE people_in_my_life ADD COLUMN IF NOT EXISTS species VARCHAR(50);
+
+        -- Add composite index for efficient filtering by user and type
+        CREATE INDEX IF NOT EXISTS idx_people_in_my_life_user_type ON people_in_my_life(user_id, entry_type);
     """
     )
 

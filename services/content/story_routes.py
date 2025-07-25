@@ -7,12 +7,19 @@ import time
 import uuid
 from datetime import datetime
 from typing import Optional
+from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
+
+# Service URL configuration
+environment = os.getenv("ENVIRONMENT", "staging")
+base_url_suffix = "production" if environment == "production" else "staging"
+identity_url = f"https://fairydust-identity-{base_url_suffix}.up.railway.app"
 
 # Content service no longer manages DUST - all DUST handling is external
 from models import (
     StoriesListResponse,
+    StoryCharacter,
     StoryConfigResponse,
     StoryDeleteResponse,
     StoryErrorResponse,
@@ -36,6 +43,7 @@ from shared.llm_usage_logger import calculate_prompt_hash, create_request_metada
 from shared.llm_client import llm_client, LLMError
 from story_image_service import story_image_service
 from story_image_generator import story_image_generator
+import httpx
 
 router = APIRouter()
 
@@ -72,6 +80,11 @@ async def generate_story(
         return StoryErrorResponse(error="Can only generate stories for yourself")
 
     try:
+        # Extract Authorization header for service-to-service calls
+        auth_token = http_request.headers.get("authorization", "")
+        if not auth_token:
+            return StoryErrorResponse(error="Authorization header required")
+
         # Check rate limiting
         rate_limit_exceeded = await _check_rate_limit(db, request.user_id)
         if rate_limit_exceeded:
@@ -82,6 +95,30 @@ async def generate_story(
         # Get user context for personalization
         user_context = await _get_user_context(db, request.user_id)
         print("👤 STORY: Retrieved user context", flush=True)
+
+        # Fetch My People data if selected_people provided
+        my_people_data = []
+        if request.selected_people:
+            my_people_data = await _fetch_my_people_data(
+                request.user_id, request.selected_people, auth_token
+            )
+
+        # Merge custom characters with My People entries  
+        merged_characters = await _merge_characters_and_people(
+            request.characters, my_people_data
+        )
+        
+        # Create updated request with merged characters
+        updated_request = StoryGenerationRequest(
+            user_id=request.user_id,
+            story_length=request.story_length,
+            characters=merged_characters,  # Use merged characters
+            selected_people=[],  # Clear this since we've merged
+            custom_prompt=request.custom_prompt,
+            target_audience=request.target_audience,
+            session_id=request.session_id,
+            include_images=request.include_images
+        )
 
         # Generate story using LLM
         (
@@ -95,7 +132,7 @@ async def generate_story(
             latency_ms,
             provider_used,
         ) = await _generate_story_llm(
-            request=request,
+            request=updated_request,  # Use merged characters
             user_context=user_context,
         )
 
@@ -105,21 +142,21 @@ async def generate_story(
         print(f"🤖 STORY: Generated story: {title}", flush=True)
         # LLM usage logging is now handled by the centralized client
 
-        # Save story to database
+        # Save story to database using merged characters
         story_id = await _save_story(
             db=db,
             user_id=request.user_id,
             title=title,
             content=story_content,
-            story_length=request.story_length,
-            target_audience=request.target_audience,
+            story_length=updated_request.story_length,
+            target_audience=updated_request.target_audience,
             word_count=word_count,
-            characters=request.characters,
-            session_id=request.session_id,
+            characters=merged_characters,  # Save merged characters (includes My People with photos)
+            session_id=updated_request.session_id,
             model_used=model_used,
             tokens_used=tokens_used,
             cost=cost,
-            custom_prompt=request.custom_prompt,
+            custom_prompt=updated_request.custom_prompt,
         )
 
         print(f"✅ STORY: Generated story for user {request.user_id}", flush=True)
@@ -132,9 +169,9 @@ async def generate_story(
         if request.include_images:
             print(f"🎨 STORY: Processing images for story {story_id}", flush=True)
             try:
-                # Extract scenes for image generation
+                # Extract scenes for image generation using merged characters (with photos!)
                 scenes = story_image_service.extract_image_scenes(
-                    story_content, request.story_length, request.characters
+                    story_content, updated_request.story_length, merged_characters
                 )
                 
                 # Insert image markers into story content
@@ -146,13 +183,14 @@ async def generate_story(
                 await _update_story_with_images(db, story_id, final_content, image_ids, has_images)
                 
                 # Start background image generation (don't await - let it run async)
+                # Now merged_characters includes photo URLs from My People!
                 asyncio.create_task(
                     story_image_generator.generate_story_images_background(
                         story_id=str(story_id),
                         user_id=str(request.user_id),
                         scenes=scenes,
-                        characters=request.characters,
-                        target_audience=request.target_audience,
+                        characters=merged_characters,  # Use merged characters with photos!
+                        target_audience=updated_request.target_audience,
                         db=db
                     )
                 )
@@ -721,15 +759,29 @@ def _build_story_prompt(request: StoryGenerationRequest, user_context: str) -> s
     character_descriptions = []
     if request.characters:
         for char in request.characters:
-            desc = f"- {char.name} ({char.relationship}"
-            if char.birth_date:
-                # Calculate age from birth date
-                from datetime import date
-
-                birth = date.fromisoformat(char.birth_date)
-                age = (date.today() - birth).days // 365
-                desc += f", {age} years old"
-            desc += ")"
+            # Handle pets vs people differently
+            if char.entry_type == "pet":
+                desc = f"- {char.name} (pet"
+                if char.species:
+                    desc += f", {char.species}"
+                if char.birth_date:
+                    # Calculate age from birth date
+                    from datetime import date
+                    birth = date.fromisoformat(char.birth_date)
+                    age = (date.today() - birth).days // 365
+                    desc += f", {age} years old"
+                desc += f", relationship to family: {char.relationship})"
+            else:
+                # Handle people (original logic)
+                desc = f"- {char.name} ({char.relationship}"
+                if char.birth_date:
+                    # Calculate age from birth date
+                    from datetime import date
+                    birth = date.fromisoformat(char.birth_date)
+                    age = (date.today() - birth).days // 365
+                    desc += f", {age} years old"
+                desc += ")"
+            
             if char.traits:
                 desc += f", traits: {', '.join(char.traits)}"
             character_descriptions.append(desc)
@@ -795,6 +847,13 @@ LANGUAGE AND STYLE:
 - Include natural dialogue that reveals character
 - Vary sentence structure and pacing for engagement
 
+CHARACTER GUIDANCE:
+- For human characters: Develop their personalities, motivations, and relationships naturally
+- For pet characters: Portray them authentically with species-appropriate behaviors while allowing for story magic
+- Pets can be central characters with agency, not just companions
+- Consider the unique perspective pets might have on situations
+- Balance realistic animal behavior with the narrative needs of your story
+
 Format the story with:
 TITLE: [Creative, intriguing title]
 
@@ -847,6 +906,124 @@ def _clean_title_formatting(title: str) -> str:
     title = re.sub(r"\s+", " ", title).strip()
 
     return title
+
+
+async def _fetch_my_people_data(user_id: UUID, selected_people: list[UUID], auth_token: str) -> list[dict]:
+    """Fetch My People data from Identity Service including photo URLs"""
+    if not selected_people:
+        return []
+    
+    try:
+        print(f"📸 STORY_PEOPLE: Fetching My People data for {len(selected_people)} people")
+        
+        async with httpx.AsyncClient() as client:
+            response = await client.get(
+                f"{identity_url}/users/{user_id}/people",
+                headers={"Authorization": auth_token},
+                timeout=10.0,
+            )
+            
+            if response.status_code == 200:
+                all_people = response.json().get("people", [])
+                
+                # Filter to selected people and extract relevant data
+                selected_people_data = []
+                for person in all_people:
+                    if person and person.get("id") in [str(pid) for pid in selected_people]:
+                        # Extract basic info including new pet fields
+                        entry_type = person.get("entry_type", "person")
+                        person_data = {
+                            "id": person.get("id"),
+                            "name": person.get("name", ""),
+                            "relationship": person.get("relationship", "friend"),
+                            "birth_date": person.get("birth_date"),
+                            "photo_url": person.get("photo_url"),  # This is the key field for images!
+                            "entry_type": entry_type,
+                            "species": person.get("species"),  # For pets: breed/animal type
+                        }
+                        
+                        # Extract traits from profile data or personality_description field
+                        traits = []
+                        
+                        # First check the direct personality_description field (simpler)
+                        if person.get("personality_description"):
+                            # Split personality description into trait-like chunks
+                            desc_traits = [t.strip() for t in person.get("personality_description").split(",")]
+                            traits.extend(desc_traits[:5])  # Limit from description
+                        
+                        # Also check profile_data for additional traits
+                        for profile_item in person.get("profile_data", []):
+                            if profile_item.get("category") == "personality":
+                                personality_data = profile_item.get("field_value", {})
+                                if isinstance(personality_data, dict):
+                                    traits.extend(personality_data.get("traits", []))
+                        
+                        # For pets, add species-appropriate default traits if none provided
+                        if entry_type == "pet" and not traits and person_data["species"]:
+                            species = person_data["species"].lower()
+                            if "dog" in species:
+                                traits = ["loyal", "playful", "friendly"]
+                            elif "cat" in species:
+                                traits = ["independent", "curious", "graceful"]
+                            elif any(pet in species for pet in ["bird", "parrot"]):
+                                traits = ["intelligent", "talkative", "colorful"]
+                            elif any(pet in species for pet in ["fish", "goldfish"]):
+                                traits = ["peaceful", "graceful", "calm"]
+                            else:
+                                traits = ["beloved", "special", "cherished"]
+                            print(f"🐾 STORY_PEOPLE: Added default traits for {species}: {traits}")
+                        
+                        person_data["traits"] = traits[:10]  # Limit to 10 traits
+                        selected_people_data.append(person_data)
+                
+                print(f"📸 STORY_PEOPLE: Successfully fetched {len(selected_people_data)} My People entries")
+                for person in selected_people_data:
+                    has_photo = "✅" if person.get("photo_url") else "❌"
+                    print(f"   {person['name']} ({person['relationship']}) - Photo: {has_photo}")
+                
+                return selected_people_data
+            else:
+                print(f"❌ STORY_PEOPLE: Identity service returned {response.status_code}")
+                return []
+                
+    except Exception as e:
+        print(f"❌ STORY_PEOPLE: Error fetching My People data: {e}")
+        return []
+
+
+async def _merge_characters_and_people(
+    custom_characters: list[StoryCharacter], 
+    my_people_data: list[dict]
+) -> list[StoryCharacter]:
+    """Merge custom characters with My People entries into unified character list"""
+    
+    merged_characters = []
+    
+    # Add custom characters (no photos)
+    for char in custom_characters:
+        merged_characters.append(char)
+    
+    # Convert My People entries to StoryCharacter format
+    for person in my_people_data:
+        story_char = StoryCharacter(
+            name=person["name"],
+            relationship=person["relationship"],
+            birth_date=person.get("birth_date"),
+            traits=person.get("traits", []),
+            photo_url=person.get("photo_url"),  # Include photo URL!
+            person_id=UUID(person["id"]) if person.get("id") else None,
+            entry_type=person.get("entry_type", "person"),  # Include entry type
+            species=person.get("species")  # Include pet species info
+        )
+        merged_characters.append(story_char)
+    
+    print(f"🎭 STORY_CHARACTERS: Merged {len(custom_characters)} custom + {len(my_people_data)} My People = {len(merged_characters)} total characters")
+    
+    # Log photo availability
+    characters_with_photos = [c for c in merged_characters if c.photo_url]
+    print(f"📸 STORY_CHARACTERS: {len(characters_with_photos)} characters have photos for image generation")
+    
+    return merged_characters
 
 
 async def _generate_story_llm(
@@ -1054,7 +1231,7 @@ async def get_story_image_status(
     current_user: TokenData = Depends(get_current_user),
     db: Database = Depends(get_db),
 ):
-    """Get status and URL of specific story image"""
+    """Get status and URL of specific story image - includes cache control for failed images"""
     
     try:
         # Verify the story belongs to the user
@@ -1084,18 +1261,28 @@ async def get_story_image_status(
             )
         
         image_url = image_data["url"] if image_data["status"] == "completed" else None
+        status = image_data["status"]
         
         # Log the URL being returned for debugging
         print(f"🔗 STORY_IMAGE_STATUS: Returning image status for {image_id}", flush=True)
         print(f"   Story ID: {story_id}", flush=True)
-        print(f"   Status: {image_data['status']}", flush=True)
+        print(f"   Status: {status}", flush=True)
         print(f"   URL: {image_url}", flush=True)
         if image_url:
             print(f"   URL Domain: {image_url.split('/')[2] if '://' in image_url else 'invalid-url'}", flush=True)
             print(f"   Is images.fairydust.fun: {'images.fairydust.fun' in image_url}", flush=True)
         
+        # Add warning for excessive polling of failed images
+        if status == "failed":
+            print(f"⚠️  STORY_IMAGE_STATUS: Client polling FAILED image {image_id} - should stop polling!", flush=True)
+            print(f"   Suggestion: Client should implement exponential backoff or stop polling failed images", flush=True)
+        elif status == "processing":
+            print(f"🔄 STORY_IMAGE_STATUS: Image {image_id} still processing - normal polling", flush=True)
+        elif status == "completed":
+            print(f"✅ STORY_IMAGE_STATUS: Image {image_id} completed - client should stop polling", flush=True)
+        
         return StoryImageStatusResponse(
-            status=image_data["status"],
+            status=status,
             url=image_url
         )
         

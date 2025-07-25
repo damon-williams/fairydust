@@ -195,12 +195,13 @@ async def _get_app_id(db: Database) -> str:
 async def _get_people_info(
     db: Database, user_id: uuid.UUID, selected_people: list[str]
 ) -> list[dict]:
-    """Get information about selected people for AI context"""
+    """Get information about selected people and pets from Identity Service for AI context"""
     if not selected_people:
+        print("🔍 ACTIVITY_PEOPLE: No selected people, returning empty list")
         return []
 
     try:
-        # Convert string IDs to UUIDs
+        # Convert string IDs to UUIDs for Identity Service call
         person_uuids = []
         for person_id in selected_people:
             try:
@@ -212,31 +213,68 @@ async def _get_people_info(
         if not person_uuids:
             return []
 
-        query = """
-            SELECT person_id, name, relationship, age, traits, notes
-            FROM user_people
-            WHERE user_id = $1 AND person_id = ANY($2)
-        """
-
-        rows = await db.fetch_all(query, user_id, person_uuids)
-
-        people_info = []
-        for row in rows:
-            people_info.append(
-                {
-                    "person_id": str(row["person_id"]),
-                    "name": row["name"],
-                    "relationship": row["relationship"],
-                    "age": row["age"],
-                    "traits": row["traits"] or [],
-                    "notes": row["notes"],
-                }
+        # Call Identity Service to get people and pets data
+        import httpx
+        
+        # Service URL configuration based on environment
+        environment = os.getenv("ENVIRONMENT", "staging")
+        base_url_suffix = "production" if environment == "production" else "staging"
+        identity_url = f"https://fairydust-identity-{base_url_suffix}.up.railway.app"
+        
+        print(f"🔍 ACTIVITY_PEOPLE: Fetching people data from Identity Service for user {user_id}")
+        
+        async with httpx.AsyncClient() as client:
+            response = await client.get(
+                f"{identity_url}/users/{user_id}/people",
+                timeout=10.0,
             )
-
-        return people_info
-
+            
+            if response.status_code == 200:
+                all_people = response.json().get("people", [])
+                print(f"🔍 ACTIVITY_PEOPLE: Got {len(all_people)} people from Identity Service")
+                
+                # Filter to selected people and extract activity-relevant data
+                selected_people_data = []
+                for person in all_people:
+                    if person and person.get("id") in [str(pid) for pid in person_uuids]:
+                        # Calculate age from birth_date if available
+                        age = None
+                        if person.get("birth_date"):
+                            from datetime import date
+                            try:
+                                birth = date.fromisoformat(person["birth_date"])
+                                age = (date.today() - birth).days // 365
+                            except:
+                                pass
+                        
+                        # Extract activity preferences or personality description for traits
+                        traits = []
+                        if person.get("personality_description"):
+                            traits = [t.strip() for t in person.get("personality_description").split(",")][:5]
+                        
+                        # Build person/pet data
+                        entry_type = person.get("entry_type", "person")
+                        person_data = {
+                            "person_id": person.get("id", ""),
+                            "name": person.get("name", ""),
+                            "relationship": person.get("relationship", ""),
+                            "entry_type": entry_type,
+                            "species": person.get("species"),  # For pets
+                            "age": age,
+                            "traits": traits,
+                            "notes": "",  # Activity preferences could be added here
+                        }
+                        
+                        selected_people_data.append(person_data)
+                
+                print(f"🔍 ACTIVITY_PEOPLE: Filtered to {len(selected_people_data)} selected people/pets")
+                return selected_people_data
+            else:
+                print(f"🔍 ACTIVITY_PEOPLE: Identity Service returned {response.status_code}, returning empty list")
+                return []
+                
     except Exception as e:
-        print(f"❌ ACTIVITY_PEOPLE: Error getting people info: {str(e)}", flush=True)
+        print(f"❌ ACTIVITY_PEOPLE: Error getting people info from Identity Service: {str(e)}", flush=True)
         return []
 
 
@@ -273,16 +311,36 @@ async def _generate_ai_contexts(
 
 
 def _build_group_context(people_info: list[dict]) -> str:
-    """Build context string about the group composition"""
+    """Build context string about the group composition including pets"""
     if not people_info:
         return "solo traveler"
 
-    group_parts = []
+    people_parts = []
+    pet_parts = []
+    
     for person in people_info:
-        age_str = f" ({person['age']})" if person["age"] else ""
-        group_parts.append(f"{person['name']}{age_str}")
+        if person.get("entry_type") == "pet":
+            # Handle pets differently
+            species_str = f" ({person['species']})" if person.get('species') else ""
+            age_str = f", {person['age']} years old" if person.get("age") else ""
+            pet_parts.append(f"{person['name']}{species_str}{age_str}")
+        else:
+            # Handle people
+            age_str = f" ({person['age']})" if person.get("age") else ""
+            people_parts.append(f"{person['name']}{age_str}")
 
-    return f"group with {', '.join(group_parts)}"
+    # Build context string
+    context_parts = []
+    if people_parts:
+        context_parts.append(f"group with {', '.join(people_parts)}")
+    if pet_parts:
+        pet_context = f"traveling with pet{'s' if len(pet_parts) > 1 else ''}: {', '.join(pet_parts)}"
+        if people_parts:
+            context_parts.append(pet_context)
+        else:
+            context_parts.append(f"solo traveler {pet_context}")
+    
+    return "; ".join(context_parts) if context_parts else "group"
 
 
 async def _get_llm_model_config() -> dict:
@@ -337,7 +395,13 @@ async def _generate_batch_contexts(
                 activities_text += f" ({activity['num_reviews']} reviews)"
             activities_text += "\n"
 
-        prompt = f"""For each activity below, generate a personalized 2-3 sentence recommendation for a {group_context}. Focus on why this activity suits the specific group, practical tips, and what to expect. Also provide 2-4 suitability tags.
+        # Check if group includes pets for enhanced guidance
+        has_pets = any(person.get("entry_type") == "pet" for person in people_info)
+        pet_guidance = ""
+        if has_pets:
+            pet_guidance = " When the group includes pets, prioritize outdoor activities, pet-friendly venues, and practical considerations like leash requirements, pet waste facilities, and shade/water availability. Consider the pet's energy level and species-specific needs."
+
+        prompt = f"""For each activity below, generate a personalized 2-3 sentence recommendation for a {group_context}. Focus on why this activity suits the specific group, practical tips, and what to expect. Also provide 2-4 suitability tags.{pet_guidance}
 
 Activities:
 {activities_text}
