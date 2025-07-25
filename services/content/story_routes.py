@@ -19,6 +19,7 @@ identity_url = f"https://fairydust-identity-{base_url_suffix}.up.railway.app"
 # Content service no longer manages DUST - all DUST handling is external
 from models import (
     StoriesListResponse,
+    StoryCharacter,
     StoryConfigResponse,
     StoryDeleteResponse,
     StoryErrorResponse,
