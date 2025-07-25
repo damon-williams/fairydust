@@ -1231,7 +1231,7 @@ async def get_story_image_status(
     current_user: TokenData = Depends(get_current_user),
     db: Database = Depends(get_db),
 ):
-    """Get status and URL of specific story image"""
+    """Get status and URL of specific story image - includes cache control for failed images"""
     
     try:
         # Verify the story belongs to the user
@@ -1261,18 +1261,28 @@ async def get_story_image_status(
             )
         
         image_url = image_data["url"] if image_data["status"] == "completed" else None
+        status = image_data["status"]
         
         # Log the URL being returned for debugging
         print(f"🔗 STORY_IMAGE_STATUS: Returning image status for {image_id}", flush=True)
         print(f"   Story ID: {story_id}", flush=True)
-        print(f"   Status: {image_data['status']}", flush=True)
+        print(f"   Status: {status}", flush=True)
         print(f"   URL: {image_url}", flush=True)
         if image_url:
             print(f"   URL Domain: {image_url.split('/')[2] if '://' in image_url else 'invalid-url'}", flush=True)
             print(f"   Is images.fairydust.fun: {'images.fairydust.fun' in image_url}", flush=True)
         
+        # Add warning for excessive polling of failed images
+        if status == "failed":
+            print(f"⚠️  STORY_IMAGE_STATUS: Client polling FAILED image {image_id} - should stop polling!", flush=True)
+            print(f"   Suggestion: Client should implement exponential backoff or stop polling failed images", flush=True)
+        elif status == "processing":
+            print(f"🔄 STORY_IMAGE_STATUS: Image {image_id} still processing - normal polling", flush=True)
+        elif status == "completed":
+            print(f"✅ STORY_IMAGE_STATUS: Image {image_id} completed - client should stop polling", flush=True)
+        
         return StoryImageStatusResponse(
-            status=image_data["status"],
+            status=status,
             url=image_url
         )
         
