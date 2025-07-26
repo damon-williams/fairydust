@@ -81,23 +81,32 @@ class StoryImageService:
         return placement_points
     
     def _extract_visual_elements(self, scene_text: str, characters: List[StoryCharacter]) -> str:
-        """Extract visual elements from scene text to create image description"""
+        """Extract visual elements from scene text while preserving actual story content"""
         
-        # Start with the scene content, cleaned up
+        # Start with the actual scene content
         scene_description = scene_text.strip()
         
-        # Remove dialogue markers and clean up
-        scene_description = re.sub(r'"[^"]*"', '', scene_description)  # Remove dialogue
+        # Clean up dialogue but preserve the story narrative
+        # Replace dialogue with narrative markers to maintain story flow
+        scene_description = re.sub(r'"([^"]+)"', r'speaking', scene_description)
         scene_description = re.sub(r'\s+', ' ', scene_description)  # Normalize whitespace
         
-        # Extract key visual elements and actions
-        visual_description = self._analyze_scene_for_visuals(scene_description, characters)
+        # Instead of replacing the story content, enhance it with visual details
+        visual_elements = self._analyze_scene_for_visuals(scene_description, characters)
         
-        # If scene is too short, make it more descriptive
-        if len(visual_description) < 50:
-            visual_description = f"A scene from a children's story: {visual_description}"
+        # Combine the actual story content with visual enhancements
+        if len(scene_description) > 250:
+            # For longer scenes, use the story content directly but add visual enhancements
+            story_content = scene_description[:250].rsplit(' ', 1)[0]  # Cut at word boundary
+            enhanced_description = f"{story_content}, {visual_elements}"
+        else:
+            # For shorter scenes, use full content plus visual elements
+            enhanced_description = f"{scene_description}, {visual_elements}"
         
-        return visual_description.strip()[:300]  # Limit length for prompt
+        # Remove redundant phrases to avoid repetition
+        enhanced_description = self._clean_redundant_phrases(enhanced_description)
+        
+        return enhanced_description.strip()[:450]  # Increased limit to include more story content
     
     def _identify_characters_in_scene(self, scene_text: str, characters: List[StoryCharacter]) -> List[StoryCharacter]:
         """Identify which characters are mentioned in this specific scene"""
@@ -273,6 +282,34 @@ class StoryImageService:
         
         return ''
     
+    def _clean_redundant_phrases(self, text: str) -> str:
+        """Remove redundant or repeated phrases from the enhanced description"""
+        
+        # Split into parts and remove duplicates while preserving order
+        parts = [part.strip() for part in text.split(',')]
+        unique_parts = []
+        seen_concepts = set()
+        
+        for part in parts:
+            # Check if this concept has already been mentioned
+            part_lower = part.lower()
+            is_duplicate = False
+            
+            for seen in seen_concepts:
+                # Check for substantial overlap (more than just common words)
+                common_words = set(part_lower.split()) & set(seen.split())
+                significant_words = {word for word in common_words if len(word) > 3}
+                
+                if len(significant_words) >= 2:  # At least 2 significant words in common
+                    is_duplicate = True
+                    break
+            
+            if not is_duplicate and part.strip():
+                unique_parts.append(part)
+                seen_concepts.add(part_lower)
+        
+        return ', '.join(unique_parts)
+    
     def insert_image_markers(self, story_content: str, scenes: List[dict]) -> str:
         """Insert image markers into story content at appropriate positions"""
         
@@ -297,81 +334,125 @@ class StoryImageService:
         characters_in_scene: List[StoryCharacter], 
         target_audience: TargetAudience
     ) -> str:
-        """Generate Replicate-optimized prompt from scene description"""
+        """Generate Replicate-optimized prompt from scene description with actual story content"""
         
-        # Start with enhanced scene description
-        prompt_parts = [scene_description]
+        # The scene_description now contains actual story content - use it as the primary prompt
+        prompt_parts = []
         
-        # Add character details with more descriptive context
+        # Clean and optimize the story content for image generation
+        cleaned_scene = self._prepare_scene_for_image_prompt(scene_description)
+        prompt_parts.append(cleaned_scene)
+        
+        # Only add character details if they provide NEW information not in the scene
         if characters_in_scene:
             character_details = []
             for char in characters_in_scene:
-                char_desc = char.name
+                char_additions = []
+                
+                # Add species info for pets if not already mentioned in scene
                 if char.entry_type == "pet" and char.species:
-                    char_desc += f" the {char.species}"
-                elif char.relationship:
-                    char_desc += f" ({char.relationship})"
+                    if char.species.lower() not in scene_description.lower():
+                        char_additions.append(f"{char.name} the {char.species}")
+                elif char.relationship and char.name.lower() in scene_description.lower():
+                    # Character is mentioned in scene, only add relationship if not obvious
+                    if char.relationship.lower() not in scene_description.lower():
+                        char_additions.append(f"{char.name} ({char.relationship})")
                 
-                # Add character traits for visual context
+                # Add visual traits that aren't mentioned in the scene
                 if char.traits:
-                    relevant_traits = [trait for trait in char.traits[:2] if any(keyword in trait.lower() 
-                                     for keyword in ['tall', 'short', 'curly', 'straight', 'blonde', 'brown', 'black', 'red', 'blue', 'green', 'happy', 'cheerful', 'kind', 'gentle'])]
-                    if relevant_traits:
-                        char_desc += f" ({', '.join(relevant_traits)})"
+                    scene_lower = scene_description.lower()
+                    relevant_traits = []
+                    for trait in char.traits[:2]:
+                        trait_lower = trait.lower()
+                        # Only add visual traits not already mentioned
+                        if (any(keyword in trait_lower for keyword in 
+                               ['tall', 'short', 'curly', 'straight', 'blonde', 'brown', 'black', 'red', 'blue', 'green']) 
+                            and trait_lower not in scene_lower):
+                            relevant_traits.append(trait)
+                    
+                    if relevant_traits and char_additions:
+                        char_additions[-1] += f" ({', '.join(relevant_traits)})"
                 
-                character_details.append(char_desc)
+                character_details.extend(char_additions)
             
-            if len(character_details) == 1:
-                prompt_parts.append(f"featuring {character_details[0]}")
-            elif len(character_details) == 2:
-                prompt_parts.append(f"featuring {character_details[0]} and {character_details[1]}")
-            else:
-                prompt_parts.append(f"featuring {', '.join(character_details[:-1])}, and {character_details[-1]}")
+            # Only add character details if they provide new context
+            if character_details:
+                if len(character_details) == 1:
+                    prompt_parts.append(f"with {character_details[0]}")
+                else:
+                    prompt_parts.append(f"with {', '.join(character_details)}")
         
-        # Combine parts
-        prompt = ', '.join(prompt_parts)
+        # Combine the story content with any enhancements
+        story_prompt = ', '.join(prompt_parts)
         
-        # Add audience-appropriate style context with more specific descriptors
+        # Add concise, audience-appropriate style context
         style_descriptors = []
         
         if target_audience in [TargetAudience.TODDLER, TargetAudience.PRESCHOOL]:
             style_descriptors.extend([
                 "children's picture book illustration",
-                "very colorful and bright", 
-                "simple and clear",
-                "friendly and welcoming",
+                "bright and colorful", 
+                "simple and friendly",
                 "safe for toddlers"
             ])
         elif target_audience in [TargetAudience.EARLY_ELEMENTARY, TargetAudience.LATE_ELEMENTARY]:
             style_descriptors.extend([
                 "children's book illustration",
                 "colorful and engaging",
-                "detailed but age-appropriate",
-                "adventurous and fun",
+                "age-appropriate detail",
                 "family-friendly"
             ])
         elif target_audience == TargetAudience.TEEN:
             style_descriptors.extend([
-                "young adult book illustration",
+                "young adult illustration",
                 "dynamic and modern",
-                "sophisticated but relatable",
-                "contemporary art style",
-                "teen-appropriate"
+                "teen-appropriate style"
             ])
         
-        # Add technical quality enhancers
+        # Essential quality descriptors (keep minimal to preserve story content)
         style_descriptors.extend([
-            "high quality digital art",
-            "professional illustration",
-            "storybook style",
-            "detailed and expressive",
-            "warm and inviting lighting"
+            "high quality illustration",
+            "professional storybook art",
+            "warm lighting"
         ])
         
-        # Combine with scene prompt
-        final_prompt = f"{prompt}, {', '.join(style_descriptors)}"
+        # Combine story content with style (prioritizing story content)
+        final_prompt = f"{story_prompt}, {', '.join(style_descriptors)}"
+        
+        # Ensure we don't exceed prompt limits while preserving story content
+        if len(final_prompt) > 500:
+            # Reduce style descriptors before reducing story content
+            reduced_styles = style_descriptors[:4]
+            final_prompt = f"{story_prompt}, {', '.join(reduced_styles)}"
         
         return final_prompt
+    
+    def _prepare_scene_for_image_prompt(self, scene_text: str) -> str:
+        """Prepare scene text specifically for image generation prompts"""
+        
+        # Clean up text for image generation while preserving story content
+        cleaned = scene_text.strip()
+        
+        # Convert first-person narrative to third-person for better image generation
+        cleaned = re.sub(r'\bI\b', 'the main character', cleaned)
+        cleaned = re.sub(r'\bmy\b', 'their', cleaned, flags=re.IGNORECASE)
+        cleaned = re.sub(r'\bme\b', 'them', cleaned)
+        
+        # Remove internal thoughts that don't translate to visuals
+        cleaned = re.sub(r'\bthought about\b.*?[.,]', '', cleaned, flags=re.IGNORECASE)
+        cleaned = re.sub(r'\bwondered if\b.*?[.,]', '', cleaned, flags=re.IGNORECASE)
+        cleaned = re.sub(r'\bremembered that\b.*?[.,]', '', cleaned, flags=re.IGNORECASE)
+        
+        # Clean up excessive modifiers
+        cleaned = re.sub(r'\bvery\s+very\b', 'very', cleaned, flags=re.IGNORECASE)
+        cleaned = re.sub(r'\breally\s+really\b', 'really', cleaned, flags=re.IGNORECASE)
+        
+        # Clean up whitespace and punctuation
+        cleaned = re.sub(r'\s+', ' ', cleaned)
+        cleaned = re.sub(r'[,.]?\s*,', ',', cleaned)  # Remove double commas
+        cleaned = re.sub(r'^\s*,\s*', '', cleaned)  # Remove leading comma
+        
+        return cleaned.strip()
     
     def prepare_reference_people(
         self, 

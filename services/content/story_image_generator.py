@@ -136,10 +136,12 @@ class StoryImageGenerator:
             logger.info(f"📝 STORY IMAGE PROMPT GENERATION:")
             logger.info(f"   Scene position: {scene.get('position', 'unknown')} (importance: {scene.get('narrative_importance', 'unknown')})")
             logger.info(f"   Scene type: {scene.get('scene_type', 'general')}")
-            logger.info(f"   Scene description: {scene['scene_description']}")
+            logger.info(f"   Story content length: {len(scene['scene_description'])} characters")
+            logger.info(f"   Scene description (first 150 chars): {scene['scene_description'][:150]}...")
             logger.info(f"   Characters in scene: {[char.name for char in characters_in_scene]}")
             logger.info(f"   Target audience: {target_audience.value}")
-            logger.info(f"   Generated prompt: {enhanced_prompt}")
+            logger.info(f"   FINAL PROMPT: {enhanced_prompt}")
+            logger.info(f"   Prompt length: {len(enhanced_prompt)} characters")
             
             # Prepare reference people (smart character selection)
             reference_people = []
