@@ -100,6 +100,25 @@ export default function Settings() {
     return 'text';
   };
 
+  // Get human-readable display name for configuration keys
+  const getDisplayName = (key: string) => {
+    const displayNames: Record<string, string> = {
+      'daily_login_bonus_amount': 'Daily Login Bonus',
+      'initial_dust_amount': 'Initial DUST Grant',
+      'app_store_url_ios': 'iOS App Store URL',
+      'app_store_url_android': 'Android App Store URL',
+      'support_email': 'Support Email',
+      'terms_of_service_url': 'Terms of Service URL',
+      'privacy_policy_url': 'Privacy Policy URL',
+      'terms_of_service_current_version': 'Terms of Service Version',
+      'privacy_policy_current_version': 'Privacy Policy Version',
+      'terms_enforcement_enabled': 'Terms Enforcement Enabled',
+      'terms_grace_period_days': 'Terms Grace Period (Days)'
+    };
+    
+    return displayNames[key] || key.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
+  };
+
   useEffect(() => {
     loadConfigs();
   }, []);
@@ -131,69 +150,6 @@ export default function Settings() {
         </Button>
       </div>
 
-      {/* Daily Login Bonus - Featured Section */}
-      {configs.find(c => c.key === 'daily_login_bonus_amount') && (
-        <Card className="border-blue-200 bg-blue-50">
-          <CardHeader>
-            <CardTitle className="text-blue-900">Daily Login Bonus</CardTitle>
-            <CardDescription className="text-blue-700">
-              Configure the daily DUST bonus amount for user logins
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            {(() => {
-              const item = configs.find(c => c.key === 'daily_login_bonus_amount')!;
-              return (
-                <div className="space-y-4">
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div className="space-y-2">
-                      <Label htmlFor={`value-${item.key}`}>Bonus Amount (DUST)</Label>
-                      <div className="flex gap-2">
-                        <Input
-                          id={`value-${item.key}`}
-                          type="number"
-                          min="0"
-                          value={editingValues[item.key] || ''}
-                          onChange={(e) => handleValueChange(item.key, e.target.value)}
-                          className="bg-white"
-                        />
-                        <Button
-                          onClick={() => saveConfig(item.key)}
-                          disabled={!hasUnsavedChanges(item) || saving === item.key}
-                          className="bg-blue-600 hover:bg-blue-700"
-                        >
-                          {saving === item.key ? (
-                            <RefreshCw className="h-4 w-4 animate-spin" />
-                          ) : (
-                            <Save className="h-4 w-4" />
-                          )}
-                        </Button>
-                      </div>
-                    </div>
-                    <div className="space-y-2">
-                      <Label htmlFor={`desc-${item.key}`}>Description</Label>
-                      <Input
-                        id={`desc-${item.key}`}
-                        value={editingDescriptions[item.key] || ''}
-                        onChange={(e) => handleDescriptionChange(item.key, e.target.value)}
-                        placeholder="Description of this setting"
-                        className="bg-white"
-                      />
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-4 text-sm text-blue-600">
-                    <span>Current Value: <Badge variant="secondary">{item.value} DUST</Badge></span>
-                    <span>Last Updated: {formatTimestamp(item.updated_at)}</span>
-                    {hasUnsavedChanges(item) && (
-                      <Badge variant="destructive">Unsaved Changes</Badge>
-                    )}
-                  </div>
-                </div>
-              );
-            })()}
-          </CardContent>
-        </Card>
-      )}
 
 
       {/* All System Configurations */}
@@ -211,7 +167,7 @@ export default function Settings() {
                 <div className="space-y-4">
                   <div className="flex items-center justify-between">
                     <div>
-                      <h3 className="font-medium">{item.key}</h3>
+                      <h3 className="font-medium">{getDisplayName(item.key)}</h3>
                       <p className="text-sm text-muted-foreground">
                         {item.description || 'No description provided'}
                       </p>
