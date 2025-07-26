@@ -96,6 +96,8 @@ class User(BaseModel):
     # Calculated daily bonus fields (not stored in database)
     daily_bonus_eligible: Optional[bool] = None
     daily_bonus_amount: Optional[int] = None
+    # Calculated initial dust amount (not stored in database)
+    initial_dust_amount: Optional[int] = None
 
     class Config:
         from_attributes = True

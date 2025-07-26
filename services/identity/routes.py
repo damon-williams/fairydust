@@ -55,6 +55,19 @@ async def get_daily_bonus_amount(db: Database) -> int:
         pass
     return 5  # Default fallback
 
+
+async def get_initial_dust_amount(db: Database) -> int:
+    """Get current initial dust amount from system config with fallback"""
+    try:
+        config_result = await db.fetch_one(
+            "SELECT value FROM system_config WHERE key = 'initial_dust_amount'"
+        )
+        if config_result:
+            return int(config_result["value"])
+    except Exception:
+        pass
+    return 100  # Default fallback
+
 security = HTTPBearer()
 
 # Constants
@@ -228,12 +241,16 @@ async def verify_otp(
 
     # Get daily bonus amount from system config
     daily_bonus_amount = await get_daily_bonus_amount(db)
+    
+    # Get initial dust amount from system config
+    initial_dust_amount = await get_initial_dust_amount(db)
 
     # Add calculated daily bonus fields to user data
     user_dict = dict(user)
     daily_bonus_value = not is_new_user and is_bonus_eligible and user.get("is_onboarding_completed", False)
     user_dict["daily_bonus_eligible"] = daily_bonus_value
     user_dict["daily_bonus_amount"] = daily_bonus_amount
+    user_dict["initial_dust_amount"] = initial_dust_amount
 
     # Create tokens
     token_data = {
@@ -410,12 +427,16 @@ async def oauth_login(
 
     # Get daily bonus amount from system config
     daily_bonus_amount = await get_daily_bonus_amount(db)
+    
+    # Get initial dust amount from system config
+    initial_dust_amount = await get_initial_dust_amount(db)
 
     # Add calculated daily bonus fields to user data
     user_dict = dict(user)
     daily_bonus_value = not is_new_user and is_bonus_eligible and user.get("is_onboarding_completed", False)
     user_dict["daily_bonus_eligible"] = daily_bonus_value
     user_dict["daily_bonus_amount"] = daily_bonus_amount
+    user_dict["initial_dust_amount"] = initial_dust_amount
 
     # Create tokens
     token_data = {
@@ -509,11 +530,15 @@ async def get_current_user_profile(
 
     # Get daily bonus amount from system config
     daily_bonus_amount = await get_daily_bonus_amount(db)
+    
+    # Get initial dust amount from system config
+    initial_dust_amount = await get_initial_dust_amount(db)
 
     # Convert user dict to mutable dict and add calculated fields
     user_dict = dict(user)
     user_dict["daily_bonus_eligible"] = is_bonus_eligible
     user_dict["daily_bonus_amount"] = daily_bonus_amount
+    user_dict["initial_dust_amount"] = initial_dust_amount
 
     return User(**user_dict)
 

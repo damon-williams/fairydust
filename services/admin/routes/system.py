@@ -63,6 +63,13 @@ async def update_system_config_value(
                 raise HTTPException(status_code=400, detail="Daily login bonus must be non-negative")
         except ValueError:
             raise HTTPException(status_code=400, detail="Daily login bonus must be a valid integer")
+    elif key == "initial_dust_amount":
+        try:
+            initial_value = int(value_str)
+            if initial_value < 0:
+                raise HTTPException(status_code=400, detail="Initial dust amount must be non-negative")
+        except ValueError:
+            raise HTTPException(status_code=400, detail="Initial dust amount must be a valid integer")
     
     # Check if key exists
     existing = await db.fetch_one(
@@ -98,6 +105,7 @@ async def get_public_system_config_value(
     # Only allow certain keys to be accessed publicly
     allowed_public_keys = [
         "daily_login_bonus_amount",
+        "initial_dust_amount",
         "app_store_url_ios", 
         "app_store_url_android",
         "support_email",
@@ -120,6 +128,7 @@ async def get_public_system_config_value(
         # Return default values for certain keys
         defaults = {
             "daily_login_bonus_amount": "5",
+            "initial_dust_amount": "100",
             "terms_of_service_current_version": "1.0.0",
             "privacy_policy_current_version": "1.0.0",
             "terms_enforcement_enabled": "true",

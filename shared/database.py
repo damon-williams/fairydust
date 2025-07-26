@@ -1392,6 +1392,11 @@ async def create_tables():
         INSERT INTO system_config (key, value, description) 
         VALUES ('daily_login_bonus_amount', '5', 'Amount of DUST granted for daily login bonus')
         ON CONFLICT (key) DO NOTHING;
+        
+        -- Insert default initial dust amount configuration
+        INSERT INTO system_config (key, value, description) 
+        VALUES ('initial_dust_amount', '100', 'Initial DUST amount granted to new users upon registration')
+        ON CONFLICT (key) DO NOTHING;
     """
     )
 
