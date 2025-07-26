@@ -69,7 +69,8 @@ async def generate_story(
     Generate a new story using LLM and automatically save it to user's collection.
     """
     print(f"📖 STORY: Starting generation for user {request.user_id}", flush=True)
-    print(f"📂 STORY: Length: {request.story_length}", flush=True)
+    print(f"📂 STORY: Length: {request.story_length}, Audience: {request.target_audience}", flush=True)
+    print(f"🌙 STORY: Bedtime story: {request.is_bedtime_story}", flush=True)
 
     # Verify user can only generate stories for themselves
     if current_user.user_id != str(request.user_id):
@@ -516,7 +517,38 @@ async def get_story_config():
                     "words": "1600-2400",
                 },
             ],
-            "target_audiences": [audience.value for audience in TargetAudience],
+            "target_audiences": [
+                {
+                    "label": "Toddler",
+                    "value": "toddler",
+                    "age_range": "2-4 years",
+                    "description": "Very simple language, familiar objects and concepts"
+                },
+                {
+                    "label": "Preschool",
+                    "value": "preschool", 
+                    "age_range": "4-6 years",
+                    "description": "Simple vocabulary with gentle lessons about friendship and kindness"
+                },
+                {
+                    "label": "Early Elementary",
+                    "value": "early_elementary",
+                    "age_range": "6-9 years", 
+                    "description": "Age-appropriate adventures with themes of courage and teamwork"
+                },
+                {
+                    "label": "Late Elementary",
+                    "value": "late_elementary",
+                    "age_range": "9-12 years",
+                    "description": "More sophisticated stories with character growth and mild challenges"
+                },
+                {
+                    "label": "Teen",
+                    "value": "teen",
+                    "age_range": "13+ years",
+                    "description": "Complex themes of identity, relationships, and personal growth"
+                }
+            ],
             "character_relationships": [
                 "protagonist",
                 "daughter",
@@ -794,12 +826,22 @@ def _build_story_prompt(request: StoryGenerationRequest, user_context: str) -> s
 
     # Create varied, unpredictable prompt with audience-specific guidance
     audience_guidance = {
-        TargetAudience.KIDS: "children (ages 4-12). Focus on adventure, friendship, learning, and wonder. Keep language simple and positive.",
-        TargetAudience.TEEN: "teenagers (ages 13-17). Explore themes of identity, relationships, growing up, and self-discovery. Use contemporary language and relatable situations.",
-        TargetAudience.ADULTS: "adults (18+). Delve into complex emotions, relationships, life challenges, and sophisticated themes. Use mature language and nuanced storytelling."
+        TargetAudience.TODDLER: "toddlers (ages 2-4). Use very simple language, repetitive phrases, basic concepts like colors and shapes. Focus on familiar objects, animals, and simple emotions. Keep sentences short.",
+        TargetAudience.PRESCHOOL: "preschoolers (ages 4-6). Use simple vocabulary with some new words. Focus on friendship, family, basic problem-solving, and discovery. Include gentle lessons about sharing, kindness, and curiosity.",
+        TargetAudience.EARLY_ELEMENTARY: "early elementary children (ages 6-9). Use age-appropriate vocabulary with opportunities to learn new words. Focus on adventure, friendship, school experiences, and overcoming small challenges. Include themes of courage, teamwork, and learning.",
+        TargetAudience.LATE_ELEMENTARY: "late elementary children (ages 9-12). Use more sophisticated vocabulary and complex sentence structures. Explore themes of friendship, identity, responsibility, and problem-solving. Include mild challenges, mystery elements, and character growth.",
+        TargetAudience.TEEN: "teenagers (ages 13+). Use mature language and complex themes. Explore identity, relationships, coming-of-age challenges, and personal growth. Include realistic situations and emotional depth."
     }
     
-    prompt = f"""You are a master storyteller with infinite creativity. Create a truly unique and surprising story for {audience_guidance[request.target_audience]} The story should take about {length_descriptions[request.story_length]} to read.
+    # Add bedtime story guidance if applicable
+    bedtime_guidance = ""
+    if request.is_bedtime_story:
+        if request.target_audience in [TargetAudience.TODDLER, TargetAudience.PRESCHOOL]:
+            bedtime_guidance = " This is a BEDTIME STORY for young children - create a very calm, soothing narrative with gentle, familiar themes. Use soft, rhythmic language with repetitive, comforting phrases. Focus on peaceful bedtime routines, cozy settings, and reassuring endings. Avoid any excitement, conflict, or stimulating elements."
+        else:
+            bedtime_guidance = " This is a BEDTIME STORY - create a calm, soothing narrative with gentle themes. Avoid exciting action or scary elements. Focus on peaceful, comforting scenarios that help wind down for sleep. Use soft, rhythmic language and end on a tranquil, reassuring note."
+    
+    prompt = f"""You are a master storyteller with infinite creativity. Create a truly unique and surprising story for {audience_guidance[request.target_audience]}{bedtime_guidance} The story should take about {length_descriptions[request.story_length]} to read.
 
 {character_text}"""
 
@@ -811,7 +853,22 @@ def _build_story_prompt(request: StoryGenerationRequest, user_context: str) -> s
     if user_context != "general user" and not request.characters:
         prompt += f"\nPersonalization context: {user_context}"
 
-    prompt += f"""
+    # Add different creative requirements based on bedtime story flag
+    if request.is_bedtime_story:
+        prompt += f"""
+
+BEDTIME STORY CREATIVE REQUIREMENTS:
+- Target word count: {target_words} words (for {length_descriptions[request.story_length]})
+- Audience: {request.target_audience.value}
+- CALMING NARRATIVE: Create gentle, predictable story patterns that soothe rather than surprise
+- PEACEFUL THEMES: Focus on comfort, safety, love, and tranquility
+- SIMPLE STRUCTURE: Use clear, straightforward storytelling without complex twists or excitement
+- GENRE SELECTION: Choose calming genres like gentle fantasy, nature stories, family tales, or peaceful adventures
+- SOOTHING SETTINGS: Use cozy, familiar, or naturally peaceful environments (bedrooms, gardens, quiet forests, starlit skies)
+- GENTLE LANGUAGE: Use soft, rhythmic prose that flows smoothly and calmly
+- COMFORTING ENDINGS: Conclude with reassurance, safety, and peaceful resolution"""
+    else:
+        prompt += f"""
 
 CREATIVE REQUIREMENTS:
 - Target word count: {target_words} words (for {length_descriptions[request.story_length]})

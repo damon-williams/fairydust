@@ -81,9 +81,11 @@ class StoryLength(str, Enum):
 
 
 class TargetAudience(str, Enum):
-    KIDS = "kids"
-    TEEN = "teen"
-    ADULTS = "adults"
+    TODDLER = "toddler"  # 2-4 years
+    PRESCHOOL = "preschool"  # 4-6 years
+    EARLY_ELEMENTARY = "early_elementary"  # 6-9 years
+    LATE_ELEMENTARY = "late_elementary"  # 9-12 years
+    TEEN = "teen"  # 13+ years
 
 
 class StoryCharacter(BaseModel):
@@ -109,7 +111,8 @@ class StoryGenerationRequest(BaseModel):
     characters: list[StoryCharacter] = Field(default_factory=list, max_items=8)
     selected_people: list[UUID] = Field(default_factory=list, max_items=5, description="My People entries to include as story characters (with photos if available)")
     custom_prompt: Optional[str] = Field(None, max_length=1000)
-    target_audience: TargetAudience = TargetAudience.KIDS
+    target_audience: TargetAudience = TargetAudience.PRESCHOOL
+    is_bedtime_story: bool = False
     session_id: Optional[UUID] = None
     include_images: bool = False
 

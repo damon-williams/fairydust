@@ -134,6 +134,8 @@ class StoryImageGenerator:
             )
             
             logger.info(f"📝 STORY IMAGE PROMPT GENERATION:")
+            logger.info(f"   Scene position: {scene.get('position', 'unknown')} (importance: {scene.get('narrative_importance', 'unknown')})")
+            logger.info(f"   Scene type: {scene.get('scene_type', 'general')}")
             logger.info(f"   Scene description: {scene['scene_description']}")
             logger.info(f"   Characters in scene: {[char.name for char in characters_in_scene]}")
             logger.info(f"   Target audience: {target_audience.value}")
