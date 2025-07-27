@@ -135,6 +135,7 @@ async def generate_story(
         ) = await _generate_story_llm(
             request=updated_request,  # Use merged characters
             user_context=user_context,
+            db=db,
         )
 
         if not story_content:
@@ -830,7 +831,7 @@ def _calculate_reading_time(word_count: int) -> str:
         return f"{minutes} minutes"
 
 
-def _build_story_prompt(request: StoryGenerationRequest, user_context: str) -> str:
+async def _build_story_prompt(request: StoryGenerationRequest, user_context: str, db: Database) -> str:
     """Build the LLM prompt for story generation"""
     min_words, max_words = READING_TIME_WORD_TARGETS[request.story_length]
     target_words = (min_words + max_words) // 2
@@ -1257,6 +1258,7 @@ async def _merge_characters_and_people(
 async def _generate_story_llm(
     request: StoryGenerationRequest,
     user_context: str,
+    db: Database,
 ) -> tuple[Optional[str], str, int, str, str, dict, float, int, str]:
     """Generate story using centralized LLM client - returns (content, title, word_count, reading_time, model_id, tokens, cost, latency_ms, provider)"""
     try:
@@ -1283,7 +1285,7 @@ async def _generate_story_llm(
         print(f"🔧 STORY_LLM: Adjusted max_tokens to {max_tokens} for {request.story_length.value} story", flush=True)
 
         # Build prompt
-        prompt = _build_story_prompt(request, user_context)
+        prompt = await _build_story_prompt(request, user_context, db)
         
         # Calculate prompt hash for logging
         prompt_hash = calculate_prompt_hash(prompt)
