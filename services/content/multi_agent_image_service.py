@@ -302,6 +302,7 @@ STORY_SIGNIFICANCE: Important narrative moment"""
             char_info = {
                 "name": char.name,
                 "relationship": char.relationship,
+                "age": char.age if char.age is not None else "not specified",
                 "entry_type": char.entry_type or "person",
                 "species": char.species if hasattr(char, "species") else None,
                 "traits": char.traits[:5] if char.traits else [],
@@ -318,13 +319,14 @@ AVAILABLE CHARACTERS:
 {json.dumps(character_data, indent=2)}
 
 For each character that appears in the scene (as identified in CHARACTERS_PRESENT), provide a detailed visual description that includes:
-- Physical appearance (age-appropriate)
+- Physical appearance that accurately reflects their specified age (CRITICAL: if age is provided, ensure the character looks that age, not younger)
 - Key visual traits that make them recognizable
 - Any special characteristics (for pets, fantasy characters, etc.)
 - How they should appear in this specific scene
 
 Focus on visual elements that will help an image generator create accurate, recognizable characters.
 If a character has a photo reference (has_photo: true), mention that they should match their reference photo.
+IMPORTANT: Pay close attention to age information - an 8-year-old should look like an 8-year-old, not a toddler or preschooler.
 
 Format as:
 CHARACTER_NAME: [detailed visual description]
@@ -530,6 +532,10 @@ Return ONLY the enhanced prompt text, nothing else:"""
             # Add relationship context
             if char.relationship:
                 char_info.append(f"  - Relationship: {char.relationship}")
+
+            # Add age information for accurate rendering
+            if char.age is not None:
+                char_info.append(f"  - Age: {char.age} years old")
 
             # Add visual traits
             if char.traits:

@@ -92,6 +92,7 @@ class StoryCharacter(BaseModel):
     name: str = Field(..., min_length=1, max_length=100)
     relationship: str = Field(..., min_length=1, max_length=100)
     birth_date: Optional[str] = Field(None, pattern=r"^\d{4}-\d{2}-\d{2}$")
+    age: Optional[int] = Field(None, ge=0, le=150, description="Character's age in years for accurate image rendering")
     traits: list[str] = Field(default_factory=list, max_items=10)
     photo_url: Optional[str] = Field(
         None, description="Photo URL from My People entry (for image generation)"
@@ -117,7 +118,7 @@ class StoryGenerationRequest(BaseModel):
     characters: list[StoryCharacter] = Field(
         default_factory=list, 
         max_items=8,
-        description="Fully resolved characters with actual names, relationships, photo URLs, and traits. Frontend should resolve 'Yourself' to actual user name and include photo_url from profile/people data."
+        description="Fully resolved characters with actual names, relationships, ages, photo URLs, and traits. Frontend should resolve 'Yourself' to actual user name and include photo_url from profile/people data. IMPORTANT: Include age field for accurate image rendering."
     )
     custom_prompt: Optional[str] = Field(None, max_length=1000)
     target_audience: TargetAudience = TargetAudience.PRESCHOOL
