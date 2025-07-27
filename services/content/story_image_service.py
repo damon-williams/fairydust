@@ -343,44 +343,86 @@ class StoryImageService:
         cleaned_scene = self._prepare_scene_for_image_prompt(scene_description)
         prompt_parts.append(cleaned_scene)
         
-        # Only add character details if they provide NEW information not in the scene
+        # Add character details - essential for proper character rendering
         if characters_in_scene:
             character_details = []
             for char in characters_in_scene:
-                char_additions = []
+                # Build comprehensive character description for image generation
+                char_desc_parts = [char.name]
                 
-                # Add species info for pets if not already mentioned in scene
+                # Always include species/type information for non-human characters
                 if char.entry_type == "pet" and char.species:
-                    if char.species.lower() not in scene_description.lower():
-                        char_additions.append(f"{char.name} the {char.species}")
-                elif char.relationship and char.name.lower() in scene_description.lower():
-                    # Character is mentioned in scene, only add relationship if not obvious
-                    if char.relationship.lower() not in scene_description.lower():
-                        char_additions.append(f"{char.name} ({char.relationship})")
+                    char_desc_parts.append(f"the {char.species}")
+                elif char.entry_type == "pet" or self._is_animal_character(char):
+                    # Try to determine animal type from relationship or traits
+                    animal_type = self._extract_animal_type(char)
+                    if animal_type:
+                        char_desc_parts.append(f"the {animal_type}")
+                    else:
+                        char_desc_parts.append("the animal")
                 
-                # Add visual traits that aren't mentioned in the scene
+                # Add relationship context if it provides important character info
+                if char.relationship:
+                    relationship_lower = char.relationship.lower()
+                    # For custom characters, the relationship might contain the full description
+                    if char.entry_type != "pet" and relationship_lower not in ['person', 'character', 'friend']:
+                        # Check if relationship contains a character description
+                        if any(desc_word in relationship_lower for desc_word in ['helps', 'magical', 'special', 'who', 'that']):
+                            # This looks like a character description, include it
+                            char_desc_parts.append(f"({char.relationship})")
+                        elif len(char.relationship.split()) <= 2:
+                            # Short relationship, likely a title
+                            char_desc_parts.append(f"({char.relationship})")
+                    elif char.entry_type == "pet" and not char.species:
+                        # For pets without species, check if relationship has type info
+                        animal_type = self._extract_animal_type(char)
+                        if not animal_type and len(char.relationship.split()) > 1:
+                            # Relationship might contain the full description
+                            char_desc_parts.append(f"({char.relationship})")
+                
+                # Always include relevant traits/descriptions for visual context
                 if char.traits:
-                    scene_lower = scene_description.lower()
-                    relevant_traits = []
-                    for trait in char.traits[:2]:
-                        trait_lower = trait.lower()
-                        # Only add visual traits not already mentioned
-                        if (any(keyword in trait_lower for keyword in 
-                               ['tall', 'short', 'curly', 'straight', 'blonde', 'brown', 'black', 'red', 'blue', 'green']) 
-                            and trait_lower not in scene_lower):
-                            relevant_traits.append(trait)
+                    # Separate physical traits from personality traits
+                    physical_traits = []
+                    character_traits = []
                     
-                    if relevant_traits and char_additions:
-                        char_additions[-1] += f" ({', '.join(relevant_traits)})"
+                    for trait in char.traits[:5]:  # Use more traits for better descriptions
+                        trait_lower = trait.lower()
+                        # Physical appearance traits
+                        if any(keyword in trait_lower for keyword in 
+                              ['tall', 'short', 'curly', 'straight', 'blonde', 'brown', 'black', 'red', 'blue', 'green', 
+                               'long', 'fluffy', 'striped', 'spotted', 'white', 'gray', 'orange', 'golden', 'dark']):
+                            physical_traits.append(trait)
+                        # Important character-defining traits (especially for fantasy characters)
+                        elif any(keyword in trait_lower for keyword in 
+                                ['magical', 'mystical', 'wise', 'ancient', 'enchanted', 'flying', 'glowing', 
+                                 'dream', 'helps', 'heals', 'protects', 'guides', 'special', 'powerful', 'spirit']):
+                            character_traits.append(trait)
+                        # Behavioral traits that affect appearance
+                        elif any(keyword in trait_lower for keyword in 
+                                ['gentle', 'fierce', 'calm', 'energetic', 'mysterious', 'bright', 'sleepy', 'kind']):
+                            character_traits.append(trait)
+                        # Include any trait that contains descriptive phrases (like full descriptions)
+                        elif len(trait.split()) > 2:  # Multi-word descriptions
+                            character_traits.append(trait)
+                    
+                    # Add the most important traits to the description
+                    important_traits = physical_traits[:2] + character_traits[:2]
+                    if important_traits:
+                        char_desc_parts.append(f"({', '.join(important_traits)})")
                 
-                character_details.extend(char_additions)
+                # Combine into full character description
+                full_char_desc = ' '.join(char_desc_parts)
+                character_details.append(full_char_desc)
             
-            # Only add character details if they provide new context
+            # Always add character details for proper image generation
             if character_details:
                 if len(character_details) == 1:
-                    prompt_parts.append(f"with {character_details[0]}")
+                    prompt_parts.append(f"featuring {character_details[0]}")
+                elif len(character_details) == 2:
+                    prompt_parts.append(f"featuring {character_details[0]} and {character_details[1]}")
                 else:
-                    prompt_parts.append(f"with {', '.join(character_details)}")
+                    prompt_parts.append(f"featuring {', '.join(character_details[:-1])}, and {character_details[-1]}")
         
         # Combine the story content with any enhancements
         story_prompt = ', '.join(prompt_parts)
@@ -453,6 +495,59 @@ class StoryImageService:
         cleaned = re.sub(r'^\s*,\s*', '', cleaned)  # Remove leading comma
         
         return cleaned.strip()
+    
+    def _is_animal_character(self, char: StoryCharacter) -> bool:
+        """Determine if a character is an animal based on relationship or traits"""
+        if not char.relationship and not char.traits:
+            return False
+        
+        # Check relationship field for animal indicators
+        relationship_lower = char.relationship.lower() if char.relationship else ""
+        animal_indicators = ['cat', 'dog', 'bird', 'fish', 'rabbit', 'hamster', 'horse', 'dragon', 'unicorn', 'phoenix', 'wolf', 'bear', 'fox', 'owl', 'eagle', 'turtle', 'frog', 'lion', 'tiger', 'elephant', 'magical creature', 'mythical']
+        
+        if any(animal in relationship_lower for animal in animal_indicators):
+            return True
+        
+        # Check traits for animal/magical creature indicators
+        traits_text = ' '.join(char.traits).lower() if char.traits else ""
+        animal_trait_indicators = ['fur', 'feathers', 'scales', 'paws', 'claws', 'tail', 'wings', 'flies', 'purrs', 'barks', 'chirps', 'roars', 'magical', 'enchanted', 'spirit animal', 'creature']
+        
+        return any(indicator in traits_text for indicator in animal_trait_indicators)
+    
+    def _extract_animal_type(self, char: StoryCharacter) -> Optional[str]:
+        """Extract animal type from character relationship or traits"""
+        # Common animals to look for
+        animals = ['cat', 'dog', 'bird', 'fish', 'rabbit', 'hamster', 'horse', 'dragon', 'unicorn', 'phoenix', 'wolf', 'bear', 'fox', 'owl', 'eagle', 'turtle', 'frog', 'lion', 'tiger', 'elephant']
+        
+        # Check relationship field first
+        if char.relationship:
+            relationship_lower = char.relationship.lower()
+            for animal in animals:
+                if animal in relationship_lower:
+                    return animal
+        
+        # Check traits
+        if char.traits:
+            traits_text = ' '.join(char.traits).lower()
+            for animal in animals:
+                if animal in traits_text:
+                    return animal
+            
+            # Check for specific animal breed patterns
+            if 'golden retriever' in traits_text:
+                return 'golden retriever dog'
+            elif 'tabby' in traits_text:
+                return 'tabby cat'
+            elif 'siamese' in traits_text:
+                return 'siamese cat'
+            elif 'persian' in traits_text:
+                return 'persian cat'
+            elif 'husky' in traits_text:
+                return 'husky dog'
+            elif 'beagle' in traits_text:
+                return 'beagle dog'
+        
+        return None
     
     def prepare_reference_people(
         self, 

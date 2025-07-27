@@ -139,6 +139,16 @@ class StoryImageGenerator:
             logger.info(f"   Story content length: {len(scene['scene_description'])} characters")
             logger.info(f"   Scene description (first 150 chars): {scene['scene_description'][:150]}...")
             logger.info(f"   Characters in scene: {[char.name for char in characters_in_scene]}")
+            # Log detailed character information
+            for char in characters_in_scene:
+                char_info = f"      {char.name}: type={char.entry_type or 'person'}"
+                if char.species:
+                    char_info += f", species={char.species}"
+                if char.relationship:
+                    char_info += f", relationship={char.relationship}"
+                if char.traits:
+                    char_info += f", traits={char.traits[:3]}"  # Show first 3 traits
+                logger.info(char_info)
             logger.info(f"   Target audience: {target_audience.value}")
             logger.info(f"   FINAL PROMPT: {enhanced_prompt}")
             logger.info(f"   Prompt length: {len(enhanced_prompt)} characters")

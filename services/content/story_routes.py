@@ -864,9 +864,10 @@ BEDTIME STORY CREATIVE REQUIREMENTS:
 - PEACEFUL THEMES: Focus on comfort, safety, love, and tranquility
 - SIMPLE STRUCTURE: Use clear, straightforward storytelling without complex twists or excitement
 - GENRE SELECTION: Choose calming genres like gentle fantasy, nature stories, family tales, or peaceful adventures
-- SOOTHING SETTINGS: Use cozy, familiar, or naturally peaceful environments (bedrooms, gardens, quiet forests, starlit skies)
+- SOOTHING SETTINGS: Use cozy, familiar, or naturally peaceful environments (bedrooms, gardens, quiet forests, starlit skies) - NEVER use laundromats
 - GENTLE LANGUAGE: Use soft, rhythmic prose that flows smoothly and calmly
-- COMFORTING ENDINGS: Conclude with reassurance, safety, and peaceful resolution"""
+- COMFORTING ENDINGS: Conclude with reassurance, safety, and peaceful resolution
+- OUTPUT ONLY THE STORY: Do not include any analysis, commentary, or explanations about the story"""
     else:
         prompt += f"""
 
@@ -888,9 +889,10 @@ GENRE VARIETY (pick unexpectedly):
 - Consider: adventure, mystery, comedy, sci-fi, fantasy, slice-of-life, historical fiction, magical realism, psychological thriller, coming-of-age, workplace drama, family saga, etc.
 
 SETTING CREATIVITY:
-- Avoid overused settings like "magical kingdoms" or "haunted houses"
-- Be specific and unusual: a 24-hour laundromat, underwater research station, food truck at a music festival, retirement home game night, etc.
+- Avoid overused settings like "magical kingdoms", "haunted houses", or "laundromats"
+- Be specific and unusual: underwater research station, food truck at a music festival, retirement home game night, artist's studio, bookbinding workshop, lighthouse, observatory, etc.
 - Use settings that serve the story and create natural conflict or intrigue
+- AVOID laundromats as story settings entirely
 
 PLOT INNOVATION:
 - Start in the middle of action or at an unusual moment
@@ -911,12 +913,20 @@ CHARACTER GUIDANCE:
 - Consider the unique perspective pets might have on situations
 - Balance realistic animal behavior with the narrative needs of your story
 
+CRITICAL OUTPUT REQUIREMENTS:
+- Output ONLY the story title and story content
+- Do NOT include any meta-commentary, analysis, or explanations about the story
+- Do NOT explain why the story is age-appropriate or educational
+- Do NOT include notes about language choices, themes, or writing techniques
+- Do NOT add any text in brackets like "[This story uses...]"
+- The story should speak for itself without explanation
+
 Format the story with:
 TITLE: [Creative, intriguing title]
 
 [Story content with rich details, natural dialogue, and compelling narrative]
 
-Remember: Your goal is to create something memorable and unique that readers haven't seen before. Be bold, creative, and surprising while staying appropriate for the audience."""
+Remember: Your goal is to create something memorable and unique that readers haven't seen before. Be bold, creative, and surprising while staying appropriate for the audience. OUTPUT ONLY THE STORY - NO META-COMMENTARY OR ANALYSIS."""
 
     return prompt
 
@@ -927,7 +937,7 @@ def _count_words(text: str) -> int:
 
 
 def _extract_title_and_content(generated_text: str) -> tuple[str, str]:
-    """Extract title and content from generated text"""
+    """Extract title and content from generated text, removing any meta-commentary"""
     lines = generated_text.strip().split("\n")
 
     # Look for TITLE: prefix
@@ -941,6 +951,9 @@ def _extract_title_and_content(generated_text: str) -> tuple[str, str]:
 
     # Clean up title formatting - remove markdown and common formatting issues
     title = _clean_title_formatting(title)
+    
+    # Remove any meta-commentary or analysis from the content
+    content = _remove_meta_commentary(content)
 
     return title, content
 
@@ -963,6 +976,68 @@ def _clean_title_formatting(title: str) -> str:
     title = re.sub(r"\s+", " ", title).strip()
 
     return title
+
+
+def _remove_meta_commentary(content: str) -> str:
+    """Remove meta-commentary and analysis from story content"""
+    
+    original_length = len(content)
+    
+    # Remove content in brackets that looks like meta-commentary
+    # Examples: "[This story uses simple language...]", "[The narrative explores...]"
+    content = re.sub(r'\[This story[^\]]*\]', '', content, flags=re.IGNORECASE)
+    content = re.sub(r'\[The story[^\]]*\]', '', content, flags=re.IGNORECASE)
+    content = re.sub(r'\[The narrative[^\]]*\]', '', content, flags=re.IGNORECASE)
+    content = re.sub(r'\[Note:[^\]]*\]', '', content, flags=re.IGNORECASE)
+    content = re.sub(r'\[This.*?appropriate[^\]]*\]', '', content, flags=re.IGNORECASE)
+    content = re.sub(r'\[.*?age[- ]appropriate[^\]]*\]', '', content, flags=re.IGNORECASE)
+    content = re.sub(r'\[.*?educational[^\]]*\]', '', content, flags=re.IGNORECASE)
+    
+    # Remove standalone analytical paragraphs at the end
+    # Look for patterns like paragraphs that start with analysis keywords
+    analysis_patterns = [
+        r'\n\n.*?This story.*?appropriate.*?\.',
+        r'\n\n.*?The narrative.*?language.*?\.',
+        r'\n\n.*?This tale.*?teaches.*?\.',
+        r'\n\n.*?The story.*?demonstrates.*?\.',
+        r'\n\n.*?This adventure.*?explores.*?\.',
+        r'\n\n.*?repetitive.*?language.*?\.',
+        r'\n\n.*?simple.*?vocabulary.*?\.',
+        r'\n\n.*?age[- ]appropriate.*?\.',
+        r'\n\n.*?educational.*?value.*?\.',
+        r'\n\n.*?teaches.*?lesson.*?\.',
+    ]
+    
+    for pattern in analysis_patterns:
+        content = re.sub(pattern, '', content, flags=re.IGNORECASE | re.DOTALL)
+    
+    # Remove any trailing analytical sentences that might not be caught above
+    # Look for sentences that contain analysis keywords at the end of the content
+    analytical_sentence_endings = [
+        r'\.?\s*This story uses.*?\.$',
+        r'\.?\s*The narrative.*?\.$',
+        r'\.?\s*This tale.*?\.$',
+        r'\.?\s*The story.*?appropriate.*?\.$',
+        r'\.?\s*.*?repetitive language.*?\.$',
+        r'\.?\s*.*?simple vocabulary.*?\.$',
+    ]
+    
+    for pattern in analytical_sentence_endings:
+        content = re.sub(pattern, '.', content, flags=re.IGNORECASE | re.DOTALL)
+    
+    # Clean up extra whitespace and empty lines
+    content = re.sub(r'\n\s*\n\s*\n', '\n\n', content)  # Remove triple+ newlines
+    content = re.sub(r'\s+', ' ', content)  # Normalize whitespace within lines
+    content = re.sub(r'\n ', '\n', content)  # Remove spaces at start of lines
+    
+    cleaned_length = len(content.strip())
+    
+    # Log if content was cleaned
+    if cleaned_length < original_length:
+        removed_chars = original_length - cleaned_length
+        print(f"🧹 STORY_CLEAN: Removed {removed_chars} characters of meta-commentary from story", flush=True)
+    
+    return content.strip()
 
 
 async def _fetch_my_people_data(user_id: UUID, selected_people: list[UUID], auth_token: str) -> list[dict]:
