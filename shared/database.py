@@ -699,6 +699,13 @@ async def create_tables():
         """
     )
 
+    # Add story_summary column for theme variety tracking
+    await db.execute_schema(
+        """
+        ALTER TABLE user_stories ADD COLUMN IF NOT EXISTS story_summary TEXT;
+        """
+    )
+
     # Create index for target_audience after column is added
     await db.execute_schema(
         """

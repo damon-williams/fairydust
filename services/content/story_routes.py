@@ -276,7 +276,7 @@ async def get_user_stories(
         base_query = """
             SELECT id, title, content, story_length, target_audience,
                    word_count, is_favorited, created_at, metadata,
-                   has_images, images_complete, image_data
+                   has_images, images_complete, image_data, story_summary
             FROM user_stories
             WHERE user_id = $1
         """
@@ -924,7 +924,7 @@ def _build_story_prompt(request: StoryGenerationRequest, user_context: str) -> s
     selected_variety = random.choice(variety_seeds)
     selected_creativity = random.choice(creativity_boosters)
     
-    # Check recent user stories to avoid repetitive themes
+    # Use AI analysis of recent story summaries to avoid repetitive themes
     recent_themes_guidance = await _get_recent_themes_guidance(db, request.user_id)
     
     print(f"🎲 STORY_VARIETY: Applied variety seed: {selected_variety}", flush=True)
@@ -1357,6 +1357,61 @@ async def _generate_story_llm(
         return None, "", 0, "", "claude-3-5-sonnet-20241022", {}, 0.0, 0, "anthropic"
 
 
+async def _generate_story_summary(title: str, content: str, characters: list, target_audience: TargetAudience) -> str:
+    """Generate a concise summary of the story for theme tracking"""
+    try:
+        print(f"📝 STORY_SUMMARY: Generating summary for story '{title}'", flush=True)
+        
+        # Prepare character names for context
+        character_names = [char.name if hasattr(char, 'name') else str(char) for char in characters[:3]]
+        char_context = f" featuring {', '.join(character_names)}" if character_names else ""
+        
+        # Create a focused prompt for story summarization
+        summary_prompt = f"""Summarize this {target_audience.value} story in 1-2 sentences, focusing on the main theme, setting, and plot elements. Be concise and capture what makes this story unique.
+
+Title: {title}
+Story: {content[:800]}...
+
+Provide only the summary, no additional commentary:"""
+        
+        # Use the LLM client to generate summary
+        response = await llm_client.generate(
+            prompt=summary_prompt,
+            provider="anthropic",
+            model="claude-3-5-haiku-20241022",  # Use faster model for summaries
+            parameters={
+                "temperature": 0.3,  # Lower temperature for consistent summaries
+                "max_tokens": 100,
+                "top_p": 0.9
+            },
+            metadata={
+                "app_id": "fairydust-story",
+                "user_id": None,  # Don't need user tracking for summaries
+                "purpose": "story_summary_generation"
+            }
+        )
+        
+        summary = response.get("content", "").strip()
+        
+        # Clean up summary - remove quotes and meta commentary
+        summary = summary.strip('"').strip()
+        if summary.startswith("Summary:") or summary.startswith("The story"):
+            summary = summary.split(":", 1)[-1].strip() if ":" in summary else summary
+        
+        # Fallback if summary generation fails
+        if not summary or len(summary) < 10:
+            summary = f"A {target_audience.value} story about {', '.join(character_names[:2]) if character_names else 'adventure'}"
+        
+        print(f"✅ STORY_SUMMARY: Generated summary: {summary[:100]}...", flush=True)
+        return summary
+        
+    except Exception as e:
+        print(f"❌ STORY_SUMMARY: Error generating summary: {str(e)}", flush=True)
+        # Return a simple fallback summary
+        char_names = [char.name if hasattr(char, 'name') else str(char) for char in characters[:2]]
+        return f"A {target_audience.value} story" + (f" featuring {', '.join(char_names)}" if char_names else "")
+
+
 async def _save_story(
     db: Database,
     user_id: uuid.UUID,
@@ -1372,9 +1427,12 @@ async def _save_story(
     cost: float,
     custom_prompt: Optional[str],
 ) -> uuid.UUID:
-    """Save story to database"""
+    """Save story to database with AI-generated summary"""
     try:
         story_id = uuid.uuid4()
+        
+        # Generate story summary for theme tracking
+        story_summary = await _generate_story_summary(title, content, characters, target_audience)
 
         metadata = {
             "characters": [char.dict() for char in characters],
@@ -1388,10 +1446,10 @@ async def _save_story(
         insert_query = """
             INSERT INTO user_stories (
                 id, user_id, title, content, story_length, target_audience,
-                characters_involved, metadata, word_count,
+                characters_involved, metadata, word_count, story_summary,
                 created_at, updated_at
             )
-            VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb, $8::jsonb, $9,
+            VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb, $8::jsonb, $9, $10,
                     CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
         """
 
@@ -1406,9 +1464,10 @@ async def _save_story(
             json.dumps([char.dict() for char in characters]),
             json.dumps(metadata),
             word_count,
+            story_summary,
         )
 
-        print(f"✅ STORY_SAVE: Saved story {story_id}", flush=True)
+        print(f"✅ STORY_SAVE: Saved story {story_id} with summary", flush=True)
         return story_id
 
     except Exception as e:
