@@ -19,14 +19,7 @@ import uuid
 from typing import Optional
 from uuid import UUID
 
-try:
-    from langsmith import traceable
-except ImportError:
-    # Fallback decorator for environments without LangSmith
-    def traceable(*args, **kwargs):
-        def decorator(func):
-            return func
-        return decorator
+from langsmith import traceable
 from models import StoryCharacter, TargetAudience
 
 from shared.llm_client import llm_client

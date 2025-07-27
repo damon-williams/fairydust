@@ -17,14 +17,7 @@ identity_url = f"https://fairydust-identity-{base_url_suffix}.up.railway.app"
 
 # Content service no longer manages DUST - all DUST handling is external
 import httpx
-try:
-    from langsmith import traceable
-except ImportError:
-    # Fallback decorator for environments without LangSmith
-    def traceable(*args, **kwargs):
-        def decorator(func):
-            return func
-        return decorator
+from langsmith import traceable
 from models import (
     StoriesListResponse,
     StoryCharacter,
