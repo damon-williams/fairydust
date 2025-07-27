@@ -9,7 +9,7 @@ python-jose[cryptography]==3.3.0
 python-dotenv==1.0.0
 
 # Google Maps/Places API integration
-# googlemaps==4.10.0  # Removed - using direct HTTP implementation instead
+googlemaps==4.10.0
 
 # HTTP client for API calls
 httpx==0.25.2
