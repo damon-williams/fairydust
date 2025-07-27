@@ -126,8 +126,8 @@ class StoryImageGenerator:
             # Determine characters in this scene
             characters_in_scene = scene.get('characters_mentioned', [])
             
-            # Generate optimized prompt
-            enhanced_prompt = story_image_service.generate_image_prompt(
+            # Generate optimized prompt using multi-agent AI system
+            enhanced_prompt = await story_image_service.generate_image_prompt(
                 scene['scene_description'],
                 characters_in_scene,
                 target_audience

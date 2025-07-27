@@ -343,54 +343,23 @@ class StoryImageService:
         
         return result
     
-    def generate_image_prompt(
+    async def generate_image_prompt(
         self, 
         scene_description: str, 
         characters_in_scene: List[StoryCharacter], 
         target_audience: TargetAudience
     ) -> str:
-        """Generate structured, clear prompt with explicit character descriptions"""
+        """Generate high-quality image prompt using multi-agent AI system"""
         
-        # Build prompt in clear sections: SUBJECTS + SCENE + STYLE
-        prompt_sections = []
+        from multi_agent_image_service import multi_agent_image_service
         
-        # SECTION 1: Main subjects/characters (most important - goes first)
-        if characters_in_scene:
-            character_subjects = []
-            for char in characters_in_scene:
-                # Build clear, explicit character description
-                char_desc = self._build_explicit_character_description(char)
-                character_subjects.append(char_desc)
-            
-            # Create clear subject statement
-            if len(character_subjects) == 1:
-                subjects = character_subjects[0]
-            elif len(character_subjects) == 2:
-                subjects = f"{character_subjects[0]} and {character_subjects[1]}"
-            else:
-                subjects = f"{', '.join(character_subjects[:-1])}, and {character_subjects[-1]}"
-            
-            prompt_sections.append(subjects)
-        
-        # SECTION 2: Scene/setting context (extract key visual elements from story)
-        scene_context = self._extract_scene_context(scene_description)
-        if scene_context:
-            prompt_sections.append(scene_context)
-        
-        # SECTION 3: Style requirements (concise and targeted)
-        style_requirements = self._get_style_requirements(target_audience)
-        prompt_sections.append(style_requirements)
-        
-        # Combine sections with clear separators
-        final_prompt = ', '.join(prompt_sections)
-        
-        # Keep prompt focused and under reasonable length
-        if len(final_prompt) > 400:
-            # Prioritize subjects and scene over extensive style descriptors
-            basic_style = self._get_basic_style_requirements(target_audience)
-            final_prompt = ', '.join([prompt_sections[0], prompt_sections[1] if len(prompt_sections) > 2 else "", basic_style])
-        
-        return final_prompt
+        # Use the sophisticated 4-agent system for prompt generation
+        return await multi_agent_image_service.generate_image_prompt(
+            scene_description=scene_description,
+            characters_in_scene=characters_in_scene,
+            target_audience=target_audience,
+            story_context=None  # Optional additional context
+        )
     
     def _build_explicit_character_description(self, char: StoryCharacter) -> str:
         """Build explicit, clear character description for image generation"""
