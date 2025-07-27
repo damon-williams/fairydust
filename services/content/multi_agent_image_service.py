@@ -19,6 +19,7 @@ import uuid
 from typing import Optional
 from uuid import UUID
 
+from langsmith import traceable
 from models import StoryCharacter, TargetAudience
 
 from shared.llm_client import llm_client
@@ -51,6 +52,7 @@ class MultiAgentImageService:
             },
         }
 
+    @traceable(run_type="chain", name="4-agent-image-prompt-generation")
     async def generate_image_prompt(
         self,
         scene_description: str,
@@ -138,6 +140,7 @@ class MultiAgentImageService:
             logger.warning(f"🔄 MULTI_AGENT: Using fallback prompt: {fallback_prompt}")
             return fallback_prompt
 
+    @traceable(run_type="llm", name="scene-intelligence-agent")
     async def _scene_intelligence_agent(
         self,
         scene_description: str,
@@ -250,6 +253,7 @@ Be specific and visual in your analysis to enable rich image generation."""
             logger.warning(f"🔄 SCENE_AGENT: Using fallback: {fallback}")
             return fallback
 
+    @traceable(run_type="llm", name="character-rendering-agent")
     async def _character_rendering_agent(
         self, scene_analysis: str, characters: list[StoryCharacter], user_id: Optional[UUID] = None
     ) -> str:
@@ -333,6 +337,7 @@ Keep descriptions vivid but concise (2-3 sentences each)."""
             logger.warning(f"🔄 CHARACTER_AGENT: Using fallback: {fallback}")
             return fallback
 
+    @traceable(run_type="llm", name="visual-composition-agent")
     async def _visual_composition_agent(
         self,
         scene_analysis: str,
@@ -410,6 +415,7 @@ Your prompt:"""
             logger.warning(f"🔄 COMPOSITION_AGENT: Using fallback: {fallback}")
             return fallback
 
+    @traceable(run_type="llm", name="quality-enhancement-agent")
     async def _quality_enhancement_agent(
         self,
         visual_prompt: str,
