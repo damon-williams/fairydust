@@ -14,6 +14,7 @@ for dramatically improved prompt quality and story-image alignment.
 
 import json
 import logging
+import uuid
 from typing import List, Optional
 from uuid import UUID
 
