@@ -349,140 +349,168 @@ class StoryImageService:
         characters_in_scene: List[StoryCharacter], 
         target_audience: TargetAudience
     ) -> str:
-        """Generate Replicate-optimized prompt from scene description with actual story content"""
+        """Generate structured, clear prompt with explicit character descriptions"""
         
-        # The scene_description now contains actual story content - use it as the primary prompt
-        prompt_parts = []
+        # Build prompt in clear sections: SUBJECTS + SCENE + STYLE
+        prompt_sections = []
         
-        # Clean and optimize the story content for image generation
-        cleaned_scene = self._prepare_scene_for_image_prompt(scene_description)
-        prompt_parts.append(cleaned_scene)
-        
-        # Add character details - essential for proper character rendering
+        # SECTION 1: Main subjects/characters (most important - goes first)
         if characters_in_scene:
-            character_details = []
+            character_subjects = []
             for char in characters_in_scene:
-                # Build comprehensive character description for image generation
-                char_desc_parts = [char.name]
-                
-                # Always include species/type information for non-human characters
-                if char.entry_type == "pet" and char.species:
-                    char_desc_parts.append(f"the {char.species}")
-                elif char.entry_type == "pet" or self._is_animal_character(char):
-                    # Try to determine animal type from relationship or traits
-                    animal_type = self._extract_animal_type(char)
-                    if animal_type:
-                        char_desc_parts.append(f"the {animal_type}")
-                    else:
-                        char_desc_parts.append("the animal")
-                
-                # Add relationship context if it provides important character info
-                if char.relationship:
-                    relationship_lower = char.relationship.lower()
-                    # For custom characters, the relationship might contain the full description
-                    if char.entry_type != "pet" and relationship_lower not in ['person', 'character', 'friend']:
-                        # Check if relationship contains a character description
-                        if any(desc_word in relationship_lower for desc_word in ['helps', 'magical', 'special', 'who', 'that']):
-                            # This looks like a character description, include it
-                            char_desc_parts.append(f"({char.relationship})")
-                        elif len(char.relationship.split()) <= 2:
-                            # Short relationship, likely a title
-                            char_desc_parts.append(f"({char.relationship})")
-                    elif char.entry_type == "pet" and not char.species:
-                        # For pets without species, check if relationship has type info
-                        animal_type = self._extract_animal_type(char)
-                        if not animal_type and len(char.relationship.split()) > 1:
-                            # Relationship might contain the full description
-                            char_desc_parts.append(f"({char.relationship})")
-                
-                # Always include relevant traits/descriptions for visual context
-                if char.traits:
-                    # Separate physical traits from personality traits
-                    physical_traits = []
-                    character_traits = []
-                    
-                    for trait in char.traits[:5]:  # Use more traits for better descriptions
-                        trait_lower = trait.lower()
-                        # Physical appearance traits
-                        if any(keyword in trait_lower for keyword in 
-                              ['tall', 'short', 'curly', 'straight', 'blonde', 'brown', 'black', 'red', 'blue', 'green', 
-                               'long', 'fluffy', 'striped', 'spotted', 'white', 'gray', 'orange', 'golden', 'dark']):
-                            physical_traits.append(trait)
-                        # Important character-defining traits (especially for fantasy characters)
-                        elif any(keyword in trait_lower for keyword in 
-                                ['magical', 'mystical', 'wise', 'ancient', 'enchanted', 'flying', 'glowing', 
-                                 'dream', 'helps', 'heals', 'protects', 'guides', 'special', 'powerful', 'spirit']):
-                            character_traits.append(trait)
-                        # Behavioral traits that affect appearance
-                        elif any(keyword in trait_lower for keyword in 
-                                ['gentle', 'fierce', 'calm', 'energetic', 'mysterious', 'bright', 'sleepy', 'kind']):
-                            character_traits.append(trait)
-                        # Include any trait that contains descriptive phrases (like full descriptions)
-                        elif len(trait.split()) > 2:  # Multi-word descriptions
-                            character_traits.append(trait)
-                    
-                    # Add the most important traits to the description
-                    important_traits = physical_traits[:2] + character_traits[:2]
-                    if important_traits:
-                        char_desc_parts.append(f"({', '.join(important_traits)})")
-                
-                # Combine into full character description
-                full_char_desc = ' '.join(char_desc_parts)
-                character_details.append(full_char_desc)
+                # Build clear, explicit character description
+                char_desc = self._build_explicit_character_description(char)
+                character_subjects.append(char_desc)
             
-            # Always add character details for proper image generation
-            if character_details:
-                if len(character_details) == 1:
-                    prompt_parts.append(f"featuring {character_details[0]}")
-                elif len(character_details) == 2:
-                    prompt_parts.append(f"featuring {character_details[0]} and {character_details[1]}")
-                else:
-                    prompt_parts.append(f"featuring {', '.join(character_details[:-1])}, and {character_details[-1]}")
+            # Create clear subject statement
+            if len(character_subjects) == 1:
+                subjects = character_subjects[0]
+            elif len(character_subjects) == 2:
+                subjects = f"{character_subjects[0]} and {character_subjects[1]}"
+            else:
+                subjects = f"{', '.join(character_subjects[:-1])}, and {character_subjects[-1]}"
+            
+            prompt_sections.append(subjects)
         
-        # Combine the story content with any enhancements
-        story_prompt = ', '.join(prompt_parts)
+        # SECTION 2: Scene/setting context (extract key visual elements from story)
+        scene_context = self._extract_scene_context(scene_description)
+        if scene_context:
+            prompt_sections.append(scene_context)
         
-        # Add concise, audience-appropriate style context
-        style_descriptors = []
+        # SECTION 3: Style requirements (concise and targeted)
+        style_requirements = self._get_style_requirements(target_audience)
+        prompt_sections.append(style_requirements)
         
-        if target_audience in [TargetAudience.TODDLER, TargetAudience.PRESCHOOL]:
-            style_descriptors.extend([
-                "children's picture book illustration",
-                "bright and colorful", 
-                "simple and friendly",
-                "safe for toddlers"
-            ])
-        elif target_audience in [TargetAudience.EARLY_ELEMENTARY, TargetAudience.LATE_ELEMENTARY]:
-            style_descriptors.extend([
-                "children's book illustration",
-                "colorful and engaging",
-                "age-appropriate detail",
-                "family-friendly"
-            ])
-        elif target_audience == TargetAudience.TEEN:
-            style_descriptors.extend([
-                "young adult illustration",
-                "dynamic and modern",
-                "teen-appropriate style"
-            ])
+        # Combine sections with clear separators
+        final_prompt = ', '.join(prompt_sections)
         
-        # Essential quality descriptors (keep minimal to preserve story content)
-        style_descriptors.extend([
-            "high quality illustration",
-            "professional storybook art",
-            "warm lighting"
-        ])
-        
-        # Combine story content with style (prioritizing story content)
-        final_prompt = f"{story_prompt}, {', '.join(style_descriptors)}"
-        
-        # Ensure we don't exceed prompt limits while preserving story content
-        if len(final_prompt) > 500:
-            # Reduce style descriptors before reducing story content
-            reduced_styles = style_descriptors[:4]
-            final_prompt = f"{story_prompt}, {', '.join(reduced_styles)}"
+        # Keep prompt focused and under reasonable length
+        if len(final_prompt) > 400:
+            # Prioritize subjects and scene over extensive style descriptors
+            basic_style = self._get_basic_style_requirements(target_audience)
+            final_prompt = ', '.join([prompt_sections[0], prompt_sections[1] if len(prompt_sections) > 2 else "", basic_style])
         
         return final_prompt
+    
+    def _build_explicit_character_description(self, char: StoryCharacter) -> str:
+        """Build explicit, clear character description for image generation"""
+        
+        # Start with the character name
+        char_parts = []
+        
+        # Handle different character types explicitly
+        if self._is_geometric_character(char):
+            # For geometric characters like "Blue Square", be very explicit
+            char_parts.append(f"a {char.name.lower()}")
+        elif char.entry_type == "pet" and char.species:
+            char_parts.append(f"a {char.species} named {char.name}")
+        elif char.entry_type == "pet" or self._is_animal_character(char):
+            animal_type = self._extract_animal_type(char)
+            if animal_type:
+                char_parts.append(f"a {animal_type} named {char.name}")
+            else:
+                char_parts.append(f"an animal character named {char.name}")
+        else:
+            # Human or humanoid character
+            char_parts.append(f"a character named {char.name}")
+        
+        # Add essential descriptive traits
+        if char.traits:
+            # Get the most visually important traits
+            visual_traits = []
+            for trait in char.traits[:3]:
+                trait_lower = trait.lower()
+                # Include physical descriptors and character-defining traits
+                if any(keyword in trait_lower for keyword in 
+                      ['blue', 'red', 'yellow', 'green', 'purple', 'orange', 'pink', 'black', 'white', 'gray',
+                       'tall', 'short', 'big', 'small', 'round', 'square', 'triangular',
+                       'magical', 'glowing', 'sparkling', 'flying', 'floating']):
+                    visual_traits.append(trait)
+                # Include full descriptive phrases
+                elif len(trait.split()) > 2:
+                    visual_traits.append(trait)
+            
+            if visual_traits:
+                char_parts.append(f"({', '.join(visual_traits[:2])})")
+        
+        # Add relationship context if it contains key character info
+        if char.relationship and len(char.relationship.split()) > 2:
+            # Check if relationship contains character description
+            if any(desc_word in char.relationship.lower() for desc_word in 
+                  ['helps', 'magical', 'who', 'that', 'with', 'made of']):
+                char_parts.append(f"({char.relationship})")
+        
+        return ' '.join(char_parts)
+    
+    def _is_geometric_character(self, char: StoryCharacter) -> bool:
+        """Detect geometric/shape characters like 'Blue Square', 'Red Circle'"""
+        name_lower = char.name.lower()
+        geometric_shapes = ['square', 'circle', 'triangle', 'rectangle', 'oval', 'diamond', 'star', 'heart']
+        colors = ['red', 'blue', 'yellow', 'green', 'purple', 'orange', 'pink', 'black', 'white', 'gray']
+        
+        # Check if name contains shape words
+        has_shape = any(shape in name_lower for shape in geometric_shapes)
+        # Check if name contains color words
+        has_color = any(color in name_lower for color in colors)
+        
+        return has_shape or has_color
+    
+    def _extract_scene_context(self, scene_description: str) -> str:
+        """Extract key visual scene elements, removing narrative fluff"""
+        
+        # Clean the scene description
+        cleaned = self._prepare_scene_for_image_prompt(scene_description)
+        
+        # Extract key visual elements
+        locations = self._extract_locations(cleaned)
+        actions = self._extract_actions(cleaned)
+        objects = self._extract_objects(cleaned)
+        
+        # Build concise scene context
+        scene_parts = []
+        
+        # Add main action or location
+        if actions and len(actions[0]) > 3:  # Avoid single words
+            scene_parts.append(f"{actions[0]}")
+        
+        # Add location if significant
+        if locations:
+            scene_parts.append(f"in {locations[0]}")
+        
+        # Add important objects
+        if objects:
+            scene_parts.append(f"with {objects[0]}")
+        
+        # If no specific elements, use first part of cleaned scene
+        if not scene_parts and cleaned:
+            # Take first meaningful phrase
+            first_phrase = cleaned.split(',')[0].strip()
+            if len(first_phrase) > 10 and len(first_phrase) < 100:
+                scene_parts.append(first_phrase)
+        
+        return ', '.join(scene_parts) if scene_parts else ""
+    
+    def _get_style_requirements(self, target_audience: TargetAudience) -> str:
+        """Get appropriate style requirements for target audience"""
+        
+        if target_audience in [TargetAudience.TODDLER, TargetAudience.PRESCHOOL]:
+            return "children's picture book illustration, bright and colorful, simple and clear"
+        elif target_audience in [TargetAudience.EARLY_ELEMENTARY, TargetAudience.LATE_ELEMENTARY]:
+            return "children's book illustration, colorful and engaging, detailed but age-appropriate"
+        elif target_audience == TargetAudience.TEEN:
+            return "young adult illustration, dynamic and modern"
+        else:
+            return "high quality illustration, professional storybook art"
+    
+    def _get_basic_style_requirements(self, target_audience: TargetAudience) -> str:
+        """Get minimal style requirements when space is limited"""
+        
+        if target_audience in [TargetAudience.TODDLER, TargetAudience.PRESCHOOL]:
+            return "children's book illustration, bright and colorful"
+        elif target_audience in [TargetAudience.EARLY_ELEMENTARY, TargetAudience.LATE_ELEMENTARY]:
+            return "children's book illustration, colorful"
+        else:
+            return "illustration, professional art"
     
     def _prepare_scene_for_image_prompt(self, scene_text: str) -> str:
         """Prepare scene text specifically for image generation prompts"""

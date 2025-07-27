@@ -145,13 +145,17 @@ class StoryImageGenerator:
                 if char.species:
                     char_info += f", species={char.species}"
                 if char.relationship:
-                    char_info += f", relationship={char.relationship}"
+                    char_info += f", relationship='{char.relationship}'"
                 if char.traits:
                     char_info += f", traits={char.traits[:3]}"  # Show first 3 traits
                 logger.info(char_info)
             logger.info(f"   Target audience: {target_audience.value}")
-            logger.info(f"   FINAL PROMPT: {enhanced_prompt}")
+            logger.info(f"   STRUCTURED PROMPT: {enhanced_prompt}")
             logger.info(f"   Prompt length: {len(enhanced_prompt)} characters")
+            
+            # Log prompt structure breakdown
+            if ' and ' in enhanced_prompt or ' in ' in enhanced_prompt:
+                logger.info(f"   ✅ Prompt appears well-structured with clear subjects and scene context")
             
             # Prepare reference people (smart character selection)
             reference_people = []
