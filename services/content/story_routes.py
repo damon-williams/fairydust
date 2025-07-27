@@ -156,7 +156,7 @@ async def generate_story(
             story_length=updated_request.story_length,
             target_audience=updated_request.target_audience,
             word_count=word_count,
-            characters=merged_characters,  # Save merged characters (includes My People with photos)
+            characters=updated_request.characters,  # Save characters (fully resolved by frontend)
             session_id=updated_request.session_id,
             model_used=model_used,
             tokens_used=tokens_used,
@@ -204,7 +204,7 @@ async def generate_story(
                 await _update_story_with_images(db, story_id, final_content, image_ids, has_images)
 
                 # Start background image generation (don't await - let it run async)
-                # Now merged_characters includes photo URLs from My People!
+                # Characters are fully resolved by frontend with photo URLs included!
                 asyncio.create_task(
                     story_image_generator.generate_story_images_background(
                         story_id=str(story_id),
