@@ -730,8 +730,17 @@ Return ONLY the enhanced prompt text, nothing else:"""
         for char in characters:
             is_present = False
 
+            # Special handling for "yourself" character - always include if it's the protagonist
+            if char.relationship and char.relationship.lower() == "yourself":
+                # Check for first-person pronouns that indicate the protagonist
+                first_person_indicators = ["i ", "i'", "my ", "me ", "myself", "i've", "i'll", "i'd", "i'm"]
+                if any(indicator in scene_lower for indicator in first_person_indicators):
+                    is_present = True
+                # Also check if character's actual name is mentioned
+                elif char.name.lower() in scene_lower:
+                    is_present = True
             # Direct name mention
-            if char.name.lower() in scene_lower:
+            elif char.name.lower() in scene_lower:
                 is_present = True
 
             # Relationship-based detection
@@ -750,6 +759,10 @@ Return ONLY the enhanced prompt text, nothing else:"""
                     "grandma",
                     "grandfather",
                     "grandpa",
+                    "yourself",
+                    "self",
+                    "me",
+                    "i",
                 ]
                 for rel_word in rel_words:
                     if rel_word in relationship_indicators and rel_word in scene_lower:
@@ -777,9 +790,19 @@ Return ONLY the enhanced prompt text, nothing else:"""
             if is_present:
                 detected_characters.append(char)
 
-        # If no characters detected but we have characters available, include the first one
+        # If no characters detected but we have characters available, include at least some
         if not detected_characters and characters:
+            # Include the first character as a minimum
             detected_characters.append(characters[0])
+            logger.warning(f"🚨 CHARACTER_DETECTION: No characters detected in scene, using first character: {characters[0].name}")
+        elif len(detected_characters) == 1 and len(characters) > 1:
+            # If we only detected one character but have more available, check for "yourself" character
+            # to ensure protagonist is included
+            for char in characters:
+                if char.relationship and char.relationship.lower() == "yourself" and char not in detected_characters:
+                    detected_characters.append(char)
+                    logger.info(f"➕ CHARACTER_DETECTION: Added protagonist character: {char.name}")
+                    break
 
         return detected_characters
 

@@ -118,8 +118,36 @@ async def generate_story(
                 request.user_id, request.selected_people, auth_token
             )
 
-        # Merge custom characters with My People entries
-        merged_characters = await _merge_characters_and_people(request.characters, my_people_data)
+        # Handle "Yourself" character - replace "You" with actual user name
+        processed_characters = []
+        user_name = None
+        
+        for char in request.characters:
+            print(f"🔍 STORY: Processing character: {char.name} (relationship: {char.relationship})")
+            if char.name.lower() == "you" and char.relationship and char.relationship.lower() == "yourself":
+                # Fetch user's actual name from identity service
+                if not user_name:
+                    print(f"🔍 STORY: Fetching user name for user_id: {request.user_id}")
+                    user_name = await _fetch_user_name(request.user_id, auth_token)
+                if user_name:
+                    # Create updated character with real name
+                    yourself_char = StoryCharacter(
+                        name=user_name,
+                        relationship="yourself",
+                        traits=char.traits if char.traits else ["protagonist", "main character"],
+                        entry_type="person"
+                    )
+                    processed_characters.append(yourself_char)
+                    print(f"👤 STORY: Replaced 'You' with actual user name: {user_name}")
+                else:
+                    # Fallback if name fetch fails
+                    print(f"⚠️ STORY: Failed to fetch user name, keeping 'You'")
+                    processed_characters.append(char)
+            else:
+                processed_characters.append(char)
+        
+        # Merge processed characters with My People entries
+        merged_characters = await _merge_characters_and_people(processed_characters, my_people_data)
 
         # Create updated request with merged characters
         updated_request = StoryGenerationRequest(
@@ -915,7 +943,9 @@ async def _build_story_prompt(
     # Build character descriptions
     character_descriptions = []
     if request.characters:
+        print(f"🎭 STORY_PROMPT: Building prompt with {len(request.characters)} characters:")
         for char in request.characters:
+            print(f"   - {char.name} ({char.relationship})")
             # Handle pets vs people differently
             if char.entry_type == "pet":
                 desc = f"- {char.name} (pet"
@@ -931,15 +961,19 @@ async def _build_story_prompt(
                 desc += f", relationship to family: {char.relationship})"
             else:
                 # Handle people (original logic)
-                desc = f"- {char.name} ({char.relationship}"
-                if char.birth_date:
-                    # Calculate age from birth date
-                    from datetime import date
+                if char.relationship and char.relationship.lower() == "yourself":
+                    # Special handling for the protagonist
+                    desc = f"- {char.name} (the main character/protagonist - this is the story's narrator)"
+                else:
+                    desc = f"- {char.name} ({char.relationship}"
+                    if char.birth_date:
+                        # Calculate age from birth date
+                        from datetime import date
 
-                    birth = date.fromisoformat(char.birth_date)
-                    age = (date.today() - birth).days // 365
-                    desc += f", {age} years old"
-                desc += ")"
+                        birth = date.fromisoformat(char.birth_date)
+                        age = (date.today() - birth).days // 365
+                        desc += f", {age} years old"
+                    desc += ")"
 
             if char.traits:
                 desc += f", traits: {', '.join(char.traits)}"
@@ -1010,6 +1044,11 @@ IMPORTANT: {selected_creativity}
 {recent_themes_guidance}
 
 {character_text}"""
+    
+    # Add protagonist instructions if "yourself" character is present
+    has_protagonist = any(char.relationship and char.relationship.lower() == "yourself" for char in request.characters) if request.characters else False
+    if has_protagonist:
+        prompt += "\n\nIMPORTANT: The story should be told from a third-person perspective, but the protagonist character listed above must be actively involved in the story's events, not just observing. Make them central to the action and adventure."
 
     if request.custom_prompt:
         prompt += f"\nSpecial request: {request.custom_prompt}"
@@ -1298,6 +1337,37 @@ async def _fetch_my_people_data(
     except Exception as e:
         print(f"❌ STORY_PEOPLE: Error fetching My People data: {e}")
         return []
+
+
+async def _fetch_user_name(user_id: UUID, auth_token: str) -> Optional[str]:
+    """Fetch user's first name from identity service"""
+    try:
+        # auth_token might already include "Bearer " prefix
+        if not auth_token.startswith("Bearer "):
+            auth_token = f"Bearer {auth_token}"
+            
+        async with httpx.AsyncClient() as client:
+            headers = {"Authorization": auth_token}
+            print(f"🔍 STORY: Fetching user from {identity_url}/users/me")
+            response = await client.get(
+                f"{identity_url}/users/me",
+                headers=headers
+            )
+            
+            if response.status_code == 200:
+                user_data = response.json()
+                first_name = user_data.get("first_name")
+                if first_name:
+                    print(f"👤 STORY: Fetched user name: {first_name}")
+                    return first_name
+                else:
+                    print("⚠️ STORY: User has no first name set")
+            else:
+                print(f"❌ STORY: Failed to fetch user data: {response.status_code}")
+    except Exception as e:
+        print(f"❌ STORY: Error fetching user name: {e}")
+    
+    return None
 
 
 async def _merge_characters_and_people(
