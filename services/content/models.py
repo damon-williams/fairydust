@@ -114,11 +114,10 @@ class TokenUsage(BaseModel):
 class StoryGenerationRequest(BaseModel):
     user_id: UUID
     story_length: StoryLength  # Reading time instead of word count
-    characters: list[StoryCharacter] = Field(default_factory=list, max_items=8)
-    selected_people: list[UUID] = Field(
-        default_factory=list,
-        max_items=5,
-        description="My People entries to include as story characters (with photos if available)",
+    characters: list[StoryCharacter] = Field(
+        default_factory=list, 
+        max_items=8,
+        description="Fully resolved characters with actual names, relationships, photo URLs, and traits. Frontend should resolve 'Yourself' to actual user name and include photo_url from profile/people data."
     )
     custom_prompt: Optional[str] = Field(None, max_length=1000)
     target_audience: TargetAudience = TargetAudience.PRESCHOOL

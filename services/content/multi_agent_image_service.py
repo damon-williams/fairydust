@@ -731,7 +731,7 @@ Return ONLY the enhanced prompt text, nothing else:"""
             is_present = False
 
             # Special handling for "yourself" character - always include if it's the protagonist
-            if char.relationship and char.relationship.lower() == "yourself":
+            if char.relationship and char.relationship.lower() in ["yourself", "protagonist"]:
                 # Check for first-person pronouns that indicate the protagonist
                 first_person_indicators = ["i ", "i'", "my ", "me ", "myself", "i've", "i'll", "i'd", "i'm"]
                 if any(indicator in scene_lower for indicator in first_person_indicators):
@@ -799,7 +799,7 @@ Return ONLY the enhanced prompt text, nothing else:"""
             # If we only detected one character but have more available, check for "yourself" character
             # to ensure protagonist is included
             for char in characters:
-                if char.relationship and char.relationship.lower() == "yourself" and char not in detected_characters:
+                if char.relationship and char.relationship.lower() in ["yourself", "protagonist"] and char not in detected_characters:
                     detected_characters.append(char)
                     logger.info(f"➕ CHARACTER_DETECTION: Added protagonist character: {char.name}")
                     break

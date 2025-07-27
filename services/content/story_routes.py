@@ -111,55 +111,18 @@ async def generate_story(
         user_context = await _get_user_context(db, request.user_id)
         print("👤 STORY: Retrieved user context", flush=True)
 
-        # Fetch My People data if selected_people provided
-        my_people_data = []
-        if request.selected_people:
-            my_people_data = await _fetch_my_people_data(
-                request.user_id, request.selected_people, auth_token
-            )
-
-        # Handle "Yourself" character - replace "You" with actual user name
-        processed_characters = []
-        user_name = None
-        
+        # Characters are now fully resolved by frontend - no processing needed
+        print(f"🎭 STORY: Received {len(request.characters)} fully resolved characters:")
         for char in request.characters:
-            print(f"🔍 STORY: Processing character: {char.name} (relationship: {char.relationship})")
-            if char.name.lower() == "you" and char.relationship and char.relationship.lower() == "yourself":
-                # Fetch user's actual name from identity service
-                if not user_name:
-                    print(f"🔍 STORY: Fetching user name for user_id: {request.user_id}")
-                    user_name = await _fetch_user_name(request.user_id, auth_token)
-                if user_name:
-                    # Create updated character with real name
-                    yourself_char = StoryCharacter(
-                        name=user_name,
-                        relationship="yourself",
-                        traits=char.traits if char.traits else ["protagonist", "main character"],
-                        entry_type="person"
-                    )
-                    processed_characters.append(yourself_char)
-                    print(f"👤 STORY: Replaced 'You' with actual user name: {user_name}")
-                else:
-                    # Fallback if name fetch fails
-                    print(f"⚠️ STORY: Failed to fetch user name, keeping 'You'")
-                    processed_characters.append(char)
-            else:
-                processed_characters.append(char)
+            has_photo = "✅" if char.photo_url else "❌"
+            print(f"   - {char.name} ({char.relationship}) - Photo: {has_photo}")
         
-        # Merge processed characters with My People entries
-        merged_characters = await _merge_characters_and_people(processed_characters, my_people_data)
-
-        # Create updated request with merged characters
-        updated_request = StoryGenerationRequest(
-            user_id=request.user_id,
-            story_length=request.story_length,
-            characters=merged_characters,  # Use merged characters
-            selected_people=[],  # Clear this since we've merged
-            custom_prompt=request.custom_prompt,
-            target_audience=request.target_audience,
-            session_id=request.session_id,
-            include_images=request.include_images,
-        )
+        # Count characters with photos for logging
+        characters_with_photos = [c for c in request.characters if c.photo_url]
+        print(f"📸 STORY: {len(characters_with_photos)} characters have photos for image generation")
+        
+        # Use request directly since characters are pre-resolved
+        updated_request = request
 
         # Generate story using LLM
         (
@@ -220,14 +183,14 @@ async def generate_story(
                 print(f"📊 STORY: Extracted metadata - Theme: {story_metadata['theme']}, Genre: {story_metadata['genre']}")
                 
                 # If no characters were provided, extract them from the story
-                if not merged_characters:
+                if not updated_request.characters:
                     extracted_characters = _extract_characters_from_story(story_content)
                     print(f"🎭 STORY: Extracted {len(extracted_characters)} characters from story: {[c.name for c in extracted_characters]}")
                     characters_for_images = extracted_characters
                 else:
-                    characters_for_images = merged_characters
+                    characters_for_images = updated_request.characters
                 
-                # Extract scenes for image generation using characters (merged or extracted)
+                # Extract scenes for image generation using characters
                 scenes = story_image_service.extract_image_scenes(
                     story_content, updated_request.story_length, characters_for_images
                 )
@@ -961,7 +924,7 @@ async def _build_story_prompt(
                 desc += f", relationship to family: {char.relationship})"
             else:
                 # Handle people (original logic)
-                if char.relationship and char.relationship.lower() == "yourself":
+                if char.relationship and char.relationship.lower() in ["yourself", "protagonist"]:
                     # Special handling for the protagonist
                     desc = f"- {char.name} (the main character/protagonist - this is the story's narrator)"
                 else:
@@ -1046,7 +1009,7 @@ IMPORTANT: {selected_creativity}
 {character_text}"""
     
     # Add protagonist instructions if "yourself" character is present
-    has_protagonist = any(char.relationship and char.relationship.lower() == "yourself" for char in request.characters) if request.characters else False
+    has_protagonist = any(char.relationship and char.relationship.lower() in ["yourself", "protagonist"] for char in request.characters) if request.characters else False
     if has_protagonist:
         prompt += "\n\nIMPORTANT: The story should be told from a third-person perspective, but the protagonist character listed above must be actively involved in the story's events, not just observing. Make them central to the action and adventure."
 
