@@ -347,17 +347,28 @@ class StoryImageService:
         self, 
         scene_description: str, 
         characters_in_scene: List[StoryCharacter], 
-        target_audience: TargetAudience
+        target_audience: TargetAudience,
+        user_id: str = None
     ) -> str:
         """Generate high-quality image prompt using multi-agent AI system"""
         
         from multi_agent_image_service import multi_agent_image_service
+        from uuid import UUID
+        
+        # Convert user_id string to UUID if provided
+        uuid_user_id = None
+        if user_id:
+            try:
+                uuid_user_id = UUID(user_id)
+            except (ValueError, TypeError):
+                pass  # Use None if conversion fails
         
         # Use the sophisticated 4-agent system for prompt generation
         return await multi_agent_image_service.generate_image_prompt(
             scene_description=scene_description,
             characters_in_scene=characters_in_scene,
             target_audience=target_audience,
+            user_id=uuid_user_id,
             story_context=None  # Optional additional context
         )
     

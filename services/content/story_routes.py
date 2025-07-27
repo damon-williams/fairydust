@@ -766,56 +766,88 @@ async def _get_llm_model_config() -> dict:
 
 
 async def _get_recent_themes_guidance(db: Database, user_id: uuid.UUID) -> str:
-    """Get guidance to avoid repeating recent story themes"""
+    """Get AI-powered guidance to avoid repeating recent story themes using story summaries"""
     try:
-        # Get last 3 stories from this user
+        # Get last 4 stories from this user with their summaries
         recent_stories = await db.fetch_all(
             """
-            SELECT title, content
+            SELECT title, story_summary, target_audience, created_at
             FROM user_stories
-            WHERE user_id = $1
+            WHERE user_id = $1 AND story_summary IS NOT NULL
             ORDER BY created_at DESC
-            LIMIT 3
+            LIMIT 4
             """,
             user_id
         )
         
-        if not recent_stories:
-            return ""
+        if not recent_stories or len(recent_stories) < 2:
+            return "ENSURE VARIETY: Create something fresh and engaging."
         
-        # Analyze themes to avoid
-        themes_to_avoid = []
+        print(f"🔍 STORY_THEMES: Analyzing {len(recent_stories)} recent stories for theme variety", flush=True)
         
-        for story in recent_stories:
-            title_lower = story["title"].lower() if story["title"] else ""
-            content_lower = story["content"].lower() if story["content"] else ""
-            
-            # Check for geometric/color themes
-            if any(shape in title_lower or shape in content_lower[:200] 
-                   for shape in ["square", "circle", "triangle", "rectangle", "oval"]):
-                themes_to_avoid.append("geometric shapes")
-            
-            if any(color in title_lower or (color in content_lower[:200] and 
-                                         any(shape in content_lower[:200] for shape in ["square", "circle", "triangle"]))
-                   for color in ["red", "blue", "yellow", "green", "purple", "orange"]):
-                themes_to_avoid.append("colored characters")
-                
-            # Check for other repetitive themes
-            if "magic" in title_lower or "magical" in content_lower[:200]:
-                themes_to_avoid.append("magical themes")
-            if "forest" in title_lower or "forest" in content_lower[:200]:
-                themes_to_avoid.append("forest settings")
-            if "adventure" in title_lower or "adventure" in content_lower[:200]:
-                themes_to_avoid.append("adventure stories")
+        # Prepare story summaries for AI analysis
+        story_summaries = []
+        for i, story in enumerate(recent_stories):
+            days_ago = i  # 0 = most recent, 1 = yesterday, etc.
+            summary_entry = f"Story {i+1} ({days_ago} stories ago): '{story['title']}' - {story['story_summary']}"
+            story_summaries.append(summary_entry)
         
-        if themes_to_avoid:
-            unique_themes = list(set(themes_to_avoid))
-            return f"AVOID REPETITION: This user recently had stories with {', '.join(unique_themes)}. Create something completely different with new themes, characters, and settings."
+        summaries_text = "\n".join(story_summaries)
         
-        return "ENSURE VARIETY: Create something fresh and different from typical patterns."
+        # Use AI to analyze themes and provide variety guidance
+        analysis_prompt = f"""Analyze these recent user stories and identify patterns or repeated themes that should be avoided in the next story:
+
+{summaries_text}
+
+Based on this analysis, provide specific guidance for generating a new story that avoids repetition. Focus on:
+1. Different character types/relationships
+2. New settings or environments  
+3. Fresh plot themes or conflicts
+4. Varied emotional tones
+
+Provide guidance in this format:
+"AVOID REPETITION: [specific themes to avoid]. CREATE INSTEAD: [suggestions for fresh elements]."
+
+If stories are sufficiently varied, respond with:
+"ENSURE VARIETY: Stories show good diversity, continue with creative freedom."
+
+Response:"""
+        
+        # Get AI analysis using fast model
+        app_config = {
+            "primary_provider": "anthropic",
+            "primary_model_id": "claude-3-5-haiku-20241022",
+            "primary_parameters": {
+                "temperature": 0.4,
+                "max_tokens": 150,
+                "top_p": 0.9
+            }
+        }
+        
+        content, metadata = await llm_client.generate_completion(
+            prompt=analysis_prompt,
+            app_config=app_config,
+            user_id=user_id,
+            app_id="fairydust-story",
+            action="theme_variety_analysis",
+            request_metadata={"purpose": "theme_variety_analysis"}
+        )
+        
+        guidance = content.strip() if content else ""
+        
+        # Clean up response
+        if guidance and len(guidance) > 20:
+            # Remove any extra formatting
+            guidance = guidance.replace('"', '').strip()
+            print(f"🎯 STORY_THEMES: AI guidance: {guidance[:100]}...", flush=True)
+            return guidance
+        else:
+            # Fallback if AI analysis fails
+            print(f"⚠️ STORY_THEMES: AI analysis failed, using fallback", flush=True)
+            return "ENSURE VARIETY: Create something fresh with new characters and settings."
         
     except Exception as e:
-        print(f"⚠️ STORY_THEMES: Error checking recent themes: {e}", flush=True)
+        print(f"⚠️ STORY_THEMES: Error in AI theme analysis: {e}", flush=True)
         return "ENSURE VARIETY: Create something fresh and different."
 
 
@@ -1359,7 +1391,7 @@ async def _generate_story_llm(
         return None, "", 0, "", "claude-3-5-sonnet-20241022", {}, 0.0, 0, "anthropic"
 
 
-async def _generate_story_summary(title: str, content: str, characters: list, target_audience: TargetAudience) -> str:
+async def _generate_story_summary(title: str, content: str, characters: list, target_audience: TargetAudience, user_id: uuid.UUID) -> str:
     """Generate a concise summary of the story for theme tracking"""
     try:
         print(f"📝 STORY_SUMMARY: Generating summary for story '{title}'", flush=True)
@@ -1377,23 +1409,26 @@ Story: {content[:800]}...
 Provide only the summary, no additional commentary:"""
         
         # Use the LLM client to generate summary
-        response = await llm_client.generate(
-            prompt=summary_prompt,
-            provider="anthropic",
-            model="claude-3-5-haiku-20241022",  # Use faster model for summaries
-            parameters={
+        app_config = {
+            "primary_provider": "anthropic",
+            "primary_model_id": "claude-3-5-haiku-20241022",
+            "primary_parameters": {
                 "temperature": 0.3,  # Lower temperature for consistent summaries
                 "max_tokens": 100,
                 "top_p": 0.9
-            },
-            metadata={
-                "app_id": "fairydust-story",
-                "user_id": None,  # Don't need user tracking for summaries
-                "purpose": "story_summary_generation"
             }
+        }
+        
+        content, metadata = await llm_client.generate_completion(
+            prompt=summary_prompt,
+            app_config=app_config,
+            user_id=user_id,  # Use actual user_id for proper usage logging
+            app_id="fairydust-story",
+            action="story_summary_generation",
+            request_metadata={"purpose": "story_summary_generation"}
         )
         
-        summary = response.get("content", "").strip()
+        summary = content.strip() if content else ""
         
         # Clean up summary - remove quotes and meta commentary
         summary = summary.strip('"').strip()
@@ -1434,7 +1469,7 @@ async def _save_story(
         story_id = uuid.uuid4()
         
         # Generate story summary for theme tracking
-        story_summary = await _generate_story_summary(title, content, characters, target_audience)
+        story_summary = await _generate_story_summary(title, content, characters, target_audience, user_id)
 
         metadata = {
             "characters": [char.dict() for char in characters],

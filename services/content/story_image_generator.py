@@ -130,7 +130,8 @@ class StoryImageGenerator:
             enhanced_prompt = await story_image_service.generate_image_prompt(
                 scene['scene_description'],
                 characters_in_scene,
-                target_audience
+                target_audience,
+                user_id  # Pass user_id for proper LLM usage logging
             )
             
             logger.info(f"📝 STORY IMAGE PROMPT GENERATION:")

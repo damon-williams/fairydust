@@ -167,7 +167,7 @@ Keep each section concise but meaningful."""
             content, metadata = await llm_client.generate_completion(
                 prompt=scene_prompt,
                 app_config=app_config,
-                user_id=uuid.uuid4(),  # Generate dummy UUID for image generation
+                user_id=user_id or uuid.uuid4(),  # Use actual user_id or fallback
                 app_id="fairydust-story",
                 action="scene_intelligence_analysis",
                 request_metadata={"purpose": "scene_intelligence_analysis"}
@@ -250,7 +250,7 @@ Keep descriptions vivid but concise (2-3 sentences each)."""
             content, metadata = await llm_client.generate_completion(
                 prompt=character_prompt,
                 app_config=app_config,
-                user_id=uuid.uuid4(),  # Generate dummy UUID for image generation
+                user_id=user_id or uuid.uuid4(),  # Use actual user_id or fallback
                 app_id="fairydust-story",
                 action="character_rendering",
                 request_metadata={"purpose": "character_rendering"}
@@ -326,7 +326,7 @@ Your prompt:"""
             content, metadata = await llm_client.generate_completion(
                 prompt=composition_prompt,
                 app_config=app_config,
-                user_id=uuid.uuid4(),  # Generate dummy UUID for image generation
+                user_id=user_id or uuid.uuid4(),  # Use actual user_id or fallback
                 app_id="fairydust-story",
                 action="visual_composition",
                 request_metadata={"purpose": "visual_composition"}
@@ -397,7 +397,7 @@ Enhanced prompt:"""
             content, metadata = await llm_client.generate_completion(
                 prompt=quality_prompt,
                 app_config=app_config,
-                user_id=uuid.uuid4(),  # Generate dummy UUID for image generation
+                user_id=user_id or uuid.uuid4(),  # Use actual user_id or fallback
                 app_id="fairydust-story",
                 action="quality_enhancement",
                 request_metadata={"purpose": "quality_enhancement"}
