@@ -1340,29 +1340,58 @@ async def _merge_characters_and_people(
 
 
 def _extract_characters_from_story(story_content: str) -> list[StoryCharacter]:
-    """Extract character names from story content using pattern matching"""
+    """Extract character names and species from story content using pattern matching"""
     
     characters = []
-    
-    # Common name patterns - look for capitalized words that appear multiple times
-    # and are used in character contexts (dialogue, actions)
     import re
     
-    # Find quoted dialogue and extract speaker patterns
+    # Enhanced patterns to capture names with species/descriptors
+    enhanced_patterns = [
+        # Pattern: "Name Species" (e.g., "Rosie Rabbit", "Mr. Whiskers the cat")
+        r'([A-Z][a-z]+(?:\s+[A-Z][a-z]+)*)\s+(?:the\s+)?(?:rabbit|cat|dog|bear|squirrel|raccoon|fox|wolf|bird|duck|owl)',
+        # Pattern: "Species Name" (e.g., "cat postal worker", "rabbit watched")  
+        r'(?:rabbit|cat|dog|bear|squirrel|raccoon|fox|wolf|bird|duck|owl)\s+(?:postal\s+worker\s+|worker\s+|character\s+)?([A-Z][a-z]+)',
+        # Pattern: Character descriptions with species
+        r'([A-Z][a-z]+(?:\s+[A-Z][a-z]+)*)[^.]*?(?:rabbit|cat|dog|bear|squirrel|raccoon|fox|wolf|bird|duck|owl)',
+    ]
+    
+    # Standard dialogue patterns for any character names
     dialogue_patterns = [
         r'"[^"]*?"\s*,?\s*([A-Z][a-z]+)\s+(?:said|asked|replied|whispered|shouted|exclaimed|called|cried)',
         r'([A-Z][a-z]+)\s+(?:said|asked|replied|whispered|shouted|exclaimed|called|cried)\s*,?\s*"',
         r'"[^"]*?"\s*(?:said|asked)\s*([A-Z][a-z]+)',
     ]
     
-    # Find action patterns
+    # Action patterns for character behavior
     action_patterns = [
-        r'([A-Z][a-z]+)\s+(?:walked|ran|jumped|smiled|looked|turned|went|came|saw|found|held|took)',
+        r'([A-Z][a-z]+)\s+(?:walked|ran|jumped|smiled|looked|turned|went|came|saw|found|held|took|hopped|balanced|twirled)',
         r'([A-Z][a-z]+)\s+(?:was|were|had|could|would|should)',
-        r'([A-Z][a-z]+)(?:\'s|\'re|\'ll|\'d)',  # Possessive and contractions
+        r'([A-Z][a-z]+)(?:\'s|\'re|\'ll|\'d)',
     ]
     
-    name_counts = {}
+    character_info = {}  # name -> {count, species, traits}
+    
+    # Extract characters with species information
+    for pattern in enhanced_patterns:
+        matches = re.findall(pattern, story_content, re.IGNORECASE)
+        for match in matches:
+            name = match.strip().title()
+            if len(name) > 1 and name.isalpha():
+                if name not in character_info:
+                    character_info[name] = {"count": 0, "species": None, "traits": []}
+                character_info[name]["count"] += 3  # Higher weight for species mentions
+                
+                # Detect species from surrounding context
+                name_context = story_content[max(0, story_content.find(match)-50):story_content.find(match)+100].lower()
+                species_map = {
+                    "rabbit": "rabbit", "cat": "cat", "dog": "dog", "bear": "bear",
+                    "squirrel": "squirrel", "raccoon": "raccoon", "fox": "fox", 
+                    "wolf": "wolf", "bird": "bird", "duck": "duck", "owl": "owl"
+                }
+                for species_key, species_value in species_map.items():
+                    if species_key in name_context:
+                        character_info[name]["species"] = species_value
+                        break
     
     # Extract from dialogue patterns
     for pattern in dialogue_patterns:
@@ -1370,7 +1399,9 @@ def _extract_characters_from_story(story_content: str) -> list[StoryCharacter]:
         for match in matches:
             name = match.strip().title()
             if len(name) > 1 and name.isalpha():
-                name_counts[name] = name_counts.get(name, 0) + 2  # Dialogue gets higher weight
+                if name not in character_info:
+                    character_info[name] = {"count": 0, "species": None, "traits": []}
+                character_info[name]["count"] += 2
     
     # Extract from action patterns
     for pattern in action_patterns:
@@ -1378,33 +1409,56 @@ def _extract_characters_from_story(story_content: str) -> list[StoryCharacter]:
         for match in matches:
             name = match.strip()
             if len(name) > 1 and name.isalpha():
-                name_counts[name] = name_counts.get(name, 0) + 1
+                if name not in character_info:
+                    character_info[name] = {"count": 0, "species": None, "traits": []}
+                character_info[name]["count"] += 1
     
-    # Filter out common words that aren't names
+    # Extract specific character names from compound names (like "Mr. Whiskers")
+    compound_names = re.findall(r'(Mr\.\s+[A-Z][a-z]+|Mrs\.\s+[A-Z][a-z]+|Miss\s+[A-Z][a-z]+|[A-Z][a-z]+\s+[A-Z][a-z]+)', story_content)
+    for compound in compound_names:
+        name = compound.strip()
+        if name not in character_info:
+            character_info[name] = {"count": 0, "species": None, "traits": []}
+        character_info[name]["count"] += 2
+        
+        # Check for species context around compound names
+        name_context = story_content[max(0, story_content.find(compound)-100):story_content.find(compound)+100].lower()
+        species_map = {
+            "rabbit": "rabbit", "cat": "cat", "dog": "dog", "bear": "bear",
+            "squirrel": "squirrel", "raccoon": "raccoon", "fox": "fox", 
+            "wolf": "wolf", "bird": "bird", "duck": "duck", "owl": "owl"
+        }
+        for species_key, species_value in species_map.items():
+            if species_key in name_context:
+                character_info[name]["species"] = species_value
+                break
+    
+    # Filter common words
     common_words = {
         'The', 'They', 'There', 'That', 'This', 'Then', 'When', 'Where', 'What', 'Who',
         'He', 'She', 'It', 'We', 'You', 'I', 'A', 'An', 'And', 'Or', 'But', 'So',
-        'As', 'At', 'In', 'On', 'For', 'To', 'Of', 'With', 'By', 'From', 'Up', 'Out',
-        'All', 'Any', 'Both', 'Each', 'Few', 'More', 'Most', 'Other', 'Some', 'Such',
-        'No', 'Nor', 'Not', 'Only', 'Own', 'Same', 'Than', 'Too', 'Very', 'Can', 'Will',
-        'Just', 'Now', 'Still', 'Even', 'Also', 'Here', 'How', 'Its', 'Our', 'Their',
-        'About', 'Above', 'After', 'Again', 'Against', 'Before', 'Being', 'Below',
-        'Between', 'During', 'Into', 'Through', 'Under', 'Until', 'While'
+        'Little', 'Big', 'One', 'Two', 'New', 'Old', 'Good', 'Bad', 'Right', 'Left'
     }
     
-    # Select names that appear multiple times and aren't common words
-    for name, count in name_counts.items():
-        if count >= 2 and name not in common_words and len(name) >= 2:
+    # Create StoryCharacter objects
+    for name, info in character_info.items():
+        if info["count"] >= 2 and name not in common_words and len(name) >= 2:
+            # Determine entry_type based on species
+            entry_type = "person"
+            if info["species"]:
+                entry_type = "pet" if info["species"] in ["cat", "dog"] else "character"
+            
             character = StoryCharacter(
                 name=name,
                 relationship="story character",
-                traits=[],
-                entry_type="person"
+                traits=info["traits"],
+                entry_type=entry_type,
+                species=info["species"]
             )
             characters.append(character)
     
-    # Limit to top 4 most mentioned characters
-    characters = sorted(characters, key=lambda c: name_counts[c.name], reverse=True)[:4]
+    # Sort by mention count and limit to top 4
+    characters = sorted(characters, key=lambda c: character_info[c.name]["count"], reverse=True)[:4]
     
     return characters
 

@@ -200,7 +200,9 @@ STORY CONTEXT:
 AUDIENCE GUIDANCE:
 {audience_guidance}
 
-Provide detailed analysis for image generation:
+REQUIRED: You must provide a complete analysis with ALL 7 sections. Do not stop after the first section.
+
+Analyze this scene for image generation and provide ALL of the following sections:
 
 1. CHARACTERS_PRESENT: Which specific characters are in this scene (use character names, relationships, and visual descriptions from context)
 2. CHARACTER_INTERACTIONS: How are the characters positioned/interacting with each other
@@ -210,16 +212,17 @@ Provide detailed analysis for image generation:
 6. VISUAL_FOCUS: The most compelling visual element that captures the story moment
 7. STORY_SIGNIFICANCE: Why this moment matters to the narrative
 
-Format your response as:
+IMPORTANT: You must include ALL 7 sections in your response. Format exactly as shown below:
+
 CHARACTERS_PRESENT: [detailed character list with descriptions]
 CHARACTER_INTERACTIONS: [positioning and interaction details]
 MAIN_ACTION: [specific visual action]
 SETTING_DETAILS: [comprehensive environment description]
-EMOTION_TONE: [mood and emotional energy]
+EMOTIONAL_TONE: [mood and emotional energy]
 VISUAL_FOCUS: [key compelling element]
 STORY_SIGNIFICANCE: [narrative importance]
 
-Be specific and visual in your analysis to enable rich image generation."""
+Complete all sections - do not stop early."""
 
         try:
             # Prepare app config for LLM client
@@ -243,13 +246,36 @@ Be specific and visual in your analysis to enable rich image generation."""
 
             logger.info(f"🤖 SCENE_AGENT INPUT: {scene_description[:150]}...")
             logger.info(f"🤖 SCENE_AGENT OUTPUT: {scene_analysis}")
+            
+            # Check if response is complete (should have all 7 sections)
+            required_sections = [
+                "CHARACTERS_PRESENT:", "CHARACTER_INTERACTIONS:", "MAIN_ACTION:",
+                "SETTING_DETAILS:", "EMOTIONAL_TONE:", "VISUAL_FOCUS:", "STORY_SIGNIFICANCE:"
+            ]
+            missing_sections = [section for section in required_sections if section not in scene_analysis]
+            
+            if missing_sections:
+                logger.warning(f"🚨 SCENE_AGENT: Incomplete response - missing sections: {missing_sections}")
+                logger.warning(f"🚨 SCENE_AGENT: Response length: {len(scene_analysis)} characters")
+                # Add missing sections with placeholder content
+                for section in missing_sections:
+                    if section not in scene_analysis:
+                        section_name = section.replace(":", "").replace("_", " ").title()
+                        scene_analysis += f"\n{section} [Analysis needed for {section_name.lower()}]"
 
             return scene_analysis
 
         except Exception as e:
             logger.error(f"❌ SCENE_AGENT: Error in analysis: {e}")
-            # Fallback analysis
-            fallback = f"CHARACTERS_PRESENT: {', '.join(character_names[:2])}\nMAIN_ACTION: Story scene with characters\nSETTING: Story setting\nEMOTION: Engaging\nVISUAL_FOCUS: Character interaction"
+            # Fallback analysis with proper character handling
+            character_names = [char.name for char in likely_characters[:2]] if likely_characters else ["characters"]
+            fallback = f"""CHARACTERS_PRESENT: {', '.join(character_names)}
+CHARACTER_INTERACTIONS: Characters interacting in scene
+MAIN_ACTION: Story scene with characters
+SETTING_DETAILS: Story setting environment
+EMOTIONAL_TONE: Engaging and appropriate for audience
+VISUAL_FOCUS: Character interaction and story moment
+STORY_SIGNIFICANCE: Important narrative moment"""
             logger.warning(f"🔄 SCENE_AGENT: Using fallback: {fallback}")
             return fallback
 
