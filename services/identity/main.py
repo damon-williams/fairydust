@@ -10,7 +10,7 @@ from fastapi.middleware.cors import CORSMiddleware
 load_dotenv()
 
 # Import our routes and dependencies
-from routes import auth_router, user_router, terms_router, public_terms_router
+from routes import auth_router, public_terms_router, terms_router, user_router
 
 from shared.database import close_db, init_db
 from shared.redis_client import close_redis, init_redis

@@ -840,7 +840,6 @@ async def create_app_api(
         if existing_app:
             raise HTTPException(status_code=400, detail="App slug already exists")
 
-
         # Create the app
         app_id = uuid4()
 
@@ -1186,6 +1185,7 @@ async def delete_action_pricing(
 # REFERRAL ROUTES
 # ============================================================================
 
+
 @referral_router.post("/validate", response_model=ReferralValidateResponse)
 async def validate_referral_code(
     request: ReferralValidateRequest,
@@ -1195,7 +1195,7 @@ async def validate_referral_code(
     # Get referral code details with user info
     code_data = await db.fetch_one(
         """
-        SELECT rc.*, u.fairyname 
+        SELECT rc.*, u.fairyname
         FROM referral_codes rc
         JOIN users u ON rc.user_id = u.id
         WHERE rc.referral_code = $1
@@ -1217,6 +1217,7 @@ async def validate_referral_code(
 
     # Check if code is expired
     from datetime import timezone
+
     now = datetime.now(timezone.utc)
     is_expired = code_data["expires_at"] < now
     is_active = code_data["is_active"]
@@ -1250,7 +1251,7 @@ async def complete_referral(
     # Validate referral code exists and is active
     code_data = await db.fetch_one(
         """
-        SELECT rc.*, u.fairyname 
+        SELECT rc.*, u.fairyname
         FROM referral_codes rc
         JOIN users u ON rc.user_id = u.id
         WHERE rc.referral_code = $1 AND rc.is_active = true AND rc.expires_at > CURRENT_TIMESTAMP
@@ -1318,15 +1319,16 @@ async def complete_referral(
     )
 
     # Grant DUST bonuses via the ledger service
-    import httpx
     import os
+
+    import httpx
 
     environment = os.getenv("ENVIRONMENT", "staging")
     base_url_suffix = "production" if environment == "production" else "staging"
     ledger_url = f"https://fairydust-ledger-{base_url_suffix}.up.railway.app"
 
     redemption_id = redemption["id"]
-    
+
     try:
         async with httpx.AsyncClient() as client:
             # Grant referee bonus
@@ -1344,11 +1346,11 @@ async def complete_referral(
                 },
                 timeout=30.0,
             )
-            
+
             if referee_response.status_code != 200:
                 raise HTTPException(
                     status_code=500,
-                    detail=f"Failed to grant referee bonus: {referee_response.text}"
+                    detail=f"Failed to grant referee bonus: {referee_response.text}",
                 )
 
             # Grant referrer bonus
@@ -1366,11 +1368,11 @@ async def complete_referral(
                 },
                 timeout=30.0,
             )
-            
+
             if referrer_response.status_code != 200:
                 raise HTTPException(
                     status_code=500,
-                    detail=f"Failed to grant referrer bonus: {referrer_response.text}"
+                    detail=f"Failed to grant referrer bonus: {referrer_response.text}",
                 )
 
             # Grant milestone bonus if applicable
@@ -1384,16 +1386,14 @@ async def complete_referral(
                         "referral_id": str(redemption_id),
                         "idempotency_key": f"milestone_{redemption_id}",
                     },
-                    headers={
-                        "Authorization": f"Bearer {credentials.credentials}"
-                    },
+                    headers={"Authorization": f"Bearer {credentials.credentials}"},
                     timeout=30.0,
                 )
-                
+
                 if milestone_response.status_code != 200:
                     raise HTTPException(
                         status_code=500,
-                        detail=f"Failed to grant milestone bonus: {milestone_response.text}"
+                        detail=f"Failed to grant milestone bonus: {milestone_response.text}",
                     )
 
     except httpx.TimeoutException:
@@ -1423,7 +1423,7 @@ async def get_user_referral_stats(
     # Check if user has an active referral code
     has_code = await db.fetch_one(
         """
-        SELECT id FROM referral_codes 
+        SELECT id FROM referral_codes
         WHERE user_id = $1 AND is_active = true AND expires_at > CURRENT_TIMESTAMP
         """,
         user_id,
@@ -1432,10 +1432,10 @@ async def get_user_referral_stats(
     # Get successful referrals count and total DUST earned
     referral_stats = await db.fetch_one(
         """
-        SELECT 
+        SELECT
             COUNT(*) as successful_referrals,
             COALESCE(SUM(referrer_bonus + milestone_bonus), 0) as total_dust_earned
-        FROM referral_redemptions 
+        FROM referral_redemptions
         WHERE referrer_user_id = $1
         """,
         user_id,
@@ -1460,7 +1460,7 @@ async def get_user_referral_stats(
     # Get recent referrals (last 5)
     recent_referrals_data = await db.fetch_all(
         """
-        SELECT rr.id, u.fairyname as referee_name, rr.redeemed_at, 
+        SELECT rr.id, u.fairyname as referee_name, rr.redeemed_at,
                (rr.referrer_bonus + rr.milestone_bonus) as dust_earned
         FROM referral_redemptions rr
         JOIN users u ON rr.referee_user_id = u.id
@@ -1524,6 +1524,7 @@ async def validate_promotional_referral_code(
 
     # Check if code is expired
     from datetime import timezone
+
     now = datetime.now(timezone.utc)
     is_expired = code_data["expires_at"] < now
     is_active = code_data["is_active"]
@@ -1543,7 +1544,7 @@ async def validate_promotional_referral_code(
         request.promotional_code.upper(),
         current_user.user_id,
     )
-    
+
     if existing_redemption:
         already_redeemed = True
 
@@ -1575,12 +1576,16 @@ async def redeem_promotional_referral_code(
 ):
     """Redeem a promotional referral code for DUST bonus"""
     import time
+
     start_time = time.time()
-    print(f"⏱️ PROMO_START: Beginning promotional code redemption for {request.promotional_code}", flush=True)
-    
+    print(
+        f"⏱️ PROMO_START: Beginning promotional code redemption for {request.promotional_code}",
+        flush=True,
+    )
+
     # Validate promotional code exists and is active
     db_start = time.time()
-    print(f"⏱️ PROMO_DB_START: Starting database query for code validation", flush=True)
+    print("⏱️ PROMO_DB_START: Starting database query for code validation", flush=True)
     code_data = await db.fetch_one(
         """
         SELECT id, code, description, dust_bonus, max_uses, current_uses, expires_at, is_active
@@ -1597,8 +1602,9 @@ async def redeem_promotional_referral_code(
 
     # Check if code is expired
     validation_start = time.time()
-    print(f"⏱️ PROMO_VALIDATION_START: Starting validation checks", flush=True)
+    print("⏱️ PROMO_VALIDATION_START: Starting validation checks", flush=True)
     from datetime import timezone
+
     now = datetime.now(timezone.utc)
     if code_data["expires_at"] < now:
         raise HTTPException(status_code=400, detail="Promotional code has expired")
@@ -1609,7 +1615,7 @@ async def redeem_promotional_referral_code(
 
     # Check if user already redeemed this code
     redemption_check_start = time.time()
-    print(f"⏱️ PROMO_REDEMPTION_CHECK_START: Checking if user already redeemed", flush=True)
+    print("⏱️ PROMO_REDEMPTION_CHECK_START: Checking if user already redeemed", flush=True)
     existing_redemption = await db.fetch_one(
         """
         SELECT id FROM promotional_referral_redemptions
@@ -1619,22 +1625,30 @@ async def redeem_promotional_referral_code(
         request.user_id,
     )
     redemption_check_end = time.time()
-    print(f"⏱️ PROMO_REDEMPTION_CHECK_END: Redemption check took {redemption_check_end - redemption_check_start:.3f}s", flush=True)
-    
+    print(
+        f"⏱️ PROMO_REDEMPTION_CHECK_END: Redemption check took {redemption_check_end - redemption_check_start:.3f}s",
+        flush=True,
+    )
+
     if existing_redemption:
-        raise HTTPException(status_code=400, detail="You have already redeemed this promotional code")
-    
+        raise HTTPException(
+            status_code=400, detail="You have already redeemed this promotional code"
+        )
+
     validation_end = time.time()
-    print(f"⏱️ PROMO_VALIDATION_END: All validation took {validation_end - validation_start:.3f}s", flush=True)
+    print(
+        f"⏱️ PROMO_VALIDATION_END: All validation took {validation_end - validation_start:.3f}s",
+        flush=True,
+    )
 
     # Start transaction for atomic operations
     transaction_start = time.time()
-    print(f"⏱️ PROMO_TRANSACTION_START: Starting database transaction", flush=True)
+    print("⏱️ PROMO_TRANSACTION_START: Starting database transaction", flush=True)
     async with db.pool.acquire() as conn:
         async with conn.transaction():
             # Record the redemption
             insert_start = time.time()
-            print(f"⏱️ PROMO_INSERT_START: Inserting redemption record", flush=True)
+            print("⏱️ PROMO_INSERT_START: Inserting redemption record", flush=True)
             await conn.execute(
                 """
                 INSERT INTO promotional_referral_redemptions (
@@ -1650,7 +1664,7 @@ async def redeem_promotional_referral_code(
 
             # Update usage count
             update_start = time.time()
-            print(f"⏱️ PROMO_UPDATE_START: Updating usage count", flush=True)
+            print("⏱️ PROMO_UPDATE_START: Updating usage count", flush=True)
             await conn.execute(
                 """
                 UPDATE promotional_referral_codes
@@ -1663,31 +1677,37 @@ async def redeem_promotional_referral_code(
             print(f"⏱️ PROMO_UPDATE_END: Update took {update_end - update_start:.3f}s", flush=True)
 
             # Grant DUST to user via ledger service
-            import httpx
             import os
 
+            import httpx
+
             ledger_prep_start = time.time()
-            print(f"⏱️ PROMO_LEDGER_PREP_START: Preparing ledger service call", flush=True)
+            print("⏱️ PROMO_LEDGER_PREP_START: Preparing ledger service call", flush=True)
             environment = os.getenv("ENVIRONMENT", "staging")
             base_url_suffix = "production" if environment == "production" else "staging"
             ledger_url = f"https://fairydust-ledger-{base_url_suffix}.up.railway.app"
 
             try:
                 # Check which token we're using for debugging
-                service_token = os.getenv('SERVICE_JWT_TOKEN')
+                service_token = os.getenv("SERVICE_JWT_TOKEN")
                 if not service_token:
                     raise HTTPException(
                         status_code=500,
-                        detail="SERVICE_JWT_TOKEN environment variable not configured. Please add it to apps service."
+                        detail="SERVICE_JWT_TOKEN environment variable not configured. Please add it to apps service.",
                     )
-                
-                print(f"🔑 PROMO_REDEEM: Using SERVICE_JWT_TOKEN for ledger auth", flush=True)
-                print(f"🔗 PROMO_REDEEM: Calling ledger at {ledger_url}/grants/promotional", flush=True)
+
+                print("🔑 PROMO_REDEEM: Using SERVICE_JWT_TOKEN for ledger auth", flush=True)
+                print(
+                    f"🔗 PROMO_REDEEM: Calling ledger at {ledger_url}/grants/promotional", flush=True
+                )
                 ledger_prep_end = time.time()
-                print(f"⏱️ PROMO_LEDGER_PREP_END: Ledger prep took {ledger_prep_end - ledger_prep_start:.3f}s", flush=True)
-                
+                print(
+                    f"⏱️ PROMO_LEDGER_PREP_END: Ledger prep took {ledger_prep_end - ledger_prep_start:.3f}s",
+                    flush=True,
+                )
+
                 http_start = time.time()
-                print(f"⏱️ PROMO_HTTP_START: Starting HTTP request to ledger", flush=True)
+                print("⏱️ PROMO_HTTP_START: Starting HTTP request to ledger", flush=True)
                 async with httpx.AsyncClient() as client:
                     ledger_response = await client.post(
                         f"{ledger_url}/grants/promotional",
@@ -1698,24 +1718,27 @@ async def redeem_promotional_referral_code(
                             "promotional_code": request.promotional_code.upper(),
                             "idempotency_key": f"promo_{request.promotional_code.upper()}_{request.user_id}",
                         },
-                        headers={
-                            "Authorization": f"Bearer {service_token}"
-                        },
+                        headers={"Authorization": f"Bearer {service_token}"},
                         timeout=60.0,
                     )
                 http_end = time.time()
-                print(f"⏱️ PROMO_HTTP_END: HTTP request took {http_end - http_start:.3f}s", flush=True)
-                    
+                print(
+                    f"⏱️ PROMO_HTTP_END: HTTP request took {http_end - http_start:.3f}s", flush=True
+                )
+
                 print(f"🏦 LEDGER_RESPONSE: Status {ledger_response.status_code}", flush=True)
                 print(f"🏦 LEDGER_RESPONSE: Body {ledger_response.text[:200]}", flush=True)
-                
+
                 if ledger_response.status_code != 200:
                     raise HTTPException(
                         status_code=500,
                         detail=f"Failed to grant DUST bonus: Status {ledger_response.status_code}, Body: {ledger_response.text}",
                     )
-                
-                print(f"✅ PROMO_REDEEM: Successfully granted {code_data['dust_bonus']} DUST", flush=True)
+
+                print(
+                    f"✅ PROMO_REDEEM: Successfully granted {code_data['dust_bonus']} DUST",
+                    flush=True,
+                )
 
             except httpx.TimeoutException as e:
                 print(f"⏰ PROMO_REDEEM: Timeout error: {str(e)}", flush=True)
@@ -1737,11 +1760,16 @@ async def redeem_promotional_referral_code(
                 )
 
     transaction_end = time.time()
-    print(f"⏱️ PROMO_TRANSACTION_END: Transaction took {transaction_end - transaction_start:.3f}s", flush=True)
-    
+    print(
+        f"⏱️ PROMO_TRANSACTION_END: Transaction took {transaction_end - transaction_start:.3f}s",
+        flush=True,
+    )
+
     end_time = time.time()
     total_time = end_time - start_time
-    print(f"⏱️ PROMO_COMPLETE: Total promotional code redemption took {total_time:.3f}s", flush=True)
+    print(
+        f"⏱️ PROMO_COMPLETE: Total promotional code redemption took {total_time:.3f}s", flush=True
+    )
 
     return PromotionalReferralRedeemResponse(
         success=True,

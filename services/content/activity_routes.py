@@ -2,6 +2,7 @@
 import json
 import os
 import uuid
+
 from fastapi import APIRouter, Depends, HTTPException, Request
 from models import (
     Activity,
@@ -14,7 +15,7 @@ from tripadvisor_service import TripAdvisorService
 
 from shared.auth_middleware import TokenData, get_current_user
 from shared.database import Database, get_db
-from shared.llm_client import llm_client, LLMError
+from shared.llm_client import LLMError, llm_client
 from shared.llm_usage_logger import create_request_metadata
 
 router = APIRouter()
@@ -215,24 +216,24 @@ async def _get_people_info(
 
         # Call Identity Service to get people and pets data
         import httpx
-        
+
         # Service URL configuration based on environment
         environment = os.getenv("ENVIRONMENT", "staging")
         base_url_suffix = "production" if environment == "production" else "staging"
         identity_url = f"https://fairydust-identity-{base_url_suffix}.up.railway.app"
-        
+
         print(f"🔍 ACTIVITY_PEOPLE: Fetching people data from Identity Service for user {user_id}")
-        
+
         async with httpx.AsyncClient() as client:
             response = await client.get(
                 f"{identity_url}/users/{user_id}/people",
                 timeout=10.0,
             )
-            
+
             if response.status_code == 200:
                 all_people = response.json().get("people", [])
                 print(f"🔍 ACTIVITY_PEOPLE: Got {len(all_people)} people from Identity Service")
-                
+
                 # Filter to selected people and extract activity-relevant data
                 selected_people_data = []
                 for person in all_people:
@@ -241,17 +242,20 @@ async def _get_people_info(
                         age = None
                         if person.get("birth_date"):
                             from datetime import date
+
                             try:
                                 birth = date.fromisoformat(person["birth_date"])
                                 age = (date.today() - birth).days // 365
                             except:
                                 pass
-                        
+
                         # Extract activity preferences or personality description for traits
                         traits = []
                         if person.get("personality_description"):
-                            traits = [t.strip() for t in person.get("personality_description").split(",")][:5]
-                        
+                            traits = [
+                                t.strip() for t in person.get("personality_description").split(",")
+                            ][:5]
+
                         # Build person/pet data
                         entry_type = person.get("entry_type", "person")
                         person_data = {
@@ -264,17 +268,24 @@ async def _get_people_info(
                             "traits": traits,
                             "notes": "",  # Activity preferences could be added here
                         }
-                        
+
                         selected_people_data.append(person_data)
-                
-                print(f"🔍 ACTIVITY_PEOPLE: Filtered to {len(selected_people_data)} selected people/pets")
+
+                print(
+                    f"🔍 ACTIVITY_PEOPLE: Filtered to {len(selected_people_data)} selected people/pets"
+                )
                 return selected_people_data
             else:
-                print(f"🔍 ACTIVITY_PEOPLE: Identity Service returned {response.status_code}, returning empty list")
+                print(
+                    f"🔍 ACTIVITY_PEOPLE: Identity Service returned {response.status_code}, returning empty list"
+                )
                 return []
-                
+
     except Exception as e:
-        print(f"❌ ACTIVITY_PEOPLE: Error getting people info from Identity Service: {str(e)}", flush=True)
+        print(
+            f"❌ ACTIVITY_PEOPLE: Error getting people info from Identity Service: {str(e)}",
+            flush=True,
+        )
         return []
 
 
@@ -317,11 +328,11 @@ def _build_group_context(people_info: list[dict]) -> str:
 
     people_parts = []
     pet_parts = []
-    
+
     for person in people_info:
         if person.get("entry_type") == "pet":
             # Handle pets differently
-            species_str = f" ({person['species']})" if person.get('species') else ""
+            species_str = f" ({person['species']})" if person.get("species") else ""
             age_str = f", {person['age']} years old" if person.get("age") else ""
             pet_parts.append(f"{person['name']}{species_str}{age_str}")
         else:
@@ -334,12 +345,14 @@ def _build_group_context(people_info: list[dict]) -> str:
     if people_parts:
         context_parts.append(f"group with {', '.join(people_parts)}")
     if pet_parts:
-        pet_context = f"traveling with pet{'s' if len(pet_parts) > 1 else ''}: {', '.join(pet_parts)}"
+        pet_context = (
+            f"traveling with pet{'s' if len(pet_parts) > 1 else ''}: {', '.join(pet_parts)}"
+        )
         if people_parts:
             context_parts.append(pet_context)
         else:
             context_parts.append(f"solo traveler {pet_context}")
-    
+
     return "; ".join(context_parts) if context_parts else "group"
 
 
@@ -430,16 +443,16 @@ Respond with exactly {len(activities)} entries in this JSON format:
             user_id=user_id,
             app_id="fairydust-activity",
             action="find-activity",
-            request_metadata=request_metadata
+            request_metadata=request_metadata,
         )
 
         print(
             f"✅ ACTIVITY_AI: Generated contexts using {generation_metadata['provider']}/{generation_metadata['model_id']}",
-            flush=True
+            flush=True,
         )
-        
-        if generation_metadata.get('was_fallback'):
-            print(f"⚠️ ACTIVITY_AI: Used fallback provider after primary failed", flush=True)
+
+        if generation_metadata.get("was_fallback"):
+            print("⚠️ ACTIVITY_AI: Used fallback provider after primary failed", flush=True)
 
         # Try to parse JSON response
         try:

@@ -271,11 +271,11 @@ async def get_action_analytics(
     db: Database = Depends(get_db),
 ):
     """Get LLM usage analytics by action-slug"""
-    
+
     # Map timeframe to SQL interval
     interval_map = {"1d": "1 day", "7d": "7 days", "30d": "30 days", "90d": "90 days"}
     interval = interval_map.get(timeframe, "7 days")
-    
+
     # Get action-level analytics from request_metadata
     action_stats = await db.fetch_all(
         f"""
@@ -295,7 +295,7 @@ async def get_action_analytics(
         ORDER BY total_cost DESC
         """
     )
-    
+
     # Get current DUST pricing for comparison
     dust_pricing = await db.fetch_all(
         """
@@ -305,37 +305,41 @@ async def get_action_analytics(
         ORDER BY action_slug
         """
     )
-    
+
     # Create a mapping of action_slug to dust_cost
     dust_cost_map = {row["action_slug"]: row["dust_cost"] for row in dust_pricing}
-    
+
     # Format results with DUST pricing comparison
     formatted_results = []
     for row in action_stats:
         action_slug = row["action_slug"]
         avg_cost_usd = float(row["avg_cost_per_request"]) if row["avg_cost_per_request"] else 0
         dust_cost = dust_cost_map.get(action_slug, 0)
-        
+
         # Calculate cost efficiency (USD cost per DUST charged)
         cost_efficiency = avg_cost_usd / dust_cost if dust_cost > 0 else 0
-        
-        formatted_results.append({
-            "action_slug": action_slug,
-            "app_name": row["app_name"],
-            "total_requests": row["total_requests"],
-            "avg_cost_per_request": avg_cost_usd,
-            "total_cost": float(row["total_cost"]) if row["total_cost"] else 0,
-            "avg_total_tokens": float(row["avg_total_tokens"]) if row["avg_total_tokens"] else 0,
-            "avg_latency_ms": float(row["avg_latency_ms"]) if row["avg_latency_ms"] else 0,
-            "current_dust_cost": dust_cost,
-            "cost_efficiency": cost_efficiency,
-            "cost_per_dust": cost_efficiency if cost_efficiency > 0 else None
-        })
-    
+
+        formatted_results.append(
+            {
+                "action_slug": action_slug,
+                "app_name": row["app_name"],
+                "total_requests": row["total_requests"],
+                "avg_cost_per_request": avg_cost_usd,
+                "total_cost": float(row["total_cost"]) if row["total_cost"] else 0,
+                "avg_total_tokens": float(row["avg_total_tokens"])
+                if row["avg_total_tokens"]
+                else 0,
+                "avg_latency_ms": float(row["avg_latency_ms"]) if row["avg_latency_ms"] else 0,
+                "current_dust_cost": dust_cost,
+                "cost_efficiency": cost_efficiency,
+                "cost_per_dust": cost_efficiency if cost_efficiency > 0 else None,
+            }
+        )
+
     return {
         "timeframe": timeframe,
         "action_analytics": formatted_results,
-        "dust_pricing": [dict(row) for row in dust_pricing]
+        "dust_pricing": [dict(row) for row in dust_pricing],
     }
 
 
@@ -370,11 +374,11 @@ async def get_fallback_analytics(
     db: Database = Depends(get_db),
 ):
     """Get LLM fallback usage analytics and provider reliability metrics"""
-    
+
     # Map timeframe to SQL interval
     interval_map = {"1d": "1 day", "7d": "7 days", "30d": "30 days", "90d": "90 days"}
     interval = interval_map.get(timeframe, "7 days")
-    
+
     # Get overall fallback statistics
     fallback_stats = await db.fetch_one(
         f"""
@@ -382,7 +386,7 @@ async def get_fallback_analytics(
             COUNT(*) as total_requests,
             COUNT(*) FILTER (WHERE was_fallback = true) as fallback_requests,
             COUNT(*) FILTER (WHERE was_fallback = false) as primary_requests,
-            CASE 
+            CASE
                 WHEN COUNT(*) = 0 THEN 0
                 ELSE ROUND(
                     (COUNT(*) FILTER (WHERE was_fallback = true)::numeric / COUNT(*)) * 100, 2
@@ -392,7 +396,7 @@ async def get_fallback_analytics(
         WHERE created_at >= NOW() - INTERVAL '{interval}'
         """
     )
-    
+
     # Get fallback breakdown by provider
     provider_reliability = await db.fetch_all(
         f"""
@@ -401,7 +405,7 @@ async def get_fallback_analytics(
             COUNT(*) as total_requests,
             COUNT(*) FILTER (WHERE was_fallback = false) as primary_success,
             COUNT(*) FILTER (WHERE was_fallback = true) as fallback_usage,
-            CASE 
+            CASE
                 WHEN COUNT(*) = 0 THEN 0
                 ELSE ROUND(
                     (COUNT(*) FILTER (WHERE was_fallback = false)::numeric / COUNT(*)) * 100, 2
@@ -415,32 +419,32 @@ async def get_fallback_analytics(
         ORDER BY total_requests DESC
         """
     )
-    
+
     # Get fallback reasons breakdown
     fallback_reasons = await db.fetch_all(
         f"""
         SELECT
             fallback_reason,
             COUNT(*) as occurrences,
-            CASE 
-                WHEN (SELECT COUNT(*) FROM llm_usage_logs 
-                     WHERE was_fallback = true 
+            CASE
+                WHEN (SELECT COUNT(*) FROM llm_usage_logs
+                     WHERE was_fallback = true
                      AND created_at >= NOW() - INTERVAL '{interval}') = 0 THEN 0
-                ELSE ROUND((COUNT(*)::numeric / 
-                    (SELECT COUNT(*) FROM llm_usage_logs 
-                     WHERE was_fallback = true 
+                ELSE ROUND((COUNT(*)::numeric /
+                    (SELECT COUNT(*) FROM llm_usage_logs
+                     WHERE was_fallback = true
                      AND created_at >= NOW() - INTERVAL '{interval}')
                 ) * 100, 2)
             END as percentage_of_fallbacks
         FROM llm_usage_logs
-        WHERE was_fallback = true 
+        WHERE was_fallback = true
           AND created_at >= NOW() - INTERVAL '{interval}'
           AND fallback_reason IS NOT NULL
         GROUP BY fallback_reason
         ORDER BY occurrences DESC
         """
     )
-    
+
     # Get daily fallback trends
     if timeframe in ["1d", "7d"]:
         group_by = "DATE(created_at)"
@@ -448,14 +452,14 @@ async def get_fallback_analytics(
     else:
         group_by = "DATE_TRUNC('week', created_at)"
         date_format = "%Y-%m-%d"
-    
+
     daily_trends = await db.fetch_all(
         f"""
         SELECT
             {group_by} as date,
             COUNT(*) as total_requests,
             COUNT(*) FILTER (WHERE was_fallback = true) as fallback_requests,
-            CASE 
+            CASE
                 WHEN COUNT(*) = 0 THEN 0
                 ELSE ROUND(
                     (COUNT(*) FILTER (WHERE was_fallback = true)::numeric / COUNT(*)) * 100, 2
@@ -467,7 +471,7 @@ async def get_fallback_analytics(
         ORDER BY date
         """
     )
-    
+
     # Get app-specific fallback usage
     app_fallback_usage = await db.fetch_all(
         f"""
@@ -476,7 +480,7 @@ async def get_fallback_analytics(
             a.slug as app_slug,
             COUNT(l.id) as total_requests,
             COUNT(l.id) FILTER (WHERE l.was_fallback = true) as fallback_requests,
-            CASE 
+            CASE
                 WHEN COUNT(l.id) = 0 THEN 0
                 ELSE ROUND(
                     (COUNT(l.id) FILTER (WHERE l.was_fallback = true)::numeric / COUNT(l.id)) * 100, 2
@@ -491,7 +495,7 @@ async def get_fallback_analytics(
         ORDER BY fallback_percentage DESC, total_requests DESC
         """
     )
-    
+
     return {
         "timeframe": timeframe,
         "overall_stats": dict(fallback_stats) if fallback_stats else {},
@@ -499,12 +503,12 @@ async def get_fallback_analytics(
         "fallback_reasons": [dict(row) for row in fallback_reasons],
         "daily_trends": [
             {
-                "date": row["date"].strftime(date_format), 
+                "date": row["date"].strftime(date_format),
                 "total_requests": row["total_requests"],
                 "fallback_requests": row["fallback_requests"],
-                "fallback_rate": float(row["fallback_rate"]) if row["fallback_rate"] else 0
+                "fallback_rate": float(row["fallback_rate"]) if row["fallback_rate"] else 0,
             }
             for row in daily_trends
         ],
-        "app_fallback_usage": [dict(row) for row in app_fallback_usage]
+        "app_fallback_usage": [dict(row) for row in app_fallback_usage],
     }

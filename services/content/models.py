@@ -93,10 +93,16 @@ class StoryCharacter(BaseModel):
     relationship: str = Field(..., min_length=1, max_length=100)
     birth_date: Optional[str] = Field(None, pattern=r"^\d{4}-\d{2}-\d{2}$")
     traits: list[str] = Field(default_factory=list, max_items=10)
-    photo_url: Optional[str] = Field(None, description="Photo URL from My People entry (for image generation)")
-    person_id: Optional[UUID] = Field(None, description="My People person ID if this character comes from My People")
+    photo_url: Optional[str] = Field(
+        None, description="Photo URL from My People entry (for image generation)"
+    )
+    person_id: Optional[UUID] = Field(
+        None, description="My People person ID if this character comes from My People"
+    )
     entry_type: Optional[str] = Field("person", description="Whether this is a 'person' or 'pet'")
-    species: Optional[str] = Field(None, description="For pets: breed/animal type (e.g., 'Golden Retriever', 'Tabby Cat')")
+    species: Optional[str] = Field(
+        None, description="For pets: breed/animal type (e.g., 'Golden Retriever', 'Tabby Cat')"
+    )
 
 
 class TokenUsage(BaseModel):
@@ -109,7 +115,11 @@ class StoryGenerationRequest(BaseModel):
     user_id: UUID
     story_length: StoryLength  # Reading time instead of word count
     characters: list[StoryCharacter] = Field(default_factory=list, max_items=8)
-    selected_people: list[UUID] = Field(default_factory=list, max_items=5, description="My People entries to include as story characters (with photos if available)")
+    selected_people: list[UUID] = Field(
+        default_factory=list,
+        max_items=5,
+        description="My People entries to include as story characters (with photos if available)",
+    )
     custom_prompt: Optional[str] = Field(None, max_length=1000)
     target_audience: TargetAudience = TargetAudience.PRESCHOOL
     is_bedtime_story: bool = False
@@ -438,11 +448,19 @@ class UserRestaurantPreferencesUpdate(BaseModel):
 class RestaurantTextSearchRequest(BaseModel):
     user_id: UUID
     location: RestaurantLocation
-    text_query: str = Field(..., min_length=1, max_length=500, description="Natural language query like 'kid-friendly italian with outdoor seating'")
+    text_query: str = Field(
+        ...,
+        min_length=1,
+        max_length=500,
+        description="Natural language query like 'kid-friendly italian with outdoor seating'",
+    )
     selected_people: list[UUID] = Field(default_factory=list)
     max_results: int = Field(10, ge=1, le=20)
     min_rating: Optional[float] = Field(None, ge=1.0, le=5.0)
-    price_levels: Optional[list[str]] = Field(None, description="Price levels: PRICE_LEVEL_INEXPENSIVE, PRICE_LEVEL_MODERATE, PRICE_LEVEL_EXPENSIVE")
+    price_levels: Optional[list[str]] = Field(
+        None,
+        description="Price levels: PRICE_LEVEL_INEXPENSIVE, PRICE_LEVEL_MODERATE, PRICE_LEVEL_EXPENSIVE",
+    )
     open_now: bool = Field(False)
     session_id: Optional[UUID] = None
 
@@ -460,7 +478,10 @@ class EnhancedRestaurant(BaseModel):
     google_place_id: Optional[str] = None
     opentable: OpenTableInfo
     highlights: list[str] = Field(default_factory=list)
-    features: list[str] = Field(default_factory=list, description="Features like 'outdoor seating', 'kid-friendly', 'wheelchair accessible'")
+    features: list[str] = Field(
+        default_factory=list,
+        description="Features like 'outdoor seating', 'kid-friendly', 'wheelchair accessible'",
+    )
 
 
 class RestaurantTextSearchResponse(BaseModel):
@@ -813,7 +834,7 @@ class GameLength(int, Enum):
 
 class GameCategory(str, Enum):
     THOUGHT_PROVOKING = "thought-provoking"
-    FUNNY_SILLY = "funny-silly" 
+    FUNNY_SILLY = "funny-silly"
     FAMILY_FRIENDLY = "family-friendly"
     WORK_CAREER = "work-career"
     RELATIONSHIPS_LOVE = "relationships-love"
@@ -920,8 +941,8 @@ class ImageStyle(str, Enum):
 
 class ImageSize(str, Enum):
     STANDARD = "standard"  # 1024x1024
-    LARGE = "large"      # 1024x1792
-    SQUARE = "square"    # 1024x1024
+    LARGE = "large"  # 1024x1792
+    SQUARE = "square"  # 1024x1024
 
 
 class ImageReferencePerson(BaseModel):

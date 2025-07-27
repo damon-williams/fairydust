@@ -4,7 +4,7 @@ import os
 import re
 import uuid
 from datetime import datetime
-from typing import Optional, Tuple, Dict
+from typing import Optional
 from uuid import UUID
 
 import httpx
@@ -32,9 +32,9 @@ from models import (
 from shared.auth_middleware import TokenData, get_current_user
 from shared.database import Database, get_db
 from shared.json_utils import parse_jsonb_field
+from shared.llm_client import LLMError, llm_client
 from shared.llm_pricing import calculate_llm_cost
 from shared.llm_usage_logger import calculate_prompt_hash, create_request_metadata, log_llm_usage
-from shared.llm_client import llm_client, LLMError
 
 router = APIRouter()
 
@@ -110,7 +110,7 @@ async def generate_recipe(
                 dietary_preferences=dietary_preferences,
                 user_id=request.user_id,
             )
-            
+
             # Extract metadata
             title = _extract_recipe_title(recipe_content, request.dish)
             prep_time = _extract_time(recipe_content, "Prep Time:")
@@ -120,7 +120,7 @@ async def generate_recipe(
             tokens_used = generation_metadata["tokens_used"]
             cost = generation_metadata["cost_usd"]
             provider = generation_metadata["provider"]
-            
+
         except LLMError as e:
             print(f"❌ RECIPE: LLM generation failed: {e}")
             return RecipeErrorResponse(error="Failed to generate recipe. Please try again.")
@@ -912,10 +912,10 @@ async def _get_user_context(
             if people_rows:
                 people_list = []
                 pets_list = []
-                
+
                 for row in people_rows:
                     entry_type = row.get("entry_type", "person")
-                    
+
                     if entry_type == "pet":
                         # Handle pets differently - no age calculation, include species
                         pet_desc = f"{row['name']} ({row.get('species', 'pet')}"
@@ -934,23 +934,29 @@ async def _get_user_context(
                             birth = date.fromisoformat(str(row["birth_date"]))
                             age = (date.today() - birth).days // 365
                             person_desc += f", {age} years old"
-                        
+
                         # Add personality description if available
                         if row["personality_description"]:
                             person_desc += f", {row['personality_description']}"
-                        
+
                         person_desc += ")"
                         people_list.append(person_desc)
 
                 # Build context strings for people and pets separately
                 if people_list and pets_list:
                     context_parts.append(f"Cooking for: {', '.join(people_list)}")
-                    context_parts.append(f"Note: Also cooking for pets: {', '.join(pets_list)} (ensure pet-safe ingredients)")
+                    context_parts.append(
+                        f"Note: Also cooking for pets: {', '.join(pets_list)} (ensure pet-safe ingredients)"
+                    )
                 elif people_list:
                     context_parts.append(f"Cooking for: {', '.join(people_list)}")
                 elif pets_list:
-                    context_parts.append(f"Cooking for pets: {', '.join(pets_list)} (focus on pet-safe ingredients only)")
-                    print("🐾 RECIPE_CONTEXT: Recipe context set for pets only - enabling pet safety mode")
+                    context_parts.append(
+                        f"Cooking for pets: {', '.join(pets_list)} (focus on pet-safe ingredients only)"
+                    )
+                    print(
+                        "🐾 RECIPE_CONTEXT: Recipe context set for pets only - enabling pet safety mode"
+                    )
 
         return "; ".join(context_parts) if context_parts else "general user"
 
@@ -1631,42 +1637,42 @@ async def _generate_recipe_llm_new(
     user_context: str,
     dietary_preferences: list[str],
     user_id: UUID,
-) -> Tuple[str, Dict]:
+) -> tuple[str, dict]:
     """
     Generate recipe using centralized LLM client with automatic retry and fallback.
-    
+
     Returns:
         Tuple[str, Dict]: (recipe_content, generation_metadata)
     """
-    
+
     # Get app configuration
     app_config = await _get_llm_model_config()
-    
+
     # Build prompt (same logic as original function)
     dish_text = f" for {dish}" if dish else ""
     servings_text = "person" if total_people == 1 else "people"
-    
+
     preferences_text = ""
     if include_ingredients:
         preferences_text += f" that includes {include_ingredients}"
-    
+
     dietary_text = ""
     if dietary_preferences:
         dietary_text = f" accommodating these dietary needs: {', '.join(dietary_preferences)}"
-    
+
     personalization_text = ""
     if user_context and user_context != "general user":
         personalization_text = f"\n\nPersonalization Context: {user_context}"
-    
+
     # Build complexity-specific guidance
     complexity_guidance = {
         RecipeComplexity.SIMPLE: "Focus on easy-to-find ingredients and basic cooking techniques. Instructions should be beginner-friendly with simple steps. Avoid specialized equipment or advanced techniques.",
         RecipeComplexity.MEDIUM: "Use moderate cooking techniques and some specialty ingredients. Include techniques like sautéing, roasting, or braising. May require basic kitchen skills and equipment.",
         RecipeComplexity.GOURMET: "Create an elevated, restaurant-quality dish with sophisticated flavors and advanced techniques. Use high-quality ingredients, complex flavor profiles, specialized equipment, and professional cooking methods. Include techniques like reduction sauces, proper knife work, temperature control, plating presentation, and culinary terminology. This should be a dish worthy of a fine dining establishment.",
     }
-    
+
     complexity_instruction = complexity_guidance[complexity]
-    
+
     prompt = f"""Generate a {complexity.value} recipe{dish_text} that serves {total_people} {servings_text}{preferences_text}{dietary_text}{personalization_text}
 
 {complexity_instruction}
@@ -1695,7 +1701,7 @@ Provide the recipe in this exact format:
 One helpful tip for success with this recipe.
 
 IMPORTANT: Always include the Nutritional Info section with estimated values."""
-    
+
     # Create request metadata for logging
     request_metadata = {
         "parameters": {
@@ -1708,7 +1714,7 @@ IMPORTANT: Always include the Nutritional Info section with estimated values."""
         },
         "user_context": user_context if user_context != "general user" else None,
     }
-    
+
     # Generate using centralized client
     completion, metadata = await llm_client.generate_completion(
         prompt=prompt,
@@ -1716,7 +1722,7 @@ IMPORTANT: Always include the Nutritional Info section with estimated values."""
         user_id=user_id,
         app_id="fairydust-recipe",
         action="recipe-generate",
-        request_metadata=request_metadata
+        request_metadata=request_metadata,
     )
-    
+
     return completion, metadata

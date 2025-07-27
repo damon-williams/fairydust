@@ -3,7 +3,6 @@ import asyncio
 import json
 import os
 import re
-import time
 import uuid
 from datetime import datetime
 from typing import Optional
@@ -17,6 +16,8 @@ base_url_suffix = "production" if environment == "production" else "staging"
 identity_url = f"https://fairydust-identity-{base_url_suffix}.up.railway.app"
 
 # Content service no longer manages DUST - all DUST handling is external
+import httpx
+from langsmith import traceable
 from models import (
     StoriesListResponse,
     StoryCharacter,
@@ -27,23 +28,22 @@ from models import (
     StoryFavoriteResponse,
     StoryGenerationRequest,
     StoryGenerationResponseNew,
-    StoryImageStatusResponse,
     StoryImageBatchResponse,
     StoryImageStatus,
+    StoryImageStatusResponse,
     StoryLength,
     TargetAudience,
     TokenUsage,
     UserStoryNew,
 )
+from story_image_generator import story_image_generator
+from story_image_service import story_image_service
 
 from shared.auth_middleware import TokenData, get_current_user
 from shared.database import Database, get_db
 from shared.json_utils import parse_jsonb_field
+from shared.llm_client import LLMError, llm_client
 from shared.llm_usage_logger import calculate_prompt_hash, create_request_metadata
-from shared.llm_client import llm_client, LLMError
-from story_image_service import story_image_service
-from story_image_generator import story_image_generator
-import httpx
 
 router = APIRouter()
 
@@ -59,6 +59,7 @@ STORY_RATE_LIMIT = 10  # Max 10 stories per hour per user
 
 
 @router.post("/apps/story/generate")
+@traceable(run_type="chain", name="story-generation")
 async def generate_story(
     request: StoryGenerationRequest,
     http_request: Request,
@@ -68,8 +69,21 @@ async def generate_story(
     """
     Generate a new story using LLM and automatically save it to user's collection.
     """
+    # Add metadata for LangSmith tracing
+    metadata = {
+        "user_id": str(request.user_id),
+        "story_length": request.story_length.value,
+        "target_audience": request.target_audience.value,
+        "character_count": len(request.characters),
+        "include_images": request.include_images,
+        "has_custom_prompt": bool(request.custom_prompt),
+        "has_selected_people": bool(request.selected_people),
+    }
+
     print(f"📖 STORY: Starting generation for user {request.user_id}", flush=True)
-    print(f"📂 STORY: Length: {request.story_length}, Audience: {request.target_audience}", flush=True)
+    print(
+        f"📂 STORY: Length: {request.story_length}, Audience: {request.target_audience}", flush=True
+    )
     print(f"🌙 STORY: Bedtime story: {request.is_bedtime_story}", flush=True)
 
     # Verify user can only generate stories for themselves
@@ -104,11 +118,9 @@ async def generate_story(
                 request.user_id, request.selected_people, auth_token
             )
 
-        # Merge custom characters with My People entries  
-        merged_characters = await _merge_characters_and_people(
-            request.characters, my_people_data
-        )
-        
+        # Merge custom characters with My People entries
+        merged_characters = await _merge_characters_and_people(request.characters, my_people_data)
+
         # Create updated request with merged characters
         updated_request = StoryGenerationRequest(
             user_id=request.user_id,
@@ -118,7 +130,7 @@ async def generate_story(
             custom_prompt=request.custom_prompt,
             target_audience=request.target_audience,
             session_id=request.session_id,
-            include_images=request.include_images
+            include_images=request.include_images,
         )
 
         # Generate story using LLM
@@ -167,24 +179,27 @@ async def generate_story(
         final_content = story_content
         image_ids = []
         has_images = False
-        
+
         if request.include_images:
             print(f"🎨 STORY: Processing images for story {story_id}", flush=True)
-            print(f"🎨 STORY: Story length: {len(story_content)} chars, expected {updated_request.story_length.value}", flush=True)
+            print(
+                f"🎨 STORY: Story length: {len(story_content)} chars, expected {updated_request.story_length.value}",
+                flush=True,
+            )
             try:
                 # Extract scenes for image generation using merged characters (with photos!)
                 scenes = story_image_service.extract_image_scenes(
                     story_content, updated_request.story_length, merged_characters
                 )
-                
+
                 # Insert image markers into story content
                 final_content = story_image_service.insert_image_markers(story_content, scenes)
-                image_ids = [scene['image_id'] for scene in scenes]
+                image_ids = [scene["image_id"] for scene in scenes]
                 has_images = True
-                
+
                 # Update story in database with image markers and metadata
                 await _update_story_with_images(db, story_id, final_content, image_ids, has_images)
-                
+
                 # Start background image generation (don't await - let it run async)
                 # Now merged_characters includes photo URLs from My People!
                 asyncio.create_task(
@@ -194,12 +209,15 @@ async def generate_story(
                         scenes=scenes,
                         characters=merged_characters,  # Use merged characters with photos!
                         target_audience=updated_request.target_audience,
-                        db=db
+                        db=db,
                     )
                 )
-                
-                print(f"🚀 STORY: Started background image generation for {len(scenes)} images", flush=True)
-                
+
+                print(
+                    f"🚀 STORY: Started background image generation for {len(scenes)} images",
+                    flush=True,
+                )
+
             except Exception as e:
                 print(f"❌ STORY: Failed to process images: {str(e)}", flush=True)
                 # Continue without images rather than failing the whole request
@@ -351,11 +369,11 @@ async def get_user_stories(
         stories = []
         for row in rows:
             estimated_reading_time = _calculate_reading_time(row["word_count"] or 0)
-            
+
             # Parse image data
             image_data = parse_jsonb_field(row["image_data"], {}, "image_data") or {}
             image_ids = image_data.get("image_ids", []) if row["has_images"] else []
-            
+
             story = UserStoryNew(
                 id=row["id"],
                 title=row["title"],
@@ -524,32 +542,32 @@ async def get_story_config():
                     "label": "Toddler",
                     "value": "toddler",
                     "age_range": "2-4 years",
-                    "description": "Very simple language, familiar objects and concepts"
+                    "description": "Very simple language, familiar objects and concepts",
                 },
                 {
                     "label": "Preschool",
-                    "value": "preschool", 
+                    "value": "preschool",
                     "age_range": "4-6 years",
-                    "description": "Simple vocabulary with gentle lessons about friendship and kindness"
+                    "description": "Simple vocabulary with gentle lessons about friendship and kindness",
                 },
                 {
                     "label": "Early Elementary",
                     "value": "early_elementary",
-                    "age_range": "6-9 years", 
-                    "description": "Age-appropriate adventures with themes of courage and teamwork"
+                    "age_range": "6-9 years",
+                    "description": "Age-appropriate adventures with themes of courage and teamwork",
                 },
                 {
                     "label": "Late Elementary",
                     "value": "late_elementary",
                     "age_range": "9-12 years",
-                    "description": "More sophisticated stories with character growth and mild challenges"
+                    "description": "More sophisticated stories with character growth and mild challenges",
                 },
                 {
                     "label": "Teen",
                     "value": "teen",
                     "age_range": "13+ years",
-                    "description": "Complex themes of identity, relationships, and personal growth"
-                }
+                    "description": "Complex themes of identity, relationships, and personal growth",
+                },
             ],
             "character_relationships": [
                 "protagonist",
@@ -688,7 +706,7 @@ async def _get_llm_model_config() -> dict:
         print(f"❌ STORY_CONFIG: App with slug '{app_slug}' not found in database", flush=True)
         # Return default config if app not found
         return {
-            "primary_provider": "anthropic", 
+            "primary_provider": "anthropic",
             "primary_model_id": "claude-3-5-sonnet-20241022",
             "primary_parameters": {"temperature": 0.8, "max_tokens": 3000, "top_p": 0.9},
         }
@@ -765,6 +783,7 @@ async def _get_llm_model_config() -> dict:
     return default_config
 
 
+@traceable(run_type="llm", name="theme-variety-analysis")
 async def _get_recent_themes_guidance(db: Database, user_id: uuid.UUID) -> str:
     """Get AI-powered guidance to avoid repeating recent story themes using story summaries"""
     try:
@@ -777,23 +796,26 @@ async def _get_recent_themes_guidance(db: Database, user_id: uuid.UUID) -> str:
             ORDER BY created_at DESC
             LIMIT 4
             """,
-            user_id
+            user_id,
         )
-        
+
         if not recent_stories or len(recent_stories) < 2:
             return "ENSURE VARIETY: Create something fresh and engaging."
-        
-        print(f"🔍 STORY_THEMES: Analyzing {len(recent_stories)} recent stories for theme variety", flush=True)
-        
+
+        print(
+            f"🔍 STORY_THEMES: Analyzing {len(recent_stories)} recent stories for theme variety",
+            flush=True,
+        )
+
         # Prepare story summaries for AI analysis
         story_summaries = []
         for i, story in enumerate(recent_stories):
             days_ago = i  # 0 = most recent, 1 = yesterday, etc.
             summary_entry = f"Story {i+1} ({days_ago} stories ago): '{story['title']}' - {story['story_summary']}"
             story_summaries.append(summary_entry)
-        
+
         summaries_text = "\n".join(story_summaries)
-        
+
         # Use AI to analyze themes and provide variety guidance
         analysis_prompt = f"""Analyze these recent user stories and identify patterns or repeated themes that should be avoided in the next story:
 
@@ -801,7 +823,7 @@ async def _get_recent_themes_guidance(db: Database, user_id: uuid.UUID) -> str:
 
 Based on this analysis, provide specific guidance for generating a new story that avoids repetition. Focus on:
 1. Different character types/relationships
-2. New settings or environments  
+2. New settings or environments
 3. Fresh plot themes or conflicts
 4. Varied emotional tones
 
@@ -812,40 +834,36 @@ If stories are sufficiently varied, respond with:
 "ENSURE VARIETY: Stories show good diversity, continue with creative freedom."
 
 Response:"""
-        
+
         # Get AI analysis using fast model
         app_config = {
             "primary_provider": "anthropic",
             "primary_model_id": "claude-3-5-haiku-20241022",
-            "primary_parameters": {
-                "temperature": 0.4,
-                "max_tokens": 150,
-                "top_p": 0.9
-            }
+            "primary_parameters": {"temperature": 0.4, "max_tokens": 150, "top_p": 0.9},
         }
-        
+
         content, metadata = await llm_client.generate_completion(
             prompt=analysis_prompt,
             app_config=app_config,
             user_id=user_id,
             app_id="fairydust-story",
             action="theme_variety_analysis",
-            request_metadata={"purpose": "theme_variety_analysis"}
+            request_metadata={"purpose": "theme_variety_analysis"},
         )
-        
+
         guidance = content.strip() if content else ""
-        
+
         # Clean up response
         if guidance and len(guidance) > 20:
             # Remove any extra formatting
-            guidance = guidance.replace('"', '').strip()
+            guidance = guidance.replace('"', "").strip()
             print(f"🎯 STORY_THEMES: AI guidance: {guidance[:100]}...", flush=True)
             return guidance
         else:
             # Fallback if AI analysis fails
-            print(f"⚠️ STORY_THEMES: AI analysis failed, using fallback", flush=True)
+            print("⚠️ STORY_THEMES: AI analysis failed, using fallback", flush=True)
             return "ENSURE VARIETY: Create something fresh with new characters and settings."
-        
+
     except Exception as e:
         print(f"⚠️ STORY_THEMES: Error in AI theme analysis: {e}", flush=True)
         return "ENSURE VARIETY: Create something fresh and different."
@@ -863,7 +881,10 @@ def _calculate_reading_time(word_count: int) -> str:
         return f"{minutes} minutes"
 
 
-async def _build_story_prompt(request: StoryGenerationRequest, user_context: str, db: Database) -> str:
+@traceable(run_type="tool", name="story-prompt-builder")
+async def _build_story_prompt(
+    request: StoryGenerationRequest, user_context: str, db: Database
+) -> str:
     """Build the LLM prompt for story generation"""
     min_words, max_words = READING_TIME_WORD_TARGETS[request.story_length]
     target_words = (min_words + max_words) // 2
@@ -887,6 +908,7 @@ async def _build_story_prompt(request: StoryGenerationRequest, user_context: str
                 if char.birth_date:
                     # Calculate age from birth date
                     from datetime import date
+
                     birth = date.fromisoformat(char.birth_date)
                     age = (date.today() - birth).days // 365
                     desc += f", {age} years old"
@@ -897,11 +919,12 @@ async def _build_story_prompt(request: StoryGenerationRequest, user_context: str
                 if char.birth_date:
                     # Calculate age from birth date
                     from datetime import date
+
                     birth = date.fromisoformat(char.birth_date)
                     age = (date.today() - birth).days // 365
                     desc += f", {age} years old"
                 desc += ")"
-            
+
             if char.traits:
                 desc += f", traits: {', '.join(char.traits)}"
             character_descriptions.append(desc)
@@ -918,9 +941,9 @@ async def _build_story_prompt(request: StoryGenerationRequest, user_context: str
         TargetAudience.PRESCHOOL: "preschoolers (ages 4-6). Use simple vocabulary with some new words. Focus on friendship, family, basic problem-solving, and discovery. Include gentle lessons about sharing, kindness, and curiosity.",
         TargetAudience.EARLY_ELEMENTARY: "early elementary children (ages 6-9). Use age-appropriate vocabulary with opportunities to learn new words. Focus on adventure, friendship, school experiences, and overcoming small challenges. Include themes of courage, teamwork, and learning.",
         TargetAudience.LATE_ELEMENTARY: "late elementary children (ages 9-12). Use more sophisticated vocabulary and complex sentence structures. Explore themes of friendship, identity, responsibility, and problem-solving. Include mild challenges, mystery elements, and character growth.",
-        TargetAudience.TEEN: "teenagers (ages 13+). Use mature language and complex themes. Explore identity, relationships, coming-of-age challenges, and personal growth. Include realistic situations and emotional depth."
+        TargetAudience.TEEN: "teenagers (ages 13+). Use mature language and complex themes. Explore identity, relationships, coming-of-age challenges, and personal growth. Include realistic situations and emotional depth.",
     }
-    
+
     # Add bedtime story guidance if applicable
     bedtime_guidance = ""
     if request.is_bedtime_story:
@@ -928,11 +951,10 @@ async def _build_story_prompt(request: StoryGenerationRequest, user_context: str
             bedtime_guidance = " This is a BEDTIME STORY for young children - create a very calm, soothing narrative with gentle, familiar themes. Use soft, rhythmic language with repetitive, comforting phrases. Focus on peaceful bedtime routines, cozy settings, and reassuring endings. Avoid any excitement, conflict, or stimulating elements."
         else:
             bedtime_guidance = " This is a BEDTIME STORY - create a calm, soothing narrative with gentle themes. Avoid exciting action or scary elements. Focus on peaceful, comforting scenarios that help wind down for sleep. Use soft, rhythmic language and end on a tranquil, reassuring note."
-    
+
     # Add randomness seed to prevent repetitive patterns
     import random
-    import time
-    
+
     # Generate variety prompts to break patterns
     variety_seeds = [
         "Create something completely different from typical children's stories.",
@@ -942,29 +964,29 @@ async def _build_story_prompt(request: StoryGenerationRequest, user_context: str
         "Explore a creative setting or scenario.",
         "Use an inventive storytelling approach.",
         "Create a story with unexpected elements.",
-        "Tell a tale that stands out from the ordinary."
+        "Tell a tale that stands out from the ordinary.",
     ]
-    
+
     # Add creativity boosters to avoid repetitive themes
     creativity_boosters = [
         "AVOID geometric shapes as main characters unless specifically requested.",
         "AVOID color-based character names (Red Circle, Blue Square, etc.) unless in character list.",
         "Focus on realistic characters, animals, or fantasy beings with personalities.",
         "Create characters with distinct names, backgrounds, and motivations.",
-        "Avoid abstract or educational concepts as primary story elements."
+        "Avoid abstract or educational concepts as primary story elements.",
     ]
-    
+
     selected_variety = random.choice(variety_seeds)
     selected_creativity = random.choice(creativity_boosters)
-    
+
     # Use AI analysis of recent story summaries to avoid repetitive themes
     recent_themes_guidance = await _get_recent_themes_guidance(db, request.user_id)
-    
+
     print(f"🎲 STORY_VARIETY: Applied variety seed: {selected_variety}", flush=True)
     print(f"🎨 STORY_CREATIVITY: Applied creativity booster: {selected_creativity}", flush=True)
     if recent_themes_guidance and "AVOID REPETITION" in recent_themes_guidance:
         print(f"🚫 STORY_REPETITION: {recent_themes_guidance}", flush=True)
-    
+
     prompt = f"""You are a master storyteller with infinite creativity. {selected_variety} Create a truly unique and surprising story for {audience_guidance[request.target_audience]}{bedtime_guidance} The story should take about {length_descriptions[request.story_length]} to read.
 
 IMPORTANT: {selected_creativity}
@@ -1080,7 +1102,7 @@ def _extract_title_and_content(generated_text: str) -> tuple[str, str]:
 
     # Clean up title formatting - remove markdown and common formatting issues
     title = _clean_title_formatting(title)
-    
+
     # Remove any meta-commentary or analysis from the content
     content = _remove_meta_commentary(content)
 
@@ -1109,84 +1131,89 @@ def _clean_title_formatting(title: str) -> str:
 
 def _remove_meta_commentary(content: str) -> str:
     """Remove meta-commentary and analysis from story content"""
-    
+
     original_length = len(content)
-    
+
     # Remove content in brackets that looks like meta-commentary
     # Examples: "[This story uses simple language...]", "[The narrative explores...]"
-    content = re.sub(r'\[This story[^\]]*\]', '', content, flags=re.IGNORECASE)
-    content = re.sub(r'\[The story[^\]]*\]', '', content, flags=re.IGNORECASE)
-    content = re.sub(r'\[The narrative[^\]]*\]', '', content, flags=re.IGNORECASE)
-    content = re.sub(r'\[Note:[^\]]*\]', '', content, flags=re.IGNORECASE)
-    content = re.sub(r'\[This.*?appropriate[^\]]*\]', '', content, flags=re.IGNORECASE)
-    content = re.sub(r'\[.*?age[- ]appropriate[^\]]*\]', '', content, flags=re.IGNORECASE)
-    content = re.sub(r'\[.*?educational[^\]]*\]', '', content, flags=re.IGNORECASE)
-    
+    content = re.sub(r"\[This story[^\]]*\]", "", content, flags=re.IGNORECASE)
+    content = re.sub(r"\[The story[^\]]*\]", "", content, flags=re.IGNORECASE)
+    content = re.sub(r"\[The narrative[^\]]*\]", "", content, flags=re.IGNORECASE)
+    content = re.sub(r"\[Note:[^\]]*\]", "", content, flags=re.IGNORECASE)
+    content = re.sub(r"\[This.*?appropriate[^\]]*\]", "", content, flags=re.IGNORECASE)
+    content = re.sub(r"\[.*?age[- ]appropriate[^\]]*\]", "", content, flags=re.IGNORECASE)
+    content = re.sub(r"\[.*?educational[^\]]*\]", "", content, flags=re.IGNORECASE)
+
     # Remove standalone analytical paragraphs at the end
     # Look for patterns like paragraphs that start with analysis keywords
     analysis_patterns = [
-        r'\n\n.*?This story.*?appropriate.*?\.',
-        r'\n\n.*?The narrative.*?language.*?\.',
-        r'\n\n.*?This tale.*?teaches.*?\.',
-        r'\n\n.*?The story.*?demonstrates.*?\.',
-        r'\n\n.*?This adventure.*?explores.*?\.',
-        r'\n\n.*?repetitive.*?language.*?\.',
-        r'\n\n.*?simple.*?vocabulary.*?\.',
-        r'\n\n.*?age[- ]appropriate.*?\.',
-        r'\n\n.*?educational.*?value.*?\.',
-        r'\n\n.*?teaches.*?lesson.*?\.',
+        r"\n\n.*?This story.*?appropriate.*?\.",
+        r"\n\n.*?The narrative.*?language.*?\.",
+        r"\n\n.*?This tale.*?teaches.*?\.",
+        r"\n\n.*?The story.*?demonstrates.*?\.",
+        r"\n\n.*?This adventure.*?explores.*?\.",
+        r"\n\n.*?repetitive.*?language.*?\.",
+        r"\n\n.*?simple.*?vocabulary.*?\.",
+        r"\n\n.*?age[- ]appropriate.*?\.",
+        r"\n\n.*?educational.*?value.*?\.",
+        r"\n\n.*?teaches.*?lesson.*?\.",
     ]
-    
+
     for pattern in analysis_patterns:
-        content = re.sub(pattern, '', content, flags=re.IGNORECASE | re.DOTALL)
-    
+        content = re.sub(pattern, "", content, flags=re.IGNORECASE | re.DOTALL)
+
     # Remove any trailing analytical sentences that might not be caught above
     # Look for sentences that contain analysis keywords at the end of the content
     analytical_sentence_endings = [
-        r'\.?\s*This story uses.*?\.$',
-        r'\.?\s*The narrative.*?\.$',
-        r'\.?\s*This tale.*?\.$',
-        r'\.?\s*The story.*?appropriate.*?\.$',
-        r'\.?\s*.*?repetitive language.*?\.$',
-        r'\.?\s*.*?simple vocabulary.*?\.$',
+        r"\.?\s*This story uses.*?\.$",
+        r"\.?\s*The narrative.*?\.$",
+        r"\.?\s*This tale.*?\.$",
+        r"\.?\s*The story.*?appropriate.*?\.$",
+        r"\.?\s*.*?repetitive language.*?\.$",
+        r"\.?\s*.*?simple vocabulary.*?\.$",
     ]
-    
+
     for pattern in analytical_sentence_endings:
-        content = re.sub(pattern, '.', content, flags=re.IGNORECASE | re.DOTALL)
-    
+        content = re.sub(pattern, ".", content, flags=re.IGNORECASE | re.DOTALL)
+
     # Clean up extra whitespace and empty lines, but preserve paragraph structure
-    content = re.sub(r'\n\s*\n\s*\n+', '\n\n', content)  # Remove triple+ newlines, keep double
-    content = re.sub(r'[ \t]+', ' ', content)  # Normalize horizontal whitespace only
-    content = re.sub(r'\n[ \t]+', '\n', content)  # Remove spaces at start of lines
-    
+    content = re.sub(r"\n\s*\n\s*\n+", "\n\n", content)  # Remove triple+ newlines, keep double
+    content = re.sub(r"[ \t]+", " ", content)  # Normalize horizontal whitespace only
+    content = re.sub(r"\n[ \t]+", "\n", content)  # Remove spaces at start of lines
+
     cleaned_length = len(content.strip())
-    
+
     # Log if content was cleaned
     if cleaned_length < original_length:
         removed_chars = original_length - cleaned_length
-        print(f"🧹 STORY_CLEAN: Removed {removed_chars} characters of meta-commentary from story", flush=True)
-    
+        print(
+            f"🧹 STORY_CLEAN: Removed {removed_chars} characters of meta-commentary from story",
+            flush=True,
+        )
+
     return content.strip()
 
 
-async def _fetch_my_people_data(user_id: UUID, selected_people: list[UUID], auth_token: str) -> list[dict]:
+async def _fetch_my_people_data(
+    user_id: UUID, selected_people: list[UUID], auth_token: str
+) -> list[dict]:
     """Fetch My People data from Identity Service including photo URLs"""
     if not selected_people:
         return []
-    
+
     try:
         print(f"📸 STORY_PEOPLE: Fetching My People data for {len(selected_people)} people")
-        
+
         async with httpx.AsyncClient() as client:
             response = await client.get(
                 f"{identity_url}/users/{user_id}/people",
                 headers={"Authorization": auth_token},
                 timeout=10.0,
             )
-            
+
             if response.status_code == 200:
                 all_people = response.json().get("people", [])
-                
+
                 # Filter to selected people and extract relevant data
                 selected_people_data = []
                 for person in all_people:
@@ -1198,27 +1225,31 @@ async def _fetch_my_people_data(user_id: UUID, selected_people: list[UUID], auth
                             "name": person.get("name", ""),
                             "relationship": person.get("relationship", "friend"),
                             "birth_date": person.get("birth_date"),
-                            "photo_url": person.get("photo_url"),  # This is the key field for images!
+                            "photo_url": person.get(
+                                "photo_url"
+                            ),  # This is the key field for images!
                             "entry_type": entry_type,
                             "species": person.get("species"),  # For pets: breed/animal type
                         }
-                        
+
                         # Extract traits from profile data or personality_description field
                         traits = []
-                        
+
                         # First check the direct personality_description field (simpler)
                         if person.get("personality_description"):
                             # Split personality description into trait-like chunks
-                            desc_traits = [t.strip() for t in person.get("personality_description").split(",")]
+                            desc_traits = [
+                                t.strip() for t in person.get("personality_description").split(",")
+                            ]
                             traits.extend(desc_traits[:5])  # Limit from description
-                        
+
                         # Also check profile_data for additional traits
                         for profile_item in person.get("profile_data", []):
                             if profile_item.get("category") == "personality":
                                 personality_data = profile_item.get("field_value", {})
                                 if isinstance(personality_data, dict):
                                     traits.extend(personality_data.get("traits", []))
-                        
+
                         # For pets, add species-appropriate default traits if none provided
                         if entry_type == "pet" and not traits and person_data["species"]:
                             species = person_data["species"].lower()
@@ -1233,37 +1264,38 @@ async def _fetch_my_people_data(user_id: UUID, selected_people: list[UUID], auth
                             else:
                                 traits = ["beloved", "special", "cherished"]
                             print(f"🐾 STORY_PEOPLE: Added default traits for {species}: {traits}")
-                        
+
                         person_data["traits"] = traits[:10]  # Limit to 10 traits
                         selected_people_data.append(person_data)
-                
-                print(f"📸 STORY_PEOPLE: Successfully fetched {len(selected_people_data)} My People entries")
+
+                print(
+                    f"📸 STORY_PEOPLE: Successfully fetched {len(selected_people_data)} My People entries"
+                )
                 for person in selected_people_data:
                     has_photo = "✅" if person.get("photo_url") else "❌"
                     print(f"   {person['name']} ({person['relationship']}) - Photo: {has_photo}")
-                
+
                 return selected_people_data
             else:
                 print(f"❌ STORY_PEOPLE: Identity service returned {response.status_code}")
                 return []
-                
+
     except Exception as e:
         print(f"❌ STORY_PEOPLE: Error fetching My People data: {e}")
         return []
 
 
 async def _merge_characters_and_people(
-    custom_characters: list[StoryCharacter], 
-    my_people_data: list[dict]
+    custom_characters: list[StoryCharacter], my_people_data: list[dict]
 ) -> list[StoryCharacter]:
     """Merge custom characters with My People entries into unified character list"""
-    
+
     merged_characters = []
-    
+
     # Add custom characters (no photos)
     for char in custom_characters:
         merged_characters.append(char)
-    
+
     # Convert My People entries to StoryCharacter format
     for person in my_people_data:
         story_char = StoryCharacter(
@@ -1274,19 +1306,24 @@ async def _merge_characters_and_people(
             photo_url=person.get("photo_url"),  # Include photo URL!
             person_id=UUID(person["id"]) if person.get("id") else None,
             entry_type=person.get("entry_type", "person"),  # Include entry type
-            species=person.get("species")  # Include pet species info
+            species=person.get("species"),  # Include pet species info
         )
         merged_characters.append(story_char)
-    
-    print(f"🎭 STORY_CHARACTERS: Merged {len(custom_characters)} custom + {len(my_people_data)} My People = {len(merged_characters)} total characters")
-    
+
+    print(
+        f"🎭 STORY_CHARACTERS: Merged {len(custom_characters)} custom + {len(my_people_data)} My People = {len(merged_characters)} total characters"
+    )
+
     # Log photo availability
     characters_with_photos = [c for c in merged_characters if c.photo_url]
-    print(f"📸 STORY_CHARACTERS: {len(characters_with_photos)} characters have photos for image generation")
-    
+    print(
+        f"📸 STORY_CHARACTERS: {len(characters_with_photos)} characters have photos for image generation"
+    )
+
     return merged_characters
 
 
+@traceable(run_type="llm", name="story-llm-generation")
 async def _generate_story_llm(
     request: StoryGenerationRequest,
     user_context: str,
@@ -1296,37 +1333,40 @@ async def _generate_story_llm(
     try:
         # Get LLM model configuration from database/cache
         model_config = await _get_llm_model_config()
-        
+
         # Adjust max_tokens based on story length to prevent truncation
         base_max_tokens = model_config.get("primary_parameters", {}).get("max_tokens", 2000)
         story_length_multipliers = {
-            StoryLength.QUICK: 1.0,    # ~500 words = ~667 tokens
-            StoryLength.MEDIUM: 1.8,   # ~1200 words = ~1600 tokens  
-            StoryLength.LONG: 2.5,     # ~2000 words = ~2667 tokens
+            StoryLength.QUICK: 1.0,  # ~500 words = ~667 tokens
+            StoryLength.MEDIUM: 1.8,  # ~1200 words = ~1600 tokens
+            StoryLength.LONG: 2.5,  # ~2000 words = ~2667 tokens
         }
-        
+
         max_tokens = int(base_max_tokens * story_length_multipliers.get(request.story_length, 1.0))
         max_tokens = max(1000, min(max_tokens, 8000))  # Ensure reasonable bounds
-        
+
         # Update parameters with adjusted max_tokens
         adjusted_config = model_config.copy()
         if "primary_parameters" not in adjusted_config:
             adjusted_config["primary_parameters"] = {}
         adjusted_config["primary_parameters"]["max_tokens"] = max_tokens
-        
-        print(f"🔧 STORY_LLM: Adjusted max_tokens to {max_tokens} for {request.story_length.value} story", flush=True)
+
+        print(
+            f"🔧 STORY_LLM: Adjusted max_tokens to {max_tokens} for {request.story_length.value} story",
+            flush=True,
+        )
 
         # Build prompt
         prompt = await _build_story_prompt(request, user_context, db)
-        
+
         # Calculate prompt hash for logging
         prompt_hash = calculate_prompt_hash(prompt)
-        
+
         # Determine action slug for logging
         action_slug = f"story-{request.story_length.value}"
         if request.include_images:
             action_slug += "-illustrated"
-        
+
         # Create request metadata
         request_metadata = create_request_metadata(
             action=action_slug,
@@ -1340,7 +1380,7 @@ async def _generate_story_llm(
             user_context=user_context if user_context != "general user" else None,
             session_id=str(request.session_id) if request.session_id else None,
         )
-        
+
         # Add prompt hash to metadata
         request_metadata["prompt_hash"] = prompt_hash
 
@@ -1351,23 +1391,26 @@ async def _generate_story_llm(
             user_id=request.user_id,
             app_id="fairydust-story",
             action=action_slug,
-            request_metadata=request_metadata
+            request_metadata=request_metadata,
         )
-        
+
         # Extract title and content from generated text
         title, content = _extract_title_and_content(generated_text)
         word_count = _count_words(content)
         estimated_reading_time = _calculate_reading_time(word_count)
-        
+
         # Extract metadata from generation result
         provider = generation_metadata["provider"]
         model_id = generation_metadata["model_id"]
         tokens_used = generation_metadata["tokens_used"]
         cost = generation_metadata["cost_usd"]
         latency_ms = generation_metadata["generation_time_ms"]
-        
-        print(f"✅ STORY_LLM: Generated story successfully with {provider}/{model_id} (latency: {latency_ms}ms)", flush=True)
-        
+
+        print(
+            f"✅ STORY_LLM: Generated story successfully with {provider}/{model_id} (latency: {latency_ms}ms)",
+            flush=True,
+        )
+
         return (
             content,
             title,
@@ -1387,19 +1430,25 @@ async def _generate_story_llm(
         print(f"❌ STORY_LLM: Unexpected error generating story: {str(e)}", flush=True)
         print(f"❌ STORY_LLM: Error type: {type(e).__name__}", flush=True)
         import traceback
+
         print(f"❌ STORY_LLM: Traceback: {traceback.format_exc()}", flush=True)
         return None, "", 0, "", "claude-3-5-sonnet-20241022", {}, 0.0, 0, "anthropic"
 
 
-async def _generate_story_summary(title: str, content: str, characters: list, target_audience: TargetAudience, user_id: uuid.UUID) -> str:
+@traceable(run_type="llm", name="story-summary-generation")
+async def _generate_story_summary(
+    title: str, content: str, characters: list, target_audience: TargetAudience, user_id: uuid.UUID
+) -> str:
     """Generate a concise summary of the story for theme tracking"""
     try:
         print(f"📝 STORY_SUMMARY: Generating summary for story '{title}'", flush=True)
-        
+
         # Prepare character names for context
-        character_names = [char.name if hasattr(char, 'name') else str(char) for char in characters[:3]]
+        character_names = [
+            char.name if hasattr(char, "name") else str(char) for char in characters[:3]
+        ]
         char_context = f" featuring {', '.join(character_names)}" if character_names else ""
-        
+
         # Create a focused prompt for story summarization
         summary_prompt = f"""Summarize this {target_audience.value} story in 1-2 sentences, focusing on the main theme, setting, and plot elements. Be concise and capture what makes this story unique.
 
@@ -1407,7 +1456,7 @@ Title: {title}
 Story: {content[:800]}...
 
 Provide only the summary, no additional commentary:"""
-        
+
         # Use the LLM client to generate summary
         app_config = {
             "primary_provider": "anthropic",
@@ -1415,38 +1464,40 @@ Provide only the summary, no additional commentary:"""
             "primary_parameters": {
                 "temperature": 0.3,  # Lower temperature for consistent summaries
                 "max_tokens": 100,
-                "top_p": 0.9
-            }
+                "top_p": 0.9,
+            },
         }
-        
+
         content, metadata = await llm_client.generate_completion(
             prompt=summary_prompt,
             app_config=app_config,
             user_id=user_id,  # Use actual user_id for proper usage logging
             app_id="fairydust-story",
             action="story_summary_generation",
-            request_metadata={"purpose": "story_summary_generation"}
+            request_metadata={"purpose": "story_summary_generation"},
         )
-        
+
         summary = content.strip() if content else ""
-        
+
         # Clean up summary - remove quotes and meta commentary
         summary = summary.strip('"').strip()
         if summary.startswith("Summary:") or summary.startswith("The story"):
             summary = summary.split(":", 1)[-1].strip() if ":" in summary else summary
-        
+
         # Fallback if summary generation fails
         if not summary or len(summary) < 10:
             summary = f"A {target_audience.value} story about {', '.join(character_names[:2]) if character_names else 'adventure'}"
-        
+
         print(f"✅ STORY_SUMMARY: Generated summary: {summary[:100]}...", flush=True)
         return summary
-        
+
     except Exception as e:
         print(f"❌ STORY_SUMMARY: Error generating summary: {str(e)}", flush=True)
         # Return a simple fallback summary
-        char_names = [char.name if hasattr(char, 'name') else str(char) for char in characters[:2]]
-        return f"A {target_audience.value} story" + (f" featuring {', '.join(char_names)}" if char_names else "")
+        char_names = [char.name if hasattr(char, "name") else str(char) for char in characters[:2]]
+        return f"A {target_audience.value} story" + (
+            f" featuring {', '.join(char_names)}" if char_names else ""
+        )
 
 
 async def _save_story(
@@ -1467,9 +1518,11 @@ async def _save_story(
     """Save story to database with AI-generated summary"""
     try:
         story_id = uuid.uuid4()
-        
+
         # Generate story summary for theme tracking
-        story_summary = await _generate_story_summary(title, content, characters, target_audience, user_id)
+        story_summary = await _generate_story_summary(
+            title, content, characters, target_audience, user_id
+        )
 
         metadata = {
             "characters": [char.dict() for char in characters],
@@ -1513,23 +1566,15 @@ async def _save_story(
 
 
 async def _update_story_with_images(
-    db: Database, 
-    story_id: uuid.UUID, 
-    final_content: str, 
-    image_ids: list[str], 
-    has_images: bool
+    db: Database, story_id: uuid.UUID, final_content: str, image_ids: list[str], has_images: bool
 ):
     """Update story with image markers and metadata"""
     try:
-        image_data = {
-            "image_ids": image_ids,
-            "has_images": has_images,
-            "images_complete": False
-        }
-        
+        image_data = {"image_ids": image_ids, "has_images": has_images, "images_complete": False}
+
         await db.execute(
             """
-            UPDATE user_stories 
+            UPDATE user_stories
             SET content = $1, has_images = $2, images_complete = $3, image_data = $4
             WHERE id = $5
             """,
@@ -1537,11 +1582,11 @@ async def _update_story_with_images(
             has_images,
             False,  # images_complete starts as False
             json.dumps(image_data),
-            story_id
+            story_id,
         )
-        
+
         print(f"✅ STORY_IMAGE_UPDATE: Updated story {story_id} with image metadata", flush=True)
-        
+
     except Exception as e:
         print(f"❌ STORY_IMAGE_UPDATE: Failed to update story with images: {str(e)}", flush=True)
         raise
@@ -1556,60 +1601,68 @@ async def get_story_image_status(
     db: Database = Depends(get_db),
 ):
     """Get status and URL of specific story image - includes cache control for failed images"""
-    
+
     try:
         # Verify the story belongs to the user
-        story = await db.fetch_one(
-            "SELECT user_id FROM user_stories WHERE id = $1",
-            story_id
-        )
-        
+        story = await db.fetch_one("SELECT user_id FROM user_stories WHERE id = $1", story_id)
+
         if not story:
             raise HTTPException(status_code=404, detail="Story not found")
-        
+
         if current_user.user_id != str(story["user_id"]) and not current_user.is_admin:
             raise HTTPException(status_code=403, detail="Access denied")
-        
+
         # Get image status
         image_data = await db.fetch_one(
             "SELECT url, status FROM story_images WHERE story_id = $1 AND image_id = $2",
-            story_id, image_id
+            story_id,
+            image_id,
         )
-        
+
         if not image_data:
-            print(f"🔍 STORY_IMAGE_STATUS: Image {image_id} not found for story {story_id}", flush=True)
-            return StoryImageStatusResponse(
-                success=False,
-                status="not_found",
-                url=None
+            print(
+                f"🔍 STORY_IMAGE_STATUS: Image {image_id} not found for story {story_id}", flush=True
             )
-        
+            return StoryImageStatusResponse(success=False, status="not_found", url=None)
+
         image_url = image_data["url"] if image_data["status"] == "completed" else None
         status = image_data["status"]
-        
+
         # Log the URL being returned for debugging
         print(f"🔗 STORY_IMAGE_STATUS: Returning image status for {image_id}", flush=True)
         print(f"   Story ID: {story_id}", flush=True)
         print(f"   Status: {status}", flush=True)
         print(f"   URL: {image_url}", flush=True)
         if image_url:
-            print(f"   URL Domain: {image_url.split('/')[2] if '://' in image_url else 'invalid-url'}", flush=True)
+            print(
+                f"   URL Domain: {image_url.split('/')[2] if '://' in image_url else 'invalid-url'}",
+                flush=True,
+            )
             print(f"   Is images.fairydust.fun: {'images.fairydust.fun' in image_url}", flush=True)
-        
+
         # Add warning for excessive polling of failed images
         if status == "failed":
-            print(f"⚠️  STORY_IMAGE_STATUS: Client polling FAILED image {image_id} - should stop polling!", flush=True)
-            print(f"   Suggestion: Client should implement exponential backoff or stop polling failed images", flush=True)
+            print(
+                f"⚠️  STORY_IMAGE_STATUS: Client polling FAILED image {image_id} - should stop polling!",
+                flush=True,
+            )
+            print(
+                "   Suggestion: Client should implement exponential backoff or stop polling failed images",
+                flush=True,
+            )
         elif status == "processing":
-            print(f"🔄 STORY_IMAGE_STATUS: Image {image_id} still processing - normal polling", flush=True)
+            print(
+                f"🔄 STORY_IMAGE_STATUS: Image {image_id} still processing - normal polling",
+                flush=True,
+            )
         elif status == "completed":
-            print(f"✅ STORY_IMAGE_STATUS: Image {image_id} completed - client should stop polling", flush=True)
-        
-        return StoryImageStatusResponse(
-            status=status,
-            url=image_url
-        )
-        
+            print(
+                f"✅ STORY_IMAGE_STATUS: Image {image_id} completed - client should stop polling",
+                flush=True,
+            )
+
+        return StoryImageStatusResponse(status=status, url=image_url)
+
     except HTTPException:
         raise
     except Exception as e:
@@ -1625,64 +1678,63 @@ async def get_story_images_batch_status(
     db: Database = Depends(get_db),
 ):
     """Get status and URLs of multiple story images at once"""
-    
+
     try:
         # Verify the story belongs to the user
-        story = await db.fetch_one(
-            "SELECT user_id FROM user_stories WHERE id = $1",
-            story_id
-        )
-        
+        story = await db.fetch_one("SELECT user_id FROM user_stories WHERE id = $1", story_id)
+
         if not story:
             raise HTTPException(status_code=404, detail="Story not found")
-        
+
         if current_user.user_id != str(story["user_id"]) and not current_user.is_admin:
             raise HTTPException(status_code=403, detail="Access denied")
-        
+
         # Parse image IDs
         image_ids = [img_id.strip() for img_id in ids.split(",") if img_id.strip()]
-        
+
         if not image_ids:
             return StoryImageBatchResponse(images={})
-        
+
         # Get all image statuses
         images = await db.fetch_all(
             """
-            SELECT image_id, url, status 
-            FROM story_images 
+            SELECT image_id, url, status
+            FROM story_images
             WHERE story_id = $1 AND image_id = ANY($2)
             """,
-            story_id, image_ids
+            story_id,
+            image_ids,
         )
-        
+
         # Build response
         image_statuses = {}
-        print(f"🔗 STORY_IMAGE_BATCH: Processing {len(images)} images for story {story_id}", flush=True)
-        
+        print(
+            f"🔗 STORY_IMAGE_BATCH: Processing {len(images)} images for story {story_id}", flush=True
+        )
+
         for image in images:
             image_url = image["url"] if image["status"] == "completed" else None
-            
+
             # Log each image URL
             print(f"   Image {image['image_id']}: {image['status']}", flush=True)
             if image_url:
                 print(f"     URL: {image_url}", flush=True)
-                print(f"     Domain: {image_url.split('/')[2] if '://' in image_url else 'invalid-url'}", flush=True)
-            
+                print(
+                    f"     Domain: {image_url.split('/')[2] if '://' in image_url else 'invalid-url'}",
+                    flush=True,
+                )
+
             image_statuses[image["image_id"]] = StoryImageStatus(
-                status=image["status"],
-                url=image_url
+                status=image["status"], url=image_url
             )
-        
+
         # Add not_found status for missing images
         for image_id in image_ids:
             if image_id not in image_statuses:
-                image_statuses[image_id] = StoryImageStatus(
-                    status="not_found",
-                    url=None
-                )
-        
+                image_statuses[image_id] = StoryImageStatus(status="not_found", url=None)
+
         return StoryImageBatchResponse(images=image_statuses)
-        
+
     except HTTPException:
         raise
     except Exception as e:

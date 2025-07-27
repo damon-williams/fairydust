@@ -17,7 +17,9 @@ class ReferralConfig(BaseModel):
     referrer_bonus: int = Field(..., ge=1, le=100, description="DUST bonus for referring users")
     milestone_rewards: list[MilestoneReward] = Field(default_factory=list)
     code_expiry_days: int = Field(..., ge=1, le=365, description="Days until referral codes expire")
-    max_referrals_per_user: int = Field(..., ge=1, le=10000, description="Maximum referrals per user")
+    max_referrals_per_user: int = Field(
+        ..., ge=1, le=10000, description="Maximum referrals per user"
+    )
     system_enabled: bool = Field(True, description="Whether referral system is enabled")
 
 
@@ -104,41 +106,49 @@ class PromotionalReferralCode(BaseModel):
 
 class PromotionalReferralCodeCreate(BaseModel):
     code: str = Field(..., min_length=3, max_length=20, description="Promotional code")
-    description: str = Field(..., min_length=1, max_length=500, description="Description of the promotion")
-    dust_bonus: int = Field(..., ge=1, le=1000, description="DUST bonus for users who redeem this code")
-    max_uses: Optional[int] = Field(None, ge=1, le=100000, description="Maximum number of uses (unlimited if None)")
+    description: str = Field(
+        ..., min_length=1, max_length=500, description="Description of the promotion"
+    )
+    dust_bonus: int = Field(
+        ..., ge=1, le=1000, description="DUST bonus for users who redeem this code"
+    )
+    max_uses: Optional[int] = Field(
+        None, ge=1, le=100000, description="Maximum number of uses (unlimited if None)"
+    )
     expires_at: datetime = Field(..., description="When the code expires")
-    
-    @validator('expires_at', pre=True)
+
+    @validator("expires_at", pre=True)
     def validate_expires_at(cls, v):
         if isinstance(v, str):
             try:
                 # Try to parse various datetime formats
-                from datetime import datetime
                 import re
-                
+                from datetime import datetime
+
                 # Remove any trailing 'Z' and handle timezone
-                v = v.replace('Z', '+00:00')
-                
+                v = v.replace("Z", "+00:00")
+
                 # Handle datetime-local format (no timezone)
-                if re.match(r'^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$', v):
-                    v += ':00'  # Add seconds if missing
+                if re.match(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$", v):
+                    v += ":00"  # Add seconds if missing
                     # Assume local timezone (UTC for now)
                     return datetime.fromisoformat(v).replace(tzinfo=None)
-                
+
                 # Handle full ISO format
-                if 'T' in v:
+                if "T" in v:
                     # Remove timezone info for now to match datetime type
-                    v = v.split('+')[0].split('Z')[0]
-                    if '.' in v:
-                        return datetime.fromisoformat(v.split('.')[0])
+                    v = v.split("+")[0].split("Z")[0]
+                    if "." in v:
+                        return datetime.fromisoformat(v.split(".")[0])
                     return datetime.fromisoformat(v)
-                    
+
                 # Fallback to default parsing
                 return datetime.fromisoformat(v)
-            except ValueError as e:
-                raise ValueError(f"Invalid datetime format: {v}. Expected ISO format like '2024-07-06T15:30:00'")
-        
+            except ValueError:
+                raise ValueError(
+                    f"Invalid datetime format: {v}. Expected ISO format like '2024-07-06T15:30:00'"
+                )
+
         return v
 
 

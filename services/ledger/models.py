@@ -135,7 +135,9 @@ class DailyBonusGrantRequest(BaseModel):
 class ReferralRewardGrantRequest(BaseModel):
     user_id: UUID
     amount: int = Field(..., ge=1, le=100, description="Referral reward amount")
-    reason: str = Field(..., description="Type of referral reward: referral_bonus|referee_bonus|milestone_bonus")
+    reason: str = Field(
+        ..., description="Type of referral reward: referral_bonus|referee_bonus|milestone_bonus"
+    )
     referral_id: UUID = Field(..., description="Referral redemption ID for tracking")
     idempotency_key: str = Field(..., min_length=1, max_length=128)
 
@@ -188,7 +190,7 @@ class InAppPurchaseRequest(BaseModel):
     product_id: str = Field(..., description="Product ID from app store")
     receipt_data: str = Field(..., description="Base64 encoded receipt data")
     platform: str = Field(..., description="Platform: 'ios' or 'android'")
-    
+
     @validator("product_id")
     def validate_product_id(cls, v):
         # Validate against known DUST purchase product IDs
@@ -196,7 +198,7 @@ class InAppPurchaseRequest(BaseModel):
         if v not in valid_products:
             raise ValueError(f"Invalid product_id. Must be one of: {', '.join(valid_products)}")
         return v
-    
+
     @validator("platform")
     def validate_platform(cls, v):
         if v not in ["ios", "android"]:

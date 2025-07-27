@@ -12,9 +12,9 @@ from models import (
     TransactionType,
 )
 
+from shared.daily_bonus_utils import update_last_login_for_bonus
 from shared.database import Database
 from shared.redis_client import RedisCache
-from shared.daily_bonus_utils import update_last_login_for_bonus
 
 
 class LedgerService:
@@ -422,13 +422,22 @@ class LedgerService:
         # Idempotency check removed for testing - allow duplicate requests
 
         # Acquire lock
-        print(f"🔒 GRANT_INITIAL_LOCK_ATTEMPT: Trying to acquire lock for user {user_id}, idempotency_key: {idempotency_key}", flush=True)
+        print(
+            f"🔒 GRANT_INITIAL_LOCK_ATTEMPT: Trying to acquire lock for user {user_id}, idempotency_key: {idempotency_key}",
+            flush=True,
+        )
         lock_acquired = await self._acquire_balance_lock(user_id)
         if not lock_acquired:
-            print(f"🔒 GRANT_INITIAL_LOCK_FAILED: Could not acquire lock for user {user_id}, idempotency_key: {idempotency_key}", flush=True)
+            print(
+                f"🔒 GRANT_INITIAL_LOCK_FAILED: Could not acquire lock for user {user_id}, idempotency_key: {idempotency_key}",
+                flush=True,
+            )
             raise HTTPException(status_code=409, detail="Balance operation in progress")
-        
-        print(f"✅ GRANT_INITIAL_LOCK_ACQUIRED: Successfully acquired lock for user {user_id}", flush=True)
+
+        print(
+            f"✅ GRANT_INITIAL_LOCK_ACQUIRED: Successfully acquired lock for user {user_id}",
+            flush=True,
+        )
 
         try:
             # First check if user already has this grant to avoid constraint violation
@@ -437,10 +446,13 @@ class LedgerService:
                 user_id,
                 app_id,
             )
-            
+
             if existing_grant:
-                print(f"✅ GRANT_INITIAL_ALREADY_EXISTS: User {user_id} already has initial grant for app {app_id}, returning existing", flush=True)
-                
+                print(
+                    f"✅ GRANT_INITIAL_ALREADY_EXISTS: User {user_id} already has initial grant for app {app_id}, returning existing",
+                    flush=True,
+                )
+
                 # Find and return the existing transaction
                 existing_transaction = await self.db.fetch_one(
                     """
@@ -453,11 +465,11 @@ class LedgerService:
                     user_id,
                     app_id,
                 )
-                
+
                 if existing_transaction:
                     # Get current balance
                     current_balance = await self.get_balance(user_id)
-                    
+
                     transaction_data = self._parse_transaction_data(existing_transaction)
                     return TransactionResponse(
                         transaction=Transaction(**transaction_data),
@@ -547,7 +559,7 @@ class LedgerService:
             raise HTTPException(status_code=400, detail="Daily bonus cannot exceed 100 DUST")
 
         # Use UTC date to ensure consistency across timezones
-        from datetime import date, datetime
+        from datetime import datetime
 
         today = datetime.utcnow().date()
 
@@ -565,7 +577,7 @@ class LedgerService:
 
                 if not user:
                     raise HTTPException(status_code=404, detail="User not found")
-                
+
                 # Update last login date
                 current_time = datetime.utcnow()
                 await update_last_login_for_bonus(conn, str(user_id), current_time)
@@ -575,8 +587,8 @@ class LedgerService:
 
                 # Update balance
                 await conn.execute(
-                    """UPDATE users 
-                       SET dust_balance = $1, updated_at = CURRENT_TIMESTAMP 
+                    """UPDATE users
+                       SET dust_balance = $1, updated_at = CURRENT_TIMESTAMP
                        WHERE id = $2""",
                     new_balance,
                     user_id,
@@ -598,9 +610,7 @@ class LedgerService:
                     TransactionStatus.COMPLETED.value,
                     "Daily login bonus",
                     app_id,
-                    json.dumps(
-                        {"grant_type": "daily_bonus", "app_id": str(app_id)}
-                    ),
+                    json.dumps({"grant_type": "daily_bonus", "app_id": str(app_id)}),
                 )
 
                 # Record grant in app_grants table
@@ -621,10 +631,12 @@ class LedgerService:
                     )
                 except Exception as e:
                     # Check for unique constraint violation (already claimed today)
-                    if "duplicate key value violates unique constraint" in str(e) and ("app_grants_user_id_app_id_grant_type" in str(e) or "granted_date" in str(e)):
+                    if "duplicate key value violates unique constraint" in str(e) and (
+                        "app_grants_user_id_app_id_grant_type" in str(e) or "granted_date" in str(e)
+                    ):
                         raise HTTPException(
-                            status_code=409, 
-                            detail=f"Daily bonus already claimed today for this app"
+                            status_code=409,
+                            detail="Daily bonus already claimed today for this app",
                         )
                     else:
                         # Re-raise other database errors

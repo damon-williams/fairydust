@@ -22,8 +22,7 @@ from models import (
 
 from shared.auth_middleware import TokenData, get_current_user
 from shared.database import Database, get_db
-from shared.llm_client import llm_client, LLMError
-from shared.llm_usage_logger import calculate_prompt_hash, create_request_metadata
+from shared.llm_client import LLMError, llm_client
 
 # Service URL configuration
 environment = os.getenv("ENVIRONMENT", "staging")
@@ -98,22 +97,24 @@ async def generate_inspiration(
 
         # Get user's recent inspirations to avoid duplicates
         recent_inspirations = await _get_recent_inspirations(db, request.user_id, request.category)
-        print(f"🔍 INSPIRE: Found {len(recent_inspirations)} recent inspirations to avoid", flush=True)
+        print(
+            f"🔍 INSPIRE: Found {len(recent_inspirations)} recent inspirations to avoid", flush=True
+        )
 
         # Generate inspiration using LLM with enhanced duplicate prevention and retry logic
         print(
             f"🤖 INSPIRE DEBUG: Starting LLM generation for category: {request.category}", flush=True
         )
-        
+
         max_retries = 3
         inspiration_content = None
         model_used = None
         tokens_used = {}
         total_cost = 0.0
-        
+
         for attempt in range(max_retries):
             print(f"🔄 INSPIRE DEBUG: Generation attempt {attempt + 1}/{max_retries}", flush=True)
-            
+
             content, model, tokens, cost = await _generate_inspiration_llm_with_user(
                 category=request.category,
                 used_suggestions=request.used_suggestions,
@@ -121,7 +122,7 @@ async def generate_inspiration(
                 recent_inspirations=recent_inspirations,
                 user_id=request.user_id,
             )
-            
+
             total_cost += cost
             if content:  # Success - no duplicate detected
                 inspiration_content = content
@@ -129,16 +130,22 @@ async def generate_inspiration(
                 tokens_used = tokens
                 break
             else:
-                print(f"⚠️ INSPIRE DEBUG: Attempt {attempt + 1} failed (duplicate or error)", flush=True)
+                print(
+                    f"⚠️ INSPIRE DEBUG: Attempt {attempt + 1} failed (duplicate or error)",
+                    flush=True,
+                )
                 if attempt < max_retries - 1:
-                    print("🔄 INSPIRE DEBUG: Retrying with more specific anti-duplicate instructions...", flush=True)
+                    print(
+                        "🔄 INSPIRE DEBUG: Retrying with more specific anti-duplicate instructions...",
+                        flush=True,
+                    )
 
         if not inspiration_content:
             print("❌ INSPIRE DEBUG: All generation attempts failed", flush=True)
             return InspirationErrorResponse(
                 error="Failed to generate unique inspiration. Please try again."
             )
-        
+
         # Use total cost from all attempts
         cost = total_cost
 
@@ -472,27 +479,32 @@ async def _check_rate_limit(db: Database, user_id: uuid.UUID) -> bool:
         return False
 
 
-async def _get_recent_inspirations(db: Database, user_id: uuid.UUID, category: InspirationCategory) -> list[str]:
+async def _get_recent_inspirations(
+    db: Database, user_id: uuid.UUID, category: InspirationCategory
+) -> list[str]:
     """Get user's recent inspirations to avoid duplicates"""
     try:
         # Get recent inspirations from the same category (last 30 days)
         query = """
             SELECT content
             FROM user_inspirations
-            WHERE user_id = $1 
+            WHERE user_id = $1
             AND category = $2
             AND deleted_at IS NULL
             AND created_at > NOW() - INTERVAL '30 days'
             ORDER BY created_at DESC
             LIMIT 20
         """
-        
+
         rows = await db.fetch_all(query, user_id, category.value)
         recent_content = [row["content"] for row in rows]
-        
-        print(f"🔍 INSPIRE_RECENT: Found {len(recent_content)} recent inspirations for {category.value}", flush=True)
+
+        print(
+            f"🔍 INSPIRE_RECENT: Found {len(recent_content)} recent inspirations for {category.value}",
+            flush=True,
+        )
         return recent_content
-        
+
     except Exception as e:
         print(f"⚠️ INSPIRE_RECENT: Error getting recent inspirations: {str(e)}", flush=True)
         return []
@@ -502,32 +514,32 @@ def _is_duplicate_content(new_content: str, previous_content: list[str]) -> bool
     """Check if new content is too similar to previous content"""
     if not previous_content or not new_content:
         return False
-        
+
     new_content_lower = new_content.lower().strip()
-    
+
     for prev_content in previous_content:
         prev_content_lower = prev_content.lower().strip()
-        
+
         # Check for exact matches
         if new_content_lower == prev_content_lower:
             return True
-            
+
         # Check for very high similarity (90%+ word overlap)
         new_words = set(new_content_lower.split())
         prev_words = set(prev_content_lower.split())
-        
+
         if len(new_words) > 0 and len(prev_words) > 0:
             overlap = len(new_words.intersection(prev_words))
             similarity = overlap / max(len(new_words), len(prev_words))
-            
+
             if similarity > 0.9:  # 90% similarity threshold
                 return True
-                
+
         # Check for substring matches (one is contained in the other)
         if len(new_content_lower) > 10 and len(prev_content_lower) > 10:
             if new_content_lower in prev_content_lower or prev_content_lower in new_content_lower:
                 return True
-    
+
     return False
 
 
@@ -579,11 +591,11 @@ async def _get_user_context(db: Database, user_id: uuid.UUID) -> str:
                     birth = date.fromisoformat(str(row["birth_date"]))
                     age = (date.today() - birth).days // 365
                     person_desc += f", {age} years old"
-                
+
                 # Add personality description if available
                 if row["personality_description"]:
                     person_desc += f", {row['personality_description']}"
-                
+
                 person_desc += ")"
                 people_list.append(person_desc)
 
@@ -703,14 +715,14 @@ async def _generate_inspiration_llm_with_user(
         context_prompt = f"Context: User is a {user_context}. "
 
         anti_dup_prompt = ""
-        
+
         # Combine recent database content with used_suggestions for comprehensive duplicate prevention
         all_previous_content = []
         if recent_inspirations:
             all_previous_content.extend(recent_inspirations)
         if used_suggestions:
             all_previous_content.extend(used_suggestions)
-            
+
         if all_previous_content:
             # Use the most recent 15 items to avoid overly long prompts
             recent_items = list(set(all_previous_content))[-15:]  # Remove duplicates and limit
@@ -719,7 +731,7 @@ async def _generate_inspiration_llm_with_user(
 
         full_prompt = f"{context_prompt}{base_prompt}{anti_dup_prompt}Respond with just the inspiration text, nothing else."
 
-        print(f"🤖 INSPIRE_LLM: Generating with centralized LLM client", flush=True)
+        print("🤖 INSPIRE_LLM: Generating with centralized LLM client", flush=True)
 
         # Create request metadata for logging
         request_metadata = {
@@ -737,7 +749,7 @@ async def _generate_inspiration_llm_with_user(
             user_id=user_id or uuid.uuid4(),
             app_id="fairydust-inspire",
             action="inspiration_generation",
-            request_metadata=request_metadata
+            request_metadata=request_metadata,
         )
 
         # Extract data from metadata
@@ -754,11 +766,14 @@ async def _generate_inspiration_llm_with_user(
 
         # Check for duplicates before returning
         if _is_duplicate_content(completion, all_previous_content):
-            print(f"⚠️ INSPIRE_LLM: Generated content is too similar to previous inspiration", flush=True)
+            print(
+                "⚠️ INSPIRE_LLM: Generated content is too similar to previous inspiration",
+                flush=True,
+            )
             print(f"🔄 INSPIRE_LLM: Generated: {completion[:50]}...", flush=True)
             # Return None to trigger retry at higher level
             return None, model_id, tokens_dict, cost
-        
+
         print("✅ INSPIRE_LLM: Generated inspiration successfully", flush=True)
         return completion, model_id, tokens_dict, cost
 

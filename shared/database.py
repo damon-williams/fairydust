@@ -220,7 +220,7 @@ async def create_tables():
 
         -- Drop old age_range column (replaced with birth_date)
         ALTER TABLE users DROP COLUMN IF EXISTS age_range;
-        
+
         -- Drop old profiling columns (no longer used)
         ALTER TABLE users DROP COLUMN IF EXISTS last_profiling_session;
         ALTER TABLE users DROP COLUMN IF EXISTS total_profiling_sessions;
@@ -288,7 +288,7 @@ async def create_tables():
         CREATE INDEX IF NOT EXISTS idx_apps_slug ON apps(slug);
         CREATE INDEX IF NOT EXISTS idx_apps_status ON apps(status);
         CREATE INDEX IF NOT EXISTS idx_apps_category ON apps(category);
-        
+
         -- Remove unused columns from apps table
         ALTER TABLE apps DROP COLUMN IF EXISTS dust_per_use;
         ALTER TABLE apps DROP COLUMN IF EXISTS website_url;
@@ -379,15 +379,15 @@ async def create_tables():
 
         -- Pet support extensions
         -- Add entry_type to distinguish between people and pets
-        DO $$ 
+        DO $$
         BEGIN
             IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'entry_type_enum') THEN
                 CREATE TYPE entry_type_enum AS ENUM ('person', 'pet');
             END IF;
         END $$;
-        
+
         ALTER TABLE people_in_my_life ADD COLUMN IF NOT EXISTS entry_type entry_type_enum NOT NULL DEFAULT 'person';
-        
+
         -- Add species field for pets (breed, animal type, etc.)
         ALTER TABLE people_in_my_life ADD COLUMN IF NOT EXISTS species VARCHAR(50);
 
@@ -1162,31 +1162,35 @@ async def create_tables():
         CREATE INDEX IF NOT EXISTS idx_app_grants_user_type_date ON app_grants(user_id, grant_type, granted_date);
     """
     )
-    
+
     # Fix for streak constraint bug - remove old constraint and ensure correct one exists
     try:
         # Drop the problematic constraint that prevents daily streak bonuses
-        await db.execute("ALTER TABLE app_grants DROP CONSTRAINT IF EXISTS app_grants_user_id_app_id_grant_type_key")
+        await db.execute(
+            "ALTER TABLE app_grants DROP CONSTRAINT IF EXISTS app_grants_user_id_app_id_grant_type_key"
+        )
         logger.info("Dropped old app_grants constraint that prevented daily streak bonuses")
     except Exception as e:
         # Constraint might not exist, which is fine
         logger.debug(f"Old constraint drop (expected if doesn't exist): {e}")
-    
+
     # Ensure the correct constraint exists (CREATE TABLE IF NOT EXISTS above should have created it)
     # but add it if migrating from old schema
     try:
-        await db.execute("""
+        await db.execute(
+            """
             DO $$
             BEGIN
                 IF NOT EXISTS (
-                    SELECT 1 FROM pg_constraint 
+                    SELECT 1 FROM pg_constraint
                     WHERE conname = 'app_grants_user_id_app_id_grant_type_granted_date_key'
                 ) THEN
-                    ALTER TABLE app_grants ADD CONSTRAINT app_grants_user_id_app_id_grant_type_granted_date_key 
+                    ALTER TABLE app_grants ADD CONSTRAINT app_grants_user_id_app_id_grant_type_granted_date_key
                         UNIQUE(user_id, app_id, grant_type, granted_date);
                 END IF;
             END $$;
-        """)
+        """
+        )
         logger.info("Ensured correct app_grants constraint exists for daily streak bonuses")
     except Exception as e:
         logger.warning(f"Error ensuring constraint (may already exist): {e}")
@@ -1221,7 +1225,7 @@ async def create_tables():
             is_active BOOLEAN DEFAULT TRUE,
             created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
             updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
-            
+
             -- Unique constraint to prevent duplicate names per user
             UNIQUE(user_id, name)
         );
@@ -1394,14 +1398,14 @@ async def create_tables():
             created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
             updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
         );
-        
+
         -- Insert default daily bonus configuration
-        INSERT INTO system_config (key, value, description) 
+        INSERT INTO system_config (key, value, description)
         VALUES ('daily_login_bonus_amount', '5', 'Amount of DUST granted for daily login bonus')
         ON CONFLICT (key) DO NOTHING;
-        
+
         -- Insert default initial dust amount configuration
-        INSERT INTO system_config (key, value, description) 
+        INSERT INTO system_config (key, value, description)
         VALUES ('initial_dust_amount', '100', 'Initial DUST amount granted to new users upon registration')
         ON CONFLICT (key) DO NOTHING;
     """
@@ -1425,7 +1429,7 @@ async def create_tables():
             data_summary JSONB,
             created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
             CONSTRAINT deletion_reason_check CHECK (deletion_reason IN (
-                'not_using_anymore', 'privacy_concerns', 'too_expensive', 
+                'not_using_anymore', 'privacy_concerns', 'too_expensive',
                 'switching_platform', 'other'
             )),
             CONSTRAINT deleted_by_check CHECK (deleted_by IN ('self', 'admin'))
@@ -1449,7 +1453,7 @@ async def create_tables():
         logger.info("Dropped old streak login index")
     except Exception as e:
         logger.debug(f"Index cleanup (expected if index doesn't exist): {e}")
-    
+
     try:
         await db.execute_schema(
             """
@@ -1472,7 +1476,7 @@ async def create_tables():
             """
         )
         logger.info("Dropped existing app_grants constraint")
-        
+
         # Update existing data
         await db.execute_schema(
             """
@@ -1480,11 +1484,11 @@ async def create_tables():
             """
         )
         logger.info("Updated existing streak grants to daily_bonus")
-        
+
         # Add the new constraint with all valid grant types
         await db.execute_schema(
             """
-            ALTER TABLE app_grants ADD CONSTRAINT app_grants_grant_type_check 
+            ALTER TABLE app_grants ADD CONSTRAINT app_grants_grant_type_check
                 CHECK (grant_type IN ('initial', 'referral_bonus', 'referee_bonus', 'milestone_bonus', 'promotional', 'daily_bonus'));
             """
         )
@@ -1560,7 +1564,7 @@ async def create_tables():
             effective_date TIMESTAMP WITH TIME ZONE NOT NULL,
             created_by UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
             created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
-            
+
             UNIQUE(document_type, version)
         );
 
@@ -1581,7 +1585,7 @@ async def create_tables():
             ip_address INET,
             user_agent TEXT,
             acceptance_method VARCHAR(50) DEFAULT 'app_signup' CHECK (acceptance_method IN ('app_signup', 'forced_update', 'voluntary')),
-            
+
             UNIQUE(user_id, document_id)
         );
 
