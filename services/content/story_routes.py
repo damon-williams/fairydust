@@ -41,7 +41,7 @@ from story_image_service import story_image_service
 
 from shared.auth_middleware import TokenData, get_current_user
 from shared.database import Database, get_db
-from shared.json_utils import parse_jsonb_field
+from shared.json_utils import parse_jsonb_field, safe_json_dumps
 from shared.llm_client import LLMError, llm_client
 from shared.llm_usage_logger import calculate_prompt_hash, create_request_metadata
 
@@ -1823,8 +1823,8 @@ async def _save_story(
             content,
             story_length.value,
             target_audience.value,
-            json.dumps([char.dict() for char in characters]),
-            json.dumps(metadata),
+            safe_json_dumps([char.dict() for char in characters]),
+            safe_json_dumps(metadata),
             word_count,
             story_summary,
         )
