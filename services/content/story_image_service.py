@@ -100,32 +100,26 @@ class StoryImageService:
         return placement_points
 
     def _extract_visual_elements(self, scene_text: str, characters: list[StoryCharacter]) -> str:
-        """Extract visual elements from scene text while preserving actual story content"""
+        """Extract and return clean scene content for the multi-agent system"""
 
-        # Start with the actual scene content
+        # Return the scene content directly - let the Scene Intelligence Agent handle analysis
+        # The multi-agent system is sophisticated enough to process the raw story content
         scene_description = scene_text.strip()
-
-        # Clean up dialogue but preserve the story narrative
-        # Replace dialogue with narrative markers to maintain story flow
-        scene_description = re.sub(r'"([^"]+)"', r"speaking", scene_description)
-        scene_description = re.sub(r"\s+", " ", scene_description)  # Normalize whitespace
-
-        # Instead of replacing the story content, enhance it with visual details
-        visual_elements = self._analyze_scene_for_visuals(scene_description, characters)
-
-        # Combine the actual story content with visual enhancements
-        if len(scene_description) > 250:
-            # For longer scenes, use the story content directly but add visual enhancements
-            story_content = scene_description[:250].rsplit(" ", 1)[0]  # Cut at word boundary
-            enhanced_description = f"{story_content}, {visual_elements}"
-        else:
-            # For shorter scenes, use full content plus visual elements
-            enhanced_description = f"{scene_description}, {visual_elements}"
-
-        # Remove redundant phrases to avoid repetition
-        enhanced_description = self._clean_redundant_phrases(enhanced_description)
-
-        return enhanced_description.strip()[:450]  # Increased limit to include more story content
+        
+        # Only do minimal cleaning to remove excessive whitespace
+        scene_description = re.sub(r"\s+", " ", scene_description)
+        
+        # Don't truncate aggressively - allow up to 800 characters for full context
+        if len(scene_description) > 800:
+            # Find a good sentence break
+            truncation_point = scene_description.rfind(".", 0, 800)
+            if truncation_point > 600:  # Good sentence break found
+                scene_description = scene_description[:truncation_point + 1]
+            else:
+                # Break at word boundary as last resort
+                scene_description = scene_description[:800].rsplit(" ", 1)[0] + "..."
+        
+        return scene_description
 
     def _identify_characters_in_scene(
         self, scene_text: str, characters: list[StoryCharacter]
