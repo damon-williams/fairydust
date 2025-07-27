@@ -77,7 +77,7 @@ async def generate_story(
         "character_count": len(request.characters),
         "include_images": request.include_images,
         "has_custom_prompt": bool(request.custom_prompt),
-        "has_selected_people": bool(request.selected_people),
+        "has_selected_people": bool(request.characters),
     }
 
     print(f"📖 STORY: Starting generation for user {request.user_id}", flush=True)
@@ -1214,7 +1214,9 @@ def _remove_meta_commentary(content: str) -> str:
 async def _fetch_my_people_data(
     user_id: UUID, selected_people: list[UUID], auth_token: str
 ) -> list[dict]:
-    """Fetch My People data from Identity Service including photo URLs"""
+    """DEPRECATED: Fetch My People data from Identity Service including photo URLs
+    
+    This function is no longer used as character data is now fully resolved by the frontend."""
     if not selected_people:
         return []
 
