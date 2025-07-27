@@ -17,7 +17,6 @@ identity_url = f"https://fairydust-identity-{base_url_suffix}.up.railway.app"
 
 # Content service no longer manages DUST - all DUST handling is external
 import httpx
-from langsmith import traceable
 from models import (
     StoriesListResponse,
     StoryCharacter,
@@ -59,7 +58,6 @@ STORY_RATE_LIMIT = 10  # Max 10 stories per hour per user
 
 
 @router.post("/apps/story/generate")
-@traceable(run_type="chain", name="story-generation")
 async def generate_story(
     request: StoryGenerationRequest,
     http_request: Request,
@@ -783,7 +781,6 @@ async def _get_llm_model_config() -> dict:
     return default_config
 
 
-@traceable(run_type="llm", name="theme-variety-analysis")
 async def _get_recent_themes_guidance(db: Database, user_id: uuid.UUID) -> str:
     """Get AI-powered guidance to avoid repeating recent story themes using story summaries"""
     try:
@@ -881,7 +878,6 @@ def _calculate_reading_time(word_count: int) -> str:
         return f"{minutes} minutes"
 
 
-@traceable(run_type="tool", name="story-prompt-builder")
 async def _build_story_prompt(
     request: StoryGenerationRequest, user_context: str, db: Database
 ) -> str:
@@ -1323,7 +1319,6 @@ async def _merge_characters_and_people(
     return merged_characters
 
 
-@traceable(run_type="llm", name="story-llm-generation")
 async def _generate_story_llm(
     request: StoryGenerationRequest,
     user_context: str,
@@ -1435,7 +1430,6 @@ async def _generate_story_llm(
         return None, "", 0, "", "claude-3-5-sonnet-20241022", {}, 0.0, 0, "anthropic"
 
 
-@traceable(run_type="llm", name="story-summary-generation")
 async def _generate_story_summary(
     title: str, content: str, characters: list, target_audience: TargetAudience, user_id: uuid.UUID
 ) -> str:
