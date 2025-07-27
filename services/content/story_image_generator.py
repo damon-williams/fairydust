@@ -1,5 +1,6 @@
 """Background image generation for stories"""
 
+import asyncio
 import json
 import logging
 import traceback
@@ -303,14 +304,16 @@ class StoryImageGenerator:
         reference_people: list,
         max_retries: int = 3,
     ):
-        """Generate image with retry logic for NSFW false positives"""
+        """Generate image with retry logic for NSFW false positives and transient Replicate errors"""
 
+        nsfw_failure_detected = False
+        
         for attempt in range(max_retries):
             try:
                 prompt_to_use = original_prompt
 
-                if attempt > 0:
-                    # On retry, create a more sanitized version of the prompt
+                if attempt > 0 and nsfw_failure_detected:
+                    # Only sanitize prompt if previous failure was NSFW-related
                     prompt_to_use = self._sanitize_prompt_for_retry(
                         original_prompt, scene, characters_in_scene, target_audience, attempt
                     )
@@ -337,11 +340,13 @@ class StoryImageGenerator:
             except Exception as e:
                 error_msg = str(e).lower()
 
+                # Check for NSFW-related errors (these need prompt sanitization)
                 if (
                     "nsfw" in error_msg
                     or "inappropriate" in error_msg
                     or "content not allowed" in error_msg
                 ):
+                    nsfw_failure_detected = True
                     if attempt < max_retries - 1:
                         logger.warning(
                             f"⚠️ NSFW detected on attempt {attempt + 1}, retrying with sanitized prompt..."
@@ -352,9 +357,33 @@ class StoryImageGenerator:
                         raise Exception(
                             f"Image generation failed after {max_retries} attempts: NSFW content detected"
                         )
+                
+                # Check for transient Replicate errors (these can be retried without changing prompt)
+                elif (
+                    "internal.bad_output" in error_msg
+                    or "unexpected error occurred" in error_msg
+                    or "timeout" in error_msg
+                    or "service unavailable" in error_msg
+                    or "temporarily unavailable" in error_msg
+                    or "rate limit" in error_msg
+                    or "queue full" in error_msg
+                ):
+                    if attempt < max_retries - 1:
+                        logger.warning(
+                            f"⚠️ Transient Replicate error on attempt {attempt + 1}, retrying without prompt changes..."
+                        )
+                        logger.warning(f"   Error: {error_msg}")
+                        # Add a small delay for transient errors to avoid rate limits
+                        await asyncio.sleep(2 ** attempt)  # Exponential backoff: 1s, 2s, 4s
+                        continue
+                    else:
+                        logger.error(f"❌ All {max_retries} attempts failed due to transient errors")
+                        raise Exception(
+                            f"Image generation failed after {max_retries} attempts: {error_msg}"
+                        )
                 else:
-                    # Non-NSFW error, don't retry
-                    logger.error(f"❌ Non-NSFW error: {e}")
+                    # Other errors (likely permanent), don't retry
+                    logger.error(f"❌ Non-retryable error: {e}")
                     raise
 
         # Should never reach here
