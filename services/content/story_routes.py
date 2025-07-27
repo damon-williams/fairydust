@@ -1053,7 +1053,6 @@ GENRE VARIETY (pick unexpectedly):
 - Mix genres creatively (sci-fi comedy, fantasy mystery, historical thriller, etc.)
 - Try unusual combinations: slice-of-life with magical realism, workplace drama with supernatural elements
 - Consider: adventure, mystery, comedy, sci-fi, fantasy, slice-of-life, historical fiction, magical realism, psychological thriller, coming-of-age, workplace drama, family saga, etc.
-- SPECIFICALLY AVOID: Stories about geometric shapes, colored objects, or abstract educational concepts unless explicitly requested
 
 SETTING CREATIVITY:
 - Avoid overused settings like "magical kingdoms", "haunted houses", or "laundromats"
@@ -1443,6 +1442,39 @@ def _extract_characters_from_story(story_content: str) -> list[StoryCharacter]:
     # Create StoryCharacter objects
     for name, info in character_info.items():
         if info["count"] >= 2 and name not in common_words and len(name) >= 2:
+            # Extract basic traits from story context
+            traits = []
+            name_lower = name.lower()
+            story_lower = story_content.lower()
+            
+            # Find descriptive words near character name
+            name_pattern = rf'\b{re.escape(name_lower)}\b'
+            for match in re.finditer(name_pattern, story_lower):
+                start = max(0, match.start() - 100)
+                end = min(len(story_lower), match.end() + 100)
+                context = story_lower[start:end]
+                
+                # Common trait patterns
+                if "curious" in context or "wondered" in context:
+                    traits.append("curious")
+                if "brave" in context or "courage" in context:
+                    traits.append("brave")
+                if "thoughtful" in context or "idea" in context:
+                    traits.append("thoughtful")
+                if "older" in context:
+                    traits.append("older sibling")
+                if "younger" in context or "little" in context:
+                    traits.append("younger")
+                if "excited" in context or "exclaimed" in context:
+                    traits.append("excitable")
+                if "helpful" in context or "help" in context:
+                    traits.append("helpful")
+                if "creative" in context or "idea" in context:
+                    traits.append("creative")
+            
+            # Remove duplicates and limit traits
+            traits = list(set(traits))[:3]
+            
             # Determine entry_type based on species
             entry_type = "person"
             if info["species"]:
@@ -1451,7 +1483,7 @@ def _extract_characters_from_story(story_content: str) -> list[StoryCharacter]:
             character = StoryCharacter(
                 name=name,
                 relationship="story character",
-                traits=info["traits"],
+                traits=traits if traits else ["friendly"],  # Default trait if none found
                 entry_type=entry_type,
                 species=info["species"]
             )

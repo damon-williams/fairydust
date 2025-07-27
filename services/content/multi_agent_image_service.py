@@ -83,9 +83,11 @@ class MultiAgentImageService:
             "scene_length": len(scene_description),
             "character_count": len(characters_in_scene),
             "character_names": [char.name for char in characters_in_scene],
+            "character_species": [getattr(char, 'species', 'unknown') for char in characters_in_scene],
             "target_audience": target_audience.value,
             "story_theme": story_theme or "Not provided",
             "story_genre": story_genre or "Not provided",
+            "has_full_story": bool(full_story_content),
             "user_id": str(user_id) if user_id else None,
         }
 
@@ -460,27 +462,26 @@ Your prompt:"""
 
         logger.info("✨ QUALITY_AGENT: Enhancing and validating prompt...")
 
-        quality_prompt = f"""Review and enhance this image generation prompt for quality and completeness:
+        quality_prompt = f"""CRITICAL: You must enhance the existing prompt while staying TRUE to the story scene. Do NOT create a different scene.
 
-CURRENT PROMPT:
+CURRENT PROMPT TO ENHANCE:
 {visual_prompt}
 
-ORIGINAL SCENE CONTEXT (for reference):
-{original_scene[:200]}...
+ACTUAL STORY SCENE (this is what's happening):
+{original_scene[:400]}
 
 TARGET AUDIENCE: {target_audience.value}
 
-Please review the prompt and:
-1. Ensure it's specific enough for good image generation
-2. Verify it captures the story essence
-3. Check that it's age-appropriate for {target_audience.value}
-4. Add any missing visual elements that would improve the image
-5. Optimize the structure and flow
+Your task:
+1. Polish the existing prompt for clarity and visual specificity
+2. Keep ALL the original characters and actions from the current prompt
+3. Add visual details that enhance but don't change the scene
+4. Ensure age-appropriate language for {target_audience.value}
+5. Keep it under 300 characters
 
-Provide your enhanced version. Keep it focused and under 300 characters.
-Make it compelling and visually clear while maintaining story relevance.
+IMPORTANT: The enhanced prompt must describe the SAME SCENE with the SAME CHARACTERS doing the SAME ACTIONS. Only improve the visual clarity and description quality.
 
-Enhanced prompt:"""
+Return ONLY the enhanced prompt text, nothing else:"""
 
         try:
             # Prepare app config for LLM client
