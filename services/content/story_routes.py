@@ -169,6 +169,7 @@ async def generate_story(
         
         if request.include_images:
             print(f"🎨 STORY: Processing images for story {story_id}", flush=True)
+            print(f"🎨 STORY: Story length: {len(story_content)} chars, expected {updated_request.story_length.value}", flush=True)
             try:
                 # Extract scenes for image generation using merged characters (with photos!)
                 scenes = story_image_service.extract_image_scenes(
@@ -1025,10 +1026,10 @@ def _remove_meta_commentary(content: str) -> str:
     for pattern in analytical_sentence_endings:
         content = re.sub(pattern, '.', content, flags=re.IGNORECASE | re.DOTALL)
     
-    # Clean up extra whitespace and empty lines
-    content = re.sub(r'\n\s*\n\s*\n', '\n\n', content)  # Remove triple+ newlines
-    content = re.sub(r'\s+', ' ', content)  # Normalize whitespace within lines
-    content = re.sub(r'\n ', '\n', content)  # Remove spaces at start of lines
+    # Clean up extra whitespace and empty lines, but preserve paragraph structure
+    content = re.sub(r'\n\s*\n\s*\n+', '\n\n', content)  # Remove triple+ newlines, keep double
+    content = re.sub(r'[ \t]+', ' ', content)  # Normalize horizontal whitespace only
+    content = re.sub(r'\n[ \t]+', '\n', content)  # Remove spaces at start of lines
     
     cleaned_length = len(content.strip())
     

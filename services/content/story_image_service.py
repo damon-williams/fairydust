@@ -28,19 +28,23 @@ class StoryImageService:
         story_length: StoryLength, 
         characters: List[StoryCharacter]
     ) -> List[dict]:
-        """Extract key scenes from story for image generation"""
+        """Extract key scenes from story for image generation with proper image count"""
         
         image_count = IMAGE_COUNTS[story_length]
+        print(f"🎨 IMAGE_EXTRACTION: Expected {image_count} images for {story_length.value} story", flush=True)
         
         # Split story into paragraphs/sections
         paragraphs = [p.strip() for p in story_content.split('\n\n') if p.strip()]
+        print(f"🎨 IMAGE_EXTRACTION: Found {len(paragraphs)} paragraphs in story", flush=True)
         
         if len(paragraphs) < image_count:
             # If story has fewer paragraphs than needed images, use what we have
             placement_points = list(range(len(paragraphs)))
+            print(f"⚠️ IMAGE_EXTRACTION: Only {len(paragraphs)} paragraphs available, using all of them", flush=True)
         else:
             # Distribute images evenly throughout story
             placement_points = self._distribute_evenly(len(paragraphs), image_count)
+            print(f"✅ IMAGE_EXTRACTION: Distributing {image_count} images at positions: {placement_points}", flush=True)
         
         scenes = []
         for i, point in enumerate(placement_points):
@@ -60,7 +64,10 @@ class StoryImageService:
                 "context": scene_context[:500],  # Keep context for debugging
                 "characters_mentioned": self._identify_characters_in_scene(scene_context, characters)
             })
+            
+            print(f"🎨 IMAGE_EXTRACTION: Created scene {i+1}/{len(placement_points)} at position {point} with ID {image_id}", flush=True)
         
+        print(f"✅ IMAGE_EXTRACTION: Generated {len(scenes)} image scenes total", flush=True)
         return scenes
     
     def _distribute_evenly(self, total_paragraphs: int, image_count: int) -> List[int]:
@@ -314,6 +321,7 @@ class StoryImageService:
         """Insert image markers into story content at appropriate positions"""
         
         paragraphs = story_content.split('\n\n')
+        print(f"🖼️ IMAGE_MARKERS: Inserting {len(scenes)} image markers into {len(paragraphs)} paragraphs", flush=True)
         
         # Sort scenes by position (reverse order to maintain indices)
         sorted_scenes = sorted(scenes, key=lambda x: x['position'], reverse=True)
@@ -324,9 +332,16 @@ class StoryImageService:
             
             # Insert marker after the paragraph at this position
             if position < len(paragraphs):
+                print(f"🖼️ IMAGE_MARKERS: Inserting {scene['image_id']} after paragraph {position}", flush=True)
                 paragraphs[position] += image_marker
+            else:
+                print(f"⚠️ IMAGE_MARKERS: Position {position} is out of range for {len(paragraphs)} paragraphs", flush=True)
         
-        return '\n\n'.join(paragraphs)
+        result = '\n\n'.join(paragraphs)
+        marker_count = result.count('[IMAGE:')
+        print(f"✅ IMAGE_MARKERS: Final content has {marker_count} image markers", flush=True)
+        
+        return result
     
     def generate_image_prompt(
         self, 
