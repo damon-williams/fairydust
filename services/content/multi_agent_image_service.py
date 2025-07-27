@@ -15,6 +15,7 @@ for dramatically improved prompt quality and story-image alignment.
 import json
 import logging
 from typing import List, Optional
+from uuid import UUID
 
 from models import StoryCharacter, TargetAudience
 from shared.llm_client import llm_client
@@ -154,16 +155,24 @@ VISUAL_FOCUS: [key visual element]
 Keep each section concise but meaningful."""
 
         try:
-            response = await llm_client.generate(
+            # Prepare app config for LLM client
+            app_config = {
+                "primary_provider": self.analysis_config["provider"],
+                "primary_model_id": self.analysis_config["model"],
+                "primary_parameters": self.analysis_config["parameters"]
+            }
+            
+            # Call LLM client with proper method
+            content, metadata = await llm_client.generate_completion(
                 prompt=scene_prompt,
-                **self.analysis_config,
-                metadata={
-                    "app_id": "fairydust-story",
-                    "purpose": "scene_intelligence_analysis"
-                }
+                app_config=app_config,
+                user_id=uuid.uuid4(),  # Generate dummy UUID for image generation
+                app_id="fairydust-story",
+                action="scene_intelligence_analysis",
+                request_metadata={"purpose": "scene_intelligence_analysis"}
             )
             
-            scene_analysis = response.get("content", "").strip()
+            scene_analysis = content.strip() if content else ""
             
             logger.info(f"🤖 SCENE_AGENT INPUT: {scene_description[:150]}...")
             logger.info(f"🤖 SCENE_AGENT OUTPUT: {scene_analysis}")
@@ -229,16 +238,24 @@ CHARACTER_NAME: [detailed visual description]
 Keep descriptions vivid but concise (2-3 sentences each)."""
 
         try:
-            response = await llm_client.generate(
+            # Prepare app config for LLM client
+            app_config = {
+                "primary_provider": self.analysis_config["provider"],
+                "primary_model_id": self.analysis_config["model"],
+                "primary_parameters": self.analysis_config["parameters"]
+            }
+            
+            # Call LLM client with proper method
+            content, metadata = await llm_client.generate_completion(
                 prompt=character_prompt,
-                **self.analysis_config,
-                metadata={
-                    "app_id": "fairydust-story",
-                    "purpose": "character_rendering"
-                }
+                app_config=app_config,
+                user_id=uuid.uuid4(),  # Generate dummy UUID for image generation
+                app_id="fairydust-story",
+                action="character_rendering",
+                request_metadata={"purpose": "character_rendering"}
             )
             
-            character_descriptions = response.get("content", "").strip()
+            character_descriptions = content.strip() if content else ""
             
             logger.info(f"👤 CHARACTER_AGENT INPUT: Scene analysis + {len(characters)} characters")
             logger.info(f"👤 CHARACTER_AGENT OUTPUT: {character_descriptions}")
@@ -297,16 +314,24 @@ Example format: "[Character descriptions] [doing action] in [setting], [mood/emo
 Your prompt:"""
 
         try:
-            response = await llm_client.generate(
+            # Prepare app config for LLM client
+            app_config = {
+                "primary_provider": self.creative_config["provider"],
+                "primary_model_id": self.creative_config["model"],
+                "primary_parameters": self.creative_config["parameters"]
+            }
+            
+            # Call LLM client with proper method
+            content, metadata = await llm_client.generate_completion(
                 prompt=composition_prompt,
-                **self.creative_config,
-                metadata={
-                    "app_id": "fairydust-story",
-                    "purpose": "visual_composition"
-                }
+                app_config=app_config,
+                user_id=uuid.uuid4(),  # Generate dummy UUID for image generation
+                app_id="fairydust-story",
+                action="visual_composition",
+                request_metadata={"purpose": "visual_composition"}
             )
             
-            visual_prompt = response.get("content", "").strip()
+            visual_prompt = content.strip() if content else ""
             
             logger.info(f"🎨 COMPOSITION_AGENT INPUT: Scene + characters + {target_audience.value}")
             logger.info(f"🎨 COMPOSITION_AGENT OUTPUT: {visual_prompt}")
@@ -360,16 +385,24 @@ Make it compelling and visually clear while maintaining story relevance.
 Enhanced prompt:"""
 
         try:
-            response = await llm_client.generate(
+            # Prepare app config for LLM client
+            app_config = {
+                "primary_provider": self.creative_config["provider"],
+                "primary_model_id": self.creative_config["model"],
+                "primary_parameters": self.creative_config["parameters"]
+            }
+            
+            # Call LLM client with proper method
+            content, metadata = await llm_client.generate_completion(
                 prompt=quality_prompt,
-                **self.creative_config,
-                metadata={
-                    "app_id": "fairydust-story",
-                    "purpose": "quality_enhancement"
-                }
+                app_config=app_config,
+                user_id=uuid.uuid4(),  # Generate dummy UUID for image generation
+                app_id="fairydust-story",
+                action="quality_enhancement",
+                request_metadata={"purpose": "quality_enhancement"}
             )
             
-            final_prompt = response.get("content", "").strip()
+            final_prompt = content.strip() if content else ""
             
             # Clean up any quotation marks or formatting
             final_prompt = final_prompt.strip('"').strip("'").strip()
