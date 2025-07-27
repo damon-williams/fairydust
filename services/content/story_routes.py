@@ -764,6 +764,60 @@ async def _get_llm_model_config() -> dict:
     return default_config
 
 
+async def _get_recent_themes_guidance(db: Database, user_id: uuid.UUID) -> str:
+    """Get guidance to avoid repeating recent story themes"""
+    try:
+        # Get last 3 stories from this user
+        recent_stories = await db.fetch_all(
+            """
+            SELECT title, content
+            FROM user_stories
+            WHERE user_id = $1
+            ORDER BY created_at DESC
+            LIMIT 3
+            """,
+            user_id
+        )
+        
+        if not recent_stories:
+            return ""
+        
+        # Analyze themes to avoid
+        themes_to_avoid = []
+        
+        for story in recent_stories:
+            title_lower = story["title"].lower() if story["title"] else ""
+            content_lower = story["content"].lower() if story["content"] else ""
+            
+            # Check for geometric/color themes
+            if any(shape in title_lower or shape in content_lower[:200] 
+                   for shape in ["square", "circle", "triangle", "rectangle", "oval"]):
+                themes_to_avoid.append("geometric shapes")
+            
+            if any(color in title_lower or (color in content_lower[:200] and 
+                                         any(shape in content_lower[:200] for shape in ["square", "circle", "triangle"]))
+                   for color in ["red", "blue", "yellow", "green", "purple", "orange"]):
+                themes_to_avoid.append("colored characters")
+                
+            # Check for other repetitive themes
+            if "magic" in title_lower or "magical" in content_lower[:200]:
+                themes_to_avoid.append("magical themes")
+            if "forest" in title_lower or "forest" in content_lower[:200]:
+                themes_to_avoid.append("forest settings")
+            if "adventure" in title_lower or "adventure" in content_lower[:200]:
+                themes_to_avoid.append("adventure stories")
+        
+        if themes_to_avoid:
+            unique_themes = list(set(themes_to_avoid))
+            return f"AVOID REPETITION: This user recently had stories with {', '.join(unique_themes)}. Create something completely different with new themes, characters, and settings."
+        
+        return "ENSURE VARIETY: Create something fresh and different from typical patterns."
+        
+    except Exception as e:
+        print(f"⚠️ STORY_THEMES: Error checking recent themes: {e}", flush=True)
+        return "ENSURE VARIETY: Create something fresh and different."
+
+
 def _calculate_reading_time(word_count: int) -> str:
     """Calculate estimated reading time based on word count"""
     # Average reading speed: 200 words per minute
@@ -842,7 +896,47 @@ def _build_story_prompt(request: StoryGenerationRequest, user_context: str) -> s
         else:
             bedtime_guidance = " This is a BEDTIME STORY - create a calm, soothing narrative with gentle themes. Avoid exciting action or scary elements. Focus on peaceful, comforting scenarios that help wind down for sleep. Use soft, rhythmic language and end on a tranquil, reassuring note."
     
-    prompt = f"""You are a master storyteller with infinite creativity. Create a truly unique and surprising story for {audience_guidance[request.target_audience]}{bedtime_guidance} The story should take about {length_descriptions[request.story_length]} to read.
+    # Add randomness seed to prevent repetitive patterns
+    import random
+    import time
+    
+    # Generate variety prompts to break patterns
+    variety_seeds = [
+        "Create something completely different from typical children's stories.",
+        "Surprise readers with an unexpected adventure.",
+        "Tell a story that breaks conventional patterns.",
+        "Focus on an unusual character or situation.",
+        "Explore a creative setting or scenario.",
+        "Use an inventive storytelling approach.",
+        "Create a story with unexpected elements.",
+        "Tell a tale that stands out from the ordinary."
+    ]
+    
+    # Add creativity boosters to avoid repetitive themes
+    creativity_boosters = [
+        "AVOID geometric shapes as main characters unless specifically requested.",
+        "AVOID color-based character names (Red Circle, Blue Square, etc.) unless in character list.",
+        "Focus on realistic characters, animals, or fantasy beings with personalities.",
+        "Create characters with distinct names, backgrounds, and motivations.",
+        "Avoid abstract or educational concepts as primary story elements."
+    ]
+    
+    selected_variety = random.choice(variety_seeds)
+    selected_creativity = random.choice(creativity_boosters)
+    
+    # Check recent user stories to avoid repetitive themes
+    recent_themes_guidance = await _get_recent_themes_guidance(db, request.user_id)
+    
+    print(f"🎲 STORY_VARIETY: Applied variety seed: {selected_variety}", flush=True)
+    print(f"🎨 STORY_CREATIVITY: Applied creativity booster: {selected_creativity}", flush=True)
+    if recent_themes_guidance and "AVOID REPETITION" in recent_themes_guidance:
+        print(f"🚫 STORY_REPETITION: {recent_themes_guidance}", flush=True)
+    
+    prompt = f"""You are a master storyteller with infinite creativity. {selected_variety} Create a truly unique and surprising story for {audience_guidance[request.target_audience]}{bedtime_guidance} The story should take about {length_descriptions[request.story_length]} to read.
+
+IMPORTANT: {selected_creativity}
+
+{recent_themes_guidance}
 
 {character_text}"""
 
@@ -888,6 +982,7 @@ GENRE VARIETY (pick unexpectedly):
 - Mix genres creatively (sci-fi comedy, fantasy mystery, historical thriller, etc.)
 - Try unusual combinations: slice-of-life with magical realism, workplace drama with supernatural elements
 - Consider: adventure, mystery, comedy, sci-fi, fantasy, slice-of-life, historical fiction, magical realism, psychological thriller, coming-of-age, workplace drama, family saga, etc.
+- SPECIFICALLY AVOID: Stories about geometric shapes, colored objects, or abstract educational concepts unless explicitly requested
 
 SETTING CREATIVITY:
 - Avoid overused settings like "magical kingdoms", "haunted houses", or "laundromats"
