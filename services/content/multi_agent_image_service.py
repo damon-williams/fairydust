@@ -54,6 +54,7 @@ class MultiAgentImageService:
         scene_description: str,
         characters_in_scene: List[StoryCharacter],
         target_audience: TargetAudience,
+        user_id: Optional[UUID] = None,
         story_context: Optional[str] = None
     ) -> str:
         """
@@ -63,6 +64,7 @@ class MultiAgentImageService:
             scene_description: Raw story content for this scene
             characters_in_scene: Characters detected in this scene
             target_audience: Age group for the story
+            user_id: User ID for LLM usage tracking
             story_context: Additional story context if available
             
         Returns:
@@ -77,22 +79,22 @@ class MultiAgentImageService:
         try:
             # Agent 1: Scene Intelligence - Deep story understanding
             scene_analysis = await self._scene_intelligence_agent(
-                scene_description, characters_in_scene, target_audience
+                scene_description, characters_in_scene, target_audience, user_id
             )
             
             # Agent 2: Character Rendering - Detailed character descriptions
             character_descriptions = await self._character_rendering_agent(
-                scene_analysis, characters_in_scene
+                scene_analysis, characters_in_scene, user_id
             )
             
             # Agent 3: Visual Composition - Structured prompt creation
             visual_prompt = await self._visual_composition_agent(
-                scene_analysis, character_descriptions, target_audience
+                scene_analysis, character_descriptions, target_audience, user_id
             )
             
             # Agent 4: Quality Enhancement - Final refinement
             final_prompt = await self._quality_enhancement_agent(
-                visual_prompt, scene_description, target_audience
+                visual_prompt, scene_description, target_audience, user_id
             )
             
             logger.info(f"✅ MULTI_AGENT: Generated final prompt: {final_prompt}")
@@ -113,7 +115,8 @@ class MultiAgentImageService:
         self,
         scene_description: str,
         characters: List[StoryCharacter],
-        target_audience: TargetAudience
+        target_audience: TargetAudience,
+        user_id: Optional[UUID] = None
     ) -> str:
         """
         Agent 1: Scene Intelligence
