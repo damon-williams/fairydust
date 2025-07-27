@@ -28,6 +28,10 @@ class StoryImageGenerator:
         characters: list[StoryCharacter],
         target_audience: TargetAudience,
         db: Database,
+        full_story_content: str = None,
+        story_theme: str = None,
+        story_genre: str = None,
+        story_context: str = None,
     ):
         """Background task to generate all images for a story"""
 
@@ -45,7 +49,8 @@ class StoryImageGenerator:
             for scene in scenes:
                 try:
                     await self._generate_single_image(
-                        db, story_id, user_id, scene, characters, target_audience
+                        db, story_id, user_id, scene, characters, target_audience,
+                        full_story_content, story_theme, story_genre, story_context
                     )
                     completed_count += 1
                     logger.info(
@@ -109,6 +114,10 @@ class StoryImageGenerator:
         scene: dict,
         characters: list[StoryCharacter],
         target_audience: TargetAudience,
+        full_story_content: str = None,
+        story_theme: str = None,
+        story_genre: str = None,
+        story_context: str = None,
     ):
         """Generate a single image for a story scene"""
 
@@ -132,6 +141,10 @@ class StoryImageGenerator:
                 characters_in_scene,
                 target_audience,
                 user_id,  # Pass user_id for proper LLM usage logging
+                story_context,
+                story_theme,
+                story_genre,
+                full_story_content,
             )
 
             logger.info("📝 STORY IMAGE PROMPT GENERATION:")

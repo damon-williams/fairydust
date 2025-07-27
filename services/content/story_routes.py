@@ -187,9 +187,21 @@ async def generate_story(
                 flush=True,
             )
             try:
-                # Extract scenes for image generation using merged characters (with photos!)
+                # Extract story metadata for better image generation
+                story_metadata = _extract_story_metadata(story_content, updated_request.target_audience)
+                print(f"📊 STORY: Extracted metadata - Theme: {story_metadata['theme']}, Genre: {story_metadata['genre']}")
+                
+                # If no characters were provided, extract them from the story
+                if not merged_characters:
+                    extracted_characters = _extract_characters_from_story(story_content)
+                    print(f"🎭 STORY: Extracted {len(extracted_characters)} characters from story: {[c.name for c in extracted_characters]}")
+                    characters_for_images = extracted_characters
+                else:
+                    characters_for_images = merged_characters
+                
+                # Extract scenes for image generation using characters (merged or extracted)
                 scenes = story_image_service.extract_image_scenes(
-                    story_content, updated_request.story_length, merged_characters
+                    story_content, updated_request.story_length, characters_for_images
                 )
 
                 # Insert image markers into story content
@@ -207,9 +219,13 @@ async def generate_story(
                         story_id=str(story_id),
                         user_id=str(request.user_id),
                         scenes=scenes,
-                        characters=merged_characters,  # Use merged characters with photos!
+                        characters=characters_for_images,  # Use characters (merged or extracted)
                         target_audience=updated_request.target_audience,
                         db=db,
+                        full_story_content=story_content,
+                        story_theme=story_metadata['theme'],
+                        story_genre=story_metadata['genre'],
+                        story_context=story_metadata['context'],
                     )
                 )
 
@@ -1321,6 +1337,141 @@ async def _merge_characters_and_people(
     )
 
     return merged_characters
+
+
+def _extract_characters_from_story(story_content: str) -> list[StoryCharacter]:
+    """Extract character names from story content using pattern matching"""
+    
+    characters = []
+    
+    # Common name patterns - look for capitalized words that appear multiple times
+    # and are used in character contexts (dialogue, actions)
+    import re
+    
+    # Find quoted dialogue and extract speaker patterns
+    dialogue_patterns = [
+        r'"[^"]*?"\s*,?\s*([A-Z][a-z]+)\s+(?:said|asked|replied|whispered|shouted|exclaimed|called|cried)',
+        r'([A-Z][a-z]+)\s+(?:said|asked|replied|whispered|shouted|exclaimed|called|cried)\s*,?\s*"',
+        r'"[^"]*?"\s*(?:said|asked)\s*([A-Z][a-z]+)',
+    ]
+    
+    # Find action patterns
+    action_patterns = [
+        r'([A-Z][a-z]+)\s+(?:walked|ran|jumped|smiled|looked|turned|went|came|saw|found|held|took)',
+        r'([A-Z][a-z]+)\s+(?:was|were|had|could|would|should)',
+        r'([A-Z][a-z]+)(?:\'s|\'re|\'ll|\'d)',  # Possessive and contractions
+    ]
+    
+    name_counts = {}
+    
+    # Extract from dialogue patterns
+    for pattern in dialogue_patterns:
+        matches = re.findall(pattern, story_content, re.IGNORECASE)
+        for match in matches:
+            name = match.strip().title()
+            if len(name) > 1 and name.isalpha():
+                name_counts[name] = name_counts.get(name, 0) + 2  # Dialogue gets higher weight
+    
+    # Extract from action patterns
+    for pattern in action_patterns:
+        matches = re.findall(pattern, story_content)
+        for match in matches:
+            name = match.strip()
+            if len(name) > 1 and name.isalpha():
+                name_counts[name] = name_counts.get(name, 0) + 1
+    
+    # Filter out common words that aren't names
+    common_words = {
+        'The', 'They', 'There', 'That', 'This', 'Then', 'When', 'Where', 'What', 'Who',
+        'He', 'She', 'It', 'We', 'You', 'I', 'A', 'An', 'And', 'Or', 'But', 'So',
+        'As', 'At', 'In', 'On', 'For', 'To', 'Of', 'With', 'By', 'From', 'Up', 'Out',
+        'All', 'Any', 'Both', 'Each', 'Few', 'More', 'Most', 'Other', 'Some', 'Such',
+        'No', 'Nor', 'Not', 'Only', 'Own', 'Same', 'Than', 'Too', 'Very', 'Can', 'Will',
+        'Just', 'Now', 'Still', 'Even', 'Also', 'Here', 'How', 'Its', 'Our', 'Their',
+        'About', 'Above', 'After', 'Again', 'Against', 'Before', 'Being', 'Below',
+        'Between', 'During', 'Into', 'Through', 'Under', 'Until', 'While'
+    }
+    
+    # Select names that appear multiple times and aren't common words
+    for name, count in name_counts.items():
+        if count >= 2 and name not in common_words and len(name) >= 2:
+            character = StoryCharacter(
+                name=name,
+                relationship="story character",
+                traits=[],
+                entry_type="person"
+            )
+            characters.append(character)
+    
+    # Limit to top 4 most mentioned characters
+    characters = sorted(characters, key=lambda c: name_counts[c.name], reverse=True)[:4]
+    
+    return characters
+
+
+def _extract_story_metadata(story_content: str, target_audience: TargetAudience) -> dict:
+    """Extract theme and genre from story content using keyword analysis"""
+    
+    story_lower = story_content.lower()
+    
+    # Theme detection based on story content
+    theme_keywords = {
+        "friendship": ["friend", "together", "help", "share", "care", "support"],
+        "adventure": ["journey", "explore", "discover", "adventure", "quest", "travel"],
+        "family": ["family", "mother", "father", "parent", "grandma", "grandpa", "home"],
+        "learning": ["learn", "school", "teach", "practice", "grow", "understand"],
+        "courage": ["brave", "courage", "fear", "overcome", "strong", "bold"],
+        "creativity": ["create", "imagine", "dream", "art", "build", "invent"],
+        "kindness": ["kind", "help", "gentle", "love", "care", "sweet"],
+        "nature": ["garden", "forest", "animals", "plants", "outdoors", "environment"],
+        "magic": ["magic", "magical", "spell", "wizard", "fairy", "enchanted"],
+        "mystery": ["mystery", "secret", "solve", "investigate", "clue", "detective"]
+    }
+    
+    # Genre detection based on content and setting
+    genre_keywords = {
+        "fantasy": ["magic", "dragon", "fairy", "wizard", "castle", "enchanted", "potion"],
+        "adventure": ["journey", "quest", "explore", "treasure", "danger", "rescue"],
+        "mystery": ["mystery", "clue", "solve", "detective", "secret", "investigate"],
+        "family": ["family", "home", "everyday", "routine", "sibling", "parent"],
+        "nature": ["forest", "garden", "animals", "outdoors", "camping", "wildlife"],
+        "school": ["school", "classroom", "teacher", "student", "homework", "learn"],
+        "friendship": ["friends", "together", "play", "share", "teammate", "buddy"],
+        "bedtime": ["sleep", "dream", "night", "cozy", "peaceful", "quiet"]
+    }
+    
+    # Score themes
+    theme_scores = {}
+    for theme, keywords in theme_keywords.items():
+        score = sum(1 for keyword in keywords if keyword in story_lower)
+        if score > 0:
+            theme_scores[theme] = score
+    
+    # Score genres
+    genre_scores = {}
+    for genre, keywords in genre_keywords.items():
+        score = sum(1 for keyword in keywords if keyword in story_lower)
+        if score > 0:
+            genre_scores[genre] = score
+    
+    # Determine primary theme and genre
+    primary_theme = max(theme_scores, key=theme_scores.get) if theme_scores else "adventure"
+    primary_genre = max(genre_scores, key=genre_scores.get) if genre_scores else "family"
+    
+    # Add audience-based context
+    audience_context = {
+        TargetAudience.TODDLER: "Simple, gentle story for very young children",
+        TargetAudience.PRESCHOOL: "Educational story with basic concepts",
+        TargetAudience.EARLY_ELEMENTARY: "Adventure story with learning elements",
+        TargetAudience.LATE_ELEMENTARY: "Complex story with character development",
+        TargetAudience.TEEN: "Young adult story with mature themes"
+    }
+    
+    return {
+        "theme": primary_theme,
+        "genre": primary_genre,
+        "context": audience_context.get(target_audience, "Children's story")
+    }
 
 
 @traceable(run_type="llm", name="story-llm-generation")

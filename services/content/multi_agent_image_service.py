@@ -37,7 +37,7 @@ class MultiAgentImageService:
             "model": "claude-3-5-haiku-20241022",
             "parameters": {
                 "temperature": 0.3,  # Lower temperature for analytical tasks
-                "max_tokens": 200,
+                "max_tokens": 400,  # Increased for detailed scene analysis
                 "top_p": 0.9,
             },
         }
@@ -47,7 +47,7 @@ class MultiAgentImageService:
             "model": "claude-3-5-haiku-20241022",
             "parameters": {
                 "temperature": 0.7,  # Higher temperature for creative tasks
-                "max_tokens": 150,
+                "max_tokens": 300,  # Increased for detailed creative outputs
                 "top_p": 0.9,
             },
         }
