@@ -34,10 +34,10 @@ class StoryImageGenerator:
         story_genre: str = None,
         story_context: str = None,
     ):
-        """Background task to generate all images for a story"""
+        """Background task to generate all images for a story using parallel processing"""
 
         try:
-            logger.info(f"🎨 Starting background image generation for story {story_id}")
+            logger.info(f"🚀 Starting PARALLEL background image generation for story {story_id}")
             logger.info(f"   Scenes to generate: {len(scenes)}")
             logger.info(f"   Characters available: {len(characters)}")
 
@@ -45,11 +45,14 @@ class StoryImageGenerator:
             for scene in scenes:
                 await self._create_story_image_record(db, story_id, user_id, scene)
 
-            # Generate images one by one
-            completed_count = 0
+            # Generate all images in parallel
+            logger.info(f"⚡ Starting parallel generation of {len(scenes)} images...")
+            
+            # Create tasks for parallel execution
+            generation_tasks = []
             for scene in scenes:
-                try:
-                    await self._generate_single_image(
+                task = asyncio.create_task(
+                    self._generate_single_image_with_error_handling(
                         db,
                         story_id,
                         user_id,
@@ -60,31 +63,47 @@ class StoryImageGenerator:
                         story_theme,
                         story_genre,
                         story_context,
-                    )
-                    completed_count += 1
-                    logger.info(
-                        f"✅ Generated image {completed_count}/{len(scenes)} for story {story_id}"
-                    )
+                    ),
+                    name=f"generate_image_{scene['image_id']}"
+                )
+                generation_tasks.append(task)
 
-                except Exception as e:
+            # Wait for all images to complete (or fail)
+            results = await asyncio.gather(*generation_tasks, return_exceptions=True)
+            
+            # Count successful generations
+            completed_count = 0
+            failed_count = 0
+            
+            for i, result in enumerate(results):
+                scene = scenes[i]
+                if isinstance(result, Exception):
+                    failed_count += 1
                     logger.error(
-                        f"❌ Failed to generate image {scene['image_id']} for story {story_id}: {e}"
+                        f"❌ Failed to generate image {scene['image_id']} for story {story_id}: {result}"
                     )
-                    logger.error(f"   Exception traceback: {traceback.format_exc()}")
-
-                    # Mark image as failed
-                    await self._mark_image_failed(db, story_id, scene["image_id"], str(e))
+                elif result is True:  # Success
+                    completed_count += 1
+                    logger.info(f"✅ Successfully generated image {scene['image_id']} for story {story_id}")
+                else:
+                    # result is False (handled failure)
+                    failed_count += 1
 
             # Update story completion status
             images_complete = completed_count == len(scenes)
             await self._update_story_completion_status(db, story_id, images_complete)
 
-            logger.info(f"🎯 Completed background image generation for story {story_id}")
+            total_time_saved = f"Parallel generation completed!"
+            logger.info(f"🎯 {total_time_saved}")
             logger.info(f"   Success rate: {completed_count}/{len(scenes)} images")
+            logger.info(f"   Failed: {failed_count} images")
+            
+            if completed_count > 0:
+                logger.info(f"⚡ PERFORMANCE: Generated {completed_count} images simultaneously instead of sequentially")
 
         except Exception as e:
             logger.error(
-                f"💥 Critical error in background image generation for story {story_id}: {e}"
+                f"💥 Critical error in parallel background image generation for story {story_id}: {e}"
             )
             logger.error(f"   Exception traceback: {traceback.format_exc()}")
 
@@ -93,6 +112,50 @@ class StoryImageGenerator:
                 await self._update_story_completion_status(db, story_id, False)
             except Exception as cleanup_error:
                 logger.error(f"Failed to update story completion status: {cleanup_error}")
+
+    async def _generate_single_image_with_error_handling(
+        self,
+        db: Database,
+        story_id: str,
+        user_id: str,
+        scene: dict,
+        characters: list[StoryCharacter],
+        target_audience: TargetAudience,
+        full_story_content: str = None,
+        story_theme: str = None,
+        story_genre: str = None,
+        story_context: str = None,
+    ) -> bool:
+        """Wrapper for _generate_single_image with proper error handling for parallel execution"""
+        
+        image_id = scene["image_id"]
+        
+        try:
+            await self._generate_single_image(
+                db,
+                story_id,
+                user_id,
+                scene,
+                characters,
+                target_audience,
+                full_story_content,
+                story_theme,
+                story_genre,
+                story_context,
+            )
+            return True  # Success
+            
+        except Exception as e:
+            logger.error(f"❌ Failed to generate image {image_id} for story {story_id}: {e}")
+            logger.error(f"   Exception traceback: {traceback.format_exc()}")
+
+            # Mark image as failed
+            try:
+                await self._mark_image_failed(db, story_id, image_id, str(e))
+            except Exception as mark_error:
+                logger.error(f"Failed to mark image {image_id} as failed: {mark_error}")
+                
+            return False  # Handled failure
 
     async def _create_story_image_record(
         self, db: Database, story_id: str, user_id: str, scene: dict

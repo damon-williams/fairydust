@@ -239,15 +239,21 @@ class ImageGenerationService:
             prediction_id = prediction["id"]
             print(f"✅ REPLICATE PREDICTION STARTED: {prediction_id}")
 
-        # Poll for completion
+        # Poll for completion with dynamic intervals
         max_wait_time = 120  # 2 minutes
-        poll_interval = 2  # 2 seconds
         elapsed_time = 0
+        
+        # Dynamic polling intervals: start fast, then slow down
+        poll_intervals = [1, 1, 2, 2, 3, 4, 5, 6, 7, 8, 10]  # seconds
+        poll_index = 0
 
         async with httpx.AsyncClient() as client:
             while elapsed_time < max_wait_time:
-                await asyncio.sleep(poll_interval)
-                elapsed_time += poll_interval
+                # Use dynamic interval
+                current_interval = poll_intervals[min(poll_index, len(poll_intervals) - 1)]
+                await asyncio.sleep(current_interval)
+                elapsed_time += current_interval
+                poll_index += 1
 
                 poll_response = await client.get(
                     f"https://api.replicate.com/v1/predictions/{prediction_id}", headers=headers
