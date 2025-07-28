@@ -345,12 +345,18 @@ class StoryImageGenerator:
                     "nsfw" in error_msg
                     or "inappropriate" in error_msg
                     or "content not allowed" in error_msg
+                    or "flagged as sensitive" in error_msg
+                    or "sensitive content" in error_msg
+                    or "(e005)" in error_msg
+                    or "content safety" in error_msg
                 ):
                     nsfw_failure_detected = True
                     if attempt < max_retries - 1:
                         logger.warning(
                             f"⚠️ NSFW detected on attempt {attempt + 1}, retrying with sanitized prompt..."
                         )
+                        logger.warning(f"   Original prompt that triggered flag: {prompt_to_use}")
+                        logger.warning(f"   Full error message: {str(e)}")
                         continue
                     else:
                         logger.error(f"❌ All {max_retries} attempts failed due to NSFW detection")
@@ -436,6 +442,23 @@ class StoryImageGenerator:
             "burning": "glowing",
             "fire": "light",
             "flame": "glow",
+            # Additional words that might trigger false positives
+            "tight": "snug",
+            "loose": "flowing",
+            "strip": "remove",
+            "stripped": "removed",
+            "bare": "plain",
+            "exposed": "visible",
+            "revealing": "showing",
+            "body": "figure",
+            "chest": "torso",
+            "curves": "shape",
+            "attractive": "pretty",
+            "seductive": "charming",
+            "tempting": "appealing",
+            "lust": "admiration",
+            "arousing": "exciting",
+            "stimulating": "interesting",
         }
 
         # Start with original prompt

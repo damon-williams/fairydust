@@ -243,7 +243,13 @@ class ImageGenerationService:
                     print(f"   Elapsed Time: {elapsed_time}s")
 
                     # Handle NSFW content detection gracefully
-                    if "nsfw" in error_msg.lower() or "inappropriate" in error_msg.lower():
+                    if (
+                        "nsfw" in error_msg.lower() 
+                        or "inappropriate" in error_msg.lower()
+                        or "flagged as sensitive" in error_msg.lower()
+                        or "(e005)" in error_msg.lower()
+                        or "sensitive content" in error_msg.lower()
+                    ):
                         raise HTTPException(
                             status_code=400,
                             detail="Content not allowed. Please modify your prompt to avoid inappropriate content.",
@@ -454,7 +460,13 @@ class ImageGenerationService:
                     print(f"   Elapsed Time: {elapsed_time}s")
 
                     # Handle NSFW content detection gracefully
-                    if "nsfw" in error_msg.lower() or "inappropriate" in error_msg.lower():
+                    if (
+                        "nsfw" in error_msg.lower() 
+                        or "inappropriate" in error_msg.lower()
+                        or "flagged as sensitive" in error_msg.lower()
+                        or "(e005)" in error_msg.lower()
+                        or "sensitive content" in error_msg.lower()
+                    ):
                         raise HTTPException(
                             status_code=400,
                             detail="Content not allowed. Please modify your prompt to avoid inappropriate content.",
