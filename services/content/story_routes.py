@@ -1244,16 +1244,17 @@ async def _fetch_user_name(user_id: UUID, auth_token: str) -> Optional[str]:
 
         async with httpx.AsyncClient() as client:
             headers = {"Authorization": auth_token}
-                response = await client.get(f"{identity_url}/users/me", headers=headers)
+            response = await client.get(f"{identity_url}/users/me", headers=headers)
 
             if response.status_code == 200:
                 user_data = response.json()
                 first_name = user_data.get("first_name")
                 if first_name:
-                            return first_name
-                else:
+                    return first_name
             else:
+                pass
     except Exception as e:
+        pass
 
     return None
 
