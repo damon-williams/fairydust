@@ -5,14 +5,14 @@ from typing import Optional
 from uuid import UUID
 
 import httpx
-from fastapi import APIRouter, Query
+from fastapi import APIRouter, Depends, Query
 from fastapi.exceptions import HTTPException
 
-from shared.auth_middleware import require_admin_api
+from shared.auth_middleware import require_admin
 from shared.database import Database, get_db
 
 # Create router
-payments_router = APIRouter(dependencies=[require_admin_api()])
+payments_router = APIRouter(dependencies=[Depends(require_admin)])
 
 # Get ledger service URL
 environment = os.getenv("ENVIRONMENT", "staging")
