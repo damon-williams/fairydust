@@ -50,8 +50,16 @@ class StoryImageGenerator:
             for scene in scenes:
                 try:
                     await self._generate_single_image(
-                        db, story_id, user_id, scene, characters, target_audience,
-                        full_story_content, story_theme, story_genre, story_context
+                        db,
+                        story_id,
+                        user_id,
+                        scene,
+                        characters,
+                        target_audience,
+                        full_story_content,
+                        story_theme,
+                        story_genre,
+                        story_context,
                     )
                     completed_count += 1
                     logger.info(
@@ -307,7 +315,7 @@ class StoryImageGenerator:
         """Generate image with retry logic for NSFW false positives and transient Replicate errors"""
 
         nsfw_failure_detected = False
-        
+
         for attempt in range(max_retries):
             try:
                 prompt_to_use = original_prompt
@@ -363,7 +371,7 @@ class StoryImageGenerator:
                         raise Exception(
                             f"Image generation failed after {max_retries} attempts: NSFW content detected"
                         )
-                
+
                 # Check for transient Replicate errors (these can be retried without changing prompt)
                 elif (
                     "internal.bad_output" in error_msg
@@ -380,7 +388,7 @@ class StoryImageGenerator:
                         )
                         logger.warning(f"   Error: {error_msg}")
                         # Add a small delay for transient errors to avoid rate limits
-                        await asyncio.sleep(2 ** attempt)  # Exponential backoff: 1s, 2s, 4s
+                        await asyncio.sleep(2**attempt)  # Exponential backoff: 1s, 2s, 4s
                         continue
                     else:
                         logger.error(f"❌ All {max_retries} attempts failed due to transient errors")

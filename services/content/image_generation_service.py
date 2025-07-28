@@ -25,36 +25,36 @@ class ImageGenerationService:
             from shared.app_config_cache import get_app_config_cache
             from shared.database import get_db
             from shared.json_utils import parse_model_config_field
-            
+
             # Get the Story app ID (hardcoded for now, could be made configurable)
             STORY_APP_ID = "fairydust-story"
-            
+
             # Try to get from cache first
             cache = await get_app_config_cache()
             cached_config = await cache.get_model_config(STORY_APP_ID)
-            
+
             if cached_config:
                 # Extract image model settings from parameters
                 params = parse_model_config_field(cached_config.get("primary_parameters", {}))
                 return params.get("image_models", {})
-            
+
             # Cache miss - fetch from database
             db = await get_db()
             config = await db.fetch_one(
                 """
-                SELECT primary_parameters FROM app_model_configs 
+                SELECT primary_parameters FROM app_model_configs
                 WHERE app_id = (SELECT id FROM apps WHERE slug = $1)
                 """,
                 STORY_APP_ID,
             )
-            
+
             if config and config["primary_parameters"]:
                 params = parse_model_config_field(config["primary_parameters"])
                 return params.get("image_models", {})
-            
+
             # Return defaults if no config found
             return {}
-            
+
         except Exception as e:
             print(f"⚠️ IMAGE_MODEL_CONFIG: Error loading config: {e}")
             # Return empty dict to use defaults
@@ -97,7 +97,7 @@ class ImageGenerationService:
 
         # Get image model configuration from app config
         image_models = await self._get_image_model_config()
-        
+
         # Choose model based on whether reference people are provided
         if reference_people:
             # Use configured model for multiple face references (up to 3)
@@ -288,7 +288,7 @@ class ImageGenerationService:
 
                     # Handle NSFW content detection gracefully
                     if (
-                        "nsfw" in error_msg.lower() 
+                        "nsfw" in error_msg.lower()
                         or "inappropriate" in error_msg.lower()
                         or "flagged as sensitive" in error_msg.lower()
                         or "(e005)" in error_msg.lower()
@@ -505,7 +505,7 @@ class ImageGenerationService:
 
                     # Handle NSFW content detection gracefully
                     if (
-                        "nsfw" in error_msg.lower() 
+                        "nsfw" in error_msg.lower()
                         or "inappropriate" in error_msg.lower()
                         or "flagged as sensitive" in error_msg.lower()
                         or "(e005)" in error_msg.lower()

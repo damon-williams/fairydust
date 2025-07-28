@@ -116,11 +116,11 @@ async def generate_story(
         for char in request.characters:
             has_photo = "✅" if char.photo_url else "❌"
             print(f"   - {char.name} ({char.relationship}) - Photo: {has_photo}")
-        
+
         # Count characters with photos for logging
         characters_with_photos = [c for c in request.characters if c.photo_url]
         print(f"📸 STORY: {len(characters_with_photos)} characters have photos for image generation")
-        
+
         # Use request directly since characters are pre-resolved
         updated_request = request
 
@@ -179,17 +179,23 @@ async def generate_story(
             )
             try:
                 # Extract story metadata for better image generation
-                story_metadata = _extract_story_metadata(story_content, updated_request.target_audience)
-                print(f"📊 STORY: Extracted metadata - Theme: {story_metadata['theme']}, Genre: {story_metadata['genre']}")
-                
+                story_metadata = _extract_story_metadata(
+                    story_content, updated_request.target_audience
+                )
+                print(
+                    f"📊 STORY: Extracted metadata - Theme: {story_metadata['theme']}, Genre: {story_metadata['genre']}"
+                )
+
                 # If no characters were provided, extract them from the story
                 if not updated_request.characters:
                     extracted_characters = _extract_characters_from_story(story_content)
-                    print(f"🎭 STORY: Extracted {len(extracted_characters)} characters from story: {[c.name for c in extracted_characters]}")
+                    print(
+                        f"🎭 STORY: Extracted {len(extracted_characters)} characters from story: {[c.name for c in extracted_characters]}"
+                    )
                     characters_for_images = extracted_characters
                 else:
                     characters_for_images = updated_request.characters
-                
+
                 # Extract scenes for image generation using characters
                 scenes = story_image_service.extract_image_scenes(
                     story_content, updated_request.story_length, characters_for_images
@@ -214,9 +220,9 @@ async def generate_story(
                         target_audience=updated_request.target_audience,
                         db=db,
                         full_story_content=story_content,
-                        story_theme=story_metadata['theme'],
-                        story_genre=story_metadata['genre'],
-                        story_context=story_metadata['context'],
+                        story_theme=story_metadata["theme"],
+                        story_genre=story_metadata["genre"],
+                        story_context=story_metadata["context"],
                     )
                 )
 
@@ -1007,9 +1013,16 @@ IMPORTANT: {selected_creativity}
 {recent_themes_guidance}
 
 {character_text}"""
-    
+
     # Add protagonist instructions if "yourself" character is present
-    has_protagonist = any(char.relationship and char.relationship.lower() in ["yourself", "protagonist"] for char in request.characters) if request.characters else False
+    has_protagonist = (
+        any(
+            char.relationship and char.relationship.lower() in ["yourself", "protagonist"]
+            for char in request.characters
+        )
+        if request.characters
+        else False
+    )
     if has_protagonist:
         prompt += "\n\nIMPORTANT: The story should be told from a third-person perspective, but the protagonist character listed above must be actively involved in the story's events, not just observing. Make them central to the action and adventure."
 
@@ -1215,7 +1228,7 @@ async def _fetch_my_people_data(
     user_id: UUID, selected_people: list[UUID], auth_token: str
 ) -> list[dict]:
     """DEPRECATED: Fetch My People data from Identity Service including photo URLs
-    
+
     This function is no longer used as character data is now fully resolved by the frontend."""
     if not selected_people:
         return []
@@ -1310,15 +1323,12 @@ async def _fetch_user_name(user_id: UUID, auth_token: str) -> Optional[str]:
         # auth_token might already include "Bearer " prefix
         if not auth_token.startswith("Bearer "):
             auth_token = f"Bearer {auth_token}"
-            
+
         async with httpx.AsyncClient() as client:
             headers = {"Authorization": auth_token}
             print(f"🔍 STORY: Fetching user from {identity_url}/users/me")
-            response = await client.get(
-                f"{identity_url}/users/me",
-                headers=headers
-            )
-            
+            response = await client.get(f"{identity_url}/users/me", headers=headers)
+
             if response.status_code == 200:
                 user_data = response.json()
                 first_name = user_data.get("first_name")
@@ -1331,7 +1341,7 @@ async def _fetch_user_name(user_id: UUID, auth_token: str) -> Optional[str]:
                 print(f"❌ STORY: Failed to fetch user data: {response.status_code}")
     except Exception as e:
         print(f"❌ STORY: Error fetching user name: {e}")
-    
+
     return None
 
 
@@ -1375,36 +1385,36 @@ async def _merge_characters_and_people(
 
 def _extract_characters_from_story(story_content: str) -> list[StoryCharacter]:
     """Extract character names and species from story content using pattern matching"""
-    
+
     characters = []
     import re
-    
+
     # Enhanced patterns to capture names with species/descriptors
     enhanced_patterns = [
         # Pattern: "Name Species" (e.g., "Rosie Rabbit", "Mr. Whiskers the cat")
-        r'([A-Z][a-z]+(?:\s+[A-Z][a-z]+)*)\s+(?:the\s+)?(?:rabbit|cat|dog|bear|squirrel|raccoon|fox|wolf|bird|duck|owl)',
-        # Pattern: "Species Name" (e.g., "cat postal worker", "rabbit watched")  
-        r'(?:rabbit|cat|dog|bear|squirrel|raccoon|fox|wolf|bird|duck|owl)\s+(?:postal\s+worker\s+|worker\s+|character\s+)?([A-Z][a-z]+)',
+        r"([A-Z][a-z]+(?:\s+[A-Z][a-z]+)*)\s+(?:the\s+)?(?:rabbit|cat|dog|bear|squirrel|raccoon|fox|wolf|bird|duck|owl)",
+        # Pattern: "Species Name" (e.g., "cat postal worker", "rabbit watched")
+        r"(?:rabbit|cat|dog|bear|squirrel|raccoon|fox|wolf|bird|duck|owl)\s+(?:postal\s+worker\s+|worker\s+|character\s+)?([A-Z][a-z]+)",
         # Pattern: Character descriptions with species
-        r'([A-Z][a-z]+(?:\s+[A-Z][a-z]+)*)[^.]*?(?:rabbit|cat|dog|bear|squirrel|raccoon|fox|wolf|bird|duck|owl)',
+        r"([A-Z][a-z]+(?:\s+[A-Z][a-z]+)*)[^.]*?(?:rabbit|cat|dog|bear|squirrel|raccoon|fox|wolf|bird|duck|owl)",
     ]
-    
+
     # Standard dialogue patterns for any character names
     dialogue_patterns = [
         r'"[^"]*?"\s*,?\s*([A-Z][a-z]+)\s+(?:said|asked|replied|whispered|shouted|exclaimed|called|cried)',
         r'([A-Z][a-z]+)\s+(?:said|asked|replied|whispered|shouted|exclaimed|called|cried)\s*,?\s*"',
         r'"[^"]*?"\s*(?:said|asked)\s*([A-Z][a-z]+)',
     ]
-    
+
     # Action patterns for character behavior
     action_patterns = [
-        r'([A-Z][a-z]+)\s+(?:walked|ran|jumped|smiled|looked|turned|went|came|saw|found|held|took|hopped|balanced|twirled)',
-        r'([A-Z][a-z]+)\s+(?:was|were|had|could|would|should)',
-        r'([A-Z][a-z]+)(?:\'s|\'re|\'ll|\'d)',
+        r"([A-Z][a-z]+)\s+(?:walked|ran|jumped|smiled|looked|turned|went|came|saw|found|held|took|hopped|balanced|twirled)",
+        r"([A-Z][a-z]+)\s+(?:was|were|had|could|would|should)",
+        r"([A-Z][a-z]+)(?:\'s|\'re|\'ll|\'d)",
     ]
-    
+
     character_info = {}  # name -> {count, species, traits}
-    
+
     # Extract characters with species information
     for pattern in enhanced_patterns:
         matches = re.findall(pattern, story_content, re.IGNORECASE)
@@ -1414,19 +1424,29 @@ def _extract_characters_from_story(story_content: str) -> list[StoryCharacter]:
                 if name not in character_info:
                     character_info[name] = {"count": 0, "species": None, "traits": []}
                 character_info[name]["count"] += 3  # Higher weight for species mentions
-                
+
                 # Detect species from surrounding context
-                name_context = story_content[max(0, story_content.find(match)-50):story_content.find(match)+100].lower()
+                name_context = story_content[
+                    max(0, story_content.find(match) - 50) : story_content.find(match) + 100
+                ].lower()
                 species_map = {
-                    "rabbit": "rabbit", "cat": "cat", "dog": "dog", "bear": "bear",
-                    "squirrel": "squirrel", "raccoon": "raccoon", "fox": "fox", 
-                    "wolf": "wolf", "bird": "bird", "duck": "duck", "owl": "owl"
+                    "rabbit": "rabbit",
+                    "cat": "cat",
+                    "dog": "dog",
+                    "bear": "bear",
+                    "squirrel": "squirrel",
+                    "raccoon": "raccoon",
+                    "fox": "fox",
+                    "wolf": "wolf",
+                    "bird": "bird",
+                    "duck": "duck",
+                    "owl": "owl",
                 }
                 for species_key, species_value in species_map.items():
                     if species_key in name_context:
                         character_info[name]["species"] = species_value
                         break
-    
+
     # Extract from dialogue patterns
     for pattern in dialogue_patterns:
         matches = re.findall(pattern, story_content, re.IGNORECASE)
@@ -1436,7 +1456,7 @@ def _extract_characters_from_story(story_content: str) -> list[StoryCharacter]:
                 if name not in character_info:
                     character_info[name] = {"count": 0, "species": None, "traits": []}
                 character_info[name]["count"] += 2
-    
+
     # Extract from action patterns
     for pattern in action_patterns:
         matches = re.findall(pattern, story_content)
@@ -1446,34 +1466,76 @@ def _extract_characters_from_story(story_content: str) -> list[StoryCharacter]:
                 if name not in character_info:
                     character_info[name] = {"count": 0, "species": None, "traits": []}
                 character_info[name]["count"] += 1
-    
+
     # Extract specific character names from compound names (like "Mr. Whiskers")
-    compound_names = re.findall(r'(Mr\.\s+[A-Z][a-z]+|Mrs\.\s+[A-Z][a-z]+|Miss\s+[A-Z][a-z]+|[A-Z][a-z]+\s+[A-Z][a-z]+)', story_content)
+    compound_names = re.findall(
+        r"(Mr\.\s+[A-Z][a-z]+|Mrs\.\s+[A-Z][a-z]+|Miss\s+[A-Z][a-z]+|[A-Z][a-z]+\s+[A-Z][a-z]+)",
+        story_content,
+    )
     for compound in compound_names:
         name = compound.strip()
         if name not in character_info:
             character_info[name] = {"count": 0, "species": None, "traits": []}
         character_info[name]["count"] += 2
-        
+
         # Check for species context around compound names
-        name_context = story_content[max(0, story_content.find(compound)-100):story_content.find(compound)+100].lower()
+        name_context = story_content[
+            max(0, story_content.find(compound) - 100) : story_content.find(compound) + 100
+        ].lower()
         species_map = {
-            "rabbit": "rabbit", "cat": "cat", "dog": "dog", "bear": "bear",
-            "squirrel": "squirrel", "raccoon": "raccoon", "fox": "fox", 
-            "wolf": "wolf", "bird": "bird", "duck": "duck", "owl": "owl"
+            "rabbit": "rabbit",
+            "cat": "cat",
+            "dog": "dog",
+            "bear": "bear",
+            "squirrel": "squirrel",
+            "raccoon": "raccoon",
+            "fox": "fox",
+            "wolf": "wolf",
+            "bird": "bird",
+            "duck": "duck",
+            "owl": "owl",
         }
         for species_key, species_value in species_map.items():
             if species_key in name_context:
                 character_info[name]["species"] = species_value
                 break
-    
+
     # Filter common words
     common_words = {
-        'The', 'They', 'There', 'That', 'This', 'Then', 'When', 'Where', 'What', 'Who',
-        'He', 'She', 'It', 'We', 'You', 'I', 'A', 'An', 'And', 'Or', 'But', 'So',
-        'Little', 'Big', 'One', 'Two', 'New', 'Old', 'Good', 'Bad', 'Right', 'Left'
+        "The",
+        "They",
+        "There",
+        "That",
+        "This",
+        "Then",
+        "When",
+        "Where",
+        "What",
+        "Who",
+        "He",
+        "She",
+        "It",
+        "We",
+        "You",
+        "I",
+        "A",
+        "An",
+        "And",
+        "Or",
+        "But",
+        "So",
+        "Little",
+        "Big",
+        "One",
+        "Two",
+        "New",
+        "Old",
+        "Good",
+        "Bad",
+        "Right",
+        "Left",
     }
-    
+
     # Create StoryCharacter objects
     for name, info in character_info.items():
         if info["count"] >= 2 and name not in common_words and len(name) >= 2:
@@ -1481,14 +1543,14 @@ def _extract_characters_from_story(story_content: str) -> list[StoryCharacter]:
             traits = []
             name_lower = name.lower()
             story_lower = story_content.lower()
-            
+
             # Find descriptive words near character name
-            name_pattern = rf'\b{re.escape(name_lower)}\b'
+            name_pattern = rf"\b{re.escape(name_lower)}\b"
             for match in re.finditer(name_pattern, story_lower):
                 start = max(0, match.start() - 100)
                 end = min(len(story_lower), match.end() + 100)
                 context = story_lower[start:end]
-                
+
                 # Common trait patterns
                 if "curious" in context or "wondered" in context:
                     traits.append("curious")
@@ -1506,35 +1568,35 @@ def _extract_characters_from_story(story_content: str) -> list[StoryCharacter]:
                     traits.append("helpful")
                 if "creative" in context or "idea" in context:
                     traits.append("creative")
-            
+
             # Remove duplicates and limit traits
             traits = list(set(traits))[:3]
-            
+
             # Determine entry_type based on species
             entry_type = "person"
             if info["species"]:
                 entry_type = "pet" if info["species"] in ["cat", "dog"] else "character"
-            
+
             character = StoryCharacter(
                 name=name,
                 relationship="story character",
                 traits=traits if traits else ["friendly"],  # Default trait if none found
                 entry_type=entry_type,
-                species=info["species"]
+                species=info["species"],
             )
             characters.append(character)
-    
+
     # Sort by mention count and limit to top 4
     characters = sorted(characters, key=lambda c: character_info[c.name]["count"], reverse=True)[:4]
-    
+
     return characters
 
 
 def _extract_story_metadata(story_content: str, target_audience: TargetAudience) -> dict:
     """Extract theme and genre from story content using keyword analysis"""
-    
+
     story_lower = story_content.lower()
-    
+
     # Theme detection based on story content
     theme_keywords = {
         "friendship": ["friend", "together", "help", "share", "care", "support"],
@@ -1546,9 +1608,9 @@ def _extract_story_metadata(story_content: str, target_audience: TargetAudience)
         "kindness": ["kind", "help", "gentle", "love", "care", "sweet"],
         "nature": ["garden", "forest", "animals", "plants", "outdoors", "environment"],
         "magic": ["magic", "magical", "spell", "wizard", "fairy", "enchanted"],
-        "mystery": ["mystery", "secret", "solve", "investigate", "clue", "detective"]
+        "mystery": ["mystery", "secret", "solve", "investigate", "clue", "detective"],
     }
-    
+
     # Genre detection based on content and setting
     genre_keywords = {
         "fantasy": ["magic", "dragon", "fairy", "wizard", "castle", "enchanted", "potion"],
@@ -1558,40 +1620,40 @@ def _extract_story_metadata(story_content: str, target_audience: TargetAudience)
         "nature": ["forest", "garden", "animals", "outdoors", "camping", "wildlife"],
         "school": ["school", "classroom", "teacher", "student", "homework", "learn"],
         "friendship": ["friends", "together", "play", "share", "teammate", "buddy"],
-        "bedtime": ["sleep", "dream", "night", "cozy", "peaceful", "quiet"]
+        "bedtime": ["sleep", "dream", "night", "cozy", "peaceful", "quiet"],
     }
-    
+
     # Score themes
     theme_scores = {}
     for theme, keywords in theme_keywords.items():
         score = sum(1 for keyword in keywords if keyword in story_lower)
         if score > 0:
             theme_scores[theme] = score
-    
+
     # Score genres
     genre_scores = {}
     for genre, keywords in genre_keywords.items():
         score = sum(1 for keyword in keywords if keyword in story_lower)
         if score > 0:
             genre_scores[genre] = score
-    
+
     # Determine primary theme and genre
     primary_theme = max(theme_scores, key=theme_scores.get) if theme_scores else "adventure"
     primary_genre = max(genre_scores, key=genre_scores.get) if genre_scores else "family"
-    
+
     # Add audience-based context
     audience_context = {
         TargetAudience.TODDLER: "Simple, gentle story for very young children",
         TargetAudience.PRESCHOOL: "Educational story with basic concepts",
         TargetAudience.EARLY_ELEMENTARY: "Adventure story with learning elements",
         TargetAudience.LATE_ELEMENTARY: "Complex story with character development",
-        TargetAudience.TEEN: "Young adult story with mature themes"
+        TargetAudience.TEEN: "Young adult story with mature themes",
     }
-    
+
     return {
         "theme": primary_theme,
         "genre": primary_genre,
-        "context": audience_context.get(target_audience, "Children's story")
+        "context": audience_context.get(target_audience, "Children's story"),
     }
 
 
@@ -1869,12 +1931,21 @@ async def _update_story_with_images(
 async def get_story_image_status(
     story_id: str,
     image_id: str,
+    request: Request,
     current_user: TokenData = Depends(get_current_user),
     db: Database = Depends(get_db),
 ):
     """Get status and URL of specific story image - includes cache control for failed images"""
 
     try:
+        # Check if this is a Railway internal request (health monitoring)
+        client_ip = request.client.host if request.client else "unknown"
+        is_internal_request = (
+            client_ip.startswith("100.64.")
+            or client_ip.startswith("10.")
+            or client_ip == "127.0.0.1"
+        )
+
         # Verify the story belongs to the user
         story = await db.fetch_one("SELECT user_id FROM user_stories WHERE id = $1", story_id)
 
@@ -1892,46 +1963,56 @@ async def get_story_image_status(
         )
 
         if not image_data:
-            print(
-                f"🔍 STORY_IMAGE_STATUS: Image {image_id} not found for story {story_id}", flush=True
-            )
+            if not is_internal_request:
+                print(
+                    f"🔍 STORY_IMAGE_STATUS: Image {image_id} not found for story {story_id}",
+                    flush=True,
+                )
             return StoryImageStatusResponse(success=False, status="not_found", url=None)
+        
+        # For internal requests to failed images, return 410 Gone to stop Railway polling
+        # This signals that the resource is permanently unavailable and should not be retried
+        if is_internal_request and image_data["status"] == "failed":
+            raise HTTPException(status_code=410, detail="Image generation permanently failed")
 
         image_url = image_data["url"] if image_data["status"] == "completed" else None
         status = image_data["status"]
 
-        # Log the URL being returned for debugging
-        print(f"🔗 STORY_IMAGE_STATUS: Returning image status for {image_id}", flush=True)
-        print(f"   Story ID: {story_id}", flush=True)
-        print(f"   Status: {status}", flush=True)
-        print(f"   URL: {image_url}", flush=True)
-        if image_url:
-            print(
-                f"   URL Domain: {image_url.split('/')[2] if '://' in image_url else 'invalid-url'}",
-                flush=True,
-            )
-            print(f"   Is images.fairydust.fun: {'images.fairydust.fun' in image_url}", flush=True)
+        # Only log detailed info for non-internal requests to reduce noise
+        if not is_internal_request:
+            print(f"🔗 STORY_IMAGE_STATUS: Returning image status for {image_id}", flush=True)
+            print(f"   Story ID: {story_id}", flush=True)
+            print(f"   Status: {status}", flush=True)
+            print(f"   URL: {image_url}", flush=True)
+            if image_url:
+                print(
+                    f"   URL Domain: {image_url.split('/')[2] if '://' in image_url else 'invalid-url'}",
+                    flush=True,
+                )
+                print(
+                    f"   Is images.fairydust.fun: {'images.fairydust.fun' in image_url}", flush=True
+                )
 
-        # Add warning for excessive polling of failed images
-        if status == "failed":
-            print(
-                f"⚠️  STORY_IMAGE_STATUS: Client polling FAILED image {image_id} - should stop polling!",
-                flush=True,
-            )
-            print(
-                "   Suggestion: Client should implement exponential backoff or stop polling failed images",
-                flush=True,
-            )
-        elif status == "processing":
-            print(
-                f"🔄 STORY_IMAGE_STATUS: Image {image_id} still processing - normal polling",
-                flush=True,
-            )
-        elif status == "completed":
-            print(
-                f"✅ STORY_IMAGE_STATUS: Image {image_id} completed - client should stop polling",
-                flush=True,
-            )
+            # Add warning for excessive polling of failed images (only for real client requests)
+            if status == "failed":
+                print(
+                    f"⚠️  STORY_IMAGE_STATUS: Client polling FAILED image {image_id} - should stop polling!",
+                    flush=True,
+                )
+                print(
+                    "   Suggestion: Client should implement exponential backoff or stop polling failed images",
+                    flush=True,
+                )
+            elif status == "processing":
+                print(
+                    f"🔄 STORY_IMAGE_STATUS: Image {image_id} still processing - normal polling",
+                    flush=True,
+                )
+            elif status == "completed":
+                print(
+                    f"✅ STORY_IMAGE_STATUS: Image {image_id} completed - client should stop polling",
+                    flush=True,
+                )
 
         return StoryImageStatusResponse(status=status, url=image_url)
 

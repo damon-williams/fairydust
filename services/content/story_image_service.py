@@ -105,20 +105,20 @@ class StoryImageService:
         # Return the scene content directly - let the Scene Intelligence Agent handle analysis
         # The multi-agent system is sophisticated enough to process the raw story content
         scene_description = scene_text.strip()
-        
+
         # Only do minimal cleaning to remove excessive whitespace
         scene_description = re.sub(r"\s+", " ", scene_description)
-        
+
         # Don't truncate aggressively - allow up to 800 characters for full context
         if len(scene_description) > 800:
             # Find a good sentence break
             truncation_point = scene_description.rfind(".", 0, 800)
             if truncation_point > 600:  # Good sentence break found
-                scene_description = scene_description[:truncation_point + 1]
+                scene_description = scene_description[: truncation_point + 1]
             else:
                 # Break at word boundary as last resort
                 scene_description = scene_description[:800].rsplit(" ", 1)[0] + "..."
-        
+
         return scene_description
 
     def _identify_characters_in_scene(

@@ -83,7 +83,9 @@ class MultiAgentImageService:
             "scene_length": len(scene_description),
             "character_count": len(characters_in_scene),
             "character_names": [char.name for char in characters_in_scene],
-            "character_species": [getattr(char, 'species', 'unknown') for char in characters_in_scene],
+            "character_species": [
+                getattr(char, "species", "unknown") for char in characters_in_scene
+            ],
             "target_audience": target_audience.value,
             "story_theme": story_theme or "Not provided",
             "story_genre": story_genre or "Not provided",
@@ -248,29 +250,44 @@ Complete all sections - do not stop early."""
 
             logger.info(f"🤖 SCENE_AGENT INPUT: {scene_description[:150]}...")
             logger.info(f"🤖 SCENE_AGENT OUTPUT: {scene_analysis}")
-            
+
             # Check if response is complete (should have all 7 sections)
             required_sections = [
-                "CHARACTERS_PRESENT:", "CHARACTER_INTERACTIONS:", "MAIN_ACTION:",
-                "SETTING_DETAILS:", "EMOTIONAL_TONE:", "VISUAL_FOCUS:", "STORY_SIGNIFICANCE:"
+                "CHARACTERS_PRESENT:",
+                "CHARACTER_INTERACTIONS:",
+                "MAIN_ACTION:",
+                "SETTING_DETAILS:",
+                "EMOTIONAL_TONE:",
+                "VISUAL_FOCUS:",
+                "STORY_SIGNIFICANCE:",
             ]
-            missing_sections = [section for section in required_sections if section not in scene_analysis]
-            
+            missing_sections = [
+                section for section in required_sections if section not in scene_analysis
+            ]
+
             if missing_sections:
-                logger.warning(f"🚨 SCENE_AGENT: Incomplete response - missing sections: {missing_sections}")
+                logger.warning(
+                    f"🚨 SCENE_AGENT: Incomplete response - missing sections: {missing_sections}"
+                )
                 logger.warning(f"🚨 SCENE_AGENT: Response length: {len(scene_analysis)} characters")
                 # Add missing sections with placeholder content
                 for section in missing_sections:
                     if section not in scene_analysis:
                         section_name = section.replace(":", "").replace("_", " ").title()
-                        scene_analysis += f"\n{section} [Analysis needed for {section_name.lower()}]"
+                        scene_analysis += (
+                            f"\n{section} [Analysis needed for {section_name.lower()}]"
+                        )
 
             return scene_analysis
 
         except Exception as e:
             logger.error(f"❌ SCENE_AGENT: Error in analysis: {e}")
             # Fallback analysis with proper character handling
-            character_names = [char.name for char in likely_characters[:2]] if likely_characters else ["characters"]
+            character_names = (
+                [char.name for char in likely_characters[:2]]
+                if likely_characters
+                else ["characters"]
+            )
             fallback = f"""CHARACTERS_PRESENT: {', '.join(character_names)}
 CHARACTER_INTERACTIONS: Characters interacting in scene
 MAIN_ACTION: Story scene with characters
@@ -739,7 +756,17 @@ Return ONLY the enhanced prompt text, nothing else:"""
             # Special handling for "yourself" character - always include if it's the protagonist
             if char.relationship and char.relationship.lower() in ["yourself", "protagonist"]:
                 # Check for first-person pronouns that indicate the protagonist
-                first_person_indicators = ["i ", "i'", "my ", "me ", "myself", "i've", "i'll", "i'd", "i'm"]
+                first_person_indicators = [
+                    "i ",
+                    "i'",
+                    "my ",
+                    "me ",
+                    "myself",
+                    "i've",
+                    "i'll",
+                    "i'd",
+                    "i'm",
+                ]
                 if any(indicator in scene_lower for indicator in first_person_indicators):
                     is_present = True
                 # Also check if character's actual name is mentioned
@@ -800,12 +827,18 @@ Return ONLY the enhanced prompt text, nothing else:"""
         if not detected_characters and characters:
             # Include the first character as a minimum
             detected_characters.append(characters[0])
-            logger.warning(f"🚨 CHARACTER_DETECTION: No characters detected in scene, using first character: {characters[0].name}")
+            logger.warning(
+                f"🚨 CHARACTER_DETECTION: No characters detected in scene, using first character: {characters[0].name}"
+            )
         elif len(detected_characters) == 1 and len(characters) > 1:
             # If we only detected one character but have more available, check for "yourself" character
             # to ensure protagonist is included
             for char in characters:
-                if char.relationship and char.relationship.lower() in ["yourself", "protagonist"] and char not in detected_characters:
+                if (
+                    char.relationship
+                    and char.relationship.lower() in ["yourself", "protagonist"]
+                    and char not in detected_characters
+                ):
                     detected_characters.append(char)
                     logger.info(f"➕ CHARACTER_DETECTION: Added protagonist character: {char.name}")
                     break
