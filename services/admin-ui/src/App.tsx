@@ -5,6 +5,7 @@ import { Users } from '@/pages/Users';
 import { Apps } from '@/pages/Apps';
 import { LLM } from '@/pages/LLM';
 import { Referrals } from '@/pages/Referrals';
+import Payments from '@/pages/Payments';
 import DeletionLogs from '@/pages/DeletionLogs';
 import Terms from '@/pages/Terms';
 import { SystemStatus } from '@/pages/SystemStatus';
@@ -32,6 +33,7 @@ function App() {
                     <Route path="apps" element={<Apps />} />
                     <Route path="llm" element={<LLM />} />
                     <Route path="referrals" element={<Referrals />} />
+                    <Route path="payments" element={<Payments />} />
                     <Route path="deletion-logs" element={<DeletionLogs />} />
                     <Route path="terms" element={<Terms />} />
                     <Route path="system" element={<SystemStatus />} />

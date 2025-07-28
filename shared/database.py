@@ -267,6 +267,26 @@ async def create_tables():
     """
     )
 
+    # Add Apple Receipt Verification Fields to existing dust_transactions table
+    await db.execute_schema(
+        """
+        ALTER TABLE dust_transactions ADD COLUMN IF NOT EXISTS payment_id VARCHAR(255);
+        ALTER TABLE dust_transactions ADD COLUMN IF NOT EXISTS receipt_data TEXT;
+        ALTER TABLE dust_transactions ADD COLUMN IF NOT EXISTS receipt_verification_status VARCHAR(50);
+        ALTER TABLE dust_transactions ADD COLUMN IF NOT EXISTS receipt_verification_response JSONB;
+        ALTER TABLE dust_transactions ADD COLUMN IF NOT EXISTS apple_transaction_id VARCHAR(255);
+        ALTER TABLE dust_transactions ADD COLUMN IF NOT EXISTS apple_original_transaction_id VARCHAR(255);
+        ALTER TABLE dust_transactions ADD COLUMN IF NOT EXISTS apple_product_id VARCHAR(100);
+        ALTER TABLE dust_transactions ADD COLUMN IF NOT EXISTS apple_purchase_date_ms BIGINT;
+        ALTER TABLE dust_transactions ADD COLUMN IF NOT EXISTS payment_amount_cents INTEGER;
+
+        CREATE INDEX IF NOT EXISTS idx_dust_transactions_apple_txn
+        ON dust_transactions(apple_transaction_id);
+        CREATE INDEX IF NOT EXISTS idx_dust_transactions_payment_id
+        ON dust_transactions(payment_id);
+    """
+    )
+
     # Apps table
     await db.execute_schema(
         """

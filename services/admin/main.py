@@ -102,6 +102,7 @@ from routes import (
     system_router,
     users_router,
 )
+from routes.payments import payments_router
 from routes.terms import terms_router
 
 # Include all route modules FIRST
@@ -111,6 +112,7 @@ app.include_router(users_router, prefix="/admin/users")
 app.include_router(apps_router, prefix="/admin/apps")
 app.include_router(llm_router, prefix="/admin/llm")
 app.include_router(referrals_router, prefix="/admin/referrals")
+app.include_router(payments_router, prefix="/admin/payments")
 app.include_router(terms_router, prefix="/admin/terms")
 app.include_router(system_router, prefix="/admin/system")
 
