@@ -851,6 +851,7 @@ async def _build_story_prompt(
     # Build character descriptions
     character_descriptions = []
     if request.characters:
+        for char in request.characters:
             # Handle pets vs people differently
             if char.entry_type == "pet":
                 desc = f"- {char.name} (pet"
