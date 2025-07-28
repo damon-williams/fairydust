@@ -728,6 +728,7 @@ async def _get_llm_model_config() -> dict:
             return parsed_config
 
     except Exception as e:
+        pass
 
     # Fallback to default config
     default_config = {
