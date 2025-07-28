@@ -117,57 +117,58 @@ add_middleware_to_app(
 # Enhanced request logging with detailed error information
 @app.middleware("http")
 async def log_requests(request, call_next):
-    import traceback
     import time
-    
+    import traceback
+
     start_time = time.time()
-    
+
     try:
         response = await call_next(request)
-        
+
         # Log errors with detailed information
         if response.status_code >= 400:
             duration_ms = int((time.time() - start_time) * 1000)
-            
+
             # Get client info
             client_ip = request.client.host if request.client else "unknown"
             user_agent = request.headers.get("user-agent", "unknown")
-            
+
             # Log basic request info
             logger.error(
                 f"🔥 {request.method} {request.url.path} - {response.status_code} "
                 f"({duration_ms}ms) from {client_ip}"
             )
-            
+
             # Log query parameters if present
             if request.query_params:
                 logger.error(f"   Query params: {dict(request.query_params)}")
-            
+
             # Log headers (excluding sensitive ones)
             safe_headers = {
-                k: v for k, v in request.headers.items() 
+                k: v
+                for k, v in request.headers.items()
                 if k.lower() not in ["authorization", "cookie", "x-api-key"]
             }
             if safe_headers:
                 logger.error(f"   Headers: {safe_headers}")
-            
+
             # For 500 errors, try to read the response body for additional context
             if response.status_code >= 500:
                 logger.error(f"   User-Agent: {user_agent}")
-                
+
         return response
-        
+
     except Exception as e:
         duration_ms = int((time.time() - start_time) * 1000)
         client_ip = request.client.host if request.client else "unknown"
-        
+
         logger.error(
             f"💥 UNHANDLED EXCEPTION {request.method} {request.url.path} "
             f"({duration_ms}ms) from {client_ip}: {str(e)}"
         )
         logger.error(f"   Exception type: {type(e).__name__}")
         logger.error(f"   Traceback: {traceback.format_exc()}")
-        
+
         # Re-raise the exception
         raise
 

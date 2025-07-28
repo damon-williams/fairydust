@@ -1,22 +1,22 @@
 # services/admin/routes/referrals.py
-from datetime import datetime, timedelta
+from datetime import datetime
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request
-
 from auth import get_current_admin_user
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from models import (
-    ReferralConfig,
-    ReferralConfigUpdate,
-    ReferralCodesResponse,
-    ReferralRedemptionsResponse,
-    ReferralSystemStats,
     PromotionalReferralCode,
     PromotionalReferralCodeCreate,
-    PromotionalReferralCodeUpdate,
     PromotionalReferralCodesResponse,
+    PromotionalReferralCodeUpdate,
     PromotionalReferralRedemptionsResponse,
+    ReferralCodesResponse,
+    ReferralConfig,
+    ReferralConfigUpdate,
+    ReferralRedemptionsResponse,
+    ReferralSystemStats,
 )
+
 from shared.database import Database, get_db
 
 referrals_router = APIRouter()
@@ -28,20 +28,18 @@ async def get_referral_config(
     db: Database = Depends(get_db),
 ):
     """Get current referral system configuration"""
-    config_data = await db.fetch_one(
-        "SELECT * FROM referral_system_config WHERE id = 1"
-    )
-    
+    config_data = await db.fetch_one("SELECT * FROM referral_system_config WHERE id = 1")
+
     if not config_data:
         raise HTTPException(status_code=404, detail="Referral configuration not found")
-    
+
     import json
-    
+
     # Parse milestone_rewards if it's a string
     milestone_rewards = config_data["milestone_rewards"]
     if isinstance(milestone_rewards, str):
         milestone_rewards = json.loads(milestone_rewards)
-    
+
     return ReferralConfig(
         referee_bonus=config_data["referee_bonus"],
         referrer_bonus=config_data["referrer_bonus"],
@@ -60,57 +58,55 @@ async def update_referral_config(
 ):
     """Update referral system configuration"""
     import json
-    
+
     # Get current configuration
-    current_config_data = await db.fetch_one(
-        "SELECT * FROM referral_system_config WHERE id = 1"
-    )
-    
+    current_config_data = await db.fetch_one("SELECT * FROM referral_system_config WHERE id = 1")
+
     if not current_config_data:
         raise HTTPException(status_code=404, detail="Referral configuration not found")
-    
+
     # Build update query
     update_fields = []
     params = []
     param_count = 1
-    
+
     if config_update.referee_bonus is not None:
         update_fields.append(f"referee_bonus = ${param_count}")
         params.append(config_update.referee_bonus)
         param_count += 1
-        
+
     if config_update.referrer_bonus is not None:
         update_fields.append(f"referrer_bonus = ${param_count}")
         params.append(config_update.referrer_bonus)
         param_count += 1
-        
+
     if config_update.milestone_rewards is not None:
         update_fields.append(f"milestone_rewards = ${param_count}")
         params.append(json.dumps(config_update.milestone_rewards))
         param_count += 1
-        
+
     if config_update.code_expiry_days is not None:
         update_fields.append(f"code_expiry_days = ${param_count}")
         params.append(config_update.code_expiry_days)
         param_count += 1
-        
+
     if config_update.max_referrals_per_user is not None:
         update_fields.append(f"max_referrals_per_user = ${param_count}")
         params.append(config_update.max_referrals_per_user)
         param_count += 1
-        
+
     if config_update.system_enabled is not None:
         update_fields.append(f"system_enabled = ${param_count}")
         params.append(config_update.system_enabled)
         param_count += 1
-    
+
     if not update_fields:
         # No updates, return current config
         # Parse milestone_rewards if it's a string
         milestone_rewards = current_config_data["milestone_rewards"]
         if isinstance(milestone_rewards, str):
             milestone_rewards = json.loads(milestone_rewards)
-            
+
         return ReferralConfig(
             referee_bonus=current_config_data["referee_bonus"],
             referrer_bonus=current_config_data["referrer_bonus"],
@@ -119,30 +115,28 @@ async def update_referral_config(
             max_referrals_per_user=current_config_data["max_referrals_per_user"],
             system_enabled=current_config_data["system_enabled"],
         )
-    
+
     # Update configuration
-    update_fields.append(f"updated_at = CURRENT_TIMESTAMP")
+    update_fields.append("updated_at = CURRENT_TIMESTAMP")
     params.append(1)  # WHERE id = 1
-    
+
     await db.execute(
         f"""
-        UPDATE referral_system_config 
-        SET {', '.join(update_fields)} 
+        UPDATE referral_system_config
+        SET {', '.join(update_fields)}
         WHERE id = ${param_count}
         """,
-        *params
+        *params,
     )
-    
+
     # Return updated configuration
-    updated_config_data = await db.fetch_one(
-        "SELECT * FROM referral_system_config WHERE id = 1"
-    )
-    
+    updated_config_data = await db.fetch_one("SELECT * FROM referral_system_config WHERE id = 1")
+
     # Parse milestone_rewards if it's a string
     milestone_rewards = updated_config_data["milestone_rewards"]
     if isinstance(milestone_rewards, str):
         milestone_rewards = json.loads(milestone_rewards)
-    
+
     return ReferralConfig(
         referee_bonus=updated_config_data["referee_bonus"],
         referrer_bonus=updated_config_data["referrer_bonus"],
@@ -162,10 +156,10 @@ async def get_referral_system_stats(
     # Get basic stats
     stats = await db.fetch_one(
         """
-        SELECT 
+        SELECT
             (SELECT COUNT(*) FROM referral_codes) as total_codes_created,
             (SELECT COUNT(*) FROM referral_redemptions) as total_successful_referrals,
-            (SELECT COALESCE(SUM(referee_bonus + referrer_bonus + milestone_bonus), 0) 
+            (SELECT COALESCE(SUM(referee_bonus + referrer_bonus + milestone_bonus), 0)
              FROM referral_redemptions) as total_dust_granted
         """
     )
@@ -177,7 +171,7 @@ async def get_referral_system_stats(
     # Get top referrers
     top_referrers_data = await db.fetch_all(
         """
-        SELECT 
+        SELECT
             rr.referrer_user_id,
             u.fairyname,
             COUNT(*) as successful_referrals,
@@ -211,7 +205,7 @@ async def get_referral_system_stats(
             )) as date
         ),
         codes_created AS (
-            SELECT 
+            SELECT
                 date_trunc('day', created_at) as date,
                 COUNT(*) as codes_created
             FROM referral_codes
@@ -219,7 +213,7 @@ async def get_referral_system_stats(
             GROUP BY date_trunc('day', created_at)
         ),
         referrals_completed AS (
-            SELECT 
+            SELECT
                 date_trunc('day', redeemed_at) as date,
                 COUNT(*) as successful_referrals,
                 SUM(referee_bonus + referrer_bonus + milestone_bonus) as dust_granted
@@ -227,7 +221,7 @@ async def get_referral_system_stats(
             WHERE redeemed_at >= CURRENT_DATE - INTERVAL '29 days'
             GROUP BY date_trunc('day', redeemed_at)
         )
-        SELECT 
+        SELECT
             ds.date::date as date,
             COALESCE(cc.codes_created, 0) as codes_created,
             COALESCE(rc.successful_referrals, 0) as successful_referrals,
@@ -278,11 +272,11 @@ async def get_referral_codes(
 
     if status:
         if status == "active":
-            where_conditions.append(f"rc.is_active = true AND rc.expires_at > CURRENT_TIMESTAMP")
+            where_conditions.append("rc.is_active = true AND rc.expires_at > CURRENT_TIMESTAMP")
         elif status == "expired":
-            where_conditions.append(f"rc.expires_at <= CURRENT_TIMESTAMP")
+            where_conditions.append("rc.expires_at <= CURRENT_TIMESTAMP")
         elif status == "inactive":
-            where_conditions.append(f"rc.is_active = false")
+            where_conditions.append("rc.is_active = false")
 
     if user_search:
         where_conditions.append(f"u.fairyname ILIKE ${param_count}")
@@ -303,12 +297,12 @@ async def get_referral_codes(
 
     # Get codes with pagination
     codes_query = f"""
-        SELECT 
+        SELECT
             rc.referral_code,
             rc.user_id,
             u.fairyname as user_name,
             rc.created_at,
-            CASE 
+            CASE
                 WHEN NOT rc.is_active THEN 'inactive'
                 WHEN rc.expires_at <= CURRENT_TIMESTAMP THEN 'expired'
                 ELSE 'active'
@@ -379,7 +373,7 @@ async def get_referral_redemptions(
 
     # Get redemptions with pagination
     redemptions_query = f"""
-        SELECT 
+        SELECT
             rr.referral_code,
             ur.fairyname as referrer_name,
             ue.fairyname as referee_name,
@@ -456,7 +450,7 @@ async def get_promotional_codes(
 
     # Get codes with pagination
     codes_query = f"""
-        SELECT 
+        SELECT
             id, code, description, dust_bonus, max_uses, current_uses,
             created_by, created_at, expires_at, is_active
         FROM promotional_referral_codes
@@ -497,28 +491,40 @@ async def get_promotional_codes(
 async def debug_promotional_code_create(request: Request):
     """Debug endpoint to see raw request data and attempt validation"""
     import logging
+
     logger = logging.getLogger(__name__)
-    
+
     try:
         body = await request.body()
         import json
+
         raw_data = json.loads(body) if body else {}
         logger.info(f"Debug - Raw request body: {raw_data}")
         logger.info(f"Debug - Request headers: {dict(request.headers)}")
-        
+
         # Try to validate the data manually
         try:
             from models import PromotionalReferralCodeCreate
+
             validated_data = PromotionalReferralCodeCreate(**raw_data)
             logger.info(f"Debug - Validation successful: {validated_data}")
-            return {"received_data": raw_data, "validation": "success", "parsed_data": validated_data.dict()}
+            return {
+                "received_data": raw_data,
+                "validation": "success",
+                "parsed_data": validated_data.dict(),
+            }
         except Exception as validation_error:
             logger.error(f"Debug - Validation failed: {validation_error}")
-            return {"received_data": raw_data, "validation": "failed", "error": str(validation_error)}
-            
+            return {
+                "received_data": raw_data,
+                "validation": "failed",
+                "error": str(validation_error),
+            }
+
     except Exception as e:
         logger.error(f"Debug - Could not parse request body: {e}")
         return {"error": str(e)}
+
 
 @referrals_router.get("/test-admin-user")
 async def test_admin_user(admin_user: dict = Depends(get_current_admin_user)):
@@ -527,8 +533,9 @@ async def test_admin_user(admin_user: dict = Depends(get_current_admin_user)):
         "admin_user_keys": list(admin_user.keys()),
         "admin_user_data": admin_user,
         "has_id": "id" in admin_user,
-        "has_user_id": "user_id" in admin_user
+        "has_user_id": "user_id" in admin_user,
     }
+
 
 @referrals_router.post("/promotional-codes", response_model=PromotionalReferralCode)
 async def create_promotional_code(
@@ -539,26 +546,29 @@ async def create_promotional_code(
 ):
     """Create a new promotional referral code"""
     import logging
+
     logger = logging.getLogger(__name__)
-    
+
     # Log everything for debugging
-    logger.info(f"=== PROMOTIONAL CODE CREATION DEBUG ===")
+    logger.info("=== PROMOTIONAL CODE CREATION DEBUG ===")
     logger.info(f"Admin user structure: {admin_user}")
     logger.info(f"Admin user keys: {list(admin_user.keys())}")
     logger.info(f"Code data: {code_create}")
-    
+
     # Verify admin user has the right structure
     if "user_id" not in admin_user:
         logger.error(f"CRITICAL: admin_user missing 'user_id' key. Keys: {list(admin_user.keys())}")
-        raise HTTPException(status_code=500, detail=f"Admin user malformed: {list(admin_user.keys())}")
-    
+        raise HTTPException(
+            status_code=500, detail=f"Admin user malformed: {list(admin_user.keys())}"
+        )
+
     logger.info(f"Using admin_user['user_id']: {admin_user['user_id']}")
     # Check if code already exists
     existing_code = await db.fetch_one(
         "SELECT id FROM promotional_referral_codes WHERE code = $1",
         code_create.code.upper(),
     )
-    
+
     if existing_code:
         raise HTTPException(status_code=400, detail="Promotional code already exists")
 
@@ -577,10 +587,10 @@ async def create_promotional_code(
         admin_user["user_id"],
         code_create.expires_at,
     )
-    
+
     if not result:
         raise HTTPException(status_code=500, detail="Failed to create promotional code")
-    
+
     code_id = result["id"]
 
     # Fetch the created code
@@ -621,7 +631,7 @@ async def update_promotional_code(
         "SELECT * FROM promotional_referral_codes WHERE id = $1",
         code_id,
     )
-    
+
     if not existing_code:
         raise HTTPException(status_code=404, detail="Promotional code not found")
 
@@ -706,7 +716,7 @@ async def delete_promotional_code(
         "SELECT id FROM promotional_referral_codes WHERE id = $1",
         code_id,
     )
-    
+
     if not existing_code:
         raise HTTPException(status_code=404, detail="Promotional code not found")
 
@@ -719,7 +729,10 @@ async def delete_promotional_code(
     return {"message": "Promotional code deleted successfully"}
 
 
-@referrals_router.get("/promotional-codes/{code_id}/redemptions", response_model=PromotionalReferralRedemptionsResponse)
+@referrals_router.get(
+    "/promotional-codes/{code_id}/redemptions",
+    response_model=PromotionalReferralRedemptionsResponse,
+)
 async def get_promotional_code_redemptions(
     code_id: str,
     page: int = Query(1, ge=1),
@@ -735,7 +748,7 @@ async def get_promotional_code_redemptions(
         "SELECT code FROM promotional_referral_codes WHERE id = $1",
         code_id,
     )
-    
+
     if not promo_code:
         raise HTTPException(status_code=404, detail="Promotional code not found")
 
@@ -748,7 +761,7 @@ async def get_promotional_code_redemptions(
 
     # Get redemptions with pagination
     redemptions_query = """
-        SELECT 
+        SELECT
             prr.id,
             prr.promotional_code,
             prr.user_id,
@@ -761,7 +774,7 @@ async def get_promotional_code_redemptions(
         ORDER BY prr.redeemed_at DESC
         LIMIT $2 OFFSET $3
     """
-    
+
     redemptions_data = await db.fetch_all(redemptions_query, promo_code["code"], limit, offset)
 
     redemptions = [

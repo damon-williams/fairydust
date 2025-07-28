@@ -1,7 +1,5 @@
 # services/content/wyr_routes.py
 import json
-import os
-import random
 import uuid
 from datetime import datetime
 from typing import Optional
@@ -13,10 +11,8 @@ from models import (
     GameLength,
     GameStatus,
     QuestionObject,
-    TokenUsage,
     WyrGameCompleteResponse,
     WyrGameDeleteResponse,
-    WyrGameErrorResponse,
     WyrGameSession,
     WyrGameSessionComplete,
     WyrGameSessionCreate,
@@ -27,9 +23,8 @@ from models import (
 
 from shared.auth_middleware import TokenData, get_current_user
 from shared.database import Database, get_db
-from shared.json_utils import parse_jsonb_field, safe_json_parse
-from shared.llm_client import llm_client, LLMError
-from shared.llm_usage_logger import calculate_prompt_hash, create_request_metadata
+from shared.json_utils import safe_json_parse
+from shared.llm_client import LLMError, llm_client
 
 router = APIRouter()
 
@@ -79,8 +74,8 @@ async def start_new_game_session(
         rate_limit_exceeded = await _check_rate_limit(db, request.user_id)
         if rate_limit_exceeded:
             raise HTTPException(
-                status_code=429, 
-                detail=f"Rate limit exceeded. Maximum {WYR_RATE_LIMIT} games per hour."
+                status_code=429,
+                detail=f"Rate limit exceeded. Maximum {WYR_RATE_LIMIT} games per hour.",
             )
 
         # Generate questions using LLM
@@ -96,14 +91,19 @@ async def start_new_game_session(
         if not questions:
             print("❌ WYR: Question generation failed", flush=True)
             raise HTTPException(
-                status_code=500, 
-                detail="Failed to generate questions. Please try again."
+                status_code=500, detail="Failed to generate questions. Please try again."
             )
 
         print(f"✅ WYR: Generated {len(questions)} questions", flush=True)
-        print(f"✅ WYR: Used {generation_metadata['provider']}/{generation_metadata['model_id']}", flush=True)
-        print(f"✅ WYR: Cost: ${generation_metadata['cost_usd']:.4f}, Time: {generation_metadata['generation_time_ms']}ms", flush=True)
-        
+        print(
+            f"✅ WYR: Used {generation_metadata['provider']}/{generation_metadata['model_id']}",
+            flush=True,
+        )
+        print(
+            f"✅ WYR: Cost: ${generation_metadata['cost_usd']:.4f}, Time: {generation_metadata['generation_time_ms']}ms",
+            flush=True,
+        )
+
         # Note: LLM usage is already logged by the centralized client
 
         # Save session to database
@@ -138,13 +138,12 @@ async def start_new_game_session(
 
     except Exception as e:
         print(f"❌ WYR: Unexpected error: {str(e)}", flush=True)
-        raise HTTPException(
-            status_code=500,
-            detail="Internal server error during game creation"
-        )
+        raise HTTPException(status_code=500, detail="Internal server error during game creation")
 
 
-@router.put("/apps/would-you-rather/sessions/{session_id}/progress", response_model=WyrGameSessionResponse)
+@router.put(
+    "/apps/would-you-rather/sessions/{session_id}/progress", response_model=WyrGameSessionResponse
+)
 async def save_answer_progress(
     session_id: uuid.UUID = Path(..., description="Session ID"),
     request: WyrGameSessionProgress = ...,
@@ -158,29 +157,22 @@ async def save_answer_progress(
         # Get existing session
         session_data = await _get_session(db, session_id, current_user.user_id)
         if not session_data:
-            raise HTTPException(
-                status_code=404,
-                detail="Session not found or access denied"
-            )
+            raise HTTPException(status_code=404, detail="Session not found or access denied")
 
         # Check if session is already completed
         if session_data["status"] == "completed":
-            raise HTTPException(
-                status_code=400,
-                detail="Cannot modify completed session"
-            )
+            raise HTTPException(status_code=400, detail="Cannot modify completed session")
 
         # Parse existing data
-        existing_questions = safe_json_parse(session_data["questions"], default=[], expected_type=list)
+        existing_questions = safe_json_parse(
+            session_data["questions"], default=[], expected_type=list
+        )
         existing_answers = safe_json_parse(session_data["answers"], default=[], expected_type=list)
 
         # Validate question exists
         question_exists = any(q.get("id") == str(request.question_id) for q in existing_questions)
         if not question_exists:
-            raise HTTPException(
-                status_code=400,
-                detail="Invalid question ID"
-            )
+            raise HTTPException(status_code=400, detail="Invalid question ID")
 
         # Update or add answer
         answer_updated = False
@@ -195,11 +187,13 @@ async def save_answer_progress(
                 break
 
         if not answer_updated:
-            existing_answers.append({
-                "question_id": str(request.question_id),
-                "chosen_option": request.chosen_option,
-                "answered_at": datetime.utcnow().isoformat(),
-            })
+            existing_answers.append(
+                {
+                    "question_id": str(request.question_id),
+                    "chosen_option": request.chosen_option,
+                    "answered_at": datetime.utcnow().isoformat(),
+                }
+            )
 
         # Update session
         update_query = """
@@ -218,10 +212,7 @@ async def save_answer_progress(
         )
 
         if not updated_session:
-            raise HTTPException(
-                status_code=500,
-                detail="Failed to update session"
-            )
+            raise HTTPException(status_code=500, detail="Failed to update session")
 
         # Build response
         session = await _build_session_response(updated_session)
@@ -231,13 +222,12 @@ async def save_answer_progress(
 
     except Exception as e:
         print(f"❌ WYR: Error updating progress: {str(e)}", flush=True)
-        raise HTTPException(
-            status_code=500,
-            detail="Failed to save progress"
-        )
+        raise HTTPException(status_code=500, detail="Failed to save progress")
 
 
-@router.post("/apps/would-you-rather/sessions/{session_id}/complete", response_model=WyrGameCompleteResponse)
+@router.post(
+    "/apps/would-you-rather/sessions/{session_id}/complete", response_model=WyrGameCompleteResponse
+)
 async def complete_game_session(
     session_id: uuid.UUID = Path(..., description="Session ID"),
     request: WyrGameSessionComplete = ...,
@@ -251,10 +241,7 @@ async def complete_game_session(
         # Get existing session
         session_data = await _get_session(db, session_id, current_user.user_id)
         if not session_data:
-            raise HTTPException(
-                status_code=404,
-                detail="Session not found or access denied"
-            )
+            raise HTTPException(status_code=404, detail="Session not found or access denied")
 
         # Check if already completed
         if session_data["status"] == "completed":
@@ -263,7 +250,7 @@ async def complete_game_session(
             scrubbed_session = _scrub_completed_session(session)
             return WyrGameCompleteResponse(
                 session=scrubbed_session,
-                summary=session_data["summary"] or "Analysis not available"
+                summary=session_data["summary"] or "Analysis not available",
             )
 
         # Generate personality analysis
@@ -275,13 +262,16 @@ async def complete_game_session(
             user_id=uuid.UUID(current_user.user_id),
             db=db,
         )
-        
-        print(f"✅ WYR: Analysis generated with {analysis_metadata['provider']}/{analysis_metadata['model_id']}", flush=True)
+
+        print(
+            f"✅ WYR: Analysis generated with {analysis_metadata['provider']}/{analysis_metadata['model_id']}",
+            flush=True,
+        )
 
         # Update session as completed
         complete_query = """
             UPDATE wyr_game_sessions
-            SET status = 'completed', completed_at = CURRENT_TIMESTAMP, 
+            SET status = 'completed', completed_at = CURRENT_TIMESTAMP,
                 summary = $1, answers = $2::jsonb, updated_at = CURRENT_TIMESTAMP
             WHERE id = $3 AND user_id = $4
             RETURNING *
@@ -290,19 +280,16 @@ async def complete_game_session(
         completed_session = await db.fetch_one(
             complete_query,
             summary,
-            json.dumps([answer.model_dump(mode='json') for answer in request.final_answers]),
+            json.dumps([answer.model_dump(mode="json") for answer in request.final_answers]),
             session_id,
             uuid.UUID(current_user.user_id),
         )
 
         if not completed_session:
-            raise HTTPException(
-                status_code=500,
-                detail="Failed to complete session"
-            )
+            raise HTTPException(status_code=500, detail="Failed to complete session")
 
         session = await _build_session_response(completed_session)
-        
+
         # Scrub questions to only show chosen options
         scrubbed_session = _scrub_completed_session(session)
         print(f"✅ WYR: Completed session {session_id}", flush=True)
@@ -311,10 +298,7 @@ async def complete_game_session(
 
     except Exception as e:
         print(f"❌ WYR: Error completing session: {str(e)}", flush=True)
-        raise HTTPException(
-            status_code=500,
-            detail="Failed to complete session"
-        )
+        raise HTTPException(status_code=500, detail="Failed to complete session")
 
 
 @router.get("/users/{user_id}/would-you-rather/sessions", response_model=WyrGameSessionsResponse)
@@ -331,10 +315,7 @@ async def get_user_sessions(
 
     # Verify user can only access their own sessions
     if current_user.user_id != str(user_id):
-        raise HTTPException(
-            status_code=403,
-            detail="Can only access your own sessions"
-        )
+        raise HTTPException(status_code=403, detail="Can only access your own sessions")
 
     try:
         # Build query with filters
@@ -391,11 +372,11 @@ async def get_user_sessions(
         sessions = []
         for row in rows:
             session = await _build_session_response(row)
-            
+
             # Scrub completed sessions to only show chosen options
             if session.status == GameStatus.COMPLETED:
                 session = _scrub_completed_session(session)
-                
+
             sessions.append(session)
 
         print(f"✅ WYR: Returning {len(sessions)} sessions", flush=True)
@@ -409,10 +390,7 @@ async def get_user_sessions(
 
     except Exception as e:
         print(f"❌ WYR: Error getting sessions: {str(e)}", flush=True)
-        raise HTTPException(
-            status_code=500,
-            detail="Failed to retrieve sessions"
-        )
+        raise HTTPException(status_code=500, detail="Failed to retrieve sessions")
 
 
 @router.get("/apps/would-you-rather/sessions/{session_id}", response_model=WyrGameSessionResponse)
@@ -427,25 +405,19 @@ async def get_single_session(
     try:
         session_data = await _get_session(db, session_id, current_user.user_id)
         if not session_data:
-            raise HTTPException(
-                status_code=404,
-                detail="Session not found or access denied"
-            )
+            raise HTTPException(status_code=404, detail="Session not found or access denied")
 
         session = await _build_session_response(session_data)
-        
+
         # Scrub completed sessions to only show chosen options
         if session.status == GameStatus.COMPLETED:
             session = _scrub_completed_session(session)
-            
+
         return WyrGameSessionResponse(session=session)
 
     except Exception as e:
         print(f"❌ WYR: Error getting session: {str(e)}", flush=True)
-        raise HTTPException(
-            status_code=500,
-            detail="Failed to retrieve session"
-        )
+        raise HTTPException(status_code=500, detail="Failed to retrieve session")
 
 
 @router.delete("/apps/would-you-rather/sessions/{session_id}", response_model=WyrGameDeleteResponse)
@@ -461,10 +433,7 @@ async def delete_session(
         # Verify session exists and belongs to user
         session_data = await _get_session(db, session_id, current_user.user_id)
         if not session_data:
-            raise HTTPException(
-                status_code=404,
-                detail="Session not found or access denied"
-            )
+            raise HTTPException(status_code=404, detail="Session not found or access denied")
 
         # Delete session
         delete_query = """
@@ -475,23 +444,18 @@ async def delete_session(
         result = await db.execute(delete_query, session_id, uuid.UUID(current_user.user_id))
 
         if "DELETE 0" in result:
-            raise HTTPException(
-                status_code=500,
-                detail="Failed to delete session"
-            )
+            raise HTTPException(status_code=500, detail="Failed to delete session")
 
         print(f"✅ WYR: Deleted session {session_id}", flush=True)
         return WyrGameDeleteResponse()
 
     except Exception as e:
         print(f"❌ WYR: Error deleting session: {str(e)}", flush=True)
-        raise HTTPException(
-            status_code=500,
-            detail="Failed to delete session"
-        )
+        raise HTTPException(status_code=500, detail="Failed to delete session")
 
 
 # Helper functions
+
 
 async def _check_rate_limit(db: Database, user_id: uuid.UUID) -> bool:
     """Check if user has exceeded rate limit for game creation"""
@@ -531,17 +495,18 @@ async def _get_user_age_context(db: Database, user_id: uuid.UUID) -> str:
         user_query = """
             SELECT birth_date FROM users WHERE id = $1
         """
-        
+
         user_result = await db.fetch_one(user_query, user_id)
         if not user_result or not user_result["birth_date"]:
             return "general audience"
 
         # Calculate age
         from datetime import date
+
         birth_date = user_result["birth_date"]
         if isinstance(birth_date, str):
             birth_date = date.fromisoformat(birth_date)
-        
+
         age = (date.today() - birth_date).days // 365
 
         if age < 13:
@@ -597,7 +562,9 @@ async def _get_wyr_llm_model_config() -> dict:
 
             config = {
                 "primary_provider": cached_config.get("primary_provider", "anthropic"),
-                "primary_model_id": cached_config.get("primary_model_id", "claude-3-5-sonnet-20241022"),
+                "primary_model_id": cached_config.get(
+                    "primary_model_id", "claude-3-5-sonnet-20241022"
+                ),
                 "primary_parameters": cached_config.get(
                     "primary_parameters", {"temperature": 0.7, "max_tokens": 1000, "top_p": 0.9}
                 ),
@@ -666,24 +633,24 @@ async def _generate_questions_llm(
     try:
         # Get user age context
         age_context = await _get_user_age_context(db, user_id)
-        
+
         # Build prompt
         prompt = _build_questions_prompt(game_length, category, custom_request, age_context)
 
         # Get LLM model configuration from database/cache
         model_config = await _get_wyr_llm_model_config()
-        
+
         # Ensure sufficient tokens for question generation (max 10 questions)
         parameters = model_config.get("primary_parameters", {})
         parameters["max_tokens"] = max(parameters.get("max_tokens", 1000), 1500)
-        
-        # Update config with adjusted parameters
-        app_config = {
-            **model_config,
-            "primary_parameters": parameters
-        }
 
-        print(f"🔧 WYR_LLM: Using {app_config['primary_provider']}/{app_config['primary_model_id']}", flush=True)
+        # Update config with adjusted parameters
+        app_config = {**model_config, "primary_parameters": parameters}
+
+        print(
+            f"🔧 WYR_LLM: Using {app_config['primary_provider']}/{app_config['primary_model_id']}",
+            flush=True,
+        )
         print(f"🔧 WYR_LLM: Parameters: {parameters}", flush=True)
 
         # Create request metadata for logging
@@ -703,28 +670,48 @@ async def _generate_questions_llm(
             user_id=user_id,
             app_id="fairydust-would-you-rather",
             action=f"would-you-rather-{game_length.value}",
-            request_metadata=request_metadata
+            request_metadata=request_metadata,
         )
 
         # Parse questions from response
         questions = _parse_questions_response(completion, category)
-        
-        print(f"✅ WYR_LLM: Generated {len(questions)} questions (expected {game_length.value})", flush=True)
-        
+
+        print(
+            f"✅ WYR_LLM: Generated {len(questions)} questions (expected {game_length.value})",
+            flush=True,
+        )
+
         # Check if we got enough complete questions
         if len(questions) < game_length.value:
-            print(f"⚠️ WYR_LLM: Insufficient questions - got {len(questions)}, expected {game_length.value}", flush=True)
-            print(f"⚠️ WYR_LLM: This may be due to token limit or response truncation", flush=True)
+            print(
+                f"⚠️ WYR_LLM: Insufficient questions - got {len(questions)}, expected {game_length.value}",
+                flush=True,
+            )
+            print("⚠️ WYR_LLM: This may be due to token limit or response truncation", flush=True)
             # Still return what we got rather than failing completely
-        
+
         return questions, generation_metadata
 
     except LLMError as e:
         print(f"❌ WYR_LLM: LLM error generating questions: {str(e)}", flush=True)
-        return [], {"provider": "unknown", "model_id": "unknown", "cost_usd": 0.0, "generation_time_ms": 0, "was_fallback": False, "attempt_number": 1}
+        return [], {
+            "provider": "unknown",
+            "model_id": "unknown",
+            "cost_usd": 0.0,
+            "generation_time_ms": 0,
+            "was_fallback": False,
+            "attempt_number": 1,
+        }
     except Exception as e:
         print(f"❌ WYR_LLM: Unexpected error generating questions: {str(e)}", flush=True)
-        return [], {"provider": "unknown", "model_id": "unknown", "cost_usd": 0.0, "generation_time_ms": 0, "was_fallback": False, "attempt_number": 1}
+        return [], {
+            "provider": "unknown",
+            "model_id": "unknown",
+            "cost_usd": 0.0,
+            "generation_time_ms": 0,
+            "was_fallback": False,
+            "attempt_number": 1,
+        }
 
 
 def _build_questions_prompt(
@@ -734,7 +721,7 @@ def _build_questions_prompt(
     age_context: str,
 ) -> str:
     """Build the LLM prompt for question generation"""
-    
+
     category_descriptions = {
         GameCategory.THOUGHT_PROVOKING: "Deep philosophical questions that make you think about values, morality, and life choices",
         GameCategory.FUNNY_SILLY: "Lighthearted, humorous questions that are entertaining and playful",
@@ -760,7 +747,7 @@ CUSTOM THEME: {custom_request}"""
 
 VARIETY REQUIREMENT: Since this is "Mix It Up", include questions from different categories:
 - {game_length.value // 3} thought-provoking questions
-- {game_length.value // 3} funny/silly questions  
+- {game_length.value // 3} funny/silly questions
 - Remaining questions from other categories (relationships, fantasy, pop culture, etc.)"""
 
     base_prompt += f"""
@@ -842,7 +829,7 @@ CORRECT JSON FORMAT EXAMPLE:
 
 Generate exactly {game_length.value} creative, engaging questions now.
 
-IMPORTANT: 
+IMPORTANT:
 - Return ONLY the JSON array, no explanations, no additional text
 - Each option should be a single choice, not a full question
 - Do NOT include "or" or both options in a single field"""
@@ -855,28 +842,30 @@ def _parse_questions_response(content: str, category: GameCategory) -> list[Ques
     try:
         # Try to extract JSON from response
         import re
-        
+
         # Debug: Print the actual response content
         print(f"🔍 WYR_PARSE: OpenAI response content: {content[:500]}...", flush=True)
-        
+
         # Look for JSON array in the response - try multiple patterns
         json_match = None
-        
+
         # Pattern 1: Direct JSON array
-        json_match = re.search(r'\[.*\]', content, re.DOTALL)
-        
+        json_match = re.search(r"\[.*\]", content, re.DOTALL)
+
         # Pattern 2: JSON in markdown code blocks
         if not json_match:
-            json_match = re.search(r'```(?:json)?\s*(\[.*?\])\s*```', content, re.DOTALL)
+            json_match = re.search(r"```(?:json)?\s*(\[.*?\])\s*```", content, re.DOTALL)
             if json_match:
-                json_match = type('Match', (), {'group': lambda: json_match.group(1)})()
-        
+                json_match = type("Match", (), {"group": lambda: json_match.group(1)})()
+
         # Pattern 3: JSON after some introductory text
         if not json_match:
-            json_match = re.search(r'(?:here|questions|array).*?(\[.*\])', content, re.DOTALL | re.IGNORECASE)
+            json_match = re.search(
+                r"(?:here|questions|array).*?(\[.*\])", content, re.DOTALL | re.IGNORECASE
+            )
             if json_match:
-                json_match = type('Match', (), {'group': lambda: json_match.group(1)})()
-        
+                json_match = type("Match", (), {"group": lambda: json_match.group(1)})()
+
         if not json_match:
             print("❌ WYR_PARSE: No JSON array found in response", flush=True)
             print(f"🔍 WYR_PARSE: Full response was: {content}", flush=True)
@@ -889,11 +878,14 @@ def _parse_questions_response(content: str, category: GameCategory) -> list[Ques
             # Check for incomplete questions (empty or very short options)
             option_a = q_data.get("option_a", "").strip()
             option_b = q_data.get("option_b", "").strip()
-            
+
             if not option_a or not option_b or len(option_a) < 10 or len(option_b) < 10:
-                print(f"⚠️ WYR_PARSE: Incomplete question {i+1}: A='{option_a}', B='{option_b}'", flush=True)
+                print(
+                    f"⚠️ WYR_PARSE: Incomplete question {i+1}: A='{option_a}', B='{option_b}'",
+                    flush=True,
+                )
                 continue  # Skip incomplete questions
-            
+
             question = QuestionObject(
                 id=uuid.uuid4(),
                 question_number=q_data.get("question_number", i + 1),
@@ -933,7 +925,7 @@ async def _save_game_session(
         """
 
         # Convert questions to JSON, ensuring UUIDs are properly serialized
-        questions_json = json.dumps([q.model_dump(mode='json') for q in questions])
+        questions_json = json.dumps([q.model_dump(mode="json") for q in questions])
 
         await db.execute(
             insert_query,
@@ -992,7 +984,9 @@ async def _build_session_response(session_data: dict) -> WyrGameSession:
             AnswerObject(
                 question_id=uuid.UUID(a["question_id"]),
                 chosen_option=a.get("chosen_option"),
-                answered_at=datetime.fromisoformat(a["answered_at"]) if a.get("answered_at") else None,
+                answered_at=datetime.fromisoformat(a["answered_at"])
+                if a.get("answered_at")
+                else None,
             )
             for a in answers_data
         ]
@@ -1028,7 +1022,7 @@ async def _generate_personality_analysis(
     try:
         # Get user age context for appropriate language
         age_context = await _get_user_age_context(db, user_id)
-        
+
         # Build analysis prompt
         prompt = _build_analysis_prompt(questions, answers, category, age_context)
 
@@ -1039,8 +1033,8 @@ async def _generate_personality_analysis(
             "primary_parameters": {
                 "max_tokens": 300,  # Sufficient for personality analysis
                 "temperature": 0.7,
-                "top_p": 0.9
-            }
+                "top_p": 0.9,
+            },
         }
 
         # Create request metadata for logging
@@ -1049,7 +1043,7 @@ async def _generate_personality_analysis(
                 "category": category,
                 "age_context": age_context,
                 "num_questions": len(questions),
-                "num_answers": len(answers)
+                "num_answers": len(answers),
             }
         }
 
@@ -1060,45 +1054,63 @@ async def _generate_personality_analysis(
             user_id=user_id,
             app_id="fairydust-would-you-rather",
             action="would-you-rather-analysis",
-            request_metadata=request_metadata
+            request_metadata=request_metadata,
         )
 
         return analysis, generation_metadata
 
     except LLMError as e:
         print(f"❌ WYR_ANALYSIS: LLM error generating analysis: {str(e)}", flush=True)
-        return "Analysis temporarily unavailable", {"provider": "unknown", "model_id": "unknown", "cost_usd": 0.0, "generation_time_ms": 0, "was_fallback": False, "attempt_number": 1}
+        return "Analysis temporarily unavailable", {
+            "provider": "unknown",
+            "model_id": "unknown",
+            "cost_usd": 0.0,
+            "generation_time_ms": 0,
+            "was_fallback": False,
+            "attempt_number": 1,
+        }
     except Exception as e:
         print(f"❌ WYR_ANALYSIS: Unexpected error generating analysis: {str(e)}", flush=True)
-        return "Analysis temporarily unavailable", {"provider": "unknown", "model_id": "unknown", "cost_usd": 0.0, "generation_time_ms": 0, "was_fallback": False, "attempt_number": 1}
+        return "Analysis temporarily unavailable", {
+            "provider": "unknown",
+            "model_id": "unknown",
+            "cost_usd": 0.0,
+            "generation_time_ms": 0,
+            "was_fallback": False,
+            "attempt_number": 1,
+        }
 
 
-def _build_analysis_prompt(questions: list[dict], answers: list[AnswerObject], category: str, age_context: str) -> str:
+def _build_analysis_prompt(
+    questions: list[dict], answers: list[AnswerObject], category: str, age_context: str
+) -> str:
     """Build prompt for personality analysis"""
-    
+
     # Create answer mapping
     answer_map = {str(a.question_id): a.chosen_option for a in answers}
-    
+
     # Build questions and answers text
     qa_text = []
     for q in questions:
         question_id = q.get("id")
         chosen = answer_map.get(question_id, "not answered")
-        
+
         if chosen == "a":
             chosen_text = f"CHOSE A: {q.get('option_a', '')}"
         elif chosen == "b":
             chosen_text = f"CHOSE B: {q.get('option_b', '')}"
         else:
             chosen_text = "NOT ANSWERED"
-            
-        qa_text.append(f"Q{q.get('question_number', '')}: {q.get('option_a', '')} vs {q.get('option_b', '')}\n{chosen_text}")
+
+        qa_text.append(
+            f"Q{q.get('question_number', '')}: {q.get('option_a', '')} vs {q.get('option_b', '')}\n{chosen_text}"
+        )
 
     qa_string = "\n\n".join(qa_text)
 
     # Check if this is for a child or family-friendly content
     is_child_friendly = category == "family-friendly" or "children" in age_context.lower()
-    
+
     if is_child_friendly:
         prompt = f"""Look at these fun "Would You Rather" choices and write something nice about this person!
 
@@ -1107,7 +1119,7 @@ THEIR CHOICES:
 
 Write a short, happy message (about 100 words, 2-3 sentences) that:
 - Says nice things about their choices
-- Uses simple words kids can understand  
+- Uses simple words kids can understand
 - Makes them feel good about themselves
 - Talks about what kind of person they are
 
@@ -1140,12 +1152,12 @@ def _scrub_completed_session(session: WyrGameSession) -> WyrGameSession:
     try:
         # Create answer mapping for quick lookup
         answer_map = {str(answer.question_id): answer.chosen_option for answer in session.answers}
-        
+
         # Create new questions list with only chosen option text
         scrubbed_questions = []
         for question in session.questions:
             chosen_option = answer_map.get(str(question.id))
-            
+
             if chosen_option == "a":
                 # User chose option A, only show option A text
                 scrubbed_question = QuestionObject(
@@ -1156,7 +1168,7 @@ def _scrub_completed_session(session: WyrGameSession) -> WyrGameSession:
                     category=question.category,
                 )
             elif chosen_option == "b":
-                # User chose option B, only show option B text  
+                # User chose option B, only show option B text
                 scrubbed_question = QuestionObject(
                     id=question.id,
                     question_number=question.question_number,
@@ -1173,9 +1185,9 @@ def _scrub_completed_session(session: WyrGameSession) -> WyrGameSession:
                     option_b="",
                     category=question.category,
                 )
-            
+
             scrubbed_questions.append(scrubbed_question)
-        
+
         # Return new session with scrubbed questions
         return WyrGameSession(
             session_id=session.session_id,
@@ -1191,7 +1203,7 @@ def _scrub_completed_session(session: WyrGameSession) -> WyrGameSession:
             answers=session.answers,  # Keep original answers
             summary=session.summary,
         )
-        
+
     except Exception as e:
         print(f"⚠️ WYR_SCRUB: Error scrubbing session, returning original: {str(e)}", flush=True)
         return session  # Return original session if scrubbing fails

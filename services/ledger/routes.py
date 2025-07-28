@@ -10,17 +10,17 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from ledger_service import LedgerService
 from models import (
     AppInitialGrantRequest,
-    DailyBonusGrantRequest,
     Balance,
     BalanceAdjustment,
     BulkGrantRequest,
     ConsumeRequest,
+    DailyBonusGrantRequest,
     GrantRequest,
     InAppPurchaseRequest,
     PromotionalGrantRequest,
     PurchaseRequest,
-    RefundRequest,
     ReferralRewardGrantRequest,
+    RefundRequest,
     TransactionList,
     TransactionResponse,
     TransactionType,
@@ -207,7 +207,7 @@ async def process_in_app_purchase(
     """Process in-app purchase from mobile app stores"""
     # Users can only make purchases for themselves
     user_id = UUID(current_user.user_id)
-    
+
     # Map product IDs to DUST amounts
     dust_amounts = {
         "dust_50": 50,
@@ -216,14 +216,15 @@ async def process_in_app_purchase(
         "dust_500": 500,
         "dust_1000": 1000,
     }
-    
+
     dust_amount = dust_amounts[request.product_id]
-    
+
     # For now, we'll create the transaction without receipt verification
     # TODO: Add Apple/Google receipt verification
     import secrets
+
     purchase_id = f"{request.platform}_{request.product_id}_{secrets.token_hex(8)}"
-    
+
     # Record the purchase
     return await ledger.record_purchase(
         user_id=user_id,
@@ -639,10 +640,10 @@ async def grant_daily_bonus(
     config_result = await db.fetch_one(
         "SELECT value FROM system_config WHERE key = 'daily_login_bonus_amount'"
     )
-    
+
     if not config_result:
         raise HTTPException(status_code=500, detail="Daily bonus not configured")
-    
+
     bonus_amount = int(config_result["value"])
 
     # Apps can grant daily bonuses to any user
@@ -681,11 +682,11 @@ async def grant_referral_reward(
 
     # Create transaction description based on reward reason
     reason_descriptions = {
-        "referral_bonus": f"Referral bonus for successful invite",
-        "referee_bonus": f"Welcome bonus for using referral code",
+        "referral_bonus": "Referral bonus for successful invite",
+        "referee_bonus": "Welcome bonus for using referral code",
         "milestone_bonus": f"Milestone bonus for {request.amount} DUST achievement",
     }
-    
+
     description = reason_descriptions.get(request.reason, f"Referral reward: {request.reason}")
 
     # Grant the referral reward using the standard grant mechanism
@@ -707,7 +708,7 @@ async def grant_promotional_dust(
     ledger: LedgerService = Depends(get_ledger_service),
 ):
     """Grant DUST for promotional code redemption (service-to-service)"""
-    
+
     # Grant promotional DUST using the standard grant mechanism
     return await ledger.grant_dust(
         user_id=request.user_id,

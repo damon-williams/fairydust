@@ -22,8 +22,8 @@ from models import (
 
 from shared.auth_middleware import TokenData, get_current_user
 from shared.database import Database, get_db
-from shared.llm_client import llm_client, LLMError
-from shared.llm_usage_logger import calculate_prompt_hash, create_request_metadata
+from shared.llm_client import LLMError, llm_client
+from shared.llm_usage_logger import create_request_metadata
 
 router = APIRouter()
 
@@ -124,21 +124,21 @@ async def generate_fortune_reading(
                 life_path_number=life_path_number,
                 auth_token=auth_token,
             )
-            
+
             if not result:
                 print("❌ FORTUNE: LLM generation failed", flush=True)
                 return FortuneErrorResponse(
                     error="Failed to generate fortune reading. Please try again."
                 )
-            
+
             reading_content, generation_metadata = result
             provider_used = generation_metadata["provider"]
             model_used = generation_metadata["model_id"]
             tokens_used = generation_metadata["tokens_used"]
             cost = generation_metadata["cost_usd"]
-            
+
             print("🤖 FORTUNE: Generated reading successfully", flush=True)
-            
+
         except LLMError as e:
             print(f"❌ FORTUNE: LLM generation failed: {str(e)}", flush=True)
             return FortuneErrorResponse(
@@ -518,7 +518,9 @@ async def _generate_fortune_llm(
         model_config = await _get_llm_model_config()
 
         # Create request metadata with proper action slug based on reading type
-        action_slug = "fortune-daily" if request.reading_type == ReadingType.DAILY else "fortune-question"
+        action_slug = (
+            "fortune-daily" if request.reading_type == ReadingType.DAILY else "fortune-question"
+        )
         request_metadata = create_request_metadata(
             action=action_slug,
             parameters={
@@ -540,7 +542,7 @@ async def _generate_fortune_llm(
             user_id=request.user_id,
             app_id="fairydust-fortune-teller",
             action=action_slug,
-            request_metadata=request_metadata
+            request_metadata=request_metadata,
         )
 
         return completion, generation_metadata

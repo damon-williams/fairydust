@@ -39,11 +39,11 @@ class GooglePlacesNewAPIService:
     ) -> list[dict[str, Any]]:
         """
         Search for restaurants using Google Places Text Search API
-        
+
         Args:
             text_query: Natural language query like "kid-friendly italian restaurants with outdoor seating"
             latitude: User's latitude
-            longitude: User's longitude  
+            longitude: User's longitude
             radius_miles: Search radius in miles
             max_results: Maximum number of results (1-20)
             min_rating: Minimum rating filter (optional)
@@ -55,18 +55,17 @@ class GooglePlacesNewAPIService:
 
         # Build request body - enhance text query for better restaurant matching
         enhanced_query = text_query
-        if not any(word in text_query.lower() for word in ["restaurant", "cafe", "dining", "food", "eat"]):
+        if not any(
+            word in text_query.lower() for word in ["restaurant", "cafe", "dining", "food", "eat"]
+        ):
             enhanced_query = f"{text_query} restaurants"
-        
+
         request_body = {
             "textQuery": enhanced_query,
             "locationBias": {
                 "circle": {
-                    "center": {
-                        "latitude": latitude,
-                        "longitude": longitude
-                    },
-                    "radius": self.miles_to_meters(radius_miles)
+                    "center": {"latitude": latitude, "longitude": longitude},
+                    "radius": self.miles_to_meters(radius_miles),
                 }
             },
             "includedType": "restaurant",
@@ -74,7 +73,7 @@ class GooglePlacesNewAPIService:
             "rankPreference": "RELEVANCE",
             "languageCode": "en",
         }
-        
+
         print(f"🔍 GOOGLE_PLACES_NEW: Enhanced query: '{enhanced_query}'")
 
         # Add optional filters
@@ -85,10 +84,10 @@ class GooglePlacesNewAPIService:
         if price_levels:
             valid_price_levels = [
                 "PRICE_LEVEL_FREE",
-                "PRICE_LEVEL_INEXPENSIVE", 
+                "PRICE_LEVEL_INEXPENSIVE",
                 "PRICE_LEVEL_MODERATE",
                 "PRICE_LEVEL_EXPENSIVE",
-                "PRICE_LEVEL_VERY_EXPENSIVE"
+                "PRICE_LEVEL_VERY_EXPENSIVE",
             ]
             filtered_price_levels = [p for p in price_levels if p in valid_price_levels]
             if filtered_price_levels:
@@ -103,7 +102,7 @@ class GooglePlacesNewAPIService:
         # Define fields to return (for efficiency and cost optimization)
         field_mask = [
             "places.id",
-            "places.displayName", 
+            "places.displayName",
             "places.formattedAddress",
             "places.location",
             "places.rating",
@@ -118,13 +117,13 @@ class GooglePlacesNewAPIService:
             "places.goodForChildren",
             "places.reservable",
             "places.servesVegetarianFood",
-            "places.accessibilityOptions"
+            "places.accessibilityOptions",
         ]
 
         headers = {
             "Content-Type": "application/json",
             "X-Goog-Api-Key": self.api_key,
-            "X-Goog-FieldMask": ",".join(field_mask)
+            "X-Goog-FieldMask": ",".join(field_mask),
         }
 
         try:
@@ -133,9 +132,9 @@ class GooglePlacesNewAPIService:
                     f"{self.base_url}/places:searchText",
                     json=request_body,
                     headers=headers,
-                    timeout=15.0
+                    timeout=15.0,
                 )
-                
+
                 print(f"🔍 GOOGLE_PLACES_NEW: API response status: {response.status_code}")
 
                 if response.status_code != 200:
@@ -153,11 +152,11 @@ class GooglePlacesNewAPIService:
                 restaurants = []
                 for place in places:
                     restaurant = self._convert_place_to_restaurant(place, latitude, longitude)
-                    
+
                     # Additional filtering if needed
                     if min_rating and restaurant.get("rating", 0) < min_rating:
                         continue
-                        
+
                     restaurants.append(restaurant)
 
                 print(f"🔍 GOOGLE_PLACES_NEW: Returning {len(restaurants)} restaurants")
@@ -171,7 +170,7 @@ class GooglePlacesNewAPIService:
         self, place: dict[str, Any], user_lat: float, user_lng: float
     ) -> dict[str, Any]:
         """Convert Google Places API (New) result to our restaurant format"""
-        
+
         # Extract location
         location = place.get("location", {})
         place_lat = location.get("latitude", 0)
@@ -181,16 +180,18 @@ class GooglePlacesNewAPIService:
         # Map price level (new API uses enum strings)
         price_level_map = {
             "PRICE_LEVEL_FREE": "$",
-            "PRICE_LEVEL_INEXPENSIVE": "$", 
+            "PRICE_LEVEL_INEXPENSIVE": "$",
             "PRICE_LEVEL_MODERATE": "$$",
             "PRICE_LEVEL_EXPENSIVE": "$$$",
-            "PRICE_LEVEL_VERY_EXPENSIVE": "$$$"
+            "PRICE_LEVEL_VERY_EXPENSIVE": "$$$",
         }
         price_level = price_level_map.get(place.get("priceLevel", "PRICE_LEVEL_MODERATE"), "$$")
 
         # Extract display name
         display_name = place.get("displayName", {})
-        restaurant_name = display_name.get("text", "Unknown Restaurant") if display_name else "Unknown Restaurant"
+        restaurant_name = (
+            display_name.get("text", "Unknown Restaurant") if display_name else "Unknown Restaurant"
+        )
 
         # Extract cuisine from primary type and types
         primary_type = place.get("primaryType", "")
@@ -198,11 +199,7 @@ class GooglePlacesNewAPIService:
         cuisine = self._extract_cuisine_from_types(primary_type, place_types, restaurant_name)
 
         # Get phone numbers
-        phone = (
-            place.get("nationalPhoneNumber") or 
-            place.get("internationalPhoneNumber") or 
-            None
-        )
+        phone = place.get("nationalPhoneNumber") or place.get("internationalPhoneNumber") or None
 
         # Extract enhanced features from new API
         features = self._extract_restaurant_features(place)
@@ -219,16 +216,18 @@ class GooglePlacesNewAPIService:
             "phone": phone,
             "google_place_id": place["id"],
             "google_place_data": place,
-            "features": features  # Enhanced features from new API
+            "features": features,  # Enhanced features from new API
         }
 
-    def _extract_cuisine_from_types(self, primary_type: str, place_types: list[str], restaurant_name: str) -> str:
+    def _extract_cuisine_from_types(
+        self, primary_type: str, place_types: list[str], restaurant_name: str
+    ) -> str:
         """Extract cuisine type from new API types and restaurant name"""
-        
+
         # New API type mappings
         cuisine_map = {
             "italian_restaurant": "Italian",
-            "chinese_restaurant": "Chinese", 
+            "chinese_restaurant": "Chinese",
             "japanese_restaurant": "Japanese",
             "mexican_restaurant": "Mexican",
             "indian_restaurant": "Indian",
@@ -243,7 +242,7 @@ class GooglePlacesNewAPIService:
             "korean_restaurant": "Korean",
             "vietnamese_restaurant": "Vietnamese",
             "greek_restaurant": "Greek",
-            "lebanese_restaurant": "Lebanese"
+            "lebanese_restaurant": "Lebanese",
         }
 
         # Check primary type first
@@ -261,51 +260,97 @@ class GooglePlacesNewAPIService:
     def _extract_cuisine_from_name(self, restaurant_name: str) -> str:
         """Extract cuisine from restaurant name using keyword analysis"""
         name_lower = restaurant_name.lower()
-        
+
         # Cuisine keyword mappings
         cuisine_keywords = {
-            "Italian": ["pizza", "italiano", "pasta", "luigi", "mario", "tony", "bella", "roma", "milano", "italian", "tuscany", "ristorante", "bistro"],
-            "Chinese": ["china", "chinese", "chopstick", "wok", "panda", "dragon", "golden garden", "express", "bao", "szechuan", "hunan"],
-            "Mexican": ["taco", "mexican", "burrito", "cantina", "maria", "jose", "salsa", "amigo", "fiesta"],
-            "Japanese": ["sushi", "japanese", "ramen", "tokyo", "sakura", "zen", "ninja", "samurai", "bento"],
+            "Italian": [
+                "pizza",
+                "italiano",
+                "pasta",
+                "luigi",
+                "mario",
+                "tony",
+                "bella",
+                "roma",
+                "milano",
+                "italian",
+                "tuscany",
+                "ristorante",
+                "bistro",
+            ],
+            "Chinese": [
+                "china",
+                "chinese",
+                "chopstick",
+                "wok",
+                "panda",
+                "dragon",
+                "golden garden",
+                "express",
+                "bao",
+                "szechuan",
+                "hunan",
+            ],
+            "Mexican": [
+                "taco",
+                "mexican",
+                "burrito",
+                "cantina",
+                "maria",
+                "jose",
+                "salsa",
+                "amigo",
+                "fiesta",
+            ],
+            "Japanese": [
+                "sushi",
+                "japanese",
+                "ramen",
+                "tokyo",
+                "sakura",
+                "zen",
+                "ninja",
+                "samurai",
+                "bento",
+            ],
             "Indian": ["indian", "curry", "tandoor", "maharaja", "taj", "spice", "bombay", "delhi"],
             "Thai": ["thai", "pad", "bangkok", "lemongrass", "basil"],
             "Vietnamese": ["pho", "vietnamese", "viet", "saigon", "banh"],
             "American": ["steak", "grill", "burger", "bbq", "american", "diner"],
-            "Seafood": ["seafood", "fish", "crab", "lobster", "oyster", "shrimp"]
+            "Seafood": ["seafood", "fish", "crab", "lobster", "oyster", "shrimp"],
         }
-        
+
         for cuisine, keywords in cuisine_keywords.items():
             if any(keyword in name_lower for keyword in keywords):
                 return cuisine
-                
+
         return "Restaurant"
 
     def _extract_restaurant_features(self, place: dict) -> list[str]:
         """Extract special features from new API place data"""
         features = []
-        
+
         # Outdoor seating
         if place.get("outdoorSeating"):
             features.append("outdoor seating")
-            
+
         # Good for children
         if place.get("goodForChildren"):
             features.append("kid-friendly")
-            
+
         # Reservations
         if place.get("reservable"):
             features.append("reservations available")
-            
+
         # Vegetarian options
         if place.get("servesVegetarianFood"):
             features.append("vegetarian options")
-            
-        # Accessibility 
+
+        # Accessibility
         accessibility = place.get("accessibilityOptions", {})
         if accessibility.get("wheelchairAccessibleEntrance"):
             features.append("wheelchair accessible")
-            
+
         return features
 
     def _calculate_distance(self, lat1: float, lon1: float, lat2: float, lon2: float) -> float:

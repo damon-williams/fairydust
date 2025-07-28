@@ -96,6 +96,8 @@ class User(BaseModel):
     # Calculated daily bonus fields (not stored in database)
     daily_bonus_eligible: Optional[bool] = None
     daily_bonus_amount: Optional[int] = None
+    # Calculated initial dust amount (not stored in database)
+    initial_dust_amount: Optional[int] = None
 
     class Config:
         from_attributes = True
@@ -123,9 +125,19 @@ class PersonInMyLifeCreate(BaseModel):
     name: str = Field(..., max_length=100)
     entry_type: EntryType = Field(EntryType.PERSON, description="Whether this is a person or pet")
     birth_date: Optional[str] = Field(None, pattern=r"^\d{4}-\d{2}-\d{2}$")
-    relationship: Optional[str] = Field(None, max_length=100, description="For people: 'mom', 'friend'. For pets: relationship to family")
-    species: Optional[str] = Field(None, max_length=50, description="For pets: breed, animal type (e.g., 'Golden Retriever', 'Tabby Cat')")
-    personality_description: Optional[str] = Field(None, max_length=200, description="Character traits for story generation")
+    relationship: Optional[str] = Field(
+        None,
+        max_length=100,
+        description="For people: 'mom', 'friend'. For pets: relationship to family",
+    )
+    species: Optional[str] = Field(
+        None,
+        max_length=50,
+        description="For pets: breed, animal type (e.g., 'Golden Retriever', 'Tabby Cat')",
+    )
+    personality_description: Optional[str] = Field(
+        None, max_length=200, description="Character traits for story generation"
+    )
 
     @field_validator("species")
     @classmethod
@@ -219,7 +231,9 @@ class ReferralCodeResponse(BaseModel):
 
 # Account deletion models
 class AccountDeletionRequest(BaseModel):
-    reason: Literal["not_using_anymore", "privacy_concerns", "too_expensive", "switching_platform", "other"]
+    reason: Literal[
+        "not_using_anymore", "privacy_concerns", "too_expensive", "switching_platform", "other"
+    ]
     feedback: Optional[str] = Field(None, max_length=1000)
 
 

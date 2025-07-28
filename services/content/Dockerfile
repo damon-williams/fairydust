@@ -12,8 +12,9 @@ COPY services/content/requirements.txt services/content/requirements.txt
 RUN pip install --upgrade pip
 RUN pip install --no-cache-dir -r services/content/requirements.txt
 
-# Verify googlemaps installation
+# Verify critical package installations
 RUN python -c "import googlemaps; print('✅ googlemaps package installed successfully')" || echo "❌ googlemaps package failed to install"
+RUN python -c "import langsmith; print('✅ langsmith package installed successfully')" || echo "❌ langsmith package failed to install"
 
 # Copy shared modules
 COPY shared/ shared/

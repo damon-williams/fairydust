@@ -67,9 +67,7 @@ async def get_apps_api(
                 return response.json()
             else:
                 logger.error(f"Apps service error: {response.status_code} - {response.text}")
-                raise HTTPException(
-                    status_code=response.status_code, detail="Failed to fetch apps"
-                )
+                raise HTTPException(status_code=response.status_code, detail="Failed to fetch apps")
 
     except HTTPException:
         raise
@@ -158,9 +156,7 @@ async def delete_app_api(
                 return response.json()
             else:
                 logger.error(f"Apps service error: {response.status_code} - {response.text}")
-                raise HTTPException(
-                    status_code=response.status_code, detail="Failed to delete app"
-                )
+                raise HTTPException(status_code=response.status_code, detail="Failed to delete app")
 
     except HTTPException:
         raise
@@ -205,9 +201,7 @@ async def create_app_api(
                 return response.json()
             else:
                 logger.error(f"Apps service error: {response.status_code} - {response.text}")
-                raise HTTPException(
-                    status_code=response.status_code, detail="Failed to create app"
-                )
+                raise HTTPException(status_code=response.status_code, detail="Failed to create app")
 
     except HTTPException:
         raise
@@ -253,9 +247,7 @@ async def update_app_api(
                 return response.json()
             else:
                 logger.error(f"Apps service error: {response.status_code} - {response.text}")
-                raise HTTPException(
-                    status_code=response.status_code, detail="Failed to update app"
-                )
+                raise HTTPException(status_code=response.status_code, detail="Failed to update app")
 
     except HTTPException:
         raise
@@ -524,7 +516,9 @@ async def create_action_pricing(
             logger.info(f"✅ Successfully created action pricing for {action_slug}")
             return result
         else:
-            logger.error(f"❌ Failed to create action pricing: {response.status_code} - {response.text}")
+            logger.error(
+                f"❌ Failed to create action pricing: {response.status_code} - {response.text}"
+            )
             raise HTTPException(
                 status_code=response.status_code, detail="Failed to create action pricing"
             )

@@ -1,9 +1,8 @@
 # services/content/character_routes.py
 from datetime import datetime
-from typing import Optional
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, Path, Query
+from fastapi import APIRouter, Depends, Path, Query
 from models import (
     CustomCharacter,
     CustomCharacterCreate,
@@ -31,8 +30,7 @@ async def get_user_characters(
     # Verify user can only access their own characters
     if current_user.user_id != str(user_id):
         return CustomCharacterErrorResponse(
-            error="Can only access your own characters",
-            error_code="FORBIDDEN"
+            error="Can only access your own characters", error_code="FORBIDDEN"
         )
 
     try:
@@ -40,7 +38,7 @@ async def get_user_characters(
         if active_only:
             query = """
                 SELECT id, user_id, name, description, character_type, is_active, created_at, updated_at
-                FROM custom_characters 
+                FROM custom_characters
                 WHERE user_id = $1 AND is_active = true
                 ORDER BY created_at DESC
             """
@@ -48,7 +46,7 @@ async def get_user_characters(
         else:
             query = """
                 SELECT id, user_id, name, description, character_type, is_active, created_at, updated_at
-                FROM custom_characters 
+                FROM custom_characters
                 WHERE user_id = $1
                 ORDER BY created_at DESC
             """
@@ -57,16 +55,12 @@ async def get_user_characters(
         # Convert to Pydantic models
         characters = [CustomCharacter(**char_data) for char_data in characters_data]
 
-        return CustomCharactersResponse(
-            characters=characters,
-            total_count=len(characters)
-        )
+        return CustomCharactersResponse(characters=characters, total_count=len(characters))
 
     except Exception as e:
         print(f"🚨 CHARACTER: Error fetching characters for user {user_id}: {e}", flush=True)
         return CustomCharacterErrorResponse(
-            error="Failed to fetch characters",
-            error_code="DATABASE_ERROR"
+            error="Failed to fetch characters", error_code="DATABASE_ERROR"
         )
 
 
@@ -81,21 +75,21 @@ async def create_character(
     # Verify user can only create characters for themselves
     if current_user.user_id != str(user_id):
         return CustomCharacterErrorResponse(
-            error="Can only create characters for yourself",
-            error_code="FORBIDDEN"
+            error="Can only create characters for yourself", error_code="FORBIDDEN"
         )
 
     try:
         # Check if character name already exists for this user
         existing_check = await db.fetch_one(
             "SELECT id FROM custom_characters WHERE user_id = $1 AND name = $2",
-            user_id, character_data.name
+            user_id,
+            character_data.name,
         )
-        
+
         if existing_check:
             return CustomCharacterErrorResponse(
                 error=f"Character with name '{character_data.name}' already exists",
-                error_code="DUPLICATE_NAME"
+                error_code="DUPLICATE_NAME",
             )
 
         # Insert new character
@@ -104,19 +98,18 @@ async def create_character(
             VALUES ($1, $2, $3, $4, true, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
             RETURNING id, user_id, name, description, character_type, is_active, created_at, updated_at
         """
-        
+
         character_record = await db.fetch_one(
             query,
             user_id,
             character_data.name,
             character_data.description,
-            character_data.character_type
+            character_data.character_type,
         )
 
         if not character_record:
             return CustomCharacterErrorResponse(
-                error="Failed to create character",
-                error_code="DATABASE_ERROR"
+                error="Failed to create character", error_code="DATABASE_ERROR"
             )
 
         character = CustomCharacter(**character_record)
@@ -127,8 +120,7 @@ async def create_character(
     except Exception as e:
         print(f"🚨 CHARACTER: Error creating character for user {user_id}: {e}", flush=True)
         return CustomCharacterErrorResponse(
-            error="Failed to create character",
-            error_code="DATABASE_ERROR"
+            error="Failed to create character", error_code="DATABASE_ERROR"
         )
 
 
@@ -144,36 +136,36 @@ async def update_character(
     # Verify user can only update their own characters
     if current_user.user_id != str(user_id):
         return CustomCharacterErrorResponse(
-            error="Can only update your own characters",
-            error_code="FORBIDDEN"
+            error="Can only update your own characters", error_code="FORBIDDEN"
         )
 
     try:
         # Check if character exists and belongs to user
         existing_character = await db.fetch_one(
             "SELECT id, user_id, name, description, character_type, is_active, created_at, updated_at FROM custom_characters WHERE id = $1 AND user_id = $2",
-            character_id, user_id
+            character_id,
+            user_id,
         )
-        
+
         if not existing_character:
             return CustomCharacterErrorResponse(
-                error="Character not found",
-                error_code="NOT_FOUND",
-                character_id=character_id
+                error="Character not found", error_code="NOT_FOUND", character_id=character_id
             )
 
         # Check for duplicate name if name is being updated
-        if character_data.name and character_data.name != existing_character['name']:
+        if character_data.name and character_data.name != existing_character["name"]:
             duplicate_check = await db.fetch_one(
                 "SELECT id FROM custom_characters WHERE user_id = $1 AND name = $2 AND id != $3",
-                user_id, character_data.name, character_id
+                user_id,
+                character_data.name,
+                character_id,
             )
-            
+
             if duplicate_check:
                 return CustomCharacterErrorResponse(
                     error=f"Character with name '{character_data.name}' already exists",
                     error_code="DUPLICATE_NAME",
-                    character_id=character_id
+                    character_id=character_id,
                 )
 
         # Build update query dynamically based on provided fields
@@ -215,7 +207,7 @@ async def update_character(
         update_values.extend([character_id, user_id])
 
         query = f"""
-            UPDATE custom_characters 
+            UPDATE custom_characters
             SET {', '.join(update_fields)}
             WHERE id = ${param_count} AND user_id = ${param_count + 1}
             RETURNING id, user_id, name, description, character_type, is_active, created_at, updated_at
@@ -227,7 +219,7 @@ async def update_character(
             return CustomCharacterErrorResponse(
                 error="Failed to update character",
                 error_code="DATABASE_ERROR",
-                character_id=character_id
+                character_id=character_id,
             )
 
         character = CustomCharacter(**updated_character)
@@ -236,15 +228,20 @@ async def update_character(
         return CustomCharacterResponse(character=character)
 
     except Exception as e:
-        print(f"🚨 CHARACTER: Error updating character {character_id} for user {user_id}: {e}", flush=True)
+        print(
+            f"🚨 CHARACTER: Error updating character {character_id} for user {user_id}: {e}",
+            flush=True,
+        )
         return CustomCharacterErrorResponse(
             error="Failed to update character",
             error_code="DATABASE_ERROR",
-            character_id=character_id
+            character_id=character_id,
         )
 
 
-@router.delete("/users/{user_id}/characters/{character_id}", response_model=CustomCharacterDeleteResponse)
+@router.delete(
+    "/users/{user_id}/characters/{character_id}", response_model=CustomCharacterDeleteResponse
+)
 async def delete_character(
     user_id: UUID = Path(..., description="User ID"),
     character_id: UUID = Path(..., description="Character ID"),
@@ -255,47 +252,50 @@ async def delete_character(
     # Verify user can only delete their own characters
     if current_user.user_id != str(user_id):
         return CustomCharacterErrorResponse(
-            error="Can only delete your own characters",
-            error_code="FORBIDDEN"
+            error="Can only delete your own characters", error_code="FORBIDDEN"
         )
 
     try:
         # Check if character exists and belongs to user
         existing_character = await db.fetch_one(
             "SELECT id, name FROM custom_characters WHERE id = $1 AND user_id = $2",
-            character_id, user_id
+            character_id,
+            user_id,
         )
-        
+
         if not existing_character:
             return CustomCharacterErrorResponse(
-                error="Character not found",
-                error_code="NOT_FOUND",
-                character_id=character_id
+                error="Character not found", error_code="NOT_FOUND", character_id=character_id
             )
 
         # Delete the character
         result = await db.execute(
-            "DELETE FROM custom_characters WHERE id = $1 AND user_id = $2",
-            character_id, user_id
+            "DELETE FROM custom_characters WHERE id = $1 AND user_id = $2", character_id, user_id
         )
 
         if result == "DELETE 0":
             return CustomCharacterErrorResponse(
                 error="Failed to delete character",
                 error_code="DATABASE_ERROR",
-                character_id=character_id
+                character_id=character_id,
             )
 
-        print(f"✅ CHARACTER: Deleted character '{existing_character['name']}' for user {user_id}", flush=True)
+        print(
+            f"✅ CHARACTER: Deleted character '{existing_character['name']}' for user {user_id}",
+            flush=True,
+        )
 
         return CustomCharacterDeleteResponse(
             message=f"Character '{existing_character['name']}' deleted successfully"
         )
 
     except Exception as e:
-        print(f"🚨 CHARACTER: Error deleting character {character_id} for user {user_id}: {e}", flush=True)
+        print(
+            f"🚨 CHARACTER: Error deleting character {character_id} for user {user_id}: {e}",
+            flush=True,
+        )
         return CustomCharacterErrorResponse(
             error="Failed to delete character",
             error_code="DATABASE_ERROR",
-            character_id=character_id
+            character_id=character_id,
         )

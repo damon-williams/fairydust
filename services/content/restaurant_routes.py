@@ -376,12 +376,14 @@ async def get_restaurants_from_google_places(
                     pet_terms.append("dog-friendly")
                 else:
                     pet_terms.append("pet-friendly")
-            
+
             # Add unique pet terms to special occasion
             unique_pet_terms = list(set(pet_terms))
             if unique_pet_terms:
                 enhanced_occasion = f"{special_occasion} {' '.join(unique_pet_terms)}".strip()
-                print(f"🐾 RESTAURANT_DEBUG: Enhanced search for {len(pets_present)} pets: '{enhanced_occasion}'")
+                print(
+                    f"🐾 RESTAURANT_DEBUG: Enhanced search for {len(pets_present)} pets: '{enhanced_occasion}'"
+                )
             else:
                 enhanced_occasion = special_occasion
         else:
@@ -722,7 +724,7 @@ async def generate_ai_highlights(
                     highlights.append("Pet-friendly seating")
                 else:
                     highlights.append("Pet-friendly venue")
-            
+
             # Check dining preferences notes
             notes_raw = person.get("notes")
             notes = notes_raw.lower() if notes_raw else ""
@@ -732,7 +734,7 @@ async def generate_ai_highlights(
                 highlights.append("Vegetarian options")
             if "gluten" in notes:
                 highlights.append("Gluten-free options")
-    
+
     # General pet-friendly highlight if pets are present but no specific species highlights added
     if has_pets and not any("pet" in h.lower() or "dog" in h.lower() for h in highlights):
         highlights.append("Pet-friendly venue")
@@ -782,7 +784,9 @@ async def get_people_data(user_id: UUID, selected_people: list[UUID]) -> list[di
                                 "id": person.get("id", ""),
                                 "name": person.get("name", ""),
                                 "relationship": person.get("relationship", ""),
-                                "entry_type": person.get("entry_type", "person"),  # Include pet type
+                                "entry_type": person.get(
+                                    "entry_type", "person"
+                                ),  # Include pet type
                                 "species": person.get("species"),  # Pet species info
                                 "notes": dining_prefs.get("dining_preferences", {}).get(
                                     "notes", ""
@@ -1103,6 +1107,7 @@ async def update_restaurant_preferences(
 # NEW PLACES API TEXT SEARCH ENDPOINT
 # ============================================================================
 
+
 @router.post("/search-text", response_model=RestaurantTextSearchResponse)
 async def search_restaurants_with_text(
     request: RestaurantTextSearchRequest,
@@ -1111,10 +1116,10 @@ async def search_restaurants_with_text(
 ):
     """
     Search restaurants using natural language queries with the new Google Places API
-    
+
     Examples:
     - "kid-friendly italian restaurants with outdoor seating"
-    - "romantic dinner spots for anniversary" 
+    - "romantic dinner spots for anniversary"
     - "casual brunch places with vegetarian options"
     - "budget-friendly tacos near me"
     """
@@ -1152,16 +1157,18 @@ async def search_restaurants_with_text(
         """,
             session_id,
             request.user_id,
-            safe_json_dumps({
-                "location": request.location.dict(), 
-                "text_query": request.text_query,
-                "search_params": {
-                    "max_results": request.max_results,
-                    "min_rating": request.min_rating,
-                    "price_levels": request.price_levels,
-                    "open_now": request.open_now
+            safe_json_dumps(
+                {
+                    "location": request.location.dict(),
+                    "text_query": request.text_query,
+                    "search_params": {
+                        "max_results": request.max_results,
+                        "min_rating": request.min_rating,
+                        "price_levels": request.price_levels,
+                        "open_now": request.open_now,
+                    },
                 }
-            }),
+            ),
             [],
             session_expires,
         )
@@ -1177,17 +1184,19 @@ async def search_restaurants_with_text(
                     pet_terms.append("dog-friendly")
                 else:
                     pet_terms.append("pet-friendly")
-            
+
             # Add unique pet terms to the query
             unique_pet_terms = list(set(pet_terms))
             if unique_pet_terms:
                 enhanced_query = f"{request.text_query} {' '.join(unique_pet_terms)}"
-                print(f"🐾 RESTAURANT_TEXT_SEARCH: Enhanced query for {len(pets_present)} pets: '{enhanced_query}'")
-        
+                print(
+                    f"🐾 RESTAURANT_TEXT_SEARCH: Enhanced query for {len(pets_present)} pets: '{enhanced_query}'"
+                )
+
         # Use new Places API for text search
         places_service = get_google_places_new_api_service()
         print("🔍 RESTAURANT_TEXT_SEARCH: Using Google Places API (New) for text search")
-        
+
         restaurants_data = await places_service.search_restaurants_text(
             text_query=enhanced_query,
             latitude=request.location.latitude,
@@ -1196,12 +1205,16 @@ async def search_restaurants_with_text(
             max_results=request.max_results,
             min_rating=request.min_rating,
             price_levels=request.price_levels,
-            open_now=request.open_now
+            open_now=request.open_now,
         )
 
-        print(f"🔍 RESTAURANT_TEXT_SEARCH: Got {len(restaurants_data)} restaurants from New Places API")
+        print(
+            f"🔍 RESTAURANT_TEXT_SEARCH: Got {len(restaurants_data)} restaurants from New Places API"
+        )
         if not restaurants_data:
-            print("🔍 RESTAURANT_TEXT_SEARCH: ⚠️ No restaurants returned from New Places API - this could be:")
+            print(
+                "🔍 RESTAURANT_TEXT_SEARCH: ⚠️ No restaurants returned from New Places API - this could be:"
+            )
             print("  1. New Places API not enabled in Google Console")
             print("  2. Invalid query or location")
             print("  3. API quota/billing issues")
@@ -1243,7 +1256,7 @@ async def search_restaurants_with_text(
                     google_place_id=restaurant_data.get("google_place_id"),
                     opentable=opentable_info,
                     highlights=highlights,
-                    features=restaurant_data.get("features", [])  # New API features
+                    features=restaurant_data.get("features", []),  # New API features
                 )
                 restaurants.append(restaurant)
                 print(f"🔍 RESTAURANT_TEXT_SEARCH: ✅ Created enhanced restaurant: {restaurant_name}")
@@ -1259,35 +1272,36 @@ async def search_restaurants_with_text(
             session_id=session_id,
             generated_at=datetime.utcnow(),
             search_query=request.text_query,
-            api_version="new"
+            api_version="new",
         )
-        
+
         print("🚨 RESTAURANT_TEXT_SEARCH: ✅ Response created successfully")
         return response
 
     except Exception as e:
         print(f"🚨 RESTAURANT_TEXT_SEARCH: ❌ Error: {e}")
         import traceback
+
         print(f"🚨 RESTAURANT_TEXT_SEARCH: Traceback: {traceback.format_exc()}")
-        
+
         # Fallback to legacy endpoint if new API fails
         print("🚨 RESTAURANT_TEXT_SEARCH: Falling back to legacy API with basic query parsing")
         try:
             # Basic parsing of text query to legacy format
             fallback_preferences = _parse_text_query_to_legacy_format(request.text_query)
-            
+
             # Create legacy request
             legacy_request = RestaurantGenerateRequest(
                 user_id=request.user_id,
                 location=request.location,
                 preferences=fallback_preferences,
                 selected_people=request.selected_people,
-                session_id=request.session_id
+                session_id=request.session_id,
             )
-            
+
             # Use legacy endpoint logic
             legacy_response = await generate_restaurants(legacy_request, current_user, db)
-            
+
             # Convert to new format
             enhanced_restaurants = [
                 EnhancedRestaurant(
@@ -1303,24 +1317,24 @@ async def search_restaurants_with_text(
                     google_place_id=r.google_place_id,
                     opentable=r.opentable,
                     highlights=r.highlights,
-                    features=[]  # Legacy doesn't have features
+                    features=[],  # Legacy doesn't have features
                 )
                 for r in legacy_response.restaurants
             ]
-            
+
             return RestaurantTextSearchResponse(
                 restaurants=enhanced_restaurants,
                 session_id=legacy_response.session_id,
                 generated_at=legacy_response.generated_at,
                 search_query=request.text_query,
-                api_version="legacy_fallback"
+                api_version="legacy_fallback",
             )
-            
+
         except Exception as fallback_error:
             print(f"🚨 RESTAURANT_TEXT_SEARCH: ❌ Fallback also failed: {fallback_error}")
             raise HTTPException(
-                status_code=500, 
-                detail="Restaurant search failed. Please try again or use the standard search."
+                status_code=500,
+                detail="Restaurant search failed. Please try again or use the standard search.",
             )
 
 
@@ -1330,23 +1344,33 @@ def _parse_text_query_to_legacy_format(text_query: str) -> "RestaurantPreference
     This is a simple fallback - the new API is much better at understanding queries
     """
     from models import RestaurantPreferences
-    
+
     query_lower = text_query.lower()
-    
+
     # Extract cuisine types
     cuisine_types = []
-    cuisine_keywords = ["italian", "chinese", "mexican", "japanese", "indian", "thai", "french", "american", "seafood"]
+    cuisine_keywords = [
+        "italian",
+        "chinese",
+        "mexican",
+        "japanese",
+        "indian",
+        "thai",
+        "french",
+        "american",
+        "seafood",
+    ]
     for cuisine in cuisine_keywords:
         if cuisine in query_lower:
             cuisine_types.append(cuisine)
-    
+
     # Extract party size indicators
     party_size = 2  # default
     if any(word in query_lower for word in ["family", "group", "large"]):
         party_size = 6
     elif any(word in query_lower for word in ["couple", "date", "romantic"]):
         party_size = 2
-    
+
     # Extract special occasions
     special_occasion = None
     if any(word in query_lower for word in ["romantic", "date", "anniversary"]):
@@ -1355,17 +1379,17 @@ def _parse_text_query_to_legacy_format(text_query: str) -> "RestaurantPreference
         special_occasion = "birthday"
     elif any(word in query_lower for word in ["family", "kid"]):
         special_occasion = "family"
-    
+
     # Extract time preferences
     time_preference = None
     if "now" in query_lower or "open" in query_lower:
         time_preference = "now"
-    
+
     return RestaurantPreferences(
         party_size=party_size,
         cuisine_types=cuisine_types,
         opentable_only=False,
         time_preference=time_preference,
         special_occasion=special_occasion,
-        max_results=20
+        max_results=20,
     )

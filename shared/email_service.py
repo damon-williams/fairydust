@@ -105,7 +105,7 @@ async def send_account_deletion_confirmation(email: str, fairyname: str, deletio
                 <h2 style="color: #667eea;">Account Deletion Confirmation</h2>
                 <p>Hi {fairyname},</p>
                 <p>This email confirms that your fairydust account has been permanently deleted.</p>
-                
+
                 <div style="background-color: #f9f9f9; padding: 15px; border-radius: 8px; margin: 20px 0;">
                     <p style="margin: 5px 0;"><strong>Deletion ID:</strong> <code style="background: #eee; padding: 2px 4px; border-radius: 3px;">{deletion_id}</code></p>
                     <p style="margin: 5px 0;"><strong>Date:</strong> {datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S')} UTC</p>
@@ -121,7 +121,7 @@ async def send_account_deletion_confirmation(email: str, fairyname: str, deletio
                 </ul>
 
                 <p>Thank you for being part of fairydust.</p>
-                
+
                 <hr style="border: none; border-top: 1px solid #eee; margin: 20px 0;">
                 <p style="color: #999; font-size: 12px; text-align: center;">- The fairydust team</p>
             </div>

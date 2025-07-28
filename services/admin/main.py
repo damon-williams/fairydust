@@ -3,10 +3,9 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import FastAPI, Request
+from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse
-from fastapi.exceptions import RequestValidationError
-from pydantic import ValidationError
 
 from shared.database import close_db, init_db
 from shared.redis_client import close_redis, init_redis
@@ -48,7 +47,7 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(
     title="fairydust Admin Portal",
-    version="2.14.0",
+    version="2.14.1",
     description="Admin portal for fairydust platform with system configuration management",
     lifespan=lifespan,
 )
@@ -61,21 +60,24 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+
 # Add validation error handler for better debugging
 @app.exception_handler(RequestValidationError)
 async def validation_exception_handler(request: Request, exc: RequestValidationError):
     import logging
+
     logger = logging.getLogger(__name__)
-    
+
     # Log detailed validation error information
     logger.error(f"Validation error on {request.method} {request.url}")
     logger.error(f"Validation errors: {exc.errors()}")
-    
+
     # Try to log the request body if possible
     try:
         body = await request.body()
         if body:
             import json
+
             try:
                 body_json = json.loads(body)
                 logger.error(f"Request body: {body_json}")
@@ -83,15 +85,13 @@ async def validation_exception_handler(request: Request, exc: RequestValidationE
                 logger.error(f"Request body (raw): {body.decode()}")
     except Exception as e:
         logger.warning(f"Could not read request body: {e}")
-    
+
     # Return detailed error response
     return JSONResponse(
         status_code=422,
-        content={
-            "detail": exc.errors(),
-            "body": "See server logs for request body details"
-        }
+        content={"detail": exc.errors(), "body": "See server logs for request body details"},
     )
+
 
 from routes import (
     apps_router,
