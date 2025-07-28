@@ -7,7 +7,8 @@ import {
   Settings,
   UserPlus,
   Trash2,
-  FileText
+  FileText,
+  CreditCard
 } from 'lucide-react';
 
 export interface NavigationItem {
@@ -45,6 +46,11 @@ export const navigation: NavigationItem[] = [
     name: 'Referrals',
     href: '/admin/referrals',
     icon: UserPlus,
+  },
+  {
+    name: 'Payments',
+    href: '/admin/payments',
+    icon: CreditCard,
   },
   {
     name: 'Deletion Logs',

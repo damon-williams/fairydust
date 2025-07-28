@@ -204,34 +204,68 @@ async def process_in_app_purchase(
     current_user: TokenData = Depends(get_current_user),
     ledger: LedgerService = Depends(get_ledger_service),
 ):
-    """Process in-app purchase from mobile app stores"""
+    """Process in-app purchase from mobile app stores with receipt verification"""
     # Users can only make purchases for themselves
     user_id = UUID(current_user.user_id)
 
-    # Map product IDs to DUST amounts
-    dust_amounts = {
-        "dust_50": 50,
-        "dust_100": 100,
-        "dust_200": 200,
-        "dust_500": 500,
-        "dust_1000": 1000,
-    }
+    print(f"🍎 IN_APP_PURCHASE: Processing {request.platform} purchase for user {user_id}")
+    print(f"🍎 IN_APP_PURCHASE: Product ID: {request.product_id}")
 
-    dust_amount = dust_amounts[request.product_id]
-
-    # For now, we'll create the transaction without receipt verification
-    # TODO: Add Apple/Google receipt verification
-    import secrets
-
-    purchase_id = f"{request.platform}_{request.product_id}_{secrets.token_hex(8)}"
-
-    # Record the purchase
-    return await ledger.record_purchase(
-        user_id=user_id,
-        dust_amount=dust_amount,
-        payment_id=purchase_id,
-        payment_amount_cents=dust_amount,  # 1 DUST = 1 cent for mapping purposes
-    )
+    if request.platform == "ios":
+        # Use Apple receipt verification
+        from apple_receipt_verification import AppleReceiptVerificationService
+        
+        apple_service = AppleReceiptVerificationService()
+        
+        # Verify receipt with Apple
+        is_valid, verification_response, error_message = await apple_service.verify_receipt(
+            request.receipt_data, request.product_id
+        )
+        
+        if not is_valid:
+            print(f"🍎 IN_APP_PURCHASE: Apple verification failed: {error_message}")
+            raise HTTPException(
+                status_code=400, 
+                detail=f"Receipt verification failed: {error_message}"
+            )
+        
+        print("🍎 IN_APP_PURCHASE: Apple receipt verification successful")
+        
+        # Extract transaction data from Apple response
+        apple_transaction_data = apple_service.extract_transaction_data(
+            verification_response, request.product_id
+        )
+        
+        dust_amount = apple_transaction_data["dust_amount"]
+        
+        # Generate payment ID
+        import secrets
+        purchase_id = f"ios_{request.product_id}_{secrets.token_hex(8)}"
+        
+        # Record the verified purchase
+        return await ledger.record_apple_purchase(
+            user_id=user_id,
+            dust_amount=dust_amount,
+            payment_id=purchase_id,
+            receipt_data=request.receipt_data,
+            verification_status="verified",
+            verification_response=verification_response,
+            apple_transaction_data=apple_transaction_data,
+            payment_amount_cents=dust_amount,  # 1 DUST = 1 cent
+        )
+        
+    elif request.platform == "android":
+        # TODO: Implement Google Play receipt verification
+        raise HTTPException(
+            status_code=501, 
+            detail="Android receipt verification not yet implemented"
+        )
+    
+    else:
+        raise HTTPException(
+            status_code=400,
+            detail="Invalid platform. Must be 'ios' or 'android'"
+        )
 
 
 @transaction_router.get("/{user_id}", response_model=TransactionList)

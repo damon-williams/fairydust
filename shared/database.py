@@ -257,13 +257,27 @@ async def create_tables():
             status VARCHAR(50) DEFAULT 'completed',
             metadata JSONB DEFAULT '{}',
             created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
-            updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+            updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+            -- Apple Receipt Verification Fields
+            payment_id VARCHAR(255),
+            receipt_data TEXT,
+            receipt_verification_status VARCHAR(50),
+            receipt_verification_response JSONB,
+            apple_transaction_id VARCHAR(255),
+            apple_original_transaction_id VARCHAR(255),
+            apple_product_id VARCHAR(100),
+            apple_purchase_date_ms BIGINT,
+            payment_amount_cents INTEGER
         );
 
         CREATE INDEX IF NOT EXISTS idx_dust_transactions_user
         ON dust_transactions(user_id, created_at DESC);
         CREATE INDEX IF NOT EXISTS idx_dust_transactions_app
         ON dust_transactions(app_id, created_at DESC);
+        CREATE INDEX IF NOT EXISTS idx_dust_transactions_apple_txn
+        ON dust_transactions(apple_transaction_id);
+        CREATE INDEX IF NOT EXISTS idx_dust_transactions_payment_id
+        ON dust_transactions(payment_id);
     """
     )
 
