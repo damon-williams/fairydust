@@ -62,6 +62,10 @@ export function Apps() {
       temperature: 0.7,
       max_tokens: 1000,
       top_p: 0.9,
+      image_models: {
+        standard_model: 'black-forest-labs/flux-1.1-pro',
+        reference_model: 'runwayml/gen4-image',
+      },
     },
   });
   const [supportedModels, setSupportedModels] = useState<any>({});
@@ -162,6 +166,10 @@ export function Apps() {
         temperature: 0.7,
         max_tokens: 1000,
         top_p: 0.9,
+        image_models: {
+          standard_model: 'black-forest-labs/flux-1.1-pro',
+          reference_model: 'runwayml/gen4-image',
+        },
       },
     });
     
@@ -679,6 +687,72 @@ export function Apps() {
                 </div>
               </div>
             </div>
+
+            {/* Image Model Configuration - Only for Story App */}
+            {editingApp?.slug === 'fairydust-story' && (
+              <div className="space-y-2 col-span-2">
+                <Label>Image Generation Models</Label>
+                <div className="grid grid-cols-2 gap-4 p-4 bg-slate-50 rounded-lg">
+                  <div className="space-y-2">
+                    <Label htmlFor="edit-standard-model">Standard Model (No Reference Images)</Label>
+                    <Select 
+                      value={modelConfig.primary_parameters.image_models?.standard_model || 'black-forest-labs/flux-1.1-pro'} 
+                      onValueChange={(value) => setModelConfig(prev => ({ 
+                        ...prev, 
+                        primary_parameters: {
+                          ...prev.primary_parameters,
+                          image_models: {
+                            ...prev.primary_parameters.image_models,
+                            standard_model: value
+                          }
+                        }
+                      }))}
+                    >
+                      <SelectTrigger>
+                        <SelectValue placeholder="Select standard model" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="black-forest-labs/flux-1.1-pro">FLUX 1.1 Pro</SelectItem>
+                        <SelectItem value="black-forest-labs/flux-schnell">FLUX Schnell (Faster)</SelectItem>
+                        <SelectItem value="stability-ai/sdxl">Stable Diffusion XL</SelectItem>
+                        <SelectItem value="dall-e-3">DALL-E 3</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  
+                  <div className="space-y-2">
+                    <Label htmlFor="edit-reference-model">Reference Model (With People Photos)</Label>
+                    <Select 
+                      value={modelConfig.primary_parameters.image_models?.reference_model || 'runwayml/gen4-image'} 
+                      onValueChange={(value) => setModelConfig(prev => ({ 
+                        ...prev, 
+                        primary_parameters: {
+                          ...prev.primary_parameters,
+                          image_models: {
+                            ...prev.primary_parameters.image_models,
+                            reference_model: value
+                          }
+                        }
+                      }))}
+                    >
+                      <SelectTrigger>
+                        <SelectValue placeholder="Select reference model" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="runwayml/gen4-image">Runway Gen-4 (Best for faces)</SelectItem>
+                        <SelectItem value="playgroundai/face-to-sticker">Face to Sticker</SelectItem>
+                        <SelectItem value="stability-ai/stable-diffusion-img2img">SD Image-to-Image</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  
+                  <div className="col-span-2 text-sm text-slate-600">
+                    <p>• Standard Model: Used when generating images from text prompts only</p>
+                    <p>• Reference Model: Used when including "My People" photos for character consistency</p>
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setConfigureDialogOpen(false)}>

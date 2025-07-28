@@ -19,6 +19,47 @@ class ImageGenerationService:
         if not self.replicate_api_token:
             raise ValueError("Missing REPLICATE_API_TOKEN environment variable")
 
+    async def _get_image_model_config(self) -> dict:
+        """Get image model configuration from app config"""
+        try:
+            from shared.app_config_cache import get_app_config_cache
+            from shared.database import get_db
+            from shared.json_utils import parse_model_config_field
+            
+            # Get the Story app ID (hardcoded for now, could be made configurable)
+            STORY_APP_ID = "fairydust-story"
+            
+            # Try to get from cache first
+            cache = await get_app_config_cache()
+            cached_config = await cache.get_model_config(STORY_APP_ID)
+            
+            if cached_config:
+                # Extract image model settings from parameters
+                params = parse_model_config_field(cached_config.get("primary_parameters", {}))
+                return params.get("image_models", {})
+            
+            # Cache miss - fetch from database
+            db = await get_db()
+            config = await db.fetch_one(
+                """
+                SELECT primary_parameters FROM app_model_configs 
+                WHERE app_id = (SELECT id FROM apps WHERE slug = $1)
+                """,
+                STORY_APP_ID,
+            )
+            
+            if config and config["primary_parameters"]:
+                params = parse_model_config_field(config["primary_parameters"])
+                return params.get("image_models", {})
+            
+            # Return defaults if no config found
+            return {}
+            
+        except Exception as e:
+            print(f"⚠️ IMAGE_MODEL_CONFIG: Error loading config: {e}")
+            # Return empty dict to use defaults
+            return {}
+
     async def generate_image(
         self,
         prompt: str,
@@ -54,16 +95,19 @@ class ImageGenerationService:
     ) -> tuple[str, dict]:
         """Generate image using Replicate - selects appropriate model based on reference people"""
 
+        # Get image model configuration from app config
+        image_models = await self._get_image_model_config()
+        
         # Choose model based on whether reference people are provided
         if reference_people:
-            # Use Runway Gen-4 Image for multiple face references (up to 3)
-            model = "runwayml/gen4-image"
+            # Use configured model for multiple face references (up to 3)
+            model = image_models.get("reference_model", "runwayml/gen4-image")
             return await self._generate_with_gen4_image(
                 model, prompt, style, image_size, reference_people
             )
         else:
-            # Use standard FLUX for text-only generation
-            model = "black-forest-labs/flux-1.1-pro"
+            # Use configured model for text-only generation
+            model = image_models.get("standard_model", "black-forest-labs/flux-1.1-pro")
             return await self._generate_standard_flux(
                 model, prompt, style, image_size, reference_people
             )
@@ -222,7 +266,7 @@ class ImageGenerationService:
                     )
 
                     metadata = {
-                        "model_used": "flux-1.1-pro",
+                        "model_used": model,  # Use actual model name instead of hardcoded
                         "api_provider": "replicate",
                         "enhanced_prompt": enhanced_prompt,
                         "prediction_id": prediction_id,
@@ -436,7 +480,7 @@ class ImageGenerationService:
                     )
 
                     metadata = {
-                        "model_used": "runway-gen4-image",
+                        "model_used": model,  # Use actual model name instead of hardcoded
                         "api_provider": "replicate",
                         "enhanced_prompt": enhanced_prompt,
                         "prediction_id": prediction_id,
