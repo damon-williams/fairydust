@@ -116,6 +116,7 @@ class TokenData(BaseModel):
     fairyname: str
     is_admin: bool = False
     exp: Optional[datetime] = None
+    type: Optional[str] = None  # 'access' or 'refresh'
 
 
 # Progressive Profiling models - removed (no longer needed)
