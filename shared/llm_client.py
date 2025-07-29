@@ -275,7 +275,7 @@ class LLMClient:
             if response.status_code == 429:
                 retry_after = int(response.headers.get("retry-after", 60))
             elif response.status_code == 529:
-                retry_after = 30  # Default backoff for overloaded
+                retry_after = 5  # Quick retry for overloaded to avoid frontend timeout
 
             raise LLMError(
                 f"Anthropic API error {response.status_code}: {error_message}",
