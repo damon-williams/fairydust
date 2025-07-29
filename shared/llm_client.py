@@ -230,6 +230,9 @@ class LLMClient:
         top_p: float,
     ) -> tuple[str, dict]:
         """Make API call to Anthropic"""
+        
+        if not self.anthropic_key:
+            raise LLMError("Anthropic API key not configured", provider="anthropic")
 
         response = await client.post(
             "https://api.anthropic.com/v1/messages",
@@ -249,7 +252,11 @@ class LLMClient:
 
         if response.status_code == 200:
             result = response.json()
-            content = result["content"][0]["text"].strip()
+            # Safely access nested response structure
+            try:
+                content = result["content"][0]["text"].strip()
+            except (KeyError, IndexError, TypeError) as e:
+                raise LLMError(f"Invalid Anthropic response structure: {e}", provider="anthropic")
 
             usage = result.get("usage", {})
             usage_data = {
@@ -266,14 +273,17 @@ class LLMClient:
                 error_data = response.json()
                 error_type = error_data.get("error", {}).get("type", "unknown_error")
                 error_message = error_data.get("error", {}).get("message", response.text)
-            except:
+            except (ValueError, KeyError, TypeError) as e:
                 error_type = "unknown_error"
-                error_message = response.text
+                error_message = f"Failed to parse error response: {response.text}"
 
             # Determine retry_after for rate limiting
             retry_after = None
             if response.status_code == 429:
-                retry_after = int(response.headers.get("retry-after", 60))
+                try:
+                    retry_after = int(response.headers.get("retry-after", 60))
+                except (ValueError, TypeError):
+                    retry_after = 60  # Default if header is not a valid integer
             elif response.status_code == 529:
                 retry_after = 5  # Quick retry for overloaded to avoid frontend timeout
 
@@ -294,6 +304,9 @@ class LLMClient:
         top_p: float,
     ) -> tuple[str, dict]:
         """Make API call to OpenAI"""
+        
+        if not self.openai_key:
+            raise LLMError("OpenAI API key not configured", provider="openai")
 
         response = await client.post(
             "https://api.openai.com/v1/chat/completions",
@@ -312,7 +325,11 @@ class LLMClient:
 
         if response.status_code == 200:
             result = response.json()
-            content = result["choices"][0]["message"]["content"].strip()
+            # Safely access nested response structure
+            try:
+                content = result["choices"][0]["message"]["content"].strip()
+            except (KeyError, IndexError, TypeError) as e:
+                raise LLMError(f"Invalid OpenAI response structure: {e}", provider="openai")
 
             usage = result.get("usage", {})
             usage_data = {
@@ -328,13 +345,16 @@ class LLMClient:
             try:
                 error_data = response.json()
                 error_message = error_data.get("error", {}).get("message", response.text)
-            except:
-                error_message = response.text
+            except (ValueError, KeyError, TypeError) as e:
+                error_message = f"Failed to parse error response: {response.text}"
 
             # Determine retry_after for rate limiting
             retry_after = None
             if response.status_code == 429:
-                retry_after = int(response.headers.get("retry-after", 60))
+                try:
+                    retry_after = int(response.headers.get("retry-after", 60))
+                except (ValueError, TypeError):
+                    retry_after = 60  # Default if header is not a valid integer
 
             raise LLMError(
                 f"OpenAI API error {response.status_code}: {error_message}",

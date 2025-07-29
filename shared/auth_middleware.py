@@ -1,5 +1,6 @@
 # shared/auth_middleware.py
 import os
+from datetime import datetime
 from typing import Optional
 
 import jwt
@@ -20,6 +21,8 @@ class TokenData(BaseModel):
     email: Optional[str] = None
     is_builder: bool = False
     is_admin: bool = False
+    exp: Optional[datetime] = None
+    type: Optional[str] = None  # 'access' or 'refresh'
 
 
 def verify_token(token: str) -> TokenData:

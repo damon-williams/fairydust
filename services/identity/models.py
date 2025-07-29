@@ -111,12 +111,7 @@ class Token(BaseModel):
     refresh_token: Optional[str] = None
 
 
-class TokenData(BaseModel):
-    user_id: str
-    fairyname: str
-    is_admin: bool = False
-    exp: Optional[datetime] = None
-    type: Optional[str] = None  # 'access' or 'refresh'
+# TokenData moved to shared.auth_middleware for consistency
 
 
 # Progressive Profiling models - removed (no longer needed)
