@@ -60,19 +60,7 @@ app = FastAPI(
 )
 
 
-# Custom exception handler for validation errors
-@app.exception_handler(RequestValidationError)
-async def validation_exception_handler(request: Request, exc: RequestValidationError):
-    """Handle validation errors"""
-    logger.error(f"Validation error on {request.url}: {exc.errors()}")
-    return JSONResponse(
-        status_code=422,
-        content={
-            "error": "Validation failed",
-            "details": exc.errors(),
-            "message": "Request body validation failed. Check required fields and data types.",
-        },
-    )
+# Exception handlers are now handled by shared middleware
 
 
 # Add centralized middleware first (executed last)

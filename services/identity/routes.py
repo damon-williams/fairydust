@@ -418,6 +418,7 @@ async def verify_otp(
     token_data = {
         "user_id": str(user["id"]),
         "fairyname": user["fairyname"],
+        "email": user.get("email"),
         "is_admin": user.get("is_admin", False),
     }
 
@@ -614,6 +615,7 @@ async def oauth_login(
     token_data = {
         "user_id": str(user["id"]),
         "fairyname": user["fairyname"],
+        "email": user.get("email"),
         "is_admin": user.get("is_admin", False),
     }
 
@@ -644,13 +646,14 @@ async def refresh_token(
 
     # Check if refresh token is still valid in Redis
     stored_token = await auth_service.redis.get(f"refresh_token:{token_data.user_id}")
-    if not stored_token or stored_token.decode() != request.refresh_token:
+    if not stored_token or stored_token != request.refresh_token:
         raise HTTPException(status_code=401, detail="Invalid refresh token")
 
     # Create new access token
     new_token_data = {
         "user_id": token_data.user_id,
         "fairyname": token_data.fairyname,
+        "email": token_data.email,
         "is_admin": token_data.is_admin,
     }
 

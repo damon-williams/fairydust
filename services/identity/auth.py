@@ -8,7 +8,7 @@ import jwt
 import redis.asyncio as redis
 from fastapi import Depends, HTTPException, Security
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
-from models import TokenData
+from shared.auth_middleware import TokenData
 from passlib.context import CryptContext
 
 # Configuration
@@ -112,7 +112,12 @@ class AuthService:
         """Decode and validate JWT token"""
         try:
             payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
-            return TokenData(**payload)
+            # Filter payload to only include fields that TokenData expects
+            filtered_payload = {
+                k: v for k, v in payload.items() 
+                if k in {'user_id', 'fairyname', 'email', 'is_builder', 'is_admin', 'exp', 'type'}
+            }
+            return TokenData(**filtered_payload)
         except jwt.ExpiredSignatureError:
             raise HTTPException(status_code=401, detail="Token has expired")
         except jwt.JWTError:
