@@ -35,17 +35,7 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
-# Configure CORS
-allowed_origins = os.getenv("ALLOWED_ORIGINS", "*").split(",")
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=allowed_origins,
-    allow_credentials=True,
-    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
-    allow_headers=["*"],
-)
-
-# Add centralized middleware
+# Add centralized middleware first (executed last)
 from shared.middleware import add_middleware_to_app
 
 # Identity service specific endpoint limits
@@ -64,6 +54,16 @@ add_middleware_to_app(
     max_request_size=6 * 1024 * 1024,  # 6MB default for identity service (to support photo uploads)
     endpoint_limits=endpoint_limits,
     log_requests=True,
+)
+
+# Configure CORS (executed first)
+allowed_origins = os.getenv("ALLOWED_ORIGINS", "*").split(",")
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=allowed_origins,
+    allow_credentials=True,
+    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+    allow_headers=["*"],
 )
 
 

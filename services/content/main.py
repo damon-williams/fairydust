@@ -75,17 +75,7 @@ async def validation_exception_handler(request: Request, exc: RequestValidationE
     )
 
 
-# CORS middleware
-allowed_origins = os.getenv("ALLOWED_ORIGINS", "*").split(",")
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=allowed_origins,
-    allow_credentials=True,
-    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
-    allow_headers=["*"],
-)
-
-# Add centralized middleware
+# Add centralized middleware first (executed last)
 from shared.middleware import add_middleware_to_app
 
 # Content service specific endpoint limits
@@ -111,6 +101,16 @@ add_middleware_to_app(
     max_request_size=15 * 1024 * 1024,  # 15MB default for content service
     endpoint_limits=endpoint_limits,
     log_requests=True,
+)
+
+# CORS middleware (executed first)
+allowed_origins = os.getenv("ALLOWED_ORIGINS", "*").split(",")
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=allowed_origins,
+    allow_credentials=True,
+    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+    allow_headers=["*"],
 )
 
 
