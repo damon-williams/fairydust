@@ -248,11 +248,11 @@ class ImageGenerationService:
         elapsed_time = 0
         poll_start_time = time.time()
         poll_count = 0
-        
+
         # Dynamic polling intervals: start fast, then slow down
         poll_intervals = [1, 1, 2, 2, 3, 4, 5, 6, 7, 8, 10]  # seconds
         poll_index = 0
-        
+
         print(f"⏱️ POLLING_TIMING: Starting to poll prediction {prediction_id}")
 
         async with httpx.AsyncClient() as client:
@@ -269,19 +269,23 @@ class ImageGenerationService:
                     f"https://api.replicate.com/v1/predictions/{prediction_id}", headers=headers
                 )
                 poll_request_time = time.time() - poll_request_start
-                
+
                 if poll_response.status_code != 200:
                     raise HTTPException(status_code=500, detail="Failed to check prediction status")
 
                 result = poll_response.json()
                 status = result["status"]
-                
-                print(f"⏱️ POLLING_TIMING: Poll #{poll_count} after {elapsed_time}s - Status: {status} (poll took {poll_request_time:.3f}s)")
+
+                print(
+                    f"⏱️ POLLING_TIMING: Poll #{poll_count} after {elapsed_time}s - Status: {status} (poll took {poll_request_time:.3f}s)"
+                )
 
                 if status == "succeeded":
                     total_poll_time = time.time() - poll_start_time
-                    print(f"✅ POLLING_TIMING: Prediction completed! Total polling time: {total_poll_time:.2f}s over {poll_count} polls")
-                    
+                    print(
+                        f"✅ POLLING_TIMING: Prediction completed! Total polling time: {total_poll_time:.2f}s over {poll_count} polls"
+                    )
+
                     image_url = (
                         result["output"][0]
                         if isinstance(result["output"], list)
@@ -489,7 +493,7 @@ class ImageGenerationService:
         elapsed_time = 0
         poll_start_time = time.time()
         poll_count = 0
-        
+
         print(f"⏱️ POLLING_TIMING: Starting to poll Gen-4 prediction {prediction_id}")
 
         async with httpx.AsyncClient() as client:
@@ -503,19 +507,23 @@ class ImageGenerationService:
                     f"https://api.replicate.com/v1/predictions/{prediction_id}", headers=headers
                 )
                 poll_request_time = time.time() - poll_request_start
-                
+
                 if poll_response.status_code != 200:
                     raise HTTPException(status_code=500, detail="Failed to check prediction status")
 
                 result = poll_response.json()
                 status = result["status"]
-                
-                print(f"⏱️ POLLING_TIMING: Gen-4 Poll #{poll_count} after {elapsed_time}s - Status: {status} (poll took {poll_request_time:.3f}s)")
+
+                print(
+                    f"⏱️ POLLING_TIMING: Gen-4 Poll #{poll_count} after {elapsed_time}s - Status: {status} (poll took {poll_request_time:.3f}s)"
+                )
 
                 if status == "succeeded":
                     total_poll_time = time.time() - poll_start_time
-                    print(f"✅ POLLING_TIMING: Gen-4 prediction completed! Total polling time: {total_poll_time:.2f}s over {poll_count} polls")
-                    
+                    print(
+                        f"✅ POLLING_TIMING: Gen-4 prediction completed! Total polling time: {total_poll_time:.2f}s over {poll_count} polls"
+                    )
+
                     image_url = (
                         result["output"][0]
                         if isinstance(result["output"], list)

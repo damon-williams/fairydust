@@ -45,35 +45,14 @@ async def check_daily_bonus_eligibility(
     """
     now = datetime.utcnow()
 
-    print(f"🔍 DAILY_BONUS_DEBUG [{user_id}]: === Checking Daily Bonus Eligibility ===", flush=True)
-    print(f"🕐 DAILY_BONUS_DEBUG [{user_id}]: Current UTC time: {now.isoformat()}", flush=True)
-    print(f"📅 DAILY_BONUS_DEBUG [{user_id}]: Current UTC date: {now.date()}", flush=True)
-    print(
-        f"📅 DAILY_BONUS_DEBUG [{user_id}]: Last login: {last_login_date.isoformat() if last_login_date else 'NEVER'}",
-        flush=True,
-    )
-
     if not last_login_date:
         # First login ever - eligible for bonus
-        print(f"🎉 DAILY_BONUS_DEBUG [{user_id}]: FIRST LOGIN EVER - Bonus eligible!", flush=True)
         return True, now
 
     # Check if different UTC dates
     last_login_date_only = last_login_date.date()
     current_date = now.date()
-
-    print(f"📅 DAILY_BONUS_DEBUG [{user_id}]: Last login date: {last_login_date_only}", flush=True)
-    print(f"📅 DAILY_BONUS_DEBUG [{user_id}]: Current date: {current_date}", flush=True)
-
     is_different_date = current_date != last_login_date_only
-
-    if is_different_date:
-        print(f"🎉 DAILY_BONUS_DEBUG [{user_id}]: DIFFERENT DATE - Bonus eligible!", flush=True)
-    else:
-        print(f"🔄 DAILY_BONUS_DEBUG [{user_id}]: SAME DATE - No bonus", flush=True)
-
-    print(f"✅ DAILY_BONUS_DEBUG [{user_id}]: Bonus eligible: {is_different_date}", flush=True)
-    print(f"🔍 DAILY_BONUS_DEBUG [{user_id}]: === End Daily Bonus Check ===", flush=True)
 
     return is_different_date, now
 
@@ -90,10 +69,7 @@ async def update_last_login_for_bonus(db, user_id: str, current_time: datetime) 
     Returns:
         Updated last login timestamp
     """
-    print(
-        f"💾 DAILY_BONUS_UPDATE [{user_id}]: Updating last login date to {current_time.isoformat()}",
-        flush=True,
-    )
+    # Update last login date for daily bonus tracking
 
     await _execute_with_retry(
         db,
@@ -106,5 +82,5 @@ async def update_last_login_for_bonus(db, user_id: str, current_time: datetime) 
         user_id,
     )
 
-    print(f"✅ DAILY_BONUS_UPDATE [{user_id}]: Last login date updated", flush=True)
+    # Last login date updated successfully
     return current_time

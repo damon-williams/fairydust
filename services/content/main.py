@@ -20,10 +20,8 @@ from contextlib import asynccontextmanager
 
 from activity_routes import router as activity_router
 from character_routes import router as character_router
-from fastapi import FastAPI, Request
-from fastapi.exceptions import RequestValidationError
+from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
 from fortune_routes import router as fortune_router
 from image_routes import image_router
 from inspire_routes import router as inspire_router
