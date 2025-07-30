@@ -733,88 +733,6 @@ async def create_tables():
         """
     )
 
-    # Remove genre column and index (story app simplification)
-    try:
-        # Check if genre column exists before trying to drop it
-        genre_exists = await db.fetch_one(
-            """
-            SELECT column_name
-            FROM information_schema.columns
-            WHERE table_name = 'user_stories' AND column_name = 'genre'
-            """
-        )
-
-        if genre_exists:
-            await db.execute_schema(
-                """
-                DROP INDEX IF EXISTS idx_user_stories_genre;
-                ALTER TABLE user_stories DROP COLUMN genre;
-                """
-            )
-            logger.info("Removed genre column from user_stories table")
-        else:
-            logger.info("Genre column already removed from user_stories table")
-    except Exception as e:
-        logger.warning(f"Genre column migration failed: {e}")
-
-    # Remove dust_cost column (content service should not handle DUST)
-    try:
-        # Check if dust_cost column exists before trying to drop it
-        dust_cost_exists = await db.fetch_one(
-            """
-            SELECT column_name
-            FROM information_schema.columns
-            WHERE table_name = 'user_stories' AND column_name = 'dust_cost'
-            """
-        )
-
-        if dust_cost_exists:
-            await db.execute_schema(
-                """
-                ALTER TABLE user_stories DROP COLUMN dust_cost;
-                """
-            )
-            logger.info("Removed dust_cost column from user_stories table")
-        else:
-            logger.info("dust_cost column already removed from user_stories table")
-    except Exception as e:
-        logger.warning(f"dust_cost column migration failed: {e}")
-
-    # Allow target_person_id to be NULL for self-readings
-    try:
-        await db.execute_schema(
-            """
-            ALTER TABLE fortune_readings ALTER COLUMN target_person_id DROP NOT NULL;
-            """
-        )
-        logger.info("Made target_person_id nullable in fortune_readings table")
-    except Exception as e:
-        logger.warning(f"Fortune readings target_person_id migration failed: {e}")
-
-    # Drop old columns that are no longer needed
-    try:
-        # Drop age_range from users table if it exists
-        await db.execute_schema(
-            """
-            ALTER TABLE users DROP COLUMN IF EXISTS age_range;
-            ALTER TABLE users DROP COLUMN IF EXISTS fortune_profile;
-            """
-        )
-        logger.info("Dropped age_range and fortune_profile columns from users table")
-    except Exception as e:
-        logger.warning(f"Failed to drop old columns from users table: {e}")
-
-    try:
-        # Drop age_range from people_in_my_life table if it exists
-        await db.execute_schema(
-            """
-            ALTER TABLE people_in_my_life DROP COLUMN IF EXISTS age_range;
-            """
-        )
-        logger.info("Dropped age_range column from people_in_my_life table")
-    except Exception as e:
-        logger.warning(f"Failed to drop age_range from people_in_my_life table: {e}")
-
     # Story generation logs table for analytics and debugging
     await db.execute_schema(
         """
@@ -1183,38 +1101,6 @@ async def create_tables():
     """
     )
 
-    # Fix for streak constraint bug - remove old constraint and ensure correct one exists
-    try:
-        # Drop the problematic constraint that prevents daily streak bonuses
-        await db.execute(
-            "ALTER TABLE app_grants DROP CONSTRAINT IF EXISTS app_grants_user_id_app_id_grant_type_key"
-        )
-        logger.info("Dropped old app_grants constraint that prevented daily streak bonuses")
-    except Exception as e:
-        # Constraint might not exist, which is fine
-        logger.debug(f"Old constraint drop (expected if doesn't exist): {e}")
-
-    # Ensure the correct constraint exists (CREATE TABLE IF NOT EXISTS above should have created it)
-    # but add it if migrating from old schema
-    try:
-        await db.execute(
-            """
-            DO $$
-            BEGIN
-                IF NOT EXISTS (
-                    SELECT 1 FROM pg_constraint
-                    WHERE conname = 'app_grants_user_id_app_id_grant_type_granted_date_key'
-                ) THEN
-                    ALTER TABLE app_grants ADD CONSTRAINT app_grants_user_id_app_id_grant_type_granted_date_key
-                        UNIQUE(user_id, app_id, grant_type, granted_date);
-                END IF;
-            END $$;
-        """
-        )
-        logger.info("Ensured correct app_grants constraint exists for daily streak bonuses")
-    except Exception as e:
-        logger.warning(f"Error ensuring constraint (may already exist): {e}")
-
     # Action-based DUST pricing table
     await db.execute_schema(
         """
@@ -1461,60 +1347,6 @@ async def create_tables():
         CREATE INDEX IF NOT EXISTS idx_account_deletion_logs_reason ON account_deletion_logs(deletion_reason);
     """
     )
-
-    # Clean up streak-related columns and constraints safely
-    try:
-        # Drop old index that references streak_days first
-        await db.execute_schema(
-            """
-            DROP INDEX IF EXISTS idx_users_streak_login;
-            """
-        )
-        logger.info("Dropped old streak login index")
-    except Exception as e:
-        logger.debug(f"Index cleanup (expected if index doesn't exist): {e}")
-
-    try:
-        await db.execute_schema(
-            """
-            -- Remove old streak columns (they may not exist in all environments)
-            ALTER TABLE users DROP COLUMN IF EXISTS streak_days;
-            ALTER TABLE users DROP COLUMN IF EXISTS timezone;
-            """
-        )
-        logger.info("Removed streak_days and timezone columns from users table")
-    except Exception as e:
-        logger.debug(f"Column cleanup (expected if columns don't exist): {e}")
-
-    # Clean up app_grants table for daily bonus only (remove streak logic)
-    try:
-        # First drop the constraint, then update data, then recreate constraint
-        await db.execute_schema(
-            """
-            -- Drop the existing constraint first
-            ALTER TABLE app_grants DROP CONSTRAINT IF EXISTS app_grants_grant_type_check;
-            """
-        )
-        logger.info("Dropped existing app_grants constraint")
-
-        # Update existing data
-        await db.execute_schema(
-            """
-            UPDATE app_grants SET grant_type = 'daily_bonus' WHERE grant_type = 'streak';
-            """
-        )
-        logger.info("Updated existing streak grants to daily_bonus")
-
-        # Add the new constraint with all valid grant types
-        await db.execute_schema(
-            """
-            ALTER TABLE app_grants ADD CONSTRAINT app_grants_grant_type_check
-                CHECK (grant_type IN ('initial', 'referral_bonus', 'referee_bonus', 'milestone_bonus', 'promotional', 'daily_bonus'));
-            """
-        )
-        logger.info("Added updated app_grants constraint for daily bonus system")
-    except Exception as e:
-        logger.warning(f"App grants cleanup failed: {e}")
 
     # User Images table for Image app
     await db.execute_schema(

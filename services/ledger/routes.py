@@ -291,7 +291,7 @@ async def process_in_app_purchase(
             )
 
             print(
-                f"🍎 IN_APP_PURCHASE: ✅ Purchase recorded successfully - Transaction ID: {result.transaction_id}"
+                f"🍎 IN_APP_PURCHASE: ✅ Purchase recorded successfully - Transaction ID: {result.transaction.id}"
             )
             print(f"🍎 IN_APP_PURCHASE: New balance: {result.new_balance} DUST")
             print("🍎 IN_APP_PURCHASE: ========== PURCHASE COMPLETE ===========")
