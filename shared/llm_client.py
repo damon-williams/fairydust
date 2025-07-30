@@ -230,7 +230,7 @@ class LLMClient:
         top_p: float,
     ) -> tuple[str, dict]:
         """Make API call to Anthropic"""
-        
+
         if not self.anthropic_key:
             raise LLMError("Anthropic API key not configured", provider="anthropic")
 
@@ -273,7 +273,7 @@ class LLMClient:
                 error_data = response.json()
                 error_type = error_data.get("error", {}).get("type", "unknown_error")
                 error_message = error_data.get("error", {}).get("message", response.text)
-            except (ValueError, KeyError, TypeError) as e:
+            except (ValueError, KeyError, TypeError):
                 error_type = "unknown_error"
                 error_message = f"Failed to parse error response: {response.text}"
 
@@ -304,7 +304,7 @@ class LLMClient:
         top_p: float,
     ) -> tuple[str, dict]:
         """Make API call to OpenAI"""
-        
+
         if not self.openai_key:
             raise LLMError("OpenAI API key not configured", provider="openai")
 
@@ -345,7 +345,7 @@ class LLMClient:
             try:
                 error_data = response.json()
                 error_message = error_data.get("error", {}).get("message", response.text)
-            except (ValueError, KeyError, TypeError) as e:
+            except (ValueError, KeyError, TypeError):
                 error_message = f"Failed to parse error response: {response.text}"
 
             # Determine retry_after for rate limiting

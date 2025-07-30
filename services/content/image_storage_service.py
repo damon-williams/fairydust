@@ -62,10 +62,11 @@ class ImageStorageService:
             Tuple[str, int, dict]: (stored_url, file_size_bytes, dimensions)
         """
         import time
+
         start_time = time.time()
-        
+
         print(f"⏱️ STORAGE_TIMING: Starting image storage for {image_id}")
-        
+
         # If R2 is configured, upload the image properly
         if self.r2_client:
             result = await self._upload_to_r2(image_url, user_id, image_id)
@@ -86,6 +87,7 @@ class ImageStorageService:
     ) -> tuple[str, int, dict]:
         """Upload image to R2 and return permanent URL"""
         import time
+
         download_start_time = time.time()
         max_retries = 3
 
@@ -110,7 +112,9 @@ class ImageStorageService:
                     )
                     download_request_time = time.time() - download_request_start
 
-                    print(f"📡 Download response: {response.status_code} (took {download_request_time:.2f}s)")
+                    print(
+                        f"📡 Download response: {response.status_code} (took {download_request_time:.2f}s)"
+                    )
 
                     if response.status_code == 200:
                         image_data = response.content
@@ -119,7 +123,9 @@ class ImageStorageService:
                         if len(image_data) > 0:
                             # Success! Upload to R2
                             download_total_time = time.time() - download_start_time
-                            print(f"⏱️ STORAGE_TIMING: Image downloaded in {download_total_time:.2f}s ({len(image_data):,} bytes)")
+                            print(
+                                f"⏱️ STORAGE_TIMING: Image downloaded in {download_total_time:.2f}s ({len(image_data):,} bytes)"
+                            )
                             break
                         else:
                             print("⚠️ Downloaded image is empty, retrying...")
@@ -173,15 +179,15 @@ class ImageStorageService:
             dimensions_start_time = time.time()
             dimensions = await self._get_image_dimensions(image_data)
             dimensions_time = time.time() - dimensions_start_time
-            
+
             total_storage_time = time.time() - download_start_time
             print(f"✅ Image uploaded to R2: {permanent_url}")
-            print(f"⏱️ STORAGE_TIMING_BREAKDOWN:")
+            print("⏱️ STORAGE_TIMING_BREAKDOWN:")
             print(f"   Download: {download_total_time:.2f}s")
-            print(f"   Upload: {upload_time:.2f}s") 
+            print(f"   Upload: {upload_time:.2f}s")
             print(f"   Dimensions: {dimensions_time:.3f}s")
             print(f"   Total storage: {total_storage_time:.2f}s")
-            
+
             return permanent_url, len(image_data), dimensions
 
         except ClientError as e:

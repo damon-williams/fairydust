@@ -37,13 +37,16 @@ class StoryImageGenerator:
         """Background task to generate all images for a story using parallel processing"""
 
         import time
+
         start_time = time.time()
 
         try:
             logger.info(f"🚀 Starting PARALLEL background image generation for story {story_id}")
             logger.info(f"   Scenes to generate: {len(scenes)}")
             logger.info(f"   Characters available: {len(characters)}")
-            logger.info(f"⏱️ TIMING: Parallel generation started at {time.strftime('%H:%M:%S', time.localtime(start_time))}")
+            logger.info(
+                f"⏱️ TIMING: Parallel generation started at {time.strftime('%H:%M:%S', time.localtime(start_time))}"
+            )
 
             # Insert initial records for all images
             for scene in scenes:
@@ -52,7 +55,7 @@ class StoryImageGenerator:
             # Generate all images in parallel
             logger.info(f"⚡ Starting parallel generation of {len(scenes)} images...")
             generation_start_time = time.time()
-            
+
             # Create tasks for parallel execution
             generation_tasks = []
             for scene in scenes:
@@ -69,7 +72,7 @@ class StoryImageGenerator:
                         story_genre,
                         story_context,
                     ),
-                    name=f"generate_image_{scene['image_id']}"
+                    name=f"generate_image_{scene['image_id']}",
                 )
                 generation_tasks.append(task)
 
@@ -77,11 +80,11 @@ class StoryImageGenerator:
             results = await asyncio.gather(*generation_tasks, return_exceptions=True)
             generation_end_time = time.time()
             generation_duration = generation_end_time - generation_start_time
-            
+
             # Count successful generations
             completed_count = 0
             failed_count = 0
-            
+
             for i, result in enumerate(results):
                 scene = scenes[i]
                 if isinstance(result, Exception):
@@ -91,7 +94,9 @@ class StoryImageGenerator:
                     )
                 elif result is True:  # Success
                     completed_count += 1
-                    logger.info(f"✅ Successfully generated image {scene['image_id']} for story {story_id}")
+                    logger.info(
+                        f"✅ Successfully generated image {scene['image_id']} for story {story_id}"
+                    )
                 else:
                     # result is False (handled failure)
                     failed_count += 1
@@ -103,18 +108,20 @@ class StoryImageGenerator:
             # Calculate timing metrics
             total_time = time.time() - start_time
             avg_time_per_image = generation_duration / len(scenes) if len(scenes) > 0 else 0
-            
-            logger.info(f"🎯 Parallel generation completed!")
+
+            logger.info("🎯 Parallel generation completed!")
             logger.info(f"   Success rate: {completed_count}/{len(scenes)} images")
             logger.info(f"   Failed: {failed_count} images")
-            logger.info(f"⏱️ TIMING METRICS:")
+            logger.info("⏱️ TIMING METRICS:")
             logger.info(f"   Total elapsed time: {total_time:.2f}s")
             logger.info(f"   Pure generation time: {generation_duration:.2f}s")
             logger.info(f"   Average time per image: {avg_time_per_image:.2f}s")
             logger.info(f"   Setup/cleanup overhead: {(total_time - generation_duration):.2f}s")
-            
+
             if completed_count > 0:
-                logger.info(f"⚡ PERFORMANCE: Generated {completed_count} images simultaneously instead of sequentially")
+                logger.info(
+                    f"⚡ PERFORMANCE: Generated {completed_count} images simultaneously instead of sequentially"
+                )
                 # Estimate sequential time savings (assume 30s average per image if done sequentially)
                 estimated_sequential_time = len(scenes) * 30
                 time_saved = max(0, estimated_sequential_time - generation_duration)
@@ -146,14 +153,17 @@ class StoryImageGenerator:
         story_context: str = None,
     ) -> bool:
         """Wrapper for _generate_single_image with proper error handling for parallel execution"""
-        
+
         import time
+
         image_id = scene["image_id"]
         start_time = time.time()
-        
+
         try:
-            logger.info(f"⏱️ INDIVIDUAL_TIMING: Starting image {image_id} at {time.strftime('%H:%M:%S')}")
-            
+            logger.info(
+                f"⏱️ INDIVIDUAL_TIMING: Starting image {image_id} at {time.strftime('%H:%M:%S')}"
+            )
+
             await self._generate_single_image(
                 db,
                 story_id,
@@ -166,11 +176,11 @@ class StoryImageGenerator:
                 story_genre,
                 story_context,
             )
-            
+
             total_time = time.time() - start_time
             logger.info(f"✅ INDIVIDUAL_TIMING: Image {image_id} completed in {total_time:.2f}s")
             return True  # Success
-            
+
         except Exception as e:
             total_time = time.time() - start_time
             logger.error(f"❌ INDIVIDUAL_TIMING: Image {image_id} FAILED after {total_time:.2f}s")
@@ -182,7 +192,7 @@ class StoryImageGenerator:
                 await self._mark_image_failed(db, story_id, image_id, str(e))
             except Exception as mark_error:
                 logger.error(f"Failed to mark image {image_id} as failed: {mark_error}")
-                
+
             return False  # Handled failure
 
     async def _create_story_image_record(
@@ -222,6 +232,7 @@ class StoryImageGenerator:
         """Generate a single image for a story scene"""
 
         import time
+
         image_id = scene["image_id"]
         phase_times = {}
 

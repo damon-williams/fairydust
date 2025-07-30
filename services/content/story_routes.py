@@ -80,7 +80,10 @@ async def generate_story(
         "has_selected_people": bool(request.characters),
     }
 
-    print(f"📖 STORY: Starting generation for user {request.user_id} ({request.story_length.value}, {request.target_audience.value})", flush=True)
+    print(
+        f"📖 STORY: Starting generation for user {request.user_id} ({request.story_length.value}, {request.target_audience.value})",
+        flush=True,
+    )
 
     # Verify user can only generate stories for themselves
     if current_user.user_id != str(request.user_id):
@@ -202,7 +205,10 @@ async def generate_story(
                     )
                 )
 
-                print(f"🚀 STORY: Started background image generation for {len(scenes)} images", flush=True)
+                print(
+                    f"🚀 STORY: Started background image generation for {len(scenes)} images",
+                    flush=True,
+                )
 
             except Exception as e:
                 print(f"❌ STORY: Failed to process images: {str(e)}", flush=True)
@@ -376,7 +382,6 @@ async def get_user_stories(
             )
             stories.append(story)
 
-
         return StoriesListResponse(
             stories=stories,
             total_count=total_count,
@@ -437,7 +442,6 @@ async def toggle_story_favorite(
             metadata=parse_jsonb_field(result["metadata"]) or {},
         )
 
-
         return StoryFavoriteResponse(story=story)
 
     except Exception as e:
@@ -476,7 +480,6 @@ async def delete_story(
         # Check if any rows were affected
         if "DELETE 0" in result:
             return StoryErrorResponse(error="Story not found", story_id=story_id)
-
 
         return StoryDeleteResponse()
 
@@ -692,7 +695,6 @@ async def _get_llm_model_config() -> dict:
     cached_config = await cache.get_model_config(app_id)
 
     if cached_config:
-
         config = {
             "primary_provider": cached_config.get("primary_provider", "anthropic"),
             "primary_model_id": cached_config.get("primary_model_id", "claude-3-5-sonnet-20241022"),
@@ -710,7 +712,6 @@ async def _get_llm_model_config() -> dict:
         db_config = await db.fetch_one("SELECT * FROM app_model_configs WHERE app_id = $1", app_id)
 
         if db_config:
-
             # Parse and cache the database config
             from shared.json_utils import parse_model_config_field
 
@@ -727,7 +728,7 @@ async def _get_llm_model_config() -> dict:
             await cache.set_model_config(app_id, parsed_config)
             return parsed_config
 
-    except Exception as e:
+    except Exception:
         pass
 
     # Fallback to default config
@@ -760,7 +761,6 @@ async def _get_recent_themes_guidance(db: Database, user_id: uuid.UUID) -> str:
 
         if not recent_stories or len(recent_stories) < 2:
             return "ENSURE VARIETY: Create something fresh and engaging."
-
 
         # Prepare story summaries for AI analysis
         story_summaries = []
@@ -817,7 +817,7 @@ Response:"""
             # Fallback if AI analysis fails
             return "ENSURE VARIETY: Create something fresh with new characters and settings."
 
-    except Exception as e:
+    except Exception:
         return "ENSURE VARIETY: Create something fresh and different."
 
 
@@ -937,7 +937,6 @@ async def _build_story_prompt(
 
     # Use AI analysis of recent story summaries to avoid repetitive themes
     recent_themes_guidance = await _get_recent_themes_guidance(db, request.user_id)
-
 
     prompt = f"""You are a master storyteller with infinite creativity. {selected_variety} Create a truly unique and surprising story for {audience_guidance[request.target_audience]}{bedtime_guidance} The story should take about {length_descriptions[request.story_length]} to read.
 
@@ -1163,7 +1162,6 @@ async def _fetch_my_people_data(
         return []
 
     try:
-
         async with httpx.AsyncClient() as client:
             response = await client.get(
                 f"{identity_url}/users/{user_id}/people",
@@ -1227,12 +1225,11 @@ async def _fetch_my_people_data(
                         person_data["traits"] = traits[:10]  # Limit to 10 traits
                         selected_people_data.append(person_data)
 
-
                 return selected_people_data
             else:
                 return []
 
-    except Exception as e:
+    except Exception:
         return []
 
 
@@ -1254,7 +1251,7 @@ async def _fetch_user_name(user_id: UUID, auth_token: str) -> Optional[str]:
                     return first_name
             else:
                 pass
-    except Exception as e:
+    except Exception:
         pass
 
     return None
@@ -1284,7 +1281,6 @@ async def _merge_characters_and_people(
             species=person.get("species"),  # Include pet species info
         )
         merged_characters.append(story_char)
-
 
     # Log photo availability
     characters_with_photos = [c for c in merged_characters if c.photo_url]
@@ -1594,7 +1590,6 @@ async def _generate_story_llm(
             adjusted_config["primary_parameters"] = {}
         adjusted_config["primary_parameters"]["max_tokens"] = max_tokens
 
-
         # Build prompt
         prompt = await _build_story_prompt(request, user_context, db)
 
@@ -1645,7 +1640,6 @@ async def _generate_story_llm(
         cost = generation_metadata["cost_usd"]
         latency_ms = generation_metadata["generation_time_ms"]
 
-
         return (
             content,
             title,
@@ -1676,7 +1670,6 @@ async def _generate_story_summary(
 ) -> str:
     """Generate a concise summary of the story for theme tracking"""
     try:
-
         # Prepare character names for context
         character_names = [
             char.name if hasattr(char, "name") else str(char) for char in characters[:3]
@@ -1724,7 +1717,7 @@ Provide only the summary, no additional commentary:"""
 
         return summary
 
-    except Exception as e:
+    except Exception:
         # Return a simple fallback summary
         char_names = [char.name if hasattr(char, "name") else str(char) for char in characters[:2]]
         return f"A {target_audience.value} story" + (
@@ -1816,7 +1809,6 @@ async def _update_story_with_images(
             story_id,
         )
 
-
     except Exception as e:
         print(f"❌ STORY_IMAGE_UPDATE: Failed to update story with images: {str(e)}", flush=True)
         raise
@@ -1865,7 +1857,7 @@ async def get_story_image_status(
                     flush=True,
                 )
             return StoryImageStatusResponse(success=False, status="not_found", url=None)
-        
+
         # For internal requests to failed images, return 410 Gone to stop Railway polling
         # This signals that the resource is permanently unavailable and should not be retried
         if is_internal_request and image_data["status"] == "failed":

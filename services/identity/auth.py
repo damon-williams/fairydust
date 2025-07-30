@@ -8,8 +8,9 @@ import jwt
 import redis.asyncio as redis
 from fastapi import Depends, HTTPException, Security
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
-from shared.auth_middleware import TokenData
 from passlib.context import CryptContext
+
+from shared.auth_middleware import TokenData
 
 # Configuration
 SECRET_KEY = os.getenv("JWT_SECRET_KEY", secrets.token_urlsafe(32))
@@ -114,8 +115,9 @@ class AuthService:
             payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
             # Filter payload to only include fields that TokenData expects
             filtered_payload = {
-                k: v for k, v in payload.items() 
-                if k in {'user_id', 'fairyname', 'email', 'is_builder', 'is_admin', 'exp', 'type'}
+                k: v
+                for k, v in payload.items()
+                if k in {"user_id", "fairyname", "email", "is_builder", "is_admin", "exp", "type"}
             }
             return TokenData(**filtered_payload)
         except jwt.ExpiredSignatureError:
@@ -305,7 +307,7 @@ class AuthService:
     async def close(self):
         """Explicitly close the HTTP client"""
         await self.http_client.aclose()
-        
+
     # Note: Removed __del__ to avoid RuntimeWarning with async cleanup
     # HTTP client will be cleaned up by garbage collection
 
