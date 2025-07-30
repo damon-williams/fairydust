@@ -208,60 +208,116 @@ async def process_in_app_purchase(
     # Users can only make purchases for themselves
     user_id = UUID(current_user.user_id)
 
-    print(f"🍎 IN_APP_PURCHASE: Processing {request.platform} purchase for user {user_id}")
+    print(f"🍎 IN_APP_PURCHASE: ========== PURCHASE REQUEST RECEIVED ===========")
+    print(f"🍎 IN_APP_PURCHASE: Client initiated purchase request")
+    print(f"🍎 IN_APP_PURCHASE: Platform: {request.platform}")
+    print(f"🍎 IN_APP_PURCHASE: User ID: {user_id}")
+    print(f"🍎 IN_APP_PURCHASE: User token sub: {current_user.user_id}")
     print(f"🍎 IN_APP_PURCHASE: Product ID: {request.product_id}")
+    print(f"🍎 IN_APP_PURCHASE: Receipt data length: {len(request.receipt_data)} chars")
+    print(f"🍎 IN_APP_PURCHASE: Receipt preview: {request.receipt_data[:50]}...")
+    print(f"🍎 IN_APP_PURCHASE: Request timestamp: {datetime.utcnow().isoformat()}")
+    print(f"🍎 IN_APP_PURCHASE: User agent: {current_user}")
 
+    # Validate platform early
+    if request.platform not in ["ios", "android"]:
+        print(f"🍎 IN_APP_PURCHASE: ❌ Invalid platform rejected: {request.platform}")
+        raise HTTPException(
+            status_code=400,
+            detail="Invalid platform. Must be 'ios' or 'android'"
+        )
+    
+    print(f"🍎 IN_APP_PURCHASE: Platform validation passed: {request.platform}")
+    
     if request.platform == "ios":
+        print(f"🍎 IN_APP_PURCHASE: Initializing Apple receipt verification service")
         # Use Apple receipt verification
         from apple_receipt_verification import AppleReceiptVerificationService
         
-        apple_service = AppleReceiptVerificationService()
+        try:
+            apple_service = AppleReceiptVerificationService()
+            print(f"🍎 IN_APP_PURCHASE: ✅ Apple service initialized successfully")
+        except Exception as e:
+            print(f"🍎 IN_APP_PURCHASE: ❌ Failed to initialize Apple service: {str(e)}")
+            raise HTTPException(
+                status_code=500,
+                detail="Failed to initialize receipt verification service"
+            )
         
         # Verify receipt with Apple
-        is_valid, verification_response, error_message = await apple_service.verify_receipt(
-            request.receipt_data, request.product_id
-        )
+        print(f"🍎 IN_APP_PURCHASE: Starting Apple receipt verification process")
+        try:
+            is_valid, verification_response, error_message = await apple_service.verify_receipt(
+                request.receipt_data, request.product_id
+            )
+            print(f"🍎 IN_APP_PURCHASE: Verification process completed - Valid: {is_valid}")
+        except Exception as e:
+            print(f"🍎 IN_APP_PURCHASE: ❌ Exception during Apple verification: {str(e)}")
+            print(f"🍎 IN_APP_PURCHASE: Exception type: {type(e).__name__}")
+            raise HTTPException(
+                status_code=500,
+                detail="Receipt verification service error"
+            )
         
         if not is_valid:
-            print(f"🍎 IN_APP_PURCHASE: Apple verification failed: {error_message}")
+            print(f"🍎 IN_APP_PURCHASE: ❌ Apple verification failed: {error_message}")
+            print(f"🍎 IN_APP_PURCHASE: Verification response: {verification_response}")
             raise HTTPException(
                 status_code=400, 
                 detail=f"Receipt verification failed: {error_message}"
             )
         
-        print("🍎 IN_APP_PURCHASE: Apple receipt verification successful")
+        print("🍎 IN_APP_PURCHASE: ✅ Apple receipt verification successful")
         
         # Extract transaction data from Apple response
-        apple_transaction_data = apple_service.extract_transaction_data(
-            verification_response, request.product_id
-        )
-        
-        dust_amount = apple_transaction_data["dust_amount"]
-        
-        # Generate payment ID
-        import secrets
-        purchase_id = f"ios_{request.product_id}_{secrets.token_hex(8)}"
-        
-        # Record the verified purchase
-        return await ledger.record_apple_purchase(
-            user_id=user_id,
-            dust_amount=dust_amount,
-            payment_id=purchase_id,
-            receipt_data=request.receipt_data,
-            verification_status="verified",
-            verification_response=verification_response,
-            apple_transaction_data=apple_transaction_data,
-            payment_amount_cents=dust_amount,  # 1 DUST = 1 cent
-        )
+        print(f"🍎 IN_APP_PURCHASE: Extracting transaction data from Apple response")
+        try:
+            apple_transaction_data = apple_service.extract_transaction_data(
+                verification_response, request.product_id
+            )
+            
+            dust_amount = apple_transaction_data["dust_amount"]
+            print(f"🍎 IN_APP_PURCHASE: DUST amount to grant: {dust_amount}")
+            
+            # Generate payment ID
+            import secrets
+            purchase_id = f"ios_{request.product_id}_{secrets.token_hex(8)}"
+            print(f"🍎 IN_APP_PURCHASE: Generated payment ID: {purchase_id}")
+            
+            # Record the verified purchase
+            print(f"🍎 IN_APP_PURCHASE: Recording purchase in ledger...")
+            result = await ledger.record_apple_purchase(
+                user_id=user_id,
+                dust_amount=dust_amount,
+                payment_id=purchase_id,
+                receipt_data=request.receipt_data,
+                verification_status="verified",
+                verification_response=verification_response,
+                apple_transaction_data=apple_transaction_data,
+                payment_amount_cents=dust_amount,  # 1 DUST = 1 cent
+            )
+            
+            print(f"🍎 IN_APP_PURCHASE: ✅ Purchase recorded successfully - Transaction ID: {result.transaction_id}")
+            print(f"🍎 IN_APP_PURCHASE: New balance: {result.new_balance} DUST")
+            print(f"🍎 IN_APP_PURCHASE: ========== PURCHASE COMPLETE ===========")
+            return result
+            
+        except Exception as e:
+            print(f"🍎 IN_APP_PURCHASE: ❌ Error during purchase processing: {str(e)}")
+            print(f"🍎 IN_APP_PURCHASE: Error type: {type(e).__name__}")
+            raise
         
     elif request.platform == "android":
+        print(f"🤖 IN_APP_PURCHASE: Android platform requested but not implemented")
         # TODO: Implement Google Play receipt verification
         raise HTTPException(
             status_code=501, 
             detail="Android receipt verification not yet implemented"
         )
     
+    # This should never execute due to early validation, but kept for safety
     else:
+        print(f"🍎 IN_APP_PURCHASE: ❌ Unexpected platform bypass: {request.platform}")
         raise HTTPException(
             status_code=400,
             detail="Invalid platform. Must be 'ios' or 'android'"

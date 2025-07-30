@@ -339,29 +339,42 @@ class LedgerService:
         await self._acquire_balance_lock(user_id)
         
         try:
+            print(f"🍎 LEDGER_APPLE_PURCHASE: Starting transaction processing within lock")
             # Check for duplicate Apple transaction
+            apple_transaction_id = apple_transaction_data.get("apple_transaction_id")
+            print(f"🍎 APPLE_PURCHASE: Checking for duplicate transaction_id: {apple_transaction_id}")
+            
             existing_transaction = await self.db.fetch_one(
                 """
-                SELECT id FROM dust_transactions 
+                SELECT id, created_at, amount FROM dust_transactions 
                 WHERE apple_transaction_id = $1 AND type = 'purchase'
                 """,
-                apple_transaction_data.get("apple_transaction_id")
+                apple_transaction_id
             )
             
             if existing_transaction:
+                error_msg = f"This Apple transaction has already been processed. Existing transaction: {existing_transaction['id']} created at {existing_transaction['created_at']} for {existing_transaction['amount']} DUST"
+                print(f"🍎 APPLE_PURCHASE: ❌ Duplicate transaction detected: {error_msg}")
                 raise HTTPException(
                     status_code=409, 
                     detail="This Apple transaction has already been processed"
                 )
             
+            print(f"🍎 APPLE_PURCHASE: ✅ No duplicate found, proceeding with transaction")
+            
             # Get current balance
             current_balance = await self.get_balance(user_id, use_cache=False)
             new_balance = current_balance + dust_amount
+            print(f"🍎 APPLE_PURCHASE: Balance update - Current: {current_balance}, Adding: {dust_amount}, New: {new_balance}")
             
             # Create transaction ID
             transaction_id = uuid4()
+            print(f"🍎 APPLE_PURCHASE: Generated transaction_id: {transaction_id}")
             
             # Insert transaction with Apple receipt fields
+            print(f"🍎 APPLE_PURCHASE: Inserting transaction record with full Apple data")
+            print(f"🍎 APPLE_PURCHASE: Receipt data length: {len(receipt_data)} chars, Verification status: {verification_status}")
+            
             transaction = await self.db.fetch_one(
                 """
                 INSERT INTO dust_transactions (
@@ -397,7 +410,10 @@ class LedgerService:
                 payment_amount_cents,
             )
             
+            print(f"🍎 APPLE_PURCHASE: ✅ Transaction record created successfully: {transaction['id']}")
+            
             # Update user balance
+            print(f"🍎 APPLE_PURCHASE: Updating user balance to {new_balance}")
             await self.db.execute(
                 "UPDATE users SET dust_balance = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2",
                 new_balance,
@@ -405,6 +421,7 @@ class LedgerService:
             )
             
             # Invalidate cache
+            print(f"🍎 APPLE_PURCHASE: Invalidating balance cache for user {user_id}")
             await self.balance_cache.delete(str(user_id))
             
             # Notify balance update via pub/sub
@@ -427,8 +444,14 @@ class LedgerService:
                 previous_balance=current_balance,
             )
             
+        except Exception as e:
+            print(f"🍎 LEDGER_APPLE_PURCHASE: ❌ Error during purchase recording: {str(e)}")
+            print(f"🍎 LEDGER_APPLE_PURCHASE: Error type: {type(e).__name__}")
+            raise
         finally:
+            print(f"🍎 LEDGER_APPLE_PURCHASE: Releasing balance lock for user {user_id}")
             await self._release_balance_lock(user_id)
+            print(f"🍎 LEDGER_APPLE_PURCHASE: ✅ Balance lock released")
 
     async def refund_transaction(
         self, transaction_id: UUID, reason: str, admin_id: Optional[UUID] = None
