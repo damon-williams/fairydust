@@ -55,7 +55,7 @@ READING_TIME_WORD_TARGETS = {
     StoryLength.LONG: (1600, 2400),  # ~8-12 min reading time
 }
 
-STORY_RATE_LIMIT = 10  # Max 10 stories per hour per user
+STORY_RATE_LIMIT = 25  # Max 25 stories per hour per user
 
 
 @router.post("/apps/story/generate")
