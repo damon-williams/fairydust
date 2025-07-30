@@ -61,20 +61,32 @@ class ImageStorageService:
         Returns:
             Tuple[str, int, dict]: (stored_url, file_size_bytes, dimensions)
         """
+        import time
+        start_time = time.time()
+        
+        print(f"⏱️ STORAGE_TIMING: Starting image storage for {image_id}")
+        
         # If R2 is configured, upload the image properly
         if self.r2_client:
-            return await self._upload_to_r2(image_url, user_id, image_id)
+            result = await self._upload_to_r2(image_url, user_id, image_id)
+            total_time = time.time() - start_time
+            print(f"⏱️ STORAGE_TIMING: Image {image_id} stored in {total_time:.2f}s")
+            return result
         else:
             # Fallback: use original URL (temporary solution)
             print("⚠️ R2 not configured, using original URL (may expire)")
             estimated_size = 1024000  # ~1MB estimate for 1024x1024 PNG
             estimated_dimensions = {"width": 1024, "height": 1024}
+            total_time = time.time() - start_time
+            print(f"⏱️ STORAGE_TIMING: Using original URL (no storage) - {total_time:.3f}s")
             return image_url, estimated_size, estimated_dimensions
 
     async def _upload_to_r2(
         self, image_url: str, user_id: str, image_id: str
     ) -> tuple[str, int, dict]:
         """Upload image to R2 and return permanent URL"""
+        import time
+        download_start_time = time.time()
         max_retries = 3
 
         for attempt in range(max_retries):
@@ -92,11 +104,13 @@ class ImageStorageService:
                     elif attempt == 2:
                         headers = {"User-Agent": "curl/7.68.0", "Accept": "image/png,image/*,*/*"}
 
+                    download_request_start = time.time()
                     response = await client.get(
                         image_url, headers=headers, timeout=30.0, follow_redirects=True
                     )
+                    download_request_time = time.time() - download_request_start
 
-                    print(f"📡 Download response: {response.status_code}")
+                    print(f"📡 Download response: {response.status_code} (took {download_request_time:.2f}s)")
 
                     if response.status_code == 200:
                         image_data = response.content
@@ -104,6 +118,8 @@ class ImageStorageService:
 
                         if len(image_data) > 0:
                             # Success! Upload to R2
+                            download_total_time = time.time() - download_start_time
+                            print(f"⏱️ STORAGE_TIMING: Image downloaded in {download_total_time:.2f}s ({len(image_data):,} bytes)")
                             break
                         else:
                             print("⚠️ Downloaded image is empty, retrying...")
@@ -132,6 +148,7 @@ class ImageStorageService:
             storage_key = f"generated/{user_id}/{image_id}.{file_extension}"
 
             # Upload to R2
+            upload_start_time = time.time()
             self.r2_client.put_object(
                 Bucket=self.bucket_name,
                 Key=storage_key,
@@ -145,15 +162,26 @@ class ImageStorageService:
                     "original-url": image_url,
                 },
             )
+            upload_time = time.time() - upload_start_time
+            print(f"⏱️ STORAGE_TIMING: Upload to R2 took {upload_time:.2f}s")
 
             # Use custom domain for R2 public access
             permanent_url = f"https://images.fairydust.fun/{storage_key}"
             print(f"🔗 Generated public URL (custom domain): {permanent_url}")
 
             # Get actual dimensions
+            dimensions_start_time = time.time()
             dimensions = await self._get_image_dimensions(image_data)
-
+            dimensions_time = time.time() - dimensions_start_time
+            
+            total_storage_time = time.time() - download_start_time
             print(f"✅ Image uploaded to R2: {permanent_url}")
+            print(f"⏱️ STORAGE_TIMING_BREAKDOWN:")
+            print(f"   Download: {download_total_time:.2f}s")
+            print(f"   Upload: {upload_time:.2f}s") 
+            print(f"   Dimensions: {dimensions_time:.3f}s")
+            print(f"   Total storage: {total_storage_time:.2f}s")
+            
             return permanent_url, len(image_data), dimensions
 
         except ClientError as e:

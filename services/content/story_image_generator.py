@@ -36,10 +36,14 @@ class StoryImageGenerator:
     ):
         """Background task to generate all images for a story using parallel processing"""
 
+        import time
+        start_time = time.time()
+
         try:
             logger.info(f"🚀 Starting PARALLEL background image generation for story {story_id}")
             logger.info(f"   Scenes to generate: {len(scenes)}")
             logger.info(f"   Characters available: {len(characters)}")
+            logger.info(f"⏱️ TIMING: Parallel generation started at {time.strftime('%H:%M:%S', time.localtime(start_time))}")
 
             # Insert initial records for all images
             for scene in scenes:
@@ -47,6 +51,7 @@ class StoryImageGenerator:
 
             # Generate all images in parallel
             logger.info(f"⚡ Starting parallel generation of {len(scenes)} images...")
+            generation_start_time = time.time()
             
             # Create tasks for parallel execution
             generation_tasks = []
@@ -70,6 +75,8 @@ class StoryImageGenerator:
 
             # Wait for all images to complete (or fail)
             results = await asyncio.gather(*generation_tasks, return_exceptions=True)
+            generation_end_time = time.time()
+            generation_duration = generation_end_time - generation_start_time
             
             # Count successful generations
             completed_count = 0
@@ -93,13 +100,25 @@ class StoryImageGenerator:
             images_complete = completed_count == len(scenes)
             await self._update_story_completion_status(db, story_id, images_complete)
 
-            total_time_saved = f"Parallel generation completed!"
-            logger.info(f"🎯 {total_time_saved}")
+            # Calculate timing metrics
+            total_time = time.time() - start_time
+            avg_time_per_image = generation_duration / len(scenes) if len(scenes) > 0 else 0
+            
+            logger.info(f"🎯 Parallel generation completed!")
             logger.info(f"   Success rate: {completed_count}/{len(scenes)} images")
             logger.info(f"   Failed: {failed_count} images")
+            logger.info(f"⏱️ TIMING METRICS:")
+            logger.info(f"   Total elapsed time: {total_time:.2f}s")
+            logger.info(f"   Pure generation time: {generation_duration:.2f}s")
+            logger.info(f"   Average time per image: {avg_time_per_image:.2f}s")
+            logger.info(f"   Setup/cleanup overhead: {(total_time - generation_duration):.2f}s")
             
             if completed_count > 0:
                 logger.info(f"⚡ PERFORMANCE: Generated {completed_count} images simultaneously instead of sequentially")
+                # Estimate sequential time savings (assume 30s average per image if done sequentially)
+                estimated_sequential_time = len(scenes) * 30
+                time_saved = max(0, estimated_sequential_time - generation_duration)
+                logger.info(f"   Estimated time saved vs sequential: {time_saved:.1f}s")
 
         except Exception as e:
             logger.error(
@@ -128,9 +147,13 @@ class StoryImageGenerator:
     ) -> bool:
         """Wrapper for _generate_single_image with proper error handling for parallel execution"""
         
+        import time
         image_id = scene["image_id"]
+        start_time = time.time()
         
         try:
+            logger.info(f"⏱️ INDIVIDUAL_TIMING: Starting image {image_id} at {time.strftime('%H:%M:%S')}")
+            
             await self._generate_single_image(
                 db,
                 story_id,
@@ -143,9 +166,14 @@ class StoryImageGenerator:
                 story_genre,
                 story_context,
             )
+            
+            total_time = time.time() - start_time
+            logger.info(f"✅ INDIVIDUAL_TIMING: Image {image_id} completed in {total_time:.2f}s")
             return True  # Success
             
         except Exception as e:
+            total_time = time.time() - start_time
+            logger.error(f"❌ INDIVIDUAL_TIMING: Image {image_id} FAILED after {total_time:.2f}s")
             logger.error(f"❌ Failed to generate image {image_id} for story {story_id}: {e}")
             logger.error(f"   Exception traceback: {traceback.format_exc()}")
 
@@ -193,7 +221,9 @@ class StoryImageGenerator:
     ):
         """Generate a single image for a story scene"""
 
+        import time
         image_id = scene["image_id"]
+        phase_times = {}
 
         try:
             # Update status to generating
@@ -208,6 +238,7 @@ class StoryImageGenerator:
             characters_in_scene = scene.get("characters_mentioned", [])
 
             # Generate optimized prompt using multi-agent AI system
+            prompt_start_time = time.time()
             enhanced_prompt = await story_image_service.generate_image_prompt(
                 scene["scene_description"],
                 characters_in_scene,
@@ -218,6 +249,7 @@ class StoryImageGenerator:
                 story_genre,
                 full_story_content,
             )
+            phase_times["prompt_generation"] = time.time() - prompt_start_time
 
             logger.info("📝 STORY IMAGE PROMPT GENERATION:")
             logger.info(
@@ -287,14 +319,18 @@ class StoryImageGenerator:
             logger.info(f"   Reference people: {len(reference_people)}")
 
             # Generate image with retry logic for NSFW false positives
+            generation_start_time = time.time()
             image_url, generation_metadata = await self._generate_image_with_retry(
                 enhanced_prompt, scene, characters_in_scene, target_audience, reference_people
             )
+            phase_times["image_generation"] = time.time() - generation_start_time
 
             # Store image in R2
+            storage_start_time = time.time()
             stored_url, file_size, dimensions = await image_storage_service.store_generated_image(
                 image_url, user_id, image_id
             )
+            phase_times["image_storage"] = time.time() - storage_start_time
 
             # Prepare full metadata
             full_metadata = {
@@ -303,9 +339,11 @@ class StoryImageGenerator:
                 "dimensions": dimensions,
                 "characters_in_scene": [char.name for char in characters_in_scene],
                 "reference_people_count": len(reference_people),
+                "phase_timings": phase_times,  # Include timing breakdown
             }
 
             # Update database with completed image
+            db_start_time = time.time()
             await db.execute(
                 """
                 UPDATE story_images
@@ -318,8 +356,17 @@ class StoryImageGenerator:
                 story_id,
                 image_id,
             )
+            phase_times["database_update"] = time.time() - db_start_time
 
+            # Log detailed timing breakdown
+            total_phases_time = sum(phase_times.values())
             logger.info(f"✅ Successfully generated and stored image {image_id}")
+            logger.info(f"⏱️ PHASE_TIMING_BREAKDOWN for {image_id}:")
+            logger.info(f"   Prompt generation: {phase_times.get('prompt_generation', 0):.2f}s")
+            logger.info(f"   Image generation: {phase_times.get('image_generation', 0):.2f}s")
+            logger.info(f"   Image storage: {phase_times.get('image_storage', 0):.2f}s")
+            logger.info(f"   Database update: {phase_times.get('database_update', 0):.2f}s")
+            logger.info(f"   Total phases: {total_phases_time:.2f}s")
 
         except Exception as e:
             logger.error(f"❌ Failed to generate image {image_id}: {e}")

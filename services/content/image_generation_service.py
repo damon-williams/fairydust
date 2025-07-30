@@ -192,12 +192,16 @@ class ImageGenerationService:
                 print("⚙️ REQUEST PAYLOAD:")
                 print(json.dumps(payload, indent=2))
 
+                # Time the initial API request
+                api_request_start = time.time()
                 response = await client.post(
                     f"https://api.replicate.com/v1/models/{model}/predictions",
                     headers=headers,
                     json=payload,
                     timeout=10.0,
                 )
+                api_request_time = time.time() - api_request_start
+                print(f"⏱️ API_TIMING: Initial request took {api_request_time:.2f}s")
 
                 if response.status_code != 201:
                     error_data = response.json() if response.content else {}
@@ -242,10 +246,14 @@ class ImageGenerationService:
         # Poll for completion with dynamic intervals
         max_wait_time = 120  # 2 minutes
         elapsed_time = 0
+        poll_start_time = time.time()
+        poll_count = 0
         
         # Dynamic polling intervals: start fast, then slow down
         poll_intervals = [1, 1, 2, 2, 3, 4, 5, 6, 7, 8, 10]  # seconds
         poll_index = 0
+        
+        print(f"⏱️ POLLING_TIMING: Starting to poll prediction {prediction_id}")
 
         async with httpx.AsyncClient() as client:
             while elapsed_time < max_wait_time:
@@ -254,17 +262,26 @@ class ImageGenerationService:
                 await asyncio.sleep(current_interval)
                 elapsed_time += current_interval
                 poll_index += 1
+                poll_count += 1
 
+                poll_request_start = time.time()
                 poll_response = await client.get(
                     f"https://api.replicate.com/v1/predictions/{prediction_id}", headers=headers
                 )
+                poll_request_time = time.time() - poll_request_start
+                
                 if poll_response.status_code != 200:
                     raise HTTPException(status_code=500, detail="Failed to check prediction status")
 
                 result = poll_response.json()
                 status = result["status"]
+                
+                print(f"⏱️ POLLING_TIMING: Poll #{poll_count} after {elapsed_time}s - Status: {status} (poll took {poll_request_time:.3f}s)")
 
                 if status == "succeeded":
+                    total_poll_time = time.time() - poll_start_time
+                    print(f"✅ POLLING_TIMING: Prediction completed! Total polling time: {total_poll_time:.2f}s over {poll_count} polls")
+                    
                     image_url = (
                         result["output"][0]
                         if isinstance(result["output"], list)
@@ -278,6 +295,9 @@ class ImageGenerationService:
                         "prediction_id": prediction_id,
                         "reference_people_count": len(reference_people),
                         "generation_approach": "flux_universal",
+                        "api_request_time": api_request_time,
+                        "polling_time": total_poll_time,
+                        "poll_count": poll_count,
                     }
 
                     return image_url, metadata
@@ -412,12 +432,16 @@ class ImageGenerationService:
                 print("⚙️ REQUEST PAYLOAD:")
                 print(json.dumps(payload, indent=2))
 
+                # Time the initial API request
+                api_request_start = time.time()
                 response = await client.post(
                     f"https://api.replicate.com/v1/models/{model}/predictions",
                     headers=headers,
                     json=payload,
                     timeout=10.0,
                 )
+                api_request_time = time.time() - api_request_start
+                print(f"⏱️ API_TIMING: Initial request took {api_request_time:.2f}s")
 
                 if response.status_code != 201:
                     error_data = response.json() if response.content else {}
@@ -463,22 +487,35 @@ class ImageGenerationService:
         max_wait_time = 180  # 3 minutes (Gen-4 may take longer)
         poll_interval = 3  # 3 seconds
         elapsed_time = 0
+        poll_start_time = time.time()
+        poll_count = 0
+        
+        print(f"⏱️ POLLING_TIMING: Starting to poll Gen-4 prediction {prediction_id}")
 
         async with httpx.AsyncClient() as client:
             while elapsed_time < max_wait_time:
                 await asyncio.sleep(poll_interval)
                 elapsed_time += poll_interval
+                poll_count += 1
 
+                poll_request_start = time.time()
                 poll_response = await client.get(
                     f"https://api.replicate.com/v1/predictions/{prediction_id}", headers=headers
                 )
+                poll_request_time = time.time() - poll_request_start
+                
                 if poll_response.status_code != 200:
                     raise HTTPException(status_code=500, detail="Failed to check prediction status")
 
                 result = poll_response.json()
                 status = result["status"]
+                
+                print(f"⏱️ POLLING_TIMING: Gen-4 Poll #{poll_count} after {elapsed_time}s - Status: {status} (poll took {poll_request_time:.3f}s)")
 
                 if status == "succeeded":
+                    total_poll_time = time.time() - poll_start_time
+                    print(f"✅ POLLING_TIMING: Gen-4 prediction completed! Total polling time: {total_poll_time:.2f}s over {poll_count} polls")
+                    
                     image_url = (
                         result["output"][0]
                         if isinstance(result["output"], list)
@@ -495,6 +532,9 @@ class ImageGenerationService:
                         "reference_images": reference_images,
                         "reference_tags": reference_tags,
                         "aspect_ratio": aspect_ratio,
+                        "api_request_time": api_request_time,
+                        "polling_time": total_poll_time,
+                        "poll_count": poll_count,
                     }
 
                     return image_url, metadata
