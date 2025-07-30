@@ -302,8 +302,12 @@ class AuthService:
                 status_code=500, detail=f"Failed to create Apple client secret: {str(e)}"
             )
 
-    async def __del__(self):
+    async def close(self):
+        """Explicitly close the HTTP client"""
         await self.http_client.aclose()
+        
+    # Note: Removed __del__ to avoid RuntimeWarning with async cleanup
+    # HTTP client will be cleaned up by garbage collection
 
 
 # Dependency to get current user from JWT token
