@@ -68,28 +68,18 @@ export function RecentDustActivity({ recentActivity }: RecentDustActivityProps) 
             activities.map((activity) => (
               <div key={activity.id} className="flex items-center justify-between">
                 <div className="flex items-center space-x-3">
-                  <div className="w-8 h-8 bg-gradient-to-br from-orange-500 to-red-600 rounded-full flex items-center justify-center">
-                    <span className="text-sm">{activity.icon || '💫'}</span>
-                  </div>
-                  <div className="flex items-center space-x-2">
-                    <div className="w-6 h-6 bg-gradient-to-br from-green-500 to-blue-600 rounded-full flex items-center justify-center">
-                      <span className="text-xs font-medium text-white">
-                        {(activity.user?.fairyname || 'U').charAt(0).toUpperCase()}
-                      </span>
-                    </div>
-                    <div>
-                      <div className="flex items-center space-x-2">
-                        <p className="text-sm font-medium text-slate-900">
-                          {activity.user?.fairyname || 'Unknown User'}
-                        </p>
-                        <Badge className={`${getActivityTypeColor(activity.activity_type)} text-xs`}>
-                          {activity.activity_type}
-                        </Badge>
-                      </div>
-                      <p className="text-xs text-slate-500 truncate max-w-48">
-                        {activity.description || 'No description'}
+                  <div>
+                    <div className="flex items-center space-x-2">
+                      <p className="text-sm font-medium text-slate-900">
+                        {activity.user?.fairyname || activity.user?.first_name || 'Unknown User'}
                       </p>
+                      <Badge className={`${getActivityTypeColor(activity.activity_type)} text-xs`}>
+                        {activity.activity_type}
+                      </Badge>
                     </div>
+                    <p className="text-xs text-slate-500 truncate max-w-48">
+                      {activity.description || 'No description'}
+                    </p>
                   </div>
                 </div>
                 <div className="text-right">
