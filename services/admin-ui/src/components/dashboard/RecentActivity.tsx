@@ -22,7 +22,7 @@ export function RecentActivity({ recentUsers }: RecentActivityProps) {
           <Button 
             variant="outline" 
             size="sm"
-            onClick={() => navigate('/users')}
+            onClick={() => navigate('/admin/users')}
           >
             View All
             <ArrowRight className="ml-2 h-4 w-4" />
