@@ -1097,4 +1097,73 @@ export class AdminAPI {
       throw error;
     }
   }
+
+  // User Profile Data APIs
+  static async getUserPeople(userId: string): Promise<any[]> {
+    try {
+      const response = await fetch(`${API_BASE}/admin/users/${userId}/people`, {
+        credentials: 'include',
+      });
+      
+      if (response.ok) {
+        return await response.json();
+      }
+      
+      throw new Error('Failed to fetch user people');
+    } catch (error) {
+      console.error('Failed to get user people:', error);
+      throw error;
+    }
+  }
+
+  static async getUserAppUsage(userId: string): Promise<any[]> {
+    try {
+      const response = await fetch(`${API_BASE}/admin/users/${userId}/app-usage`, {
+        credentials: 'include',
+      });
+      
+      if (response.ok) {
+        return await response.json();
+      }
+      
+      throw new Error('Failed to fetch user app usage');
+    } catch (error) {
+      console.error('Failed to get user app usage:', error);
+      throw error;
+    }
+  }
+
+  static async getUserGeneratedContent(userId: string, limit: number = 10): Promise<any[]> {
+    try {
+      const response = await fetch(`${API_BASE}/admin/users/${userId}/generated-content?limit=${limit}`, {
+        credentials: 'include',
+      });
+      
+      if (response.ok) {
+        return await response.json();
+      }
+      
+      throw new Error('Failed to fetch user generated content');
+    } catch (error) {
+      console.error('Failed to get user generated content:', error);
+      throw error;
+    }
+  }
+
+  static async getUserDustTransactions(userId: string, limit: number = 20): Promise<any[]> {
+    try {
+      const response = await fetch(`${API_BASE}/admin/users/${userId}/dust-transactions?limit=${limit}`, {
+        credentials: 'include',
+      });
+      
+      if (response.ok) {
+        return await response.json();
+      }
+      
+      throw new Error('Failed to fetch user dust transactions');
+    } catch (error) {
+      console.error('Failed to get user dust transactions:', error);
+      throw error;
+    }
+  }
 }

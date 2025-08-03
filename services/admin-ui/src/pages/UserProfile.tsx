@@ -118,25 +118,8 @@ export function UserProfile() {
     
     try {
       setPeopleLoading(true);
-      // Mock data for now - replace with actual API call
-      const mockPeople: PersonInLife[] = [
-        {
-          id: '1',
-          name: 'Mom',
-          entry_type: 'person',
-          relationship: 'Mother',
-          created_at: '2024-01-15T10:00:00Z'
-        },
-        {
-          id: '2',
-          name: 'Buddy',
-          entry_type: 'pet',
-          relationship: 'Pet',
-          species: 'Golden Retriever',
-          created_at: '2024-02-01T14:30:00Z'
-        }
-      ];
-      setPeople(mockPeople);
+      const data = await AdminAPI.getUserPeople(userId);
+      setPeople(data);
     } catch (err) {
       console.error('Failed to load people:', err);
     } finally {
@@ -149,28 +132,8 @@ export function UserProfile() {
     
     try {
       setAppUsageLoading(true);
-      // Mock data for now - replace with actual API call
-      const mockAppUsage: AppUsage[] = [
-        {
-          app_name: 'Recipe Generator',
-          last_used: '2024-01-20T15:30:00Z',
-          total_uses: 15,
-          dust_spent: 45
-        },
-        {
-          app_name: 'Story Generator',
-          last_used: '2024-01-18T20:15:00Z',
-          total_uses: 8,
-          dust_spent: 32
-        },
-        {
-          app_name: 'Activity Finder',
-          last_used: '2024-01-16T12:00:00Z',
-          total_uses: 3,
-          dust_spent: 9
-        }
-      ];
-      setAppUsage(mockAppUsage);
+      const data = await AdminAPI.getUserAppUsage(userId);
+      setAppUsage(data);
     } catch (err) {
       console.error('Failed to load app usage:', err);
     } finally {
@@ -183,31 +146,8 @@ export function UserProfile() {
     
     try {
       setContentLoading(true);
-      // Mock data for now - replace with actual API call
-      const mockContent: GeneratedContent[] = [
-        {
-          id: '1',
-          type: 'recipe',
-          title: 'Chocolate Chip Cookies',
-          created_at: '2024-01-20T15:30:00Z',
-          dust_cost: 3
-        },
-        {
-          id: '2',
-          type: 'story',
-          title: 'The Magic Forest Adventure',
-          created_at: '2024-01-18T20:15:00Z',
-          dust_cost: 4
-        },
-        {
-          id: '3',
-          type: 'activity',
-          title: 'Weekend Park Activities',
-          created_at: '2024-01-16T12:00:00Z',
-          dust_cost: 3
-        }
-      ];
-      setGeneratedContent(mockContent);
+      const data = await AdminAPI.getUserGeneratedContent(userId, 10);
+      setGeneratedContent(data);
     } catch (err) {
       console.error('Failed to load generated content:', err);
     } finally {
@@ -220,31 +160,8 @@ export function UserProfile() {
     
     try {
       setTransactionsLoading(true);
-      // Mock data for now - replace with actual API call
-      const mockTransactions: DustTransaction[] = [
-        {
-          id: '1',
-          amount: 100,
-          transaction_type: 'grant',
-          description: 'Welcome bonus',
-          created_at: '2024-01-15T10:00:00Z'
-        },
-        {
-          id: '2',
-          amount: -3,
-          transaction_type: 'spend',
-          description: 'Recipe: Chocolate Chip Cookies',
-          created_at: '2024-01-20T15:30:00Z'
-        },
-        {
-          id: '3',
-          amount: -4,
-          transaction_type: 'spend',
-          description: 'Story: The Magic Forest Adventure',
-          created_at: '2024-01-18T20:15:00Z'
-        }
-      ];
-      setDustTransactions(mockTransactions);
+      const data = await AdminAPI.getUserDustTransactions(userId, 20);
+      setDustTransactions(data);
     } catch (err) {
       console.error('Failed to load transactions:', err);
     } finally {
@@ -336,7 +253,6 @@ export function UserProfile() {
             Back to Users
           </Button>
           <div>
-            <h1 className="text-3xl font-bold text-slate-900">User Profile</h1>
             <p className="text-slate-500">Detailed information for {user.first_name || user.fairyname}</p>
           </div>
         </div>
@@ -413,6 +329,7 @@ export function UserProfile() {
               <p className="text-2xl font-bold text-slate-900">{user.dust_balance}</p>
             </div>
             <Button 
+              variant="outline"
               className="w-full"
               onClick={() => setGrantDialogOpen(true)}
             >
@@ -538,7 +455,7 @@ export function UserProfile() {
                       <div>
                         <p className="text-sm font-medium">{content.title}</p>
                         <p className="text-xs text-slate-500">
-                          {content.dust_cost} DUST
+                          Created content
                         </p>
                       </div>
                     </div>
