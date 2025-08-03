@@ -6,6 +6,7 @@ import { UserProfile } from '@/pages/UserProfile';
 import { Apps } from '@/pages/Apps';
 import { LLM } from '@/pages/LLM';
 import { Referrals } from '@/pages/Referrals';
+import { Activity } from '@/pages/Activity';
 import Payments from '@/pages/Payments';
 import DeletionLogs from '@/pages/DeletionLogs';
 import Terms from '@/pages/Terms';
@@ -35,6 +36,7 @@ function App() {
                     <Route path="apps" element={<Apps />} />
                     <Route path="llm" element={<LLM />} />
                     <Route path="referrals" element={<Referrals />} />
+                    <Route path="activity" element={<Activity />} />
                     <Route path="payments" element={<Payments />} />
                     <Route path="deletion-logs" element={<DeletionLogs />} />
                     <Route path="terms" element={<Terms />} />

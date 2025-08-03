@@ -102,6 +102,7 @@ from routes import (
     system_router,
     users_router,
 )
+from routes.activity import activity_router
 from routes.payments import payments_router
 from routes.terms import terms_router
 
@@ -112,6 +113,7 @@ app.include_router(users_router, prefix="/admin/users")
 app.include_router(apps_router, prefix="/admin/apps")
 app.include_router(llm_router, prefix="/admin/llm")
 app.include_router(referrals_router, prefix="/admin/referrals")
+app.include_router(activity_router, prefix="/admin/activity")
 app.include_router(payments_router, prefix="/admin/payments")
 app.include_router(terms_router, prefix="/admin/terms")
 app.include_router(system_router, prefix="/admin/system")
@@ -191,6 +193,7 @@ async def serve_react_app(path: str):
         or path.startswith("admin/apps")
         or path.startswith("admin/llm")
         or path.startswith("admin/referrals")
+        or path.startswith("admin/activity")
         or path.startswith("admin/deletion-logs")
         or path.startswith("admin/terms")
         or path.startswith("admin/system")

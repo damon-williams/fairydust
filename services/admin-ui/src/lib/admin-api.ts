@@ -109,6 +109,23 @@ export class AdminAPI {
     }
   }
 
+  static async getRecentActivity(): Promise<any[]> {
+    try {
+      const response = await fetch(`${API_BASE}/admin/dashboard/recent-activity`, {
+        credentials: 'include',
+      });
+      
+      if (response.ok) {
+        return await response.json();
+      }
+      
+      throw new Error('Failed to fetch recent activity');
+    } catch (error) {
+      console.error('Failed to get recent activity:', error);
+      throw error;
+    }
+  }
+
   // Users APIs
   static async getUsers(page: number = 1, limit: number = 50, search?: string): Promise<{ users: User[]; total: number; pages: number }> {
     try {
@@ -1180,6 +1197,41 @@ export class AdminAPI {
       throw new Error('Failed to fetch user payments');
     } catch (error) {
       console.error('Failed to get user payments:', error);
+      throw error;
+    }
+  }
+
+  // Activity APIs
+  static async getActivity(params?: {
+    page?: number;
+    limit?: number;
+    user_search?: string;
+    activity_type?: string;
+  }): Promise<{
+    activities: any[];
+    total: number;
+    pages: number;
+    current_page: number;
+    has_more: boolean;
+  }> {
+    try {
+      const queryParams = new URLSearchParams();
+      if (params?.page) queryParams.append('page', params.page.toString());
+      if (params?.limit) queryParams.append('limit', params.limit.toString());
+      if (params?.user_search) queryParams.append('user_search', params.user_search);
+      if (params?.activity_type) queryParams.append('activity_type', params.activity_type);
+
+      const response = await fetch(`${API_BASE}/admin/activity/api?${queryParams}`, {
+        credentials: 'include',
+      });
+      
+      if (response.ok) {
+        return await response.json();
+      }
+      
+      throw new Error('Failed to fetch activity');
+    } catch (error) {
+      console.error('Failed to get activity:', error);
       throw error;
     }
   }
