@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { StatsCard } from '@/components/dashboard/StatsCard';
 import { RecentActivity } from '@/components/dashboard/RecentActivity';
+import { RecentDustActivity } from '@/components/dashboard/RecentDustActivity';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
 import { 
@@ -27,14 +28,15 @@ export function Dashboard() {
       setLoading(true);
       setError(null);
       
-      const [statsData, usersData] = await Promise.all([
+      const [statsData, usersData, activityData] = await Promise.all([
         AdminAPI.getDashboardStats(),
         AdminAPI.getRecentUsers(),
+        AdminAPI.getRecentActivity(),
       ]);
       
       setStats(statsData);
       setRecentUsers(usersData);
-      setRecentActivity([]);
+      setRecentActivity(activityData);
     } catch (err) {
       console.error('Failed to load dashboard data:', err);
       setError('Failed to load dashboard data. Please try again.');
@@ -148,7 +150,10 @@ export function Dashboard() {
       </div>
 
       {/* Recent Activity */}
-      <RecentActivity recentUsers={recentUsers} />
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+        <RecentActivity recentUsers={recentUsers} />
+        <RecentDustActivity recentActivity={recentActivity} />
+      </div>
     </div>
   );
 }

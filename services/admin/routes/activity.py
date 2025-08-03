@@ -45,6 +45,17 @@ async def get_activity_json(
         elif activity_type == "image":
             where_conditions.append("dt.description ILIKE $%d" % (len(params) + 1))
             params.append("%image%")
+        elif activity_type == "inspiration":
+            where_conditions.append("(dt.description ILIKE $%d OR dt.description ILIKE $%d)" % (len(params) + 1, len(params) + 2))
+            params.append("%inspiration%")
+            params.append("%inspire%")
+        elif activity_type == "fortune":
+            where_conditions.append("dt.description ILIKE $%d" % (len(params) + 1))
+            params.append("%fortune%")
+        elif activity_type == "wyr":
+            where_conditions.append("(dt.description ILIKE $%d OR dt.description ILIKE $%d)" % (len(params) + 1, len(params) + 2))
+            params.append("%would you rather%")
+            params.append("%wyr%")
 
     where_clause = " WHERE " + " AND ".join(where_conditions)
 
@@ -100,6 +111,15 @@ async def get_activity_json(
         elif "image" in description:
             activity_type = "image"
             icon = "🎨"
+        elif "inspiration" in description or "inspire" in description:
+            activity_type = "inspiration"
+            icon = "✨"
+        elif "fortune" in description:
+            activity_type = "fortune"
+            icon = "🔮"
+        elif "would you rather" in description or "wyr" in description:
+            activity_type = "wyr"
+            icon = "🤔"
         else:
             activity_type = "other"
             icon = "💫"

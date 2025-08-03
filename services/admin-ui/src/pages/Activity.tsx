@@ -86,6 +86,9 @@ export function Activity() {
       case 'activity': return 'bg-green-100 text-green-800';
       case 'restaurant': return 'bg-purple-100 text-purple-800';
       case 'image': return 'bg-pink-100 text-pink-800';
+      case 'inspiration': return 'bg-yellow-100 text-yellow-800';
+      case 'fortune': return 'bg-indigo-100 text-indigo-800';
+      case 'wyr': return 'bg-teal-100 text-teal-800';
       default: return 'bg-gray-100 text-gray-800';
     }
   };
@@ -137,6 +140,9 @@ export function Activity() {
                 <SelectItem value="activity">🎯 Activities</SelectItem>
                 <SelectItem value="restaurant">🍽️ Restaurants</SelectItem>
                 <SelectItem value="image">🎨 Images</SelectItem>
+                <SelectItem value="inspiration">✨ Inspiration</SelectItem>
+                <SelectItem value="fortune">🔮 Fortune Teller</SelectItem>
+                <SelectItem value="wyr">🤔 Would You Rather</SelectItem>
               </SelectContent>
             </Select>
           </div>
@@ -148,7 +154,7 @@ export function Activity() {
         <CardHeader>
           <CardTitle className="flex items-center space-x-2">
             <ActivityIcon className="h-5 w-5" />
-            <span>Recent Activity ({totalActivities} total)</span>
+            <span>Recent Activity</span>
           </CardTitle>
         </CardHeader>
         <CardContent>
@@ -177,28 +183,18 @@ export function Activity() {
               {activities.map((activity) => (
                 <div key={activity.id} className="flex items-center justify-between p-4 border border-slate-200 rounded-lg hover:bg-slate-50">
                   <div className="flex items-center space-x-4">
-                    <div className="w-10 h-10 bg-gradient-to-br from-blue-500 to-purple-600 rounded-full flex items-center justify-center">
-                      <span className="text-lg">{activity.icon}</span>
-                    </div>
-                    <div className="flex items-center space-x-3">
-                      <div className="w-8 h-8 bg-gradient-to-br from-green-500 to-blue-600 rounded-full flex items-center justify-center">
-                        <span className="text-sm font-medium text-white">
-                          {(activity.user.first_name || activity.user.fairyname).charAt(0).toUpperCase()}
-                        </span>
-                      </div>
-                      <div>
-                        <div className="flex items-center space-x-2">
-                          <p className="text-sm font-medium text-slate-900">
-                            {activity.user.first_name || activity.user.fairyname}
-                          </p>
-                          <Badge className={getActivityTypeColor(activity.activity_type)}>
-                            {activity.activity_type}
-                          </Badge>
-                        </div>
-                        <p className="text-xs text-slate-500">
-                          {activity.description}
+                    <div>
+                      <div className="flex items-center space-x-2">
+                        <p className="text-sm font-medium text-slate-900">
+                          {activity.user.fairyname}
                         </p>
+                        <Badge className={getActivityTypeColor(activity.activity_type)}>
+                          {activity.activity_type}
+                        </Badge>
                       </div>
+                      <p className="text-xs text-slate-500">
+                        {activity.description}
+                      </p>
                     </div>
                   </div>
                   <div className="text-right">
