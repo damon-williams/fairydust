@@ -199,7 +199,7 @@ export function Activity() {
                   </div>
                   <div className="text-right">
                     <p className="text-sm font-semibold text-red-600">
-                      -{activity.amount} DUST
+                      {activity.amount} DUST
                     </p>
                     <p className="text-xs text-slate-500">
                       {formatDistanceToNow(new Date(activity.created_at), { addSuffix: true })}
