@@ -432,6 +432,10 @@ async def verify_otp(
         dust_granted=0,  # DUST grants now handled by apps, not identity service
         is_first_login_today=is_bonus_eligible,
         daily_bonus_eligible=daily_bonus_value,
+        extracted_name=None,  # OTP doesn't provide name data
+        extracted_first_name=None,
+        extracted_last_name=None,
+        extracted_birthdate=None,
     )
 
 
