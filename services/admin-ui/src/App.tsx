@@ -2,6 +2,7 @@ import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-d
 import { Layout } from '@/components/layout/Layout';
 import { Dashboard } from '@/pages/Dashboard';
 import { Users } from '@/pages/Users';
+import { UserProfile } from '@/pages/UserProfile';
 import { Apps } from '@/pages/Apps';
 import { LLM } from '@/pages/LLM';
 import { Referrals } from '@/pages/Referrals';
@@ -30,6 +31,7 @@ function App() {
                   <Routes>
                     <Route path="dashboard" element={<Dashboard />} />
                     <Route path="users" element={<Users />} />
+                    <Route path="users/:userId/profile" element={<UserProfile />} />
                     <Route path="apps" element={<Apps />} />
                     <Route path="llm" element={<LLM />} />
                     <Route path="referrals" element={<Referrals />} />

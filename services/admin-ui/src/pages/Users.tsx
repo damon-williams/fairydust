@@ -280,11 +280,10 @@ export function Users() {
                         Grant DUST
                       </Button>
                       <Button 
-                        variant="ghost" 
+                        variant="outline" 
                         size="sm"
                         onClick={() => navigate(`/admin/users/${user.id}/profile`)}
                       >
-                        <Eye className="h-4 w-4 mr-1" />
                         View Profile
                       </Button>
                     </div>
