@@ -22,6 +22,24 @@ import {
 const API_BASE = window.location.origin;
 
 export class AdminAPI {
+  // Generic HTTP methods
+  static async get(endpoint: string): Promise<any> {
+    try {
+      const response = await fetch(`${API_BASE}/admin${endpoint}`, {
+        credentials: 'include',
+      });
+      
+      if (response.ok) {
+        return await response.json();
+      }
+      
+      throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+    } catch (error) {
+      console.error(`Failed to GET ${endpoint}:`, error);
+      throw error;
+    }
+  }
+
   // Dashboard APIs
   static async getDashboardStats(): Promise<DashboardStats> {
     try {

@@ -4,19 +4,26 @@ import { Badge } from '@/components/ui/badge';
 import { User } from '@/types/admin';
 import { formatDistanceToNow } from 'date-fns';
 import { ArrowRight } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
 
 interface RecentActivityProps {
   recentUsers: User[];
 }
 
 export function RecentActivity({ recentUsers }: RecentActivityProps) {
+  const navigate = useNavigate();
+
   return (
     <div className="grid grid-cols-1 gap-6">
       {/* Recent Users */}
       <Card>
         <CardHeader className="flex flex-row items-center justify-between">
           <CardTitle className="text-lg font-semibold">Recent Users</CardTitle>
-          <Button variant="outline" size="sm">
+          <Button 
+            variant="outline" 
+            size="sm"
+            onClick={() => navigate('/users')}
+          >
             View All
             <ArrowRight className="ml-2 h-4 w-4" />
           </Button>

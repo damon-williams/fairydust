@@ -1,0 +1,11 @@
+{
+  "mcpServers": {
+    "fairydust": {
+      "command": "npx",
+      "args": ["@fairydust/mcp-proxy"],
+      "env": {
+        "FAIRYDUST_MCP_URL": "https://fairydust-mcp-production.up.railway.app"
+      }
+    }
+  }
+}

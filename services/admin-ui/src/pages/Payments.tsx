@@ -5,8 +5,8 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '.
 import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../components/ui/select';
-import { adminApi } from '../lib/admin-api';
-import { useToast } from '../components/ui/sonner';
+import { AdminAPI } from '../lib/admin-api';
+import { toast } from 'sonner';
 
 interface PaymentTransaction {
   id: string;
@@ -40,7 +40,6 @@ export default function Payments() {
   const [searchUserId, setSearchUserId] = useState('');
   const [filterStatus, setFilterStatus] = useState('all');
   const [filterPlatform, setFilterPlatform] = useState('all');
-  const { toast } = useToast();
 
   useEffect(() => {
     fetchPaymentData();
@@ -56,20 +55,16 @@ export default function Payments() {
       if (filterStatus !== 'all') params.append('status', filterStatus);
       if (filterPlatform !== 'all') params.append('platform', filterPlatform);
       
-      const transactionsResponse = await adminApi.get(`/payments/transactions?${params}`);
+      const transactionsResponse = await AdminAPI.get(`/payments/transactions?${params}`);
       setTransactions(transactionsResponse.transactions || []);
       
       // Fetch payment stats
-      const statsResponse = await adminApi.get('/payments/stats');
+      const statsResponse = await AdminAPI.get('/payments/stats');
       setStats(statsResponse);
       
     } catch (error) {
       console.error('Error fetching payment data:', error);
-      toast({
-        title: 'Error',
-        description: 'Failed to fetch payment data',
-        variant: 'destructive',
-      });
+      toast.error('Failed to fetch payment data');
     } finally {
       setLoading(false);
     }
