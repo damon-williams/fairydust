@@ -432,6 +432,10 @@ async def verify_otp(
         dust_granted=0,  # DUST grants now handled by apps, not identity service
         is_first_login_today=is_bonus_eligible,
         daily_bonus_eligible=daily_bonus_value,
+        extracted_name=None,  # OTP doesn't provide name data
+        extracted_first_name=None,
+        extracted_last_name=None,
+        extracted_birthdate=None,
     )
 
 
@@ -622,15 +626,37 @@ async def oauth_login(
     access_token = await auth_service.create_access_token(token_data)
     refresh_token = await auth_service.create_refresh_token(token_data)
 
-    return AuthResponse(
+    # Extract name and DOB for frontend pre-population
+    extracted_name = user_info.get("name") if user_info else None
+    extracted_first_name = user_info.get("first_name") if user_info else None
+    extracted_last_name = user_info.get("last_name") if user_info else None
+    extracted_birthdate = user_info.get("birthdate") if user_info else None
+    
+    print(f"📤 OAUTH RESPONSE: Returning to client:")
+    print(f"   - extracted_name: {extracted_name}")
+    print(f"   - extracted_first_name: {extracted_first_name}")
+    print(f"   - extracted_last_name: {extracted_last_name}")
+    print(f"   - extracted_birthdate: {extracted_birthdate}")
+    print(f"   - is_new_user: {is_new_user}")
+
+    response_data = AuthResponse(
         user=User(**user_dict),
         token=Token(access_token=access_token, refresh_token=refresh_token, expires_in=3600),
         is_new_user=is_new_user,
         dust_granted=0,  # DUST grants now handled by apps, not identity service
         is_first_login_today=is_bonus_eligible,
         daily_bonus_eligible=daily_bonus_value,
-        extracted_name=user_info.get("name") if user_info else None,
+        extracted_name=extracted_name,
     )
+    
+    # Add additional fields to response for client
+    if extracted_first_name or extracted_last_name:
+        response_data.extracted_first_name = extracted_first_name
+        response_data.extracted_last_name = extracted_last_name
+    if extracted_birthdate:
+        response_data.extracted_birthdate = extracted_birthdate
+    
+    return response_data
 
 
 @auth_router.post("/refresh", response_model=Token)

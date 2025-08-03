@@ -319,3 +319,6 @@ class AuthResponse(BaseModel):
     pending_terms: list[TermsDocument] = []
     # OAuth provider extracted name for frontend pre-population
     extracted_name: Optional[str] = None
+    extracted_first_name: Optional[str] = None
+    extracted_last_name: Optional[str] = None
+    extracted_birthdate: Optional[str] = None
