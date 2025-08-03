@@ -189,7 +189,7 @@ export function Activity() {
                       <div className="flex items-center space-x-2">
                         <p 
                           className="text-sm font-medium text-slate-900 hover:text-blue-600 cursor-pointer"
-                          onClick={() => navigate(`/admin/users/${activity.user.id}`)}
+                          onClick={() => navigate(`/admin/users/${activity.user.id}/profile`)}
                         >
                           {activity.user.fairyname}
                         </p>

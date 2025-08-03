@@ -36,7 +36,7 @@ export function RecentActivity({ recentUsers }: RecentActivityProps) {
                   <div>
                     <p 
                       className="text-sm font-medium text-slate-900 hover:text-blue-600 cursor-pointer"
-                      onClick={() => navigate(`/admin/users/${user.id}`)}
+                      onClick={() => navigate(`/admin/users/${user.id}/profile`)}
                     >
                       {user.fairyname}
                     </p>

@@ -101,7 +101,7 @@ export function RecentDustActivity({ recentActivity }: RecentDustActivityProps) 
                     <div className="flex items-center space-x-2">
                       <p 
                         className="text-sm font-medium text-slate-900 hover:text-blue-600 cursor-pointer"
-                        onClick={() => navigate(`/admin/users/${activity.user?.id || activity.user_id}`)}
+                        onClick={() => navigate(`/admin/users/${activity.user?.id || activity.user_id}/profile`)}
                       >
                         {getFairyname(activity)}
                       </p>
