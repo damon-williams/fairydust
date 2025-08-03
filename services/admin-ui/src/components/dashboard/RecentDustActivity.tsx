@@ -28,6 +28,9 @@ interface RecentDustActivityProps {
 export function RecentDustActivity({ recentActivity }: RecentDustActivityProps) {
   const navigate = useNavigate();
 
+  // Handle case where recentActivity might be undefined
+  const activities = recentActivity || [];
+
   const getActivityTypeColor = (type: string) => {
     switch (type) {
       case 'recipe': return 'bg-orange-100 text-orange-800';
@@ -57,12 +60,12 @@ export function RecentDustActivity({ recentActivity }: RecentDustActivityProps) 
       </CardHeader>
       <CardContent>
         <div className="space-y-4">
-          {recentActivity.length === 0 ? (
+          {activities.length === 0 ? (
             <p className="text-sm text-slate-500 text-center py-4">
               No recent activity
             </p>
           ) : (
-            recentActivity.map((activity) => (
+            activities.map((activity) => (
               <div key={activity.id} className="flex items-center justify-between">
                 <div className="flex items-center space-x-3">
                   <div className="w-8 h-8 bg-gradient-to-br from-orange-500 to-red-600 rounded-full flex items-center justify-center">
