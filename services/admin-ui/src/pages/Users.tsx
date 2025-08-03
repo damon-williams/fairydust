@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -31,12 +32,13 @@ import {
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { User } from '@/types/admin';
-import { Search, Filter, Download, MoreHorizontal, RefreshCw, AlertTriangle } from 'lucide-react';
+import { Search, Filter, Download, Eye, RefreshCw, AlertTriangle } from 'lucide-react';
 import { formatDistanceToNow } from 'date-fns';
 import { AdminAPI } from '@/lib/admin-api';
 import { toast } from 'sonner';
 
 export function Users() {
+  const navigate = useNavigate();
   const [users, setUsers] = useState<User[]>([]);
   const [searchTerm, setSearchTerm] = useState('');
   const [filterType, setFilterType] = useState('all');
@@ -134,7 +136,8 @@ export function Users() {
 
   const filteredUsers = users.filter(user => {
     const matchesSearch = user.fairyname.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                         user.email?.toLowerCase().includes(searchTerm.toLowerCase());
+                         user.email?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                         user.first_name?.toLowerCase().includes(searchTerm.toLowerCase());
     
     const matchesFilter = filterType === 'all' ||
                          (filterType === 'admins' && user.is_admin) ||
@@ -223,8 +226,7 @@ export function Users() {
             <TableHeader>
               <TableRow>
                 <TableHead>User</TableHead>
-                <TableHead>Contact</TableHead>
-                <TableHead>Type</TableHead>
+                <TableHead>Email</TableHead>
                 <TableHead>DUST Balance</TableHead>
                 <TableHead>Last Active</TableHead>
                 <TableHead>Actions</TableHead>
@@ -237,33 +239,25 @@ export function Users() {
                     <div className="flex items-center space-x-3">
                       <div className="w-8 h-8 bg-gradient-to-br from-blue-500 to-purple-600 rounded-full flex items-center justify-center">
                         <span className="text-sm font-medium text-white">
-                          {user.fairyname.charAt(0).toUpperCase()}
+                          {(user.first_name || user.fairyname).charAt(0).toUpperCase()}
                         </span>
                       </div>
                       <div>
-                        <div className="font-medium">{user.fairyname}</div>
+                        <div className="flex items-center space-x-2">
+                          <span className="font-medium">{user.first_name || 'No name provided'}</span>
+                          {user.is_admin && (
+                            <Badge variant="destructive" className="text-xs">Admin</Badge>
+                          )}
+                        </div>
                         <div className="text-sm text-slate-500">
-                          {user.streak_days} day streak
+                          {user.fairyname}
                         </div>
                       </div>
                     </div>
                   </TableCell>
                   <TableCell>
                     <div className="text-sm">
-                      {user.email || user.phone || 'No contact'}
-                    </div>
-                    <div className="text-xs text-slate-500 capitalize">
-                      {user.auth_provider}
-                    </div>
-                  </TableCell>
-                  <TableCell>
-                    <div className="flex space-x-1">
-                      {user.is_admin && (
-                        <Badge variant="destructive" className="text-xs">Admin</Badge>
-                      )}
-                      {!user.is_admin && (
-                        <Badge variant="secondary" className="text-xs">User</Badge>
-                      )}
+                      {user.email || user.phone || 'No email'}
                     </div>
                   </TableCell>
                   <TableCell>
@@ -285,8 +279,13 @@ export function Users() {
                       >
                         Grant DUST
                       </Button>
-                      <Button variant="ghost" size="sm">
-                        <MoreHorizontal className="h-4 w-4" />
+                      <Button 
+                        variant="ghost" 
+                        size="sm"
+                        onClick={() => navigate(`/admin/users/${user.id}/profile`)}
+                      >
+                        <Eye className="h-4 w-4 mr-1" />
+                        View Profile
                       </Button>
                     </div>
                   </TableCell>
