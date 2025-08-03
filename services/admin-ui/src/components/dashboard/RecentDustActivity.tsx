@@ -9,11 +9,15 @@ interface ActivityItem {
   id: string;
   amount: number;
   type: string;
-  activity_type: string;
-  icon: string;
+  activity_type?: string;
+  icon?: string;
   description: string;
   created_at: string;
-  user: {
+  fairyname: string;
+  first_name: string;
+  user_id: string;
+  // Alternative format from full activity API
+  user?: {
     id: string;
     fairyname: string;
     first_name: string;
@@ -38,8 +42,33 @@ export function RecentDustActivity({ recentActivity }: RecentDustActivityProps) 
       case 'activity': return 'bg-green-100 text-green-800';
       case 'restaurant': return 'bg-purple-100 text-purple-800';
       case 'image': return 'bg-pink-100 text-pink-800';
+      case 'inspiration': return 'bg-yellow-100 text-yellow-800';
+      case 'fortune': return 'bg-indigo-100 text-indigo-800';
+      case 'wyr': return 'bg-teal-100 text-teal-800';
       default: return 'bg-gray-100 text-gray-800';
     }
+  };
+
+  const getActivityType = (activity: ActivityItem): string => {
+    if (activity.activity_type) {
+      return activity.activity_type;
+    }
+    
+    // Determine activity type from description for dashboard endpoint
+    const description = activity.description.toLowerCase();
+    if (description.includes('recipe')) return 'recipe';
+    if (description.includes('story')) return 'story';
+    if (description.includes('activity') || description.includes('search')) return 'activity';
+    if (description.includes('restaurant')) return 'restaurant';
+    if (description.includes('image')) return 'image';
+    if (description.includes('inspiration') || description.includes('inspire')) return 'inspiration';
+    if (description.includes('fortune')) return 'fortune';
+    if (description.includes('would you rather') || description.includes('wyr')) return 'wyr';
+    return 'other';
+  };
+
+  const getFairyname = (activity: ActivityItem): string => {
+    return activity.user?.fairyname || activity.fairyname || activity.user?.first_name || activity.first_name || 'Unknown User';
   };
 
   return (
@@ -71,10 +100,10 @@ export function RecentDustActivity({ recentActivity }: RecentDustActivityProps) 
                   <div>
                     <div className="flex items-center space-x-2">
                       <p className="text-sm font-medium text-slate-900">
-                        {activity.user?.fairyname || activity.user?.first_name || 'Unknown User'}
+                        {getFairyname(activity)}
                       </p>
-                      <Badge className={`${getActivityTypeColor(activity.activity_type)} text-xs`}>
-                        {activity.activity_type}
+                      <Badge className={`${getActivityTypeColor(getActivityType(activity))} text-xs`}>
+                        {getActivityType(activity)}
                       </Badge>
                     </div>
                     <p className="text-xs text-slate-500 truncate max-w-48">
@@ -84,7 +113,7 @@ export function RecentDustActivity({ recentActivity }: RecentDustActivityProps) 
                 </div>
                 <div className="text-right">
                   <p className="text-sm font-semibold text-red-600">
-                    -{activity.amount || 0} DUST
+                    {Math.abs(activity.amount || 0)} DUST
                   </p>
                   <p className="text-xs text-slate-500 mt-1">
                     {activity.created_at ? formatDistanceToNow(new Date(activity.created_at), { addSuffix: true }) : 'Unknown time'}
