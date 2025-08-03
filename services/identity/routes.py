@@ -629,6 +629,7 @@ async def oauth_login(
         dust_granted=0,  # DUST grants now handled by apps, not identity service
         is_first_login_today=is_bonus_eligible,
         daily_bonus_eligible=daily_bonus_value,
+        extracted_name=user_info.get("name") if user_info else None,
     )
 
 
