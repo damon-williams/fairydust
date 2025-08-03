@@ -40,7 +40,13 @@ export function Dashboard() {
       // Load activity data separately with error handling
       try {
         const activityData = await AdminAPI.getRecentActivity();
-        setRecentActivity(activityData);
+        // Ensure the data is an array and has proper structure
+        if (Array.isArray(activityData)) {
+          setRecentActivity(activityData);
+        } else {
+          console.warn('Recent activity data is not an array:', activityData);
+          setRecentActivity([]);
+        }
       } catch (activityError) {
         console.warn('Failed to load recent activity, using empty array:', activityError);
         setRecentActivity([]);

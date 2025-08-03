@@ -69,35 +69,35 @@ export function RecentDustActivity({ recentActivity }: RecentDustActivityProps) 
               <div key={activity.id} className="flex items-center justify-between">
                 <div className="flex items-center space-x-3">
                   <div className="w-8 h-8 bg-gradient-to-br from-orange-500 to-red-600 rounded-full flex items-center justify-center">
-                    <span className="text-sm">{activity.icon}</span>
+                    <span className="text-sm">{activity.icon || '💫'}</span>
                   </div>
                   <div className="flex items-center space-x-2">
                     <div className="w-6 h-6 bg-gradient-to-br from-green-500 to-blue-600 rounded-full flex items-center justify-center">
                       <span className="text-xs font-medium text-white">
-                        {(activity.user.first_name || activity.user.fairyname).charAt(0).toUpperCase()}
+                        {(activity.user?.fairyname || 'U').charAt(0).toUpperCase()}
                       </span>
                     </div>
                     <div>
                       <div className="flex items-center space-x-2">
                         <p className="text-sm font-medium text-slate-900">
-                          {activity.user.first_name || activity.user.fairyname}
+                          {activity.user?.fairyname || 'Unknown User'}
                         </p>
                         <Badge className={`${getActivityTypeColor(activity.activity_type)} text-xs`}>
                           {activity.activity_type}
                         </Badge>
                       </div>
                       <p className="text-xs text-slate-500 truncate max-w-48">
-                        {activity.description}
+                        {activity.description || 'No description'}
                       </p>
                     </div>
                   </div>
                 </div>
                 <div className="text-right">
                   <p className="text-sm font-semibold text-red-600">
-                    -{activity.amount} DUST
+                    -{activity.amount || 0} DUST
                   </p>
                   <p className="text-xs text-slate-500 mt-1">
-                    {formatDistanceToNow(new Date(activity.created_at), { addSuffix: true })}
+                    {activity.created_at ? formatDistanceToNow(new Date(activity.created_at), { addSuffix: true }) : 'Unknown time'}
                   </p>
                 </div>
               </div>
