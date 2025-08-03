@@ -23,7 +23,7 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
-import { ArrowLeft, User as UserIcon, RefreshCw, AlertTriangle, Users, Smartphone, FileText, DollarSign, Heart, PawPrint } from 'lucide-react';
+import { ArrowLeft, User as UserIcon, RefreshCw, AlertTriangle, Users, FileText, DollarSign, Heart, PawPrint } from 'lucide-react';
 import { User } from '@/types/admin';
 import { AdminAPI } from '@/lib/admin-api';
 import { formatDistanceToNow } from 'date-fns';
@@ -39,12 +39,6 @@ interface PersonInLife {
   created_at: string;
 }
 
-interface AppUsage {
-  app_name: string;
-  last_used: string;
-  total_uses: number;
-  dust_spent: number;
-}
 
 interface GeneratedContent {
   id: string;
@@ -71,13 +65,11 @@ export function UserProfile() {
   
   // Data states
   const [people, setPeople] = useState<PersonInLife[]>([]);
-  const [appUsage, setAppUsage] = useState<AppUsage[]>([]);
   const [generatedContent, setGeneratedContent] = useState<GeneratedContent[]>([]);
   const [dustTransactions, setDustTransactions] = useState<DustTransaction[]>([]);
   
   // Loading states
   const [peopleLoading, setPeopleLoading] = useState(true);
-  const [appUsageLoading, setAppUsageLoading] = useState(true);
   const [contentLoading, setContentLoading] = useState(true);
   const [transactionsLoading, setTransactionsLoading] = useState(true);
   
@@ -127,19 +119,6 @@ export function UserProfile() {
     }
   };
 
-  const loadAppUsageData = async () => {
-    if (!userId) return;
-    
-    try {
-      setAppUsageLoading(true);
-      const data = await AdminAPI.getUserAppUsage(userId);
-      setAppUsage(data);
-    } catch (err) {
-      console.error('Failed to load app usage:', err);
-    } finally {
-      setAppUsageLoading(false);
-    }
-  };
 
   const loadGeneratedContentData = async () => {
     if (!userId) return;
@@ -204,7 +183,6 @@ export function UserProfile() {
   useEffect(() => {
     loadUserData();
     loadPeopleData();
-    loadAppUsageData();
     loadGeneratedContentData();
     loadDustTransactionData();
   }, [userId]);
@@ -253,7 +231,7 @@ export function UserProfile() {
             Back to Users
           </Button>
           <div>
-            <p className="text-slate-500">Detailed information for {user.first_name || user.fairyname}</p>
+            <h1 className="text-3xl font-bold text-slate-900">User Profile</h1>
           </div>
         </div>
         <Button variant="outline" onClick={loadUserData}>
@@ -380,44 +358,6 @@ export function UserProfile() {
                     </div>
                     <p className="text-xs text-slate-500">
                       {formatDistanceToNow(new Date(person.created_at), { addSuffix: true })}
-                    </p>
-                  </div>
-                ))}
-              </div>
-            )}
-          </CardContent>
-        </Card>
-
-        {/* App Usage */}
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center space-x-2">
-              <Smartphone className="h-5 w-5" />
-              <span>App Usage</span>
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            {appUsageLoading ? (
-              <div className="flex items-center justify-center py-8">
-                <RefreshCw className="h-4 w-4 animate-spin mr-2" />
-                Loading...
-              </div>
-            ) : appUsage.length === 0 ? (
-              <p className="text-slate-500 text-center py-8">
-                No app usage yet
-              </p>
-            ) : (
-              <div className="space-y-3">
-                {appUsage.map((app, index) => (
-                  <div key={index} className="flex items-center justify-between">
-                    <div>
-                      <p className="text-sm font-medium">{app.app_name}</p>
-                      <p className="text-xs text-slate-500">
-                        {app.total_uses} uses • {app.dust_spent} DUST spent
-                      </p>
-                    </div>
-                    <p className="text-xs text-slate-500">
-                      {formatDistanceToNow(new Date(app.last_used), { addSuffix: true })}
                     </p>
                   </div>
                 ))}
