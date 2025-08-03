@@ -15,6 +15,7 @@ import { Search, Filter, RefreshCw, AlertTriangle, ChevronLeft, ChevronRight, Ac
 import { formatDistanceToNow } from 'date-fns';
 import { AdminAPI } from '@/lib/admin-api';
 import { toast } from 'sonner';
+import { useNavigate } from 'react-router-dom';
 
 interface ActivityItem {
   id: string;
@@ -33,6 +34,7 @@ interface ActivityItem {
 }
 
 export function Activity() {
+  const navigate = useNavigate();
   const [activities, setActivities] = useState<ActivityItem[]>([]);
   const [searchTerm, setSearchTerm] = useState('');
   const [activityType, setActivityType] = useState('all');
@@ -185,7 +187,10 @@ export function Activity() {
                   <div className="flex items-center space-x-4">
                     <div>
                       <div className="flex items-center space-x-2">
-                        <p className="text-sm font-medium text-slate-900">
+                        <p 
+                          className="text-sm font-medium text-slate-900 hover:text-blue-600 cursor-pointer"
+                          onClick={() => navigate(`/admin/users/${activity.user.id}`)}
+                        >
                           {activity.user.fairyname}
                         </p>
                         <Badge className={getActivityTypeColor(activity.activity_type)}>

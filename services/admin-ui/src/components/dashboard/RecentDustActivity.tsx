@@ -99,7 +99,10 @@ export function RecentDustActivity({ recentActivity }: RecentDustActivityProps) 
                 <div className="flex items-center space-x-3">
                   <div>
                     <div className="flex items-center space-x-2">
-                      <p className="text-sm font-medium text-slate-900">
+                      <p 
+                        className="text-sm font-medium text-slate-900 hover:text-blue-600 cursor-pointer"
+                        onClick={() => navigate(`/admin/users/${activity.user?.id || activity.user_id}`)}
+                      >
                         {getFairyname(activity)}
                       </p>
                       <Badge className={`${getActivityTypeColor(getActivityType(activity))} text-xs`}>

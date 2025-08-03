@@ -34,7 +34,10 @@ export function RecentActivity({ recentUsers }: RecentActivityProps) {
               <div key={user.id} className="flex items-center justify-between">
                 <div className="flex items-center space-x-3">
                   <div>
-                    <p className="text-sm font-medium text-slate-900">
+                    <p 
+                      className="text-sm font-medium text-slate-900 hover:text-blue-600 cursor-pointer"
+                      onClick={() => navigate(`/admin/users/${user.id}`)}
+                    >
                       {user.fairyname}
                     </p>
                     <p className="text-xs text-slate-500">
