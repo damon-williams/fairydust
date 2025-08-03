@@ -32,7 +32,7 @@ import {
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { User } from '@/types/admin';
-import { Search, Filter, Download, Eye, RefreshCw, AlertTriangle } from 'lucide-react';
+import { Search, Filter, Download, Eye, RefreshCw, AlertTriangle, ChevronLeft, ChevronRight } from 'lucide-react';
 import { formatDistanceToNow } from 'date-fns';
 import { AdminAPI } from '@/lib/admin-api';
 import { toast } from 'sonner';
@@ -55,15 +55,33 @@ export function Users() {
   const [grantReason, setGrantReason] = useState('');
   const [granting, setGranting] = useState(false);
 
-  const loadUsers = async (page: number = 1, search?: string) => {
+  const loadUsers = async (page: number = 1, search?: string, filter?: string) => {
     try {
       setLoading(true);
       setError(null);
       
-      const data = await AdminAPI.getUsers(page, 50, search);
-      setUsers(data.users);
-      setTotalPages(data.pages);
-      setTotalUsers(data.total);
+      // Build query params
+      const params = new URLSearchParams({
+        page: page.toString(),
+        limit: '50'
+      });
+      
+      if (search) params.append('search', search);
+      if (filter) params.append('filter', filter);
+      
+      const url = `/admin/users/api?${params}`;
+      const response = await fetch(window.location.origin + url, {
+        credentials: 'include',
+      });
+      
+      if (response.ok) {
+        const data = await response.json();
+        setUsers(data.users);
+        setTotalPages(data.pages);
+        setTotalUsers(data.total);
+      } else {
+        throw new Error('Failed to fetch users');
+      }
     } catch (err) {
       console.error('Failed to load users:', err);
       setError('Failed to load users. Please try again.');
@@ -73,12 +91,17 @@ export function Users() {
   };
 
   useEffect(() => {
-    loadUsers(currentPage, searchTerm || undefined);
-  }, [currentPage]);
+    loadUsers(currentPage, getFilteredSearchTerm() || undefined, getFilterParam());
+  }, [currentPage, filterType]);
 
   const handleSearch = () => {
     setCurrentPage(1);
-    loadUsers(1, searchTerm || undefined);
+    loadUsers(1, getFilteredSearchTerm() || undefined, getFilterParam());
+  };
+
+  const handleFilterChange = (newFilter: string) => {
+    setFilterType(newFilter);
+    setCurrentPage(1);
   };
 
   // User status toggle removed - is_active field no longer exists
@@ -134,17 +157,16 @@ export function Users() {
     setGrantDialogOpen(true);
   };
 
-  const filteredUsers = users.filter(user => {
-    const matchesSearch = user.fairyname.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                         user.email?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                         user.first_name?.toLowerCase().includes(searchTerm.toLowerCase());
-    
-    const matchesFilter = filterType === 'all' ||
-                         (filterType === 'admins' && user.is_admin) ||
-                         (filterType === 'regular' && !user.is_admin);
-    
-    return matchesSearch && matchesFilter;
-  });
+  const getFilteredSearchTerm = () => {
+    if (filterType === 'all') return searchTerm;
+    return searchTerm; // Server will handle both search and filter
+  };
+
+  const getFilterParam = () => {
+    if (filterType === 'admins') return 'admin';
+    if (filterType === 'regular') return 'regular';
+    return undefined;
+  };
 
   return (
     <div className="space-y-6">
@@ -180,7 +202,7 @@ export function Users() {
                 />
               </div>
             </div>
-            <Select value={filterType} onValueChange={setFilterType}>
+            <Select value={filterType} onValueChange={handleFilterChange}>
               <SelectTrigger className="w-48">
                 <Filter className="mr-2 h-4 w-4" />
                 <SelectValue placeholder="Filter by type" />
@@ -198,7 +220,7 @@ export function Users() {
       {/* Users Table */}
       <Card>
         <CardHeader>
-          <CardTitle>User Accounts ({filteredUsers.length})</CardTitle>
+          <CardTitle>User Accounts ({totalUsers} total)</CardTitle>
         </CardHeader>
         <CardContent>
           {loading && (
@@ -233,7 +255,7 @@ export function Users() {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {filteredUsers.map((user) => (
+              {users.map((user) => (
                 <TableRow key={user.id}>
                   <TableCell>
                     <div className="flex items-center space-x-3">
@@ -295,6 +317,69 @@ export function Users() {
           )}
         </CardContent>
       </Card>
+
+      {/* Pagination */}
+      {!loading && !error && users.length > 0 && totalPages > 1 && (
+        <Card>
+          <CardContent className="pt-6">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center space-x-2">
+                <p className="text-sm text-slate-600">
+                  Showing {((currentPage - 1) * 50) + 1} to {Math.min(currentPage * 50, totalUsers)} of {totalUsers} users
+                </p>
+              </div>
+              <div className="flex items-center space-x-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setCurrentPage(currentPage - 1)}
+                  disabled={currentPage === 1}
+                >
+                  <ChevronLeft className="h-4 w-4 mr-1" />
+                  Previous
+                </Button>
+                
+                <div className="flex items-center space-x-1">
+                  {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
+                    let pageNum;
+                    if (totalPages <= 5) {
+                      pageNum = i + 1;
+                    } else if (currentPage <= 3) {
+                      pageNum = i + 1;
+                    } else if (currentPage >= totalPages - 2) {
+                      pageNum = totalPages - 4 + i;
+                    } else {
+                      pageNum = currentPage - 2 + i;
+                    }
+                    
+                    return (
+                      <Button
+                        key={pageNum}
+                        variant={currentPage === pageNum ? "default" : "outline"}
+                        size="sm"
+                        onClick={() => setCurrentPage(pageNum)}
+                        className="w-8 h-8 p-0"
+                      >
+                        {pageNum}
+                      </Button>
+                    );
+                  })}
+                </div>
+                
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setCurrentPage(currentPage + 1)}
+                  disabled={currentPage === totalPages}
+                >
+                  Next
+                  <ChevronRight className="h-4 w-4 ml-1" />
+                </Button>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       {/* Grant DUST Dialog */}
       <Dialog open={grantDialogOpen} onOpenChange={setGrantDialogOpen}>

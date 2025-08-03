@@ -14,6 +14,7 @@ async def get_users_json(
     page: int = 1,
     limit: int = 50,
     search: Optional[str] = None,
+    filter: Optional[str] = None,
     admin_user: dict = Depends(get_current_admin_user),
     db: Database = Depends(get_db),
 ):
@@ -30,11 +31,23 @@ async def get_users_json(
     count_query = "SELECT COUNT(*) as total FROM users"
 
     params = []
-    where_clause = ""
+    where_conditions = []
 
     if search:
-        where_clause = " WHERE (fairyname ILIKE $1 OR email ILIKE $1 OR phone ILIKE $1)"
+        where_conditions.append("(fairyname ILIKE $%d OR email ILIKE $%d OR phone ILIKE $%d OR first_name ILIKE $%d)" % (len(params) + 1, len(params) + 1, len(params) + 1, len(params) + 1))
         params.append(f"%{search}%")
+
+    if filter:
+        if filter == "admin":
+            where_conditions.append("is_admin = $%d" % (len(params) + 1))
+            params.append(True)
+        elif filter == "regular":
+            where_conditions.append("is_admin = $%d" % (len(params) + 1))
+            params.append(False)
+
+    where_clause = ""
+    if where_conditions:
+        where_clause = " WHERE " + " AND ".join(where_conditions)
 
     users = await db.fetch_all(
         f"{base_query}{where_clause} ORDER BY created_at DESC LIMIT {limit} OFFSET {offset}",
