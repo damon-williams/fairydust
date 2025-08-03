@@ -22,7 +22,7 @@ interface ActivityItem {
 }
 
 interface RecentDustActivityProps {
-  recentActivity: ActivityItem[];
+  recentActivity?: ActivityItem[];
 }
 
 export function RecentDustActivity({ recentActivity }: RecentDustActivityProps) {
