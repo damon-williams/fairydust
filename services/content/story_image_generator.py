@@ -3,8 +3,11 @@
 import asyncio
 import json
 import logging
+import time
 import traceback
+from datetime import datetime
 
+from fastapi import HTTPException
 from image_generation_service import image_generation_service
 from image_storage_service import image_storage_service
 from models import ImageSize, ImageStyle, StoryCharacter, TargetAudience
@@ -81,9 +84,11 @@ class StoryImageGenerator:
             generation_end_time = time.time()
             generation_duration = generation_end_time - generation_start_time
 
-            # Count successful generations
+            # Count successful generations and track retry stats
             completed_count = 0
             failed_count = 0
+            retry_success_count = 0
+            first_attempt_success_count = 0
 
             for i, result in enumerate(results):
                 scene = scenes[i]
@@ -101,6 +106,11 @@ class StoryImageGenerator:
                     # result is False (handled failure)
                     failed_count += 1
 
+            # Get retry statistics from database
+            retry_stats = await self._get_retry_statistics(db, story_id)
+            retry_success_count = retry_stats.get("retry_successes", 0)
+            first_attempt_success_count = completed_count - retry_success_count
+
             # Update story completion status
             images_complete = completed_count == len(scenes)
             await self._update_story_completion_status(db, story_id, images_complete)
@@ -109,10 +119,18 @@ class StoryImageGenerator:
             total_time = time.time() - start_time
             avg_time_per_image = generation_duration / len(scenes) if len(scenes) > 0 else 0
 
-            logger.info("🎯 Parallel generation completed!")
-            logger.info(f"   Success rate: {completed_count}/{len(scenes)} images")
+            logger.info("🎯 PARALLEL_GENERATION_COMPLETE!")
+            logger.info(
+                f"   Success rate: {completed_count}/{len(scenes)} images ({completed_count/len(scenes)*100:.1f}%)"
+            )
             logger.info(f"   Failed: {failed_count} images")
-            logger.info("⏱️ TIMING METRICS:")
+            logger.info("📊 RETRY_STATISTICS:")
+            logger.info(f"   First attempt successes: {first_attempt_success_count}")
+            logger.info(f"   Retry successes: {retry_success_count}")
+            logger.info(
+                f"   Retry success rate: {retry_success_count/max(1, retry_success_count + failed_count)*100:.1f}% of retry attempts"
+            )
+            logger.info("⏱️ TIMING_METRICS:")
             logger.info(f"   Total elapsed time: {total_time:.2f}s")
             logger.info(f"   Pure generation time: {generation_duration:.2f}s")
             logger.info(f"   Average time per image: {avg_time_per_image:.2f}s")
@@ -189,7 +207,9 @@ class StoryImageGenerator:
 
             # Mark image as failed
             try:
-                await self._mark_image_failed(db, story_id, image_id, str(e))
+                # Extract retry information if available
+                retry_count = getattr(e, "retry_count", 0)
+                await self._mark_image_failed(db, story_id, image_id, str(e), retry_count)
             except Exception as mark_error:
                 logger.error(f"Failed to mark image {image_id} as failed: {mark_error}")
 
@@ -380,17 +400,54 @@ class StoryImageGenerator:
             logger.info(f"   Total phases: {total_phases_time:.2f}s")
 
         except Exception as e:
-            logger.error(f"❌ Failed to generate image {image_id}: {e}")
+            # Extract error details for better debugging
+            error_msg = str(e)
+            if isinstance(e, HTTPException):
+                error_msg = f"HTTP {e.status_code}: {e.detail}"
+
+            logger.error(f"❌ Failed to generate image {image_id}: {error_msg}")
+            logger.error(f"   Error type: {type(e).__name__}")
+            logger.error(f"   Scene description: {scene.get('scene_description', 'N/A')[:100]}...")
+            logger.error(f"   Characters in scene: {len(characters_in_scene)}")
+            logger.error(f"   Target audience: {target_audience.value}")
             logger.error(f"   Exception traceback: {traceback.format_exc()}")
             raise  # Re-raise to be caught by caller
 
     async def _mark_image_failed(
-        self, db: Database, story_id: str, image_id: str, error_message: str
+        self, db: Database, story_id: str, image_id: str, error_message: str, retry_count: int = 0
     ):
-        """Mark an image as failed in the database"""
+        """Mark an image as failed in the database with detailed error info"""
 
         try:
-            error_metadata = {"error": error_message, "failed_at": "background_generation"}
+            # Extract more detailed error information
+            error_type = "unknown"
+            error_detail = error_message
+
+            # Classify the error type
+            if (
+                "HTTP 400" in error_message
+                or "NSFW" in error_message.lower()
+                or "content not allowed" in error_message.lower()
+            ):
+                error_type = "content_policy"
+            elif "timeout" in error_message.lower():
+                error_type = "timeout"
+            elif "HTTP 5" in error_message:
+                error_type = "server_error"
+            elif "rate limit" in error_message.lower():
+                error_type = "rate_limit"
+            elif "internal.bad_output" in error_message.lower():
+                error_type = "replicate_error"
+
+            error_metadata = {
+                "error": error_message,
+                "error_type": error_type,
+                "failed_at": "background_generation",
+                "timestamp": datetime.utcnow().isoformat(),
+                "retry_count": retry_count,
+                "total_attempts": retry_count + 1,
+                "retry_success": False,
+            }
 
             await db.execute(
                 """
@@ -402,6 +459,10 @@ class StoryImageGenerator:
                 json.dumps(error_metadata),
                 story_id,
                 image_id,
+            )
+
+            logger.error(
+                f"❌ FINAL_FAILURE: Image {image_id} marked as failed (type: {error_type}, attempts: {retry_count + 1})"
             )
 
         except Exception as e:
@@ -424,6 +485,40 @@ class StoryImageGenerator:
         except Exception as e:
             logger.error(f"Failed to update story completion status: {e}")
 
+    async def _get_retry_statistics(self, db: Database, story_id: str) -> dict:
+        """Get retry statistics for images in this story"""
+        try:
+            # Query generation metadata from successful images to count retries
+            query = """
+                SELECT generation_metadata
+                FROM story_images
+                WHERE story_id = $1 AND status = 'completed'
+            """
+            rows = await db.fetch_all(query, story_id)
+
+            retry_successes = 0
+            total_attempts = 0
+
+            for row in rows:
+                try:
+                    metadata = (
+                        json.loads(row["generation_metadata"]) if row["generation_metadata"] else {}
+                    )
+                    if metadata.get("retry_success", False):
+                        retry_successes += 1
+                    total_attempts += metadata.get("total_attempts", 1)
+                except (json.JSONDecodeError, TypeError):
+                    continue
+
+            return {
+                "retry_successes": retry_successes,
+                "total_attempts": total_attempts,
+                "first_attempt_successes": len(rows) - retry_successes,
+            }
+        except Exception as e:
+            logger.error(f"Failed to get retry statistics: {e}")
+            return {"retry_successes": 0, "total_attempts": 0, "first_attempt_successes": 0}
+
     async def _generate_image_with_retry(
         self,
         original_prompt: str,
@@ -435,24 +530,54 @@ class StoryImageGenerator:
     ):
         """Generate image with retry logic for NSFW false positives and transient Replicate errors"""
 
+        image_id = scene.get("image_id", "unknown")
         nsfw_failure_detected = False
+        retry_start_time = None
+
+        logger.info(
+            f"🎯 IMAGE_RETRY_START: Beginning generation for image {image_id} (max {max_retries} attempts)"
+        )
 
         for attempt in range(max_retries):
             try:
+                # Log timing between attempts
+                if attempt > 0:
+                    if retry_start_time:
+                        retry_delay = time.time() - retry_start_time
+                        logger.info(
+                            f"⏱️ IMAGE_RETRY_TIMING: Attempt {attempt + 1} for image {image_id} starting after {retry_delay:.2f}s delay"
+                        )
+
                 prompt_to_use = original_prompt
 
                 if attempt > 0 and nsfw_failure_detected:
                     # Only sanitize prompt if previous failure was NSFW-related
+                    logger.warning(
+                        f"🚨 NSFW_RETRY: Image {image_id} attempt {attempt + 1} - Sanitizing prompt due to content policy violation"
+                    )
+
+                    old_prompt = prompt_to_use
                     prompt_to_use = self._sanitize_prompt_for_retry(
                         original_prompt, scene, characters_in_scene, target_audience, attempt
                     )
-                    logger.info(f"🔄 RETRY {attempt}: Using sanitized prompt:")
-                    logger.info(f"   FULL SANITIZED PROMPT: {prompt_to_use}")
+
+                    # Show prompt changes for debugging
+                    logger.info(f"🔄 PROMPT_SANITIZATION for image {image_id}:")
+                    logger.info(f"   ORIGINAL: {old_prompt}")
+                    logger.info(f"   SANITIZED: {prompt_to_use}")
+
+                    # Highlight what changed
+                    changes_made = self._analyze_prompt_changes(old_prompt, prompt_to_use)
+                    if changes_made:
+                        logger.info(f"   CHANGES_MADE: {', '.join(changes_made)}")
                 else:
-                    logger.info(f"🎯 ATTEMPT {attempt + 1}: Using original prompt:")
-                    logger.info(f"   FULL ORIGINAL PROMPT: {prompt_to_use}")
+                    logger.info(
+                        f"🎯 ATTEMPT {attempt + 1} for image {image_id}: Using {'original' if attempt == 0 else 'retry'} prompt"
+                    )
+                    logger.debug(f"   FULL_PROMPT: {prompt_to_use}")
 
                 # Try to generate with current prompt
+                attempt_start_time = time.time()
                 image_url, generation_metadata = await image_generation_service.generate_image(
                     prompt_to_use,
                     ImageStyle.CARTOON,  # Default to cartoon for stories
@@ -461,13 +586,28 @@ class StoryImageGenerator:
                 )
 
                 # Success!
+                attempt_duration = time.time() - attempt_start_time
                 if attempt > 0:
-                    logger.info(f"✅ RETRY SUCCESS: Generated image after {attempt + 1} attempts")
+                    logger.info(
+                        f"✅ RETRY_SUCCESS: Image {image_id} generated successfully after {attempt + 1} attempts in {attempt_duration:.2f}s"
+                    )
+                    # Add retry metadata to generation_metadata
+                    generation_metadata["retry_count"] = attempt
+                    generation_metadata["retry_success"] = True
+                    generation_metadata["total_attempts"] = attempt + 1
+                else:
+                    logger.info(
+                        f"✅ FIRST_ATTEMPT_SUCCESS: Image {image_id} generated on first attempt in {attempt_duration:.2f}s"
+                    )
+                    generation_metadata["retry_count"] = 0
+                    generation_metadata["retry_success"] = False
+                    generation_metadata["total_attempts"] = 1
 
                 return image_url, generation_metadata
 
             except Exception as e:
                 error_msg = str(e).lower()
+                retry_start_time = time.time()  # Track when retry delay starts
 
                 # Check for NSFW-related errors (these need prompt sanitization)
                 if (
@@ -482,16 +622,25 @@ class StoryImageGenerator:
                     nsfw_failure_detected = True
                     if attempt < max_retries - 1:
                         logger.warning(
-                            f"⚠️ NSFW detected on attempt {attempt + 1}, retrying with sanitized prompt..."
+                            f"🚨 NSFW_FAILURE: Image {image_id} attempt {attempt + 1} failed - content policy violation"
                         )
-                        logger.warning(f"   Original prompt that triggered flag: {prompt_to_use}")
+                        logger.warning(f"   Prompt that triggered NSFW: {prompt_to_use[:100]}...")
                         logger.warning(f"   Full error message: {str(e)}")
+                        logger.info(
+                            f"🔄 NSFW_RETRY_QUEUED: Will retry image {image_id} with sanitized prompt (attempt {attempt + 2}/{max_retries})"
+                        )
                         continue
                     else:
-                        logger.error(f"❌ All {max_retries} attempts failed due to NSFW detection")
-                        raise Exception(
-                            f"Image generation failed after {max_retries} attempts: NSFW content detected"
+                        logger.error(
+                            f"❌ NSFW_FINAL_FAILURE: Image {image_id} failed all {max_retries} attempts due to persistent NSFW detection"
                         )
+                        logger.error(f"   Last prompt attempted: {prompt_to_use}")
+                        # Store retry count in the exception for later use
+                        final_error = f"Image generation failed after {max_retries} attempts: NSFW content detected"
+                        error_with_retry_info = Exception(final_error)
+                        error_with_retry_info.retry_count = attempt
+                        error_with_retry_info.retry_type = "nsfw"
+                        raise error_with_retry_info
 
                 # Check for transient Replicate errors (these can be retried without changing prompt)
                 elif (
@@ -504,22 +653,42 @@ class StoryImageGenerator:
                     or "queue full" in error_msg
                 ):
                     if attempt < max_retries - 1:
+                        backoff_delay = 2**attempt  # Exponential backoff: 1s, 2s, 4s
                         logger.warning(
-                            f"⚠️ Transient Replicate error on attempt {attempt + 1}, retrying without prompt changes..."
+                            f"⚠️ TRANSIENT_ERROR: Image {image_id} attempt {attempt + 1} failed with retryable error"
                         )
-                        logger.warning(f"   Error: {error_msg}")
+                        logger.warning(f"   Error type: {error_msg}")
+                        logger.info(
+                            f"⏱️ RETRY_BACKOFF: Waiting {backoff_delay}s before retry attempt {attempt + 2}/{max_retries} for image {image_id}"
+                        )
                         # Add a small delay for transient errors to avoid rate limits
-                        await asyncio.sleep(2**attempt)  # Exponential backoff: 1s, 2s, 4s
+                        await asyncio.sleep(backoff_delay)
                         continue
                     else:
-                        logger.error(f"❌ All {max_retries} attempts failed due to transient errors")
-                        raise Exception(
+                        logger.error(
+                            f"❌ TRANSIENT_FINAL_FAILURE: Image {image_id} failed all {max_retries} attempts due to persistent transient errors"
+                        )
+                        logger.error(f"   Last error: {error_msg}")
+                        final_error = (
                             f"Image generation failed after {max_retries} attempts: {error_msg}"
                         )
+                        error_with_retry_info = Exception(final_error)
+                        error_with_retry_info.retry_count = attempt
+                        error_with_retry_info.retry_type = "transient"
+                        raise error_with_retry_info
                 else:
-                    # Other errors (likely permanent), don't retry
-                    logger.error(f"❌ Non-retryable error: {e}")
-                    raise
+                    # Extract detailed error information for better debugging
+                    if isinstance(e, HTTPException):
+                        error_detail = f"HTTP {e.status_code}: {e.detail}"
+                        logger.error(f"❌ Non-retryable HTTP error: {error_detail}")
+                        logger.error(f"   Status Code: {e.status_code}")
+                        logger.error(f"   Error Detail: {e.detail}")
+                        logger.error(f"   Full exception type: {type(e).__name__}")
+                        # Re-raise with more context
+                        raise Exception(f"Image generation failed with {error_detail}")
+                    else:
+                        logger.error(f"❌ Non-retryable error ({type(e).__name__}): {str(e)}")
+                        raise
 
         # Should never reach here
         raise Exception("Image generation failed: Maximum retries exceeded")
@@ -617,6 +786,87 @@ class StoryImageGenerator:
             sanitized += ", cartoon style, colorful, friendly, safe for children, wholesome family content, bright and cheerful"
 
         return sanitized
+
+    def _analyze_prompt_changes(self, original_prompt: str, sanitized_prompt: str) -> list[str]:
+        """Analyze what changes were made during prompt sanitization"""
+        changes = []
+
+        # Check for word replacements
+        sanitization_words = {
+            "discovered": "found",
+            "exploring": "walking through",
+            "dark": "shadowy",
+            "mysterious": "curious",
+            "secret": "hidden",
+            "whispered": "said quietly",
+            "breathed": "spoke softly",
+            "trembling": "nervous",
+            "shivering": "cold",
+            "passion": "excitement",
+            "desire": "wish",
+            "touched": "reached for",
+            "embrace": "hug",
+            "intimate": "close",
+            "seductive": "appealing",
+            "naked": "without clothes",
+            "bare": "empty",
+            "exposed": "visible",
+            "flesh": "skin",
+            "breast": "chest",
+            "thigh": "leg",
+            "sensual": "gentle",
+            "erotic": "artistic",
+            "climax": "peak",
+            "penetrated": "entered",
+            "thrust": "pushed",
+            "moist": "damp",
+            "wet": "damp",
+            "hard": "firm",
+            "soft": "gentle",
+            "hot": "warm",
+            "burning": "glowing",
+            "fire": "light",
+            "flame": "glow",
+            "tight": "snug",
+            "loose": "flowing",
+            "strip": "remove",
+            "stripped": "removed",
+            "revealing": "showing",
+            "body": "figure",
+            "chest": "torso",
+            "curves": "shape",
+            "attractive": "pretty",
+            "tempting": "appealing",
+            "lust": "admiration",
+            "arousing": "exciting",
+            "stimulating": "interesting",
+        }
+
+        words_replaced = []
+        for original_word, replacement in sanitization_words.items():
+            if original_word in original_prompt.lower() and replacement in sanitized_prompt.lower():
+                words_replaced.append(f"'{original_word}' → '{replacement}'")
+
+        if words_replaced:
+            changes.append(
+                f"Word replacements: {', '.join(words_replaced[:3])}"
+            )  # Limit to first 3
+
+        # Check for safety additions
+        safety_phrases = ["family-friendly", "safe for children", "innocent", "wholesome"]
+        added_safety = [
+            phrase
+            for phrase in safety_phrases
+            if phrase in sanitized_prompt and phrase not in original_prompt
+        ]
+        if added_safety:
+            changes.append(f"Added safety terms: {', '.join(added_safety)}")
+
+        # Check if prompt was completely rebuilt (attempt 2)
+        if len(sanitized_prompt) < len(original_prompt) * 0.7:
+            changes.append("Prompt completely rebuilt for safety")
+
+        return changes
 
 
 # Global instance

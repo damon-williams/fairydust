@@ -10,6 +10,7 @@ export interface User {
   auth_provider: string;
   streak_days: number;
   last_login_date?: string;
+  is_onboarding_completed?: boolean;
   created_at: string;
   updated_at: string;
 }

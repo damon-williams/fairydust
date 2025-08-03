@@ -24,7 +24,7 @@ class ImageGenerationService:
         try:
             from shared.app_config_cache import get_app_config_cache
             from shared.database import get_db
-            from shared.json_utils import parse_model_config_field
+            from shared.json_utils import parse_jsonb_field, parse_model_config_field
 
             # Get the Story app ID (hardcoded for now, could be made configurable)
             STORY_APP_ID = "fairydust-story"
@@ -35,7 +35,9 @@ class ImageGenerationService:
 
             if cached_config:
                 # Extract image model settings from parameters
-                params = parse_model_config_field(cached_config.get("primary_parameters", {}))
+                params = cached_config.get("primary_parameters", {})
+                if isinstance(params, str):
+                    params = parse_jsonb_field(params, default={}, field_name="primary_parameters")
                 return params.get("image_models", {})
 
             # Cache miss - fetch from database
@@ -49,7 +51,7 @@ class ImageGenerationService:
             )
 
             if config and config["primary_parameters"]:
-                params = parse_model_config_field(config["primary_parameters"])
+                params = parse_model_config_field(config, "primary_parameters") or {}
                 return params.get("image_models", {})
 
             # Return defaults if no config found

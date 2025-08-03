@@ -8,7 +8,8 @@ import {
   UserPlus,
   Trash2,
   FileText,
-  CreditCard
+  CreditCard,
+  Zap
 } from 'lucide-react';
 
 export interface NavigationItem {
@@ -46,6 +47,11 @@ export const navigation: NavigationItem[] = [
     name: 'Referrals',
     href: '/admin/referrals',
     icon: UserPlus,
+  },
+  {
+    name: 'Activity Feed',
+    href: '/admin/activity',
+    icon: Zap,
   },
   {
     name: 'Payments',

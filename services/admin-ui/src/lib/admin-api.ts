@@ -22,6 +22,24 @@ import {
 const API_BASE = window.location.origin;
 
 export class AdminAPI {
+  // Generic HTTP methods
+  static async get(endpoint: string): Promise<any> {
+    try {
+      const response = await fetch(`${API_BASE}/admin${endpoint}`, {
+        credentials: 'include',
+      });
+      
+      if (response.ok) {
+        return await response.json();
+      }
+      
+      throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+    } catch (error) {
+      console.error(`Failed to GET ${endpoint}:`, error);
+      throw error;
+    }
+  }
+
   // Dashboard APIs
   static async getDashboardStats(): Promise<DashboardStats> {
     try {
@@ -87,6 +105,23 @@ export class AdminAPI {
       throw new Error('Failed to fetch recent apps');
     } catch (error) {
       console.error('Failed to get recent apps:', error);
+      throw error;
+    }
+  }
+
+  static async getRecentActivity(): Promise<any[]> {
+    try {
+      const response = await fetch(`${API_BASE}/admin/dashboard/recent-activity`, {
+        credentials: 'include',
+      });
+      
+      if (response.ok) {
+        return await response.json();
+      }
+      
+      throw new Error('Failed to fetch recent activity');
+    } catch (error) {
+      console.error('Failed to get recent activity:', error);
       throw error;
     }
   }
@@ -1076,6 +1111,127 @@ export class AdminAPI {
       throw new Error('Failed to fetch terms stats');
     } catch (error) {
       console.error('Failed to get terms stats:', error);
+      throw error;
+    }
+  }
+
+  // User Profile Data APIs
+  static async getUserPeople(userId: string): Promise<any[]> {
+    try {
+      const response = await fetch(`${API_BASE}/admin/users/${userId}/people`, {
+        credentials: 'include',
+      });
+      
+      if (response.ok) {
+        return await response.json();
+      }
+      
+      throw new Error('Failed to fetch user people');
+    } catch (error) {
+      console.error('Failed to get user people:', error);
+      throw error;
+    }
+  }
+
+  static async getUserAppUsage(userId: string): Promise<any[]> {
+    try {
+      const response = await fetch(`${API_BASE}/admin/users/${userId}/app-usage`, {
+        credentials: 'include',
+      });
+      
+      if (response.ok) {
+        return await response.json();
+      }
+      
+      throw new Error('Failed to fetch user app usage');
+    } catch (error) {
+      console.error('Failed to get user app usage:', error);
+      throw error;
+    }
+  }
+
+  static async getUserGeneratedContent(userId: string, limit: number = 10): Promise<any[]> {
+    try {
+      const response = await fetch(`${API_BASE}/admin/users/${userId}/generated-content?limit=${limit}`, {
+        credentials: 'include',
+      });
+      
+      if (response.ok) {
+        return await response.json();
+      }
+      
+      throw new Error('Failed to fetch user generated content');
+    } catch (error) {
+      console.error('Failed to get user generated content:', error);
+      throw error;
+    }
+  }
+
+  static async getUserDustTransactions(userId: string, limit: number = 20): Promise<any[]> {
+    try {
+      const response = await fetch(`${API_BASE}/admin/users/${userId}/dust-transactions?limit=${limit}`, {
+        credentials: 'include',
+      });
+      
+      if (response.ok) {
+        return await response.json();
+      }
+      
+      throw new Error('Failed to fetch user dust transactions');
+    } catch (error) {
+      console.error('Failed to get user dust transactions:', error);
+      throw error;
+    }
+  }
+
+  static async getUserPayments(userId: string, limit: number = 20): Promise<any[]> {
+    try {
+      const response = await fetch(`${API_BASE}/admin/users/${userId}/payments?limit=${limit}`, {
+        credentials: 'include',
+      });
+      
+      if (response.ok) {
+        return await response.json();
+      }
+      
+      throw new Error('Failed to fetch user payments');
+    } catch (error) {
+      console.error('Failed to get user payments:', error);
+      throw error;
+    }
+  }
+
+  // Activity APIs
+  static async getActivity(params?: {
+    page?: number;
+    limit?: number;
+    user_search?: string;
+    activity_type?: string;
+  }): Promise<{
+    activities: any[];
+    total: number;
+    pages: number;
+    current_page: number;
+    has_more: boolean;
+  }> {
+    try {
+      const queryParams = new URLSearchParams();
+      if (params?.page) queryParams.append('page', params.page.toString());
+      if (params?.limit) queryParams.append('limit', params.limit.toString());
+      if (params?.user_search) queryParams.append('user_search', params.user_search);
+      if (params?.activity_type) queryParams.append('activity_type', params.activity_type);
+
+      const response = await fetch(`${API_BASE}/admin/activity/api?${queryParams}`, {
+        credentials: 'include',
+      });
+      
+      if (response.ok) {
+        return await response.json();
+      }
+      
+      throw new Error('Failed to fetch activity');
+    } catch (error) {
+      console.error('Failed to get activity:', error);
       throw error;
     }
   }

@@ -14,6 +14,7 @@ async def get_users_json(
     page: int = 1,
     limit: int = 50,
     search: Optional[str] = None,
+    filter: Optional[str] = None,
     admin_user: dict = Depends(get_current_admin_user),
     db: Database = Depends(get_db),
 ):
@@ -30,11 +31,23 @@ async def get_users_json(
     count_query = "SELECT COUNT(*) as total FROM users"
 
     params = []
-    where_clause = ""
+    where_conditions = []
 
     if search:
-        where_clause = " WHERE (fairyname ILIKE $1 OR email ILIKE $1 OR phone ILIKE $1)"
+        where_conditions.append("(fairyname ILIKE $%d OR email ILIKE $%d OR phone ILIKE $%d OR first_name ILIKE $%d)" % (len(params) + 1, len(params) + 1, len(params) + 1, len(params) + 1))
         params.append(f"%{search}%")
+
+    if filter:
+        if filter == "admin":
+            where_conditions.append("is_admin = $%d" % (len(params) + 1))
+            params.append(True)
+        elif filter == "regular":
+            where_conditions.append("is_admin = $%d" % (len(params) + 1))
+            params.append(False)
+
+    where_clause = ""
+    if where_conditions:
+        where_clause = " WHERE " + " AND ".join(where_conditions)
 
     users = await db.fetch_all(
         f"{base_query}{where_clause} ORDER BY created_at DESC LIMIT {limit} OFFSET {offset}",
@@ -454,3 +467,135 @@ async def toggle_admin_api(
     )
 
     return {"success": True, "is_admin": new_admin_status}
+
+
+@users_router.get("/{user_id}/people")
+async def get_user_people(
+    user_id: str,
+    admin_user: dict = Depends(get_current_admin_user),
+    db: Database = Depends(get_db),
+):
+    """Get user's people in my life"""
+    people = await db.fetch_all(
+        "SELECT * FROM people_in_my_life WHERE user_id = $1 ORDER BY created_at ASC",
+        user_id,
+    )
+    
+    return [dict(person) for person in people]
+
+
+@users_router.get("/{user_id}/app-usage")
+async def get_user_app_usage(
+    user_id: str,
+    admin_user: dict = Depends(get_current_admin_user),
+    db: Database = Depends(get_db),
+):
+    """Get user's app usage statistics"""
+    # Get app usage from dust transactions
+    app_usage = await db.fetch_all(
+        """
+        SELECT 
+            CASE 
+                WHEN description LIKE '%Recipe%' THEN 'Recipe Generator'
+                WHEN description LIKE '%Story%' THEN 'Story Generator'  
+                WHEN description LIKE '%Activity%' THEN 'Activity Finder'
+                WHEN description LIKE '%Restaurant%' THEN 'Restaurant Finder'
+                WHEN description LIKE '%Fortune%' THEN 'Fortune Teller'
+                WHEN description LIKE '%Image%' THEN 'Image Generator'
+                ELSE 'Other'
+            END as app_name,
+            COUNT(*) as total_uses,
+            SUM(ABS(amount)) as dust_spent,
+            MAX(created_at) as last_used
+        FROM dust_transactions 
+        WHERE user_id = $1 AND amount < 0 AND type = 'spend'
+        GROUP BY app_name
+        HAVING app_name != 'Other'
+        ORDER BY total_uses DESC
+        """,
+        user_id,
+    )
+    
+    return [dict(usage) for usage in app_usage]
+
+
+@users_router.get("/{user_id}/generated-content")
+async def get_user_generated_content(
+    user_id: str,
+    limit: int = 10,
+    admin_user: dict = Depends(get_current_admin_user),
+    db: Database = Depends(get_db),
+):
+    """Get user's generated content"""
+    content = []
+    
+    # Get recipes
+    recipes = await db.fetch_all(
+        "SELECT id, title, created_at, 'recipe' as type FROM user_recipes WHERE user_id = $1 ORDER BY created_at DESC LIMIT $2",
+        user_id, limit,
+    )
+    content.extend([dict(recipe) for recipe in recipes])
+    
+    # Get stories
+    stories = await db.fetch_all(
+        "SELECT id, title, created_at, 'story' as type FROM user_stories WHERE user_id = $1 ORDER BY created_at DESC LIMIT $2",
+        user_id, limit,
+    )
+    content.extend([dict(story) for story in stories])
+    
+    # Get images
+    images = await db.fetch_all(
+        "SELECT id, prompt as title, created_at, 'image' as type FROM user_images WHERE user_id = $1 ORDER BY created_at DESC LIMIT $2",
+        user_id, limit,
+    )
+    content.extend([dict(image) for image in images])
+    
+    # Sort by creation date and limit
+    content.sort(key=lambda x: x['created_at'], reverse=True)
+    return content[:limit]
+
+
+@users_router.get("/{user_id}/dust-transactions")
+async def get_user_dust_transactions(
+    user_id: str,
+    limit: int = 20,
+    admin_user: dict = Depends(get_current_admin_user),
+    db: Database = Depends(get_db),
+):
+    """Get user's DUST transaction history"""
+    transactions = await db.fetch_all(
+        "SELECT id, amount, type as transaction_type, description, created_at FROM dust_transactions WHERE user_id = $1 ORDER BY created_at DESC LIMIT $2",
+        user_id, limit,
+    )
+    
+    return [dict(transaction) for transaction in transactions]
+
+
+@users_router.get("/{user_id}/payments")
+async def get_user_payments(
+    user_id: str,
+    limit: int = 20,
+    admin_user: dict = Depends(get_current_admin_user),
+    db: Database = Depends(get_db),
+):
+    """Get user's payment history"""
+    payments = await db.fetch_all(
+        """
+        SELECT 
+            id, 
+            payment_method,
+            amount_usd,
+            dust_amount,
+            status,
+            transaction_id,
+            created_at,
+            completed_at
+        FROM payments 
+        WHERE user_id = $1 
+        ORDER BY created_at DESC 
+        LIMIT $2
+        """,
+        user_id, limit,
+    )
+    
+    return [dict(payment) for payment in payments]

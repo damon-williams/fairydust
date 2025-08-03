@@ -317,3 +317,5 @@ class AuthResponse(BaseModel):
     # Terms & Conditions status
     terms_acceptance_required: bool = False
     pending_terms: list[TermsDocument] = []
+    # OAuth provider extracted name for frontend pre-population
+    extracted_name: Optional[str] = None

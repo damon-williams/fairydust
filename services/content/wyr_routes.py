@@ -1031,8 +1031,8 @@ async def _generate_personality_analysis(
             "primary_provider": "anthropic",
             "primary_model_id": "claude-3-5-sonnet-20241022",
             "primary_parameters": {
-                "max_tokens": 300,  # Sufficient for personality analysis
-                "temperature": 0.7,
+                "max_tokens": 100,  # Much shorter for whimsical summaries
+                "temperature": 0.8,  # Higher creativity for whimsical tone
                 "top_p": 0.9,
             },
         }
@@ -1117,29 +1117,28 @@ def _build_analysis_prompt(
 THEIR CHOICES:
 {qa_string}
 
-Write a short, happy message (about 100 words, 2-3 sentences) that:
-- Says nice things about their choices
-- Uses simple words kids can understand
-- Makes them feel good about themselves
-- Talks about what kind of person they are
+Write a super short, happy message (about 30-40 words, just 1-2 sentences) that:
+- Says something awesome about their choices
+- Uses simple words kids understand
+- Makes them smile
 
-Write like you're talking to a friend. Use words like "awesome", "cool", "amazing". Make it fun and positive!
+Be like their best friend! Use fun words like "awesome", "cool", "amazing"!
 
-IMPORTANT: Keep it short and sweet. Use easy words. Make them smile!"""
+IMPORTANT: Keep it REALLY short and sweet - just 1-2 sentences!"""
     else:
-        prompt = f"""Analyze this person's personality based on their "Would You Rather" choices in the {category} category.
+        prompt = f"""Create a fun, whimsical personality summary based on these "Would You Rather" choices from the {category} category.
 
 THEIR CHOICES:
 {qa_string}
 
-Create a concise personality analysis (120-150 words, maximum 3 paragraphs) that:
-- Identifies key patterns in their choices
-- Highlights 2-3 main personality traits
-- Feels personal and encouraging
+Write a playful, lighthearted personality snapshot (40-60 words max, 2-3 sentences) that:
+- Captures their vibe with a fun twist
+- Uses creative, whimsical language
+- Feels like a magical personality spell
 
-Write like a wise friend. Be specific, not generic. Keep it punchy and fun.
+Write like a quirky fairy godmother giving them their personality reading. Be specific, playful, and delightfully weird.
 
-IMPORTANT: Maximum 3 paragraphs. Return ONLY the analysis text, no explanations."""
+IMPORTANT: Maximum 60 words. Make it whimsical and fun, not serious. Return ONLY the personality reading."""
 
     return prompt
 

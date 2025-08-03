@@ -163,3 +163,31 @@ async def get_recent_apps(
     )
 
     return [dict(app) for app in recent_apps]
+
+
+@dashboard_router.get("/dashboard/recent-activity")
+async def get_recent_activity(
+    admin_user: dict = Depends(get_current_admin_user),
+    db: Database = Depends(get_db),
+):
+    """Get recent DUST consumption activity for React app"""
+    recent_activity = await db.fetch_all(
+        """
+        SELECT 
+            dt.id,
+            dt.amount,
+            dt.type,
+            dt.description,
+            dt.created_at,
+            u.fairyname,
+            u.first_name,
+            u.id as user_id
+        FROM dust_transactions dt
+        JOIN users u ON dt.user_id = u.id
+        WHERE dt.amount < 0  -- Only show consumption (negative amounts)
+        ORDER BY dt.created_at DESC
+        LIMIT 10
+        """
+    )
+
+    return [dict(activity) for activity in recent_activity]
