@@ -556,3 +556,33 @@ async def get_user_dust_transactions(
     )
     
     return [dict(transaction) for transaction in transactions]
+
+
+@users_router.get("/{user_id}/payments")
+async def get_user_payments(
+    user_id: str,
+    limit: int = 20,
+    admin_user: dict = Depends(get_current_admin_user),
+    db: Database = Depends(get_db),
+):
+    """Get user's payment history"""
+    payments = await db.fetch_all(
+        """
+        SELECT 
+            id, 
+            payment_method,
+            amount_usd,
+            dust_amount,
+            status,
+            transaction_id,
+            created_at,
+            completed_at
+        FROM payments 
+        WHERE user_id = $1 
+        ORDER BY created_at DESC 
+        LIMIT $2
+        """,
+        user_id, limit,
+    )
+    
+    return [dict(payment) for payment in payments]

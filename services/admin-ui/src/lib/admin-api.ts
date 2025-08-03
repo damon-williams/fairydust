@@ -1166,4 +1166,21 @@ export class AdminAPI {
       throw error;
     }
   }
+
+  static async getUserPayments(userId: string, limit: number = 20): Promise<any[]> {
+    try {
+      const response = await fetch(`${API_BASE}/admin/users/${userId}/payments?limit=${limit}`, {
+        credentials: 'include',
+      });
+      
+      if (response.ok) {
+        return await response.json();
+      }
+      
+      throw new Error('Failed to fetch user payments');
+    } catch (error) {
+      console.error('Failed to get user payments:', error);
+      throw error;
+    }
+  }
 }

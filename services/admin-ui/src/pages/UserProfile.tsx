@@ -23,7 +23,7 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
-import { ArrowLeft, User as UserIcon, RefreshCw, AlertTriangle, Users, FileText, DollarSign, Heart, PawPrint } from 'lucide-react';
+import { ArrowLeft, User as UserIcon, RefreshCw, AlertTriangle, Users, FileText, DollarSign, Heart, PawPrint, CreditCard } from 'lucide-react';
 import { User } from '@/types/admin';
 import { AdminAPI } from '@/lib/admin-api';
 import { formatDistanceToNow } from 'date-fns';
@@ -56,6 +56,17 @@ interface DustTransaction {
   created_at: string;
 }
 
+interface Payment {
+  id: string;
+  payment_method: string;
+  amount_usd: number;
+  dust_amount: number;
+  status: string;
+  transaction_id?: string;
+  created_at: string;
+  completed_at?: string;
+}
+
 export function UserProfile() {
   const { userId } = useParams<{ userId: string }>();
   const navigate = useNavigate();
@@ -67,11 +78,13 @@ export function UserProfile() {
   const [people, setPeople] = useState<PersonInLife[]>([]);
   const [generatedContent, setGeneratedContent] = useState<GeneratedContent[]>([]);
   const [dustTransactions, setDustTransactions] = useState<DustTransaction[]>([]);
+  const [payments, setPayments] = useState<Payment[]>([]);
   
   // Loading states
   const [peopleLoading, setPeopleLoading] = useState(true);
   const [contentLoading, setContentLoading] = useState(true);
   const [transactionsLoading, setTransactionsLoading] = useState(true);
+  const [paymentsLoading, setPaymentsLoading] = useState(true);
   
   // Grant DUST dialog state
   const [grantDialogOpen, setGrantDialogOpen] = useState(false);
@@ -148,6 +161,20 @@ export function UserProfile() {
     }
   };
 
+  const loadPaymentsData = async () => {
+    if (!userId) return;
+    
+    try {
+      setPaymentsLoading(true);
+      const data = await AdminAPI.getUserPayments(userId, 20);
+      setPayments(data);
+    } catch (err) {
+      console.error('Failed to load payments:', err);
+    } finally {
+      setPaymentsLoading(false);
+    }
+  };
+
   const handleGrantDust = async () => {
     if (!user || !grantAmount || !grantReason) {
       toast.error('Please fill in all fields');
@@ -170,9 +197,10 @@ export function UserProfile() {
       setGrantAmount('');
       setGrantReason('');
       
-      // Reload user data and transactions
+      // Reload user data, transactions and payments
       loadUserData();
       loadDustTransactionData();
+      loadPaymentsData();
     } catch (err) {
       toast.error('Failed to grant DUST');
     } finally {
@@ -185,6 +213,7 @@ export function UserProfile() {
     loadPeopleData();
     loadGeneratedContentData();
     loadDustTransactionData();
+    loadPaymentsData();
   }, [userId]);
 
   if (loading) {
@@ -445,6 +474,55 @@ export function UserProfile() {
                       </p>
                       <p className="text-xs text-slate-500">
                         {formatDistanceToNow(new Date(transaction.created_at), { addSuffix: true })}
+                      </p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </CardContent>
+        </Card>
+
+        {/* Payments */}
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center space-x-2">
+              <CreditCard className="h-5 w-5" />
+              <span>Payments</span>
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            {paymentsLoading ? (
+              <div className="flex items-center justify-center py-8">
+                <RefreshCw className="h-4 w-4 animate-spin mr-2" />
+                Loading...
+              </div>
+            ) : payments.length === 0 ? (
+              <p className="text-slate-500 text-center py-8">
+                No payments yet
+              </p>
+            ) : (
+              <div className="space-y-3">
+                {payments.map((payment) => (
+                  <div key={payment.id} className="flex items-center justify-between">
+                    <div>
+                      <p className="text-sm font-medium">
+                        ${payment.amount_usd.toFixed(2)} → {payment.dust_amount} DUST
+                      </p>
+                      <p className="text-xs text-slate-500">
+                        {payment.payment_method} • {payment.status}
+                      </p>
+                    </div>
+                    <div className="text-right">
+                      <Badge 
+                        variant={payment.status === 'completed' ? 'secondary' : 
+                                payment.status === 'pending' ? 'outline' : 'destructive'}
+                        className="text-xs"
+                      >
+                        {payment.status}
+                      </Badge>
+                      <p className="text-xs text-slate-500 mt-1">
+                        {formatDistanceToNow(new Date(payment.created_at), { addSuffix: true })}
                       </p>
                     </div>
                   </div>
