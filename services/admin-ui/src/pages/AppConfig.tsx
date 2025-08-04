@@ -180,36 +180,51 @@ export function AppConfig() {
       setSaving(true);
       setError(null);
 
-      // Build the configuration payload
-      const payload = {
-        primary_parameters: {
-          // Only include enabled configurations
-          ...(config.text_models_enabled && config.text_config ? {
-            primary_provider: config.text_config.primary_provider,
-            primary_model_id: config.text_config.primary_model_id,
-            fallback_provider: config.text_config.fallback_provider,
-            fallback_model_id: config.text_config.fallback_model_id,
-            temperature: config.text_config.parameters.temperature,
-            max_tokens: config.text_config.parameters.max_tokens,
-            top_p: config.text_config.parameters.top_p,
-          } : {}),
-          
-          ...(config.image_models_enabled && config.image_config ? {
-            image_models: {
-              standard_model: config.image_config.standard_model,
-              reference_model: config.image_config.reference_model,
-              parameters: config.image_config.parameters,
-            }
-          } : {}),
-          
-          ...(config.video_models_enabled && config.video_config ? {
-            video_models: {
-              standard_model: config.video_config.standard_model,
-              parameters: config.video_config.parameters,
-            }
-          } : {}),
+      // Build the configuration payload with correct structure
+      const payload: any = {};
+      
+      // Text model configuration - provider and model_id go to top level
+      if (config.text_models_enabled && config.text_config) {
+        payload.primary_provider = config.text_config.primary_provider;
+        payload.primary_model_id = config.text_config.primary_model_id;
+        
+        // Parameters go in primary_parameters
+        payload.primary_parameters = {
+          temperature: config.text_config.parameters.temperature,
+          max_tokens: config.text_config.parameters.max_tokens,
+          top_p: config.text_config.parameters.top_p,
+        };
+        
+        // Add fallback models if configured
+        if (config.text_config.fallback_provider && config.text_config.fallback_model_id) {
+          payload.fallback_models = [{
+            provider: config.text_config.fallback_provider,
+            model_id: config.text_config.fallback_model_id,
+            trigger: "provider_error",
+            parameters: config.text_config.parameters,
+          }];
         }
-      };
+      } else {
+        // Initialize empty parameters object
+        payload.primary_parameters = {};
+      }
+      
+      // Add image models to primary_parameters if enabled
+      if (config.image_models_enabled && config.image_config) {
+        payload.primary_parameters.image_models = {
+          standard_model: config.image_config.standard_model,
+          reference_model: config.image_config.reference_model,
+          parameters: config.image_config.parameters,
+        };
+      }
+      
+      // Add video models to primary_parameters if enabled  
+      if (config.video_models_enabled && config.video_config) {
+        payload.primary_parameters.video_models = {
+          standard_model: config.video_config.standard_model,
+          parameters: config.video_config.parameters,
+        };
+      }
 
       console.log('🔍 FRONTEND: Saving app configuration:', JSON.stringify(payload, null, 2));
       await AdminAPI.updateAppModelConfig(appId!, payload);
