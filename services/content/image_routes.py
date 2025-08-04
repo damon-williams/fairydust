@@ -25,6 +25,7 @@ from models import (
 )
 
 from shared.database import Database, get_db
+from shared.ai_usage_logger import get_ai_usage_logger
 
 security = HTTPBearer()
 
@@ -176,6 +177,53 @@ async def generate_image(request: ImageGenerateRequest, db: Database = Depends(g
         model_used = generation_metadata["model_used"]
         actual_cost = get_image_model_pricing(model_used)
         
+        # Log AI usage for analytics
+        try:
+            # Get Image app ID
+            image_app = await db.fetch_one(
+                "SELECT id FROM apps WHERE slug = 'fairydust-image'"
+            )
+            if image_app:
+                # Determine provider from model
+                provider = "replicate"  # All image models use Replicate
+                if "black-forest-labs" in model_used:
+                    provider = "replicate/black-forest-labs"
+                elif "runwayml" in model_used:
+                    provider = "replicate/runwayml"
+                
+                # Get image dimensions from metadata or generation_metadata
+                dimensions = full_metadata.get("dimensions", "1024x1024")
+                
+                # Log the usage
+                ai_logger = await get_ai_usage_logger(db)
+                await ai_logger.log_image_usage(
+                    user_id=request.user_id,
+                    app_id=image_app["id"],
+                    provider=provider,
+                    model_id=model_used,
+                    images_generated=1,
+                    image_dimensions=dimensions,
+                    cost_usd=actual_cost,
+                    latency_ms=generation_metadata["generation_time_ms"],
+                    prompt_text=request.prompt,
+                    finish_reason="completed",
+                    was_fallback=False,
+                    fallback_reason=None,
+                    request_metadata={
+                        "action": "generate",
+                        "style": request.style.value,
+                        "size": request.image_size.value,
+                        "reference_people_count": len(request.reference_people) if request.reference_people else 0,
+                        "api_provider": generation_metadata.get("api_provider", "replicate"),
+                        "generation_approach": generation_metadata.get("generation_approach")
+                    }
+                )
+        except Exception as log_error:
+            # Don't fail the request if logging fails
+            import logging
+            logger = logging.getLogger(__name__) 
+            logger.error(f"Failed to log image usage: {log_error}")
+        
         generation_info = ImageGenerationInfo(
             model_used=model_used,
             generation_time_ms=generation_metadata["generation_time_ms"],
@@ -314,6 +362,55 @@ async def regenerate_image(
         from shared.llm_pricing import get_image_model_pricing
         model_used = generation_metadata["model_used"]
         actual_cost = get_image_model_pricing(model_used)
+        
+        # Log AI usage for analytics
+        try:
+            # Get Image app ID
+            image_app = await db.fetch_one(
+                "SELECT id FROM apps WHERE slug = 'fairydust-image'"
+            )
+            if image_app:
+                # Determine provider from model
+                provider = "replicate"  # All image models use Replicate
+                if "black-forest-labs" in model_used:
+                    provider = "replicate/black-forest-labs"
+                elif "runwayml" in model_used:
+                    provider = "replicate/runwayml"
+                
+                # Get image dimensions from metadata or generation_metadata
+                dimensions = full_metadata.get("dimensions", "1024x1024")
+                
+                # Log the usage
+                ai_logger = await get_ai_usage_logger(db)
+                await ai_logger.log_image_usage(
+                    user_id=request.user_id,
+                    app_id=image_app["id"],
+                    provider=provider,
+                    model_id=model_used,
+                    images_generated=1,
+                    image_dimensions=dimensions,
+                    cost_usd=actual_cost,
+                    latency_ms=generation_metadata["generation_time_ms"],
+                    prompt_text=enhanced_prompt,
+                    finish_reason="completed",
+                    was_fallback=False,
+                    fallback_reason=None,
+                    request_metadata={
+                        "action": "regenerate",
+                        "style": style,
+                        "size": original_image["image_size"],
+                        "reference_people_count": len(reference_people) if reference_people else 0,
+                        "api_provider": generation_metadata.get("api_provider", "replicate"),
+                        "generation_approach": generation_metadata.get("generation_approach"),
+                        "original_image_id": image_id,
+                        "feedback": request.feedback
+                    }
+                )
+        except Exception as log_error:
+            # Don't fail the request if logging fails
+            import logging
+            logger = logging.getLogger(__name__) 
+            logger.error(f"Failed to log image regeneration usage: {log_error}")
         
         generation_info = ImageGenerationInfo(
             model_used=model_used,

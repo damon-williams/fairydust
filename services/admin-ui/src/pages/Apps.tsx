@@ -521,7 +521,7 @@ export function Apps() {
                       <Button 
                         variant="ghost" 
                         size="sm"
-                        onClick={() => navigate(`/apps/${app.id}/config`)}
+                        onClick={() => navigate(`/admin/apps/${app.id}/config`)}
                         className="text-blue-600 hover:text-blue-800"
                       >
                         <Settings className="h-4 w-4 mr-1" />
