@@ -1272,6 +1272,159 @@ export class AdminAPI {
     }
   }
 
+  // Pricing Management APIs
+  static async getModelPricing(): Promise<any> {
+    try {
+      const response = await fetch(`${API_BASE}/admin/pricing/models`, {
+        credentials: 'include',
+      });
+      
+      if (response.ok) {
+        return await response.json();
+      }
+      
+      throw new Error('Failed to fetch model pricing');
+    } catch (error) {
+      console.error('Failed to get model pricing:', error);
+      throw error;
+    }
+  }
+
+  static async updateModelPricing(pricingData: any): Promise<any> {
+    try {
+      const response = await fetch(`${API_BASE}/admin/pricing/models`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        credentials: 'include',
+        body: JSON.stringify(pricingData),
+      });
+      
+      if (response.ok) {
+        return await response.json();
+      }
+      
+      throw new Error('Failed to update model pricing');
+    } catch (error) {
+      console.error('Failed to update model pricing:', error);
+      throw error;
+    }
+  }
+
+  static async getProviderPricing(provider: string): Promise<any> {
+    try {
+      const response = await fetch(`${API_BASE}/admin/pricing/models/${provider}`, {
+        credentials: 'include',
+      });
+      
+      if (response.ok) {
+        return await response.json();
+      }
+      
+      throw new Error(`Failed to fetch ${provider} pricing`);
+    } catch (error) {
+      console.error(`Failed to get ${provider} pricing:`, error);
+      throw error;
+    }
+  }
+
+  static async updateProviderPricing(provider: string, pricingData: any): Promise<any> {
+    try {
+      const response = await fetch(`${API_BASE}/admin/pricing/models/${provider}`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        credentials: 'include',
+        body: JSON.stringify(pricingData),
+      });
+      
+      if (response.ok) {
+        return await response.json();
+      }
+      
+      throw new Error(`Failed to update ${provider} pricing`);
+    } catch (error) {
+      console.error(`Failed to update ${provider} pricing:`, error);
+      throw error;
+    }
+  }
+
+  static async addModelPricing(provider: string, modelId: string, pricingData: any): Promise<any> {
+    try {
+      const response = await fetch(`${API_BASE}/admin/pricing/models/${provider}/${modelId}`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        credentials: 'include',
+        body: JSON.stringify(pricingData),
+      });
+      
+      if (response.ok) {
+        return await response.json();
+      }
+      
+      throw new Error(`Failed to add model ${modelId} pricing`);
+    } catch (error) {
+      console.error(`Failed to add model ${modelId} pricing:`, error);
+      throw error;
+    }
+  }
+
+  static async removeModelPricing(provider: string, modelId: string): Promise<any> {
+    try {
+      const response = await fetch(`${API_BASE}/admin/pricing/models/${provider}/${modelId}`, {
+        method: 'DELETE',
+        credentials: 'include',
+      });
+      
+      if (response.ok) {
+        return await response.json();
+      }
+      
+      throw new Error(`Failed to remove model ${modelId} pricing`);
+    } catch (error) {
+      console.error(`Failed to remove model ${modelId} pricing:`, error);
+      throw error;
+    }
+  }
+
+  static async getPricingHistory(): Promise<any> {
+    try {
+      const response = await fetch(`${API_BASE}/admin/pricing/history`, {
+        credentials: 'include',
+      });
+      
+      if (response.ok) {
+        return await response.json();
+      }
+      
+      throw new Error('Failed to fetch pricing history');
+    } catch (error) {
+      console.error('Failed to get pricing history:', error);
+      throw error;
+    }
+  }
+
+  static async getPricingComparison(): Promise<any> {
+    try {
+      const response = await fetch(`${API_BASE}/admin/pricing/current-vs-historical`, {
+        credentials: 'include',
+      });
+      
+      if (response.ok) {
+        return await response.json();
+      }
+      
+      throw new Error('Failed to fetch pricing comparison');
+    } catch (error) {
+      console.error('Failed to get pricing comparison:', error);
+      throw error;
+    }
+  }
+
   // Activity APIs
   static async getActivity(params?: {
     page?: number;

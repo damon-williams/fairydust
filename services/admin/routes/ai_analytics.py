@@ -34,7 +34,7 @@ async def get_ai_usage_metrics(
         """
     )
 
-    # TODO: Add image usage stats when image_usage_logs table is implemented
+    # TODO: Add image usage stats when image_usage_logs table is implemented  
     # For now, return zeros for image/video metrics
     image_stats = {
         "total_images": 0,
@@ -48,18 +48,18 @@ async def get_ai_usage_metrics(
         "avg_latency_ms": 0.0
     }
 
-    # Combine stats
+    # Combine stats (convert Decimal to float for JSON serialization)
     total_stats = {
         "total_requests": (llm_stats["total_requests"] if llm_stats else 0),
         "total_tokens": (llm_stats["total_tokens"] if llm_stats else 0),
         "total_images": image_stats["total_images"],
         "total_videos": video_stats["total_videos"],
         "total_cost_usd": (
-            (llm_stats["total_cost_usd"] if llm_stats else 0) +
+            float(llm_stats["total_cost_usd"] if llm_stats else 0) +
             image_stats["total_cost_usd"] +
             video_stats["total_cost_usd"]
         ),
-        "avg_latency_ms": (llm_stats["avg_latency_ms"] if llm_stats else 0)
+        "avg_latency_ms": float(llm_stats["avg_latency_ms"] if llm_stats else 0)
     }
 
     # Get model breakdown for text models
@@ -130,15 +130,39 @@ async def get_ai_usage_metrics(
             app["app_slug"]
         )
 
+        # Convert Decimal types to float for JSON serialization
+        app_dict = dict(app)
+        for key in ["avg_prompt_tokens", "avg_completion_tokens", "avg_total_tokens", "avg_cost_per_request", "total_cost"]:
+            if app_dict.get(key) is not None:
+                app_dict[key] = float(app_dict[key])
+        
+        # Convert model data Decimal types to float
+        models_dict = []
+        for model in models_used:
+            model_dict = dict(model)
+            for key in ["cost", "avg_latency_ms"]:
+                if model_dict.get(key) is not None:
+                    model_dict[key] = float(model_dict[key])
+            models_dict.append(model_dict)
+        
         formatted_app_usage.append({
-            **dict(app),
-            "models_used": [dict(model) for model in models_used]
+            **app_dict,
+            "models_used": models_dict
         })
+
+    # Convert model breakdown Decimal types to float
+    model_breakdown = []
+    for row in text_model_stats:
+        row_dict = dict(row)
+        for key in ["cost", "avg_latency"]:
+            if row_dict.get(key) is not None:
+                row_dict[key] = float(row_dict[key])
+        model_breakdown.append(row_dict)
 
     return {
         "timeframe": timeframe,
         "total_stats": total_stats,
-        "model_breakdown": [dict(row) for row in text_model_stats],
+        "model_breakdown": model_breakdown,
         "app_usage": formatted_app_usage,
     }
 
