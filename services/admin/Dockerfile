@@ -12,9 +12,6 @@ COPY shared ./shared
 # Copy service code
 COPY services/admin .
 
-# Copy migration files for startup migration
-COPY migrations ./migrations
-
 EXPOSE 8003
 
 CMD ["python", "main.py"]

@@ -102,13 +102,22 @@ export function AppConfig() {
       setLoading(true);
       setError(null);
       
-      // Load app details and configuration
-      const [appData, configData] = await Promise.all([
-        AdminAPI.getApp(appId!),
-        AdminAPI.getAppModelConfig(appId!)
-      ]);
-      
+      // Load app details
+      const appData = await AdminAPI.getApp(appId!);
       setApp(appData);
+      
+      // Load configuration (handle 404 gracefully)
+      let configData = null;
+      try {
+        configData = await AdminAPI.getAppModelConfig(appId!);
+      } catch (configError: any) {
+        if (configError.message?.includes('404') || configError.message?.includes('not found')) {
+          console.info('No model configuration found for app, using defaults');
+          configData = null;
+        } else {
+          throw configError; // Re-throw non-404 errors
+        }
+      }
       
       // Parse configuration with defaults
       if (configData?.primary_parameters) {
@@ -148,6 +157,13 @@ export function AppConfig() {
               resolution: '1080p'
             }
           } : undefined,
+        });
+      } else {
+        // No configuration exists, use empty defaults
+        setConfig({
+          text_models_enabled: false,
+          image_models_enabled: false,
+          video_models_enabled: false,
         });
       }
     } catch (err) {
