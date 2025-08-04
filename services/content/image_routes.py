@@ -124,6 +124,18 @@ async def _log_image_usage(
     request_metadata: dict = None
 ):
     """Log image usage to apps service"""
+    print(f"🔍 DEBUG: Logging image usage with data:")
+    print(f"  user_id: {user_id} (type: {type(user_id)})")
+    print(f"  app_id: {app_id} (type: {type(app_id)})")
+    print(f"  provider: {provider} (len: {len(provider) if provider else 'None'})")
+    print(f"  model_id: {model_id} (len: {len(model_id) if model_id else 'None'})")
+    print(f"  images_generated: {images_generated}")
+    print(f"  image_dimensions: {image_dimensions} (len: {len(image_dimensions) if image_dimensions else 'None'})")
+    print(f"  latency_ms: {latency_ms}")
+    print(f"  prompt_text: {prompt_text[:100] if prompt_text else 'None'}...")
+    print(f"  finish_reason: {finish_reason}")
+    print(f"  was_fallback: {was_fallback}")
+    print(f"  fallback_reason: {fallback_reason}")
     apps_service_url = _get_apps_service_url()
     service_token = os.getenv("SERVICE_JWT_TOKEN")
     
@@ -133,8 +145,8 @@ async def _log_image_usage(
         return
     
     usage_data = {
-        "user_id": user_id,
-        "app_id": app_id,
+        "user_id": user_id,  # Already converted to string by caller
+        "app_id": app_id,    # Already converted to string by caller  
         "provider": provider,
         "model_id": model_id,
         "images_generated": images_generated,
@@ -159,6 +171,7 @@ async def _log_image_usage(
             
             if response.status_code != 201:
                 print(f"WARNING: Failed to log image usage: {response.status_code} - {response.text}")
+                print(f"REQUEST DATA: {usage_data}")
             else:
                 print("✅ Image usage logged successfully")
                 

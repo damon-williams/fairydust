@@ -2,8 +2,10 @@
 import os
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
+from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from routes import admin_router, app_router, image_router, llm_router, marketplace_router, referral_router, video_router
 from service_routes import service_router
 
@@ -30,6 +32,35 @@ app = FastAPI(
     version="1.0.0",
     lifespan=lifespan,
 )
+
+# Add validation error handler for better debugging
+@app.exception_handler(RequestValidationError)
+async def validation_exception_handler(request: Request, exc: RequestValidationError):
+    import logging
+    logger = logging.getLogger(__name__)
+    
+    # Log detailed validation error information
+    logger.error(f"Validation error on {request.method} {request.url}")
+    logger.error(f"Validation errors: {exc.errors()}")
+    
+    # Try to log the request body if possible
+    try:
+        body = await request.body()
+        if body:
+            import json
+            try:
+                body_json = json.loads(body)
+                logger.error(f"Request body: {body_json}")
+            except:
+                logger.error(f"Request body (raw): {body.decode()}")
+    except Exception as e:
+        logger.warning(f"Could not read request body: {e}")
+    
+    # Return detailed error response
+    return JSONResponse(
+        status_code=422,
+        content={"detail": exc.errors(), "body": "See server logs for request body details"},
+    )
 
 # CORS middleware
 allowed_origins = os.getenv("ALLOWED_ORIGINS", "*").split(",")
