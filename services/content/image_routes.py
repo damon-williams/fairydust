@@ -170,10 +170,16 @@ async def generate_image(request: ImageGenerateRequest, db: Database = Depends(g
         image_data["metadata"] = json.loads(image_record["metadata"])
 
         user_image = UserImage(**image_data)
+        
+        # Calculate actual cost based on model used
+        from shared.llm_pricing import get_image_model_pricing
+        model_used = generation_metadata["model_used"]
+        actual_cost = get_image_model_pricing(model_used)
+        
         generation_info = ImageGenerationInfo(
-            model_used=generation_metadata["model_used"],
+            model_used=model_used,
             generation_time_ms=generation_metadata["generation_time_ms"],
-            cost_estimate="$0.025",  # FLUX cost estimate - actual cost handled by apps service
+            cost_estimate=f"${actual_cost:.3f}",  # Actual cost based on model
         )
 
         return ImageGenerateResponse(image=user_image, generation_info=generation_info)
@@ -303,10 +309,16 @@ async def regenerate_image(
         image_data["metadata"] = json.loads(new_image_record["metadata"])
 
         user_image = UserImage(**image_data)
+        
+        # Calculate actual cost based on model used
+        from shared.llm_pricing import get_image_model_pricing
+        model_used = generation_metadata["model_used"]
+        actual_cost = get_image_model_pricing(model_used)
+        
         generation_info = ImageGenerationInfo(
-            model_used=generation_metadata["model_used"],
+            model_used=model_used,
             generation_time_ms=generation_metadata["generation_time_ms"],
-            cost_estimate="$0.025",  # FLUX cost estimate - actual cost handled by apps service
+            cost_estimate=f"${actual_cost:.3f}",  # Actual cost based on model
         )
 
         return ImageRegenerateResponse(image=user_image, generation_info=generation_info)

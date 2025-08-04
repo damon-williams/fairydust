@@ -16,7 +16,7 @@ class LLMProvider(str, Enum):
     OPENAI = "openai"
 
 
-# Pricing per million tokens (input/output) - Updated 2024
+# Pricing per million tokens (input/output) for LLMs, per image for image models - Updated 2024
 PRICING_CONFIG = {
     "anthropic": {
         # Claude models - per million tokens
@@ -33,6 +33,17 @@ PRICING_CONFIG = {
         # GPT models - per million tokens
         "gpt-4o": {"input": 2.5, "output": 10.0},
         "gpt-4o-mini": {"input": 0.15, "output": 0.60},
+    },
+    "image": {
+        # Image models - per image generation
+        "black-forest-labs/flux-1.1-pro": {"cost": 0.04},
+        "black-forest-labs/flux-schnell": {"cost": 0.003},  # $3.00 per 1000 images
+        "runwayml/gen4-image": {"cost": 0.05},
+        # Placeholder models (may not be fully supported yet)
+        "stability-ai/sdxl": {"cost": 0.02},
+        "dall-e-3": {"cost": 0.04},
+        "playgroundai/face-to-sticker": {"cost": 0.03},
+        "stability-ai/stable-diffusion-img2img": {"cost": 0.02},
     },
 }
 
@@ -179,6 +190,48 @@ def estimate_cost_range(provider: str, model_id: str, estimated_tokens: int) -> 
     max_cost = calculate_llm_cost(provider, model_id, expensive_input, expensive_output)
 
     return {"min_cost": min_cost, "max_cost": max_cost, "estimated_tokens": estimated_tokens}
+
+
+def calculate_image_cost(model_id: str, image_count: int = 1) -> float:
+    """
+    Calculate image generation cost based on model and image count.
+
+    Args:
+        model_id: Image model identifier (e.g., "black-forest-labs/flux-1.1-pro")
+        image_count: Number of images to generate
+
+    Returns:
+        Cost in USD (rounded to 6 decimal places)
+    """
+    if image_count <= 0:
+        raise ValueError("Image count must be positive")
+
+    # Get pricing for image model
+    if "image" not in PRICING_CONFIG or model_id not in PRICING_CONFIG["image"]:
+        logger.warning(f"Unknown image model '{model_id}', using default cost of $0.025")
+        return round(0.025 * image_count, 6)
+
+    model_cost = PRICING_CONFIG["image"][model_id]["cost"]
+    total_cost = model_cost * image_count
+
+    return round(total_cost, 6)
+
+
+def get_image_model_pricing(model_id: str) -> float:
+    """
+    Get per-image cost for a specific image model.
+
+    Args:
+        model_id: Image model identifier
+
+    Returns:
+        Cost per image in USD
+    """
+    if "image" not in PRICING_CONFIG or model_id not in PRICING_CONFIG["image"]:
+        logger.warning(f"Unknown image model '{model_id}', using default cost")
+        return 0.025
+
+    return PRICING_CONFIG["image"][model_id]["cost"]
 
 
 def get_all_supported_models() -> dict[str, list]:

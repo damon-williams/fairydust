@@ -26,12 +26,12 @@ class ImageGenerationService:
             from shared.database import get_db
             from shared.json_utils import parse_jsonb_field, parse_model_config_field
 
-            # Get the Story app ID (hardcoded for now, could be made configurable)
-            STORY_APP_ID = "fairydust-story"
+            # Get the Image app ID
+            IMAGE_APP_ID = "fairydust-image"
 
             # Try to get from cache first
             cache = await get_app_config_cache()
-            cached_config = await cache.get_model_config(STORY_APP_ID)
+            cached_config = await cache.get_model_config(IMAGE_APP_ID)
 
             if cached_config:
                 # Extract image model settings from parameters
@@ -47,7 +47,7 @@ class ImageGenerationService:
                 SELECT primary_parameters FROM app_model_configs
                 WHERE app_id = (SELECT id FROM apps WHERE slug = $1)
                 """,
-                STORY_APP_ID,
+                IMAGE_APP_ID,
             )
 
             if config and config["primary_parameters"]:
