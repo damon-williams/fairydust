@@ -208,7 +208,7 @@ async def get_app_model_config(app_id: str, db: Database = Depends(get_db)):
     config_dict = dict(config)
     parsed_config = {
         "id": str(config_dict["id"]),
-        "app_id": config_dict["app_id"],
+        "app_id": str(config_dict["app_id"]),
         "primary_provider": config_dict["primary_provider"],
         "primary_model_id": config_dict["primary_model_id"],
         "primary_parameters": parse_model_config_field(config_dict, "primary_parameters"),
@@ -222,7 +222,7 @@ async def get_app_model_config(app_id: str, db: Database = Depends(get_db)):
     # Cache the parsed config
     await cache.set_model_config(app_id, parsed_config)
 
-    return AppModelConfig(**config)
+    return AppModelConfig(**parsed_config)
 
 
 @llm_router.put("/{app_id}/model-config", response_model=AppModelConfig)

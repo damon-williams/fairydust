@@ -91,6 +91,20 @@ export function AppConfig() {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  // Helper function to display user-friendly status
+  const getStatusDisplay = (status: string) => {
+    switch (status) {
+      case 'approved':
+        return 'Active';
+      case 'pending':
+        return 'Pending';
+      case 'rejected':
+        return 'Rejected';
+      default:
+        return status;
+    }
+  };
+
   useEffect(() => {
     if (appId) {
       loadAppConfig();
@@ -313,7 +327,7 @@ export function AppConfig() {
       <div className="flex items-center gap-4">
         <Button 
           variant="outline" 
-          onClick={() => navigate('/apps')}
+          onClick={() => navigate('/admin/apps')}
           className="flex items-center gap-2"
         >
           <ArrowLeft className="h-4 w-4" />
@@ -364,7 +378,7 @@ export function AppConfig() {
             <div>
               <Label className="text-sm font-medium text-slate-600">Status</Label>
               <Badge variant={app?.status === 'approved' ? 'default' : 'secondary'}>
-                {app?.status}
+                {getStatusDisplay(app?.status || '')}
               </Badge>
             </div>
           </div>
@@ -621,7 +635,7 @@ export function AppConfig() {
       <div className="flex justify-end gap-4 pt-6 border-t">
         <Button 
           variant="outline" 
-          onClick={() => navigate('/apps')}
+          onClick={() => navigate('/admin/apps')}
         >
           Cancel
         </Button>

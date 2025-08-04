@@ -124,18 +124,6 @@ async def _log_image_usage(
     request_metadata: dict = None
 ):
     """Log image usage to apps service"""
-    print(f"🔍 DEBUG: Logging image usage with data:")
-    print(f"  user_id: {user_id} (type: {type(user_id)})")
-    print(f"  app_id: {app_id} (type: {type(app_id)})")
-    print(f"  provider: {provider} (len: {len(provider) if provider else 'None'})")
-    print(f"  model_id: {model_id} (len: {len(model_id) if model_id else 'None'})")
-    print(f"  images_generated: {images_generated}")
-    print(f"  image_dimensions: {image_dimensions} (len: {len(image_dimensions) if image_dimensions else 'None'})")
-    print(f"  latency_ms: {latency_ms}")
-    print(f"  prompt_text: {prompt_text[:100] if prompt_text else 'None'}...")
-    print(f"  finish_reason: {finish_reason}")
-    print(f"  was_fallback: {was_fallback}")
-    print(f"  fallback_reason: {fallback_reason}")
     apps_service_url = _get_apps_service_url()
     service_token = os.getenv("SERVICE_JWT_TOKEN")
     
@@ -171,7 +159,6 @@ async def _log_image_usage(
             
             if response.status_code != 201:
                 print(f"WARNING: Failed to log image usage: {response.status_code} - {response.text}")
-                print(f"REQUEST DATA: {usage_data}")
             else:
                 print("✅ Image usage logged successfully")
                 
@@ -269,7 +256,12 @@ async def generate_image(request: ImageGenerateRequest, db: Database = Depends(g
                     provider = "replicate/runwayml"
                 
                 # Get image dimensions from metadata or generation_metadata
-                dimensions = full_metadata.get("dimensions", "1024x1024")
+                dimensions_raw = full_metadata.get("dimensions", "1024x1024")
+                # Convert dimensions to string format if it's an object
+                if isinstance(dimensions_raw, dict) and 'width' in dimensions_raw and 'height' in dimensions_raw:
+                    dimensions = f"{dimensions_raw['width']}x{dimensions_raw['height']}"
+                else:
+                    dimensions = str(dimensions_raw) if dimensions_raw else "1024x1024"
                 
                 # Log the usage
                 await _log_image_usage(
@@ -453,7 +445,12 @@ async def regenerate_image(
                     provider = "replicate/runwayml"
                 
                 # Get image dimensions from metadata or generation_metadata
-                dimensions = full_metadata.get("dimensions", "1024x1024")
+                dimensions_raw = full_metadata.get("dimensions", "1024x1024")
+                # Convert dimensions to string format if it's an object
+                if isinstance(dimensions_raw, dict) and 'width' in dimensions_raw and 'height' in dimensions_raw:
+                    dimensions = f"{dimensions_raw['width']}x{dimensions_raw['height']}"
+                else:
+                    dimensions = str(dimensions_raw) if dimensions_raw else "1024x1024"
                 
                 # Log the usage
                 await _log_image_usage(
