@@ -7,8 +7,47 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse
 
-from shared.database import close_db, init_db
+from shared.database import close_db, init_db, get_db
 from shared.redis_client import close_redis, init_redis
+
+
+async def run_ai_usage_migration():
+    """Run the AI usage logs migration during startup"""
+    from pathlib import Path
+    
+    try:
+        db = await get_db()
+        
+        # Check if table already exists
+        table_exists = await db.fetch_one(
+            "SELECT EXISTS (SELECT FROM information_schema.tables WHERE table_name = 'ai_usage_logs')"
+        )
+        
+        if table_exists["exists"]:
+            print("✓ ai_usage_logs table already exists, skipping migration")
+            return True
+        
+        # Read the migration SQL
+        migration_file = Path(__file__).parent.parent.parent / "migrations" / "create_ai_usage_logs.sql"
+        if not migration_file.exists():
+            raise FileNotFoundError(f"Migration file not found: {migration_file}")
+            
+        with open(migration_file, 'r') as f:
+            migration_sql = f.read()
+        
+        # Execute the migration using the schema method
+        await db.execute_schema(migration_sql)
+        
+        print("✅ AI usage logs migration completed successfully!")
+        print("📊 Created ai_usage_logs table for unified AI model tracking")
+        print("🔍 Created unified_ai_usage view for backward compatibility")
+        print("📈 Ready to track text, image, and video model usage")
+        
+        return True
+        
+    except Exception as e:
+        print(f"❌ AI usage logs migration failed: {e}")
+        raise
 
 
 @asynccontextmanager
@@ -27,6 +66,16 @@ async def lifespan(app: FastAPI):
 
         await init_db()
         logger.info("Database initialized successfully")
+
+        # Run AI usage logs migration
+        try:
+            logger.info("Running AI usage logs migration...")
+            await run_ai_usage_migration()
+            logger.info("AI usage logs migration completed successfully")
+        except Exception as e:
+            logger.error(f"AI usage logs migration failed: {e}")
+            # Don't fail startup if migration fails, just log the error
+            logger.warning("Continuing startup despite migration failure")
 
         await init_redis()
         logger.info("Redis initialized successfully")

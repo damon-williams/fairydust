@@ -27,6 +27,8 @@ async def run_migration():
         print("Example: DATABASE_URL=postgresql://user:pass@host:port/dbname python scripts/migrate_ai_usage_logs.py")
         return False
 
+    print(f"🔄 Starting migration with DATABASE_URL: {database_url[:50]}...")
+    
     # Set the DATABASE_URL for the shared database module
     import os
     os.environ["DATABASE_URL"] = database_url
