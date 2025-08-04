@@ -234,6 +234,11 @@ async def update_app_model_config(
 ):
     """Update LLM model configuration for an app (admin only)"""
     import json
+    import logging
+    logger = logging.getLogger(__name__)
+    
+    logger.info(f"🔍 BACKEND: Updating model config for app {app_id}")
+    logger.info(f"🔍 BACKEND: Config update payload: {config_update}")
 
     # Check if app exists
     app = await db.fetch_one("SELECT id FROM apps WHERE id = $1", app_id)
@@ -315,19 +320,25 @@ async def update_app_model_config(
     update_values = []
     param_count = 1
 
+    logger.info(f"🔍 BACKEND: Processing update fields...")
+    
     if config_update.primary_provider is not None:
+        logger.info(f"🔍 BACKEND: Updating primary_provider to {config_update.primary_provider.value}")
         update_fields.append(f"primary_provider = ${param_count}")
         update_values.append(config_update.primary_provider.value)
         param_count += 1
 
     if config_update.primary_model_id is not None:
+        logger.info(f"🔍 BACKEND: Updating primary_model_id to {config_update.primary_model_id}")
         update_fields.append(f"primary_model_id = ${param_count}")
         update_values.append(config_update.primary_model_id)
         param_count += 1
 
     if config_update.primary_parameters is not None:
+        params_json = json.dumps(config_update.primary_parameters.dict(exclude_none=True))
+        logger.info(f"🔍 BACKEND: Updating primary_parameters to {params_json}")
         update_fields.append(f"primary_parameters = ${param_count}::jsonb")
-        update_values.append(json.dumps(config_update.primary_parameters.dict(exclude_none=True)))
+        update_values.append(params_json)
         param_count += 1
 
     if config_update.fallback_models is not None:
@@ -353,6 +364,7 @@ async def update_app_model_config(
         param_count += 1
 
     if not update_fields:
+        logger.warning(f"🔍 BACKEND: No update fields detected for app {app_id}")
         # Return current config if no updates
         return AppModelConfig(**current_config)
 
@@ -371,7 +383,15 @@ async def update_app_model_config(
         RETURNING *
     """
 
+    logger.info(f"🔍 BACKEND: Executing update query: {query}")
+    logger.info(f"🔍 BACKEND: Update values: {update_values}")
+    
     updated_config = await db.fetch_one(query, *update_values)
+    
+    if updated_config:
+        logger.info(f"✅ BACKEND: Successfully updated config for app {app_id}")
+    else:
+        logger.error(f"❌ BACKEND: Failed to update config for app {app_id} - no rows returned")
 
     # Invalidate cache after successful update
     from shared.app_config_cache import get_app_config_cache

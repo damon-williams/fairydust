@@ -211,7 +211,9 @@ export function AppConfig() {
         }
       };
 
+      console.log('🔍 FRONTEND: Saving app configuration:', JSON.stringify(payload, null, 2));
       await AdminAPI.updateAppModelConfig(appId!, payload);
+      console.log('✅ FRONTEND: Save request completed successfully');
       toast.success('App configuration saved successfully!');
       
     } catch (err) {
