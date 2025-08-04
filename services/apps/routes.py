@@ -886,57 +886,6 @@ async def create_app_api(
         raise HTTPException(status_code=500, detail="Failed to create app")
 
 
-@admin_router.get("/apps/{app_id}")
-async def get_app_api(
-    app_id: str,
-    admin_user: TokenData = Depends(require_admin),
-    db: Database = Depends(get_db),
-):
-    """Get individual app details via API for React app (admin only)"""
-    import logging
-
-    logger = logging.getLogger(__name__)
-    try:
-        # Fetch app details
-        app = await db.fetch_one(
-            """
-            SELECT a.*, u.fairyname as builder_name
-            FROM apps a
-            LEFT JOIN users u ON a.builder_id = u.id
-            WHERE a.id = $1
-            """,
-            app_id,
-        )
-
-        if not app:
-            logger.warning(f"App not found: {app_id}")
-            raise HTTPException(status_code=404, detail="App not found")
-
-        # Convert to dict for JSON response
-        app_dict = dict(app)
-        
-        # Add model configuration if available
-        model_config = await db.fetch_one(
-            "SELECT * FROM app_model_configs WHERE app_id = $1",
-            app_id,
-        )
-        
-        if model_config:
-            app_dict["primary_provider"] = model_config["primary_provider"]
-            app_dict["primary_model_id"] = model_config["primary_model_id"]
-        else:
-            app_dict["primary_provider"] = None
-            app_dict["primary_model_id"] = None
-
-        logger.info(f"✅ Successfully fetched app {app_id}")
-        return app_dict
-
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"Error fetching app {app_id}: {e}")
-        raise HTTPException(status_code=500, detail="Failed to fetch app")
-
 
 @admin_router.put("/apps/{app_id}")
 async def update_app_api(
@@ -1041,6 +990,58 @@ async def get_builders_api(
         "SELECT id, fairyname, email FROM users WHERE is_builder = true ORDER BY fairyname"
     )
     return [dict(builder) for builder in builders]
+
+
+@admin_router.get("/apps/{app_id}")
+async def get_app_api(
+    app_id: str,
+    admin_user: TokenData = Depends(require_admin),
+    db: Database = Depends(get_db),
+):
+    """Get individual app details via API for React app (admin only)"""
+    import logging
+
+    logger = logging.getLogger(__name__)
+    try:
+        # Fetch app details
+        app = await db.fetch_one(
+            """
+            SELECT a.*, u.fairyname as builder_name
+            FROM apps a
+            LEFT JOIN users u ON a.builder_id = u.id
+            WHERE a.id = $1
+            """,
+            app_id,
+        )
+
+        if not app:
+            logger.warning(f"App not found: {app_id}")
+            raise HTTPException(status_code=404, detail="App not found")
+
+        # Convert to dict for JSON response
+        app_dict = dict(app)
+        
+        # Add model configuration if available
+        model_config = await db.fetch_one(
+            "SELECT * FROM app_model_configs WHERE app_id = $1",
+            app_id,
+        )
+        
+        if model_config:
+            app_dict["primary_provider"] = model_config["primary_provider"]
+            app_dict["primary_model_id"] = model_config["primary_model_id"]
+        else:
+            app_dict["primary_provider"] = None
+            app_dict["primary_model_id"] = None
+
+        logger.info(f"✅ Successfully fetched app {app_id}")
+        return app_dict
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error fetching app {app_id}: {e}")
+        raise HTTPException(status_code=500, detail="Failed to fetch app")
 
 
 # Admin endpoints for managing action pricing

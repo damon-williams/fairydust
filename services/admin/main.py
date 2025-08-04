@@ -27,8 +27,8 @@ async def run_ai_usage_migration():
             print("✓ ai_usage_logs table already exists, skipping migration")
             return True
         
-        # Read the migration SQL
-        migration_file = Path(__file__).parent.parent.parent / "migrations" / "create_ai_usage_logs.sql"
+        # Read the migration SQL - in Docker container, migrations are copied to /app/migrations/
+        migration_file = Path("/app/migrations/create_ai_usage_logs.sql")
         if not migration_file.exists():
             raise FileNotFoundError(f"Migration file not found: {migration_file}")
             
