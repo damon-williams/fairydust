@@ -12,6 +12,7 @@ from models import (
     AppModelConfigUpdate,
     AppStatus,
     AppValidation,
+    ImageUsageLogCreate,
     LLMUsageLogCreate,
     LLMUsageStats,
     PromotionalReferralRedeemRequest,
@@ -24,6 +25,7 @@ from models import (
     ReferralStatsResponse,
     ReferralValidateRequest,
     ReferralValidateResponse,
+    VideoUsageLogCreate,
 )
 
 from shared.auth_middleware import TokenData, get_current_user, require_admin
@@ -34,6 +36,8 @@ app_router = APIRouter()
 admin_router = APIRouter()
 marketplace_router = APIRouter()
 referral_router = APIRouter()
+image_router = APIRouter()
+video_router = APIRouter()
 
 # ============================================================================
 # BASIC APP ROUTES
@@ -178,8 +182,26 @@ async def get_app_model_config(app_id: str, db: Database = Depends(get_db)):
     )
 
     if not config:
-        raise HTTPException(
-            status_code=404, detail=f"Model configuration not found for app {app_id}"
+        # Return default configuration for apps without model config
+        from models import LLMProvider, ModelParameters, CostLimits, FeatureFlags
+        
+        # Verify the app exists first
+        app = await db.fetch_one("SELECT id, name FROM apps WHERE id = $1", app_id)
+        if not app:
+            raise HTTPException(status_code=404, detail=f"App {app_id} not found")
+        
+        # Return default configuration
+        return AppModelConfig(
+            id=uuid4(),
+            app_id=app_id,
+            primary_provider=LLMProvider.ANTHROPIC,
+            primary_model_id="claude-3-5-sonnet-20241022",
+            primary_parameters=ModelParameters(),
+            fallback_models=[],
+            cost_limits=CostLimits(),
+            feature_flags=FeatureFlags(),
+            created_at=datetime.utcnow(),
+            updated_at=datetime.utcnow()
         )
 
     # Parse JSONB fields for caching
@@ -618,6 +640,152 @@ async def get_user_llm_usage(
         period_start=start_date,
         period_end=end_date,
     )
+
+
+# ============================================================================
+# IMAGE MODEL USAGE LOGGING
+# ============================================================================
+
+
+@image_router.post("/usage", status_code=status.HTTP_201_CREATED)
+async def log_image_usage(usage: ImageUsageLogCreate, db: Database = Depends(get_db)):
+    """Log image generation usage for analytics and cost tracking"""
+    import json
+    from shared.llm_pricing import calculate_image_cost
+
+    # Verify app exists and get UUID (handle both UUID and slug)
+    try:
+        # Try as UUID first
+        app_uuid = UUID(usage.app_id)
+        app = await db.fetch_one("SELECT id FROM apps WHERE id = $1", app_uuid)
+    except ValueError:
+        # If not UUID, treat as slug
+        app = await db.fetch_one("SELECT id FROM apps WHERE slug = $1", usage.app_id)
+
+    if not app:
+        raise HTTPException(status_code=404, detail="App not found")
+
+    # Use the actual app UUID for database operations
+    app_uuid = app["id"]
+
+    # Verify user exists
+    user = await db.fetch_one("SELECT id FROM users WHERE id = $1", usage.user_id)
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    # Calculate cost server-side (SECURITY: never trust client-provided costs)
+    try:
+        calculated_cost = calculate_image_cost(
+            model_id=usage.model_id,
+            image_count=usage.images_generated,
+        )
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Cost calculation failed: {str(e)}")
+
+    # Insert usage log into ai_usage_logs table
+    usage_id = uuid4()
+    await db.execute(
+        """
+        INSERT INTO ai_usage_logs (
+            id, user_id, app_id, model_type, provider, model_id,
+            images_generated, image_dimensions, cost_usd, latency_ms,
+            prompt_text, finish_reason, was_fallback, fallback_reason,
+            request_metadata, created_at
+        ) VALUES (
+            $1, $2, $3, 'image', $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, NOW()
+        )
+        """,
+        usage_id,
+        usage.user_id,
+        app_uuid,
+        usage.provider,
+        usage.model_id,
+        usage.images_generated,
+        usage.image_dimensions,
+        calculated_cost,
+        usage.latency_ms,
+        usage.prompt_text,
+        usage.finish_reason,
+        usage.was_fallback,
+        usage.fallback_reason,
+        json.dumps(usage.request_metadata),
+    )
+
+    return {"message": "Image usage logged successfully", "usage_id": str(usage_id)}
+
+
+# ============================================================================
+# VIDEO MODEL USAGE LOGGING
+# ============================================================================
+
+
+@video_router.post("/usage", status_code=status.HTTP_201_CREATED)
+async def log_video_usage(usage: VideoUsageLogCreate, db: Database = Depends(get_db)):
+    """Log video generation usage for analytics and cost tracking"""
+    import json
+    from shared.llm_pricing import calculate_video_cost
+
+    # Verify app exists and get UUID (handle both UUID and slug)
+    try:
+        # Try as UUID first
+        app_uuid = UUID(usage.app_id)
+        app = await db.fetch_one("SELECT id FROM apps WHERE id = $1", app_uuid)
+    except ValueError:
+        # If not UUID, treat as slug
+        app = await db.fetch_one("SELECT id FROM apps WHERE slug = $1", usage.app_id)
+
+    if not app:
+        raise HTTPException(status_code=404, detail="App not found")
+
+    # Use the actual app UUID for database operations
+    app_uuid = app["id"]
+
+    # Verify user exists
+    user = await db.fetch_one("SELECT id FROM users WHERE id = $1", usage.user_id)
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    # Calculate cost server-side (SECURITY: never trust client-provided costs)
+    try:
+        calculated_cost = calculate_video_cost(
+            model_id=usage.model_id,
+            video_count=usage.videos_generated,
+            duration_seconds=usage.video_duration_seconds,
+        )
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Cost calculation failed: {str(e)}")
+
+    # Insert usage log into ai_usage_logs table
+    usage_id = uuid4()
+    await db.execute(
+        """
+        INSERT INTO ai_usage_logs (
+            id, user_id, app_id, model_type, provider, model_id,
+            videos_generated, video_duration_seconds, video_resolution,
+            cost_usd, latency_ms, prompt_text, finish_reason,
+            was_fallback, fallback_reason, request_metadata, created_at
+        ) VALUES (
+            $1, $2, $3, 'video', $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, NOW()
+        )
+        """,
+        usage_id,
+        usage.user_id,
+        app_uuid,
+        usage.provider,
+        usage.model_id,
+        usage.videos_generated,
+        usage.video_duration_seconds,
+        usage.video_resolution,
+        calculated_cost,
+        usage.latency_ms,
+        usage.prompt_text,
+        usage.finish_reason,
+        usage.was_fallback,
+        usage.fallback_reason,
+        json.dumps(usage.request_metadata),
+    )
+
+    return {"message": "Video usage logged successfully", "usage_id": str(usage_id)}
 
 
 # Action-based DUST pricing endpoints

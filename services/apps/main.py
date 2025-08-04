@@ -4,7 +4,7 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from routes import admin_router, app_router, llm_router, marketplace_router, referral_router
+from routes import admin_router, app_router, image_router, llm_router, marketplace_router, referral_router, video_router
 from service_routes import service_router
 
 from shared.database import close_db, init_db
@@ -47,6 +47,8 @@ app.include_router(admin_router, prefix="/admin", tags=["admin"])
 app.include_router(marketplace_router, prefix="/marketplace", tags=["marketplace"])
 app.include_router(service_router, prefix="/service", tags=["service"])
 app.include_router(llm_router, prefix="/llm", tags=["llm"])
+app.include_router(image_router, prefix="/image", tags=["image"])
+app.include_router(video_router, prefix="/video", tags=["video"])
 app.include_router(referral_router, prefix="/referrals", tags=["referrals"])
 
 

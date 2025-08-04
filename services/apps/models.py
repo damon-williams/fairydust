@@ -182,6 +182,43 @@ class LLMUsageStats(BaseModel):
     period_end: datetime
 
 
+# Image generation usage models
+class ImageUsageLogCreate(BaseModel):
+    model_config = {"protected_namespaces": ()}
+
+    user_id: UUID
+    app_id: str = Field(..., max_length=255)
+    provider: str = Field(..., max_length=50)
+    model_id: str = Field(..., max_length=200)
+    images_generated: int = Field(..., ge=1)
+    image_dimensions: str = Field(..., max_length=20)  # e.g., "1024x1024"
+    latency_ms: int = Field(..., ge=0)
+    prompt_text: Optional[str] = Field(None, max_length=2000)
+    finish_reason: Optional[str] = Field(None, max_length=50)
+    was_fallback: bool = False
+    fallback_reason: Optional[str] = Field(None, max_length=100)
+    request_metadata: dict = Field(default_factory=dict)
+
+
+# Video generation usage models
+class VideoUsageLogCreate(BaseModel):
+    model_config = {"protected_namespaces": ()}
+
+    user_id: UUID
+    app_id: str = Field(..., max_length=255)
+    provider: str = Field(..., max_length=50)
+    model_id: str = Field(..., max_length=200)
+    videos_generated: int = Field(..., ge=1)
+    video_duration_seconds: float = Field(..., ge=0)
+    video_resolution: str = Field(..., max_length=20)  # e.g., "1280x720"
+    latency_ms: int = Field(..., ge=0)
+    prompt_text: Optional[str] = Field(None, max_length=2000)
+    finish_reason: Optional[str] = Field(None, max_length=50)
+    was_fallback: bool = False
+    fallback_reason: Optional[str] = Field(None, max_length=100)
+    request_metadata: dict = Field(default_factory=dict)
+
+
 # Referral models
 class ReferralValidateRequest(BaseModel):
     referral_code: str = Field(..., min_length=6, max_length=10)

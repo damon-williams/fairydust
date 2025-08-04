@@ -366,6 +366,40 @@ async def get_image_model_pricing_async(model_id: str) -> float:
     return pricing_config["image"][model_id]["cost"]
 
 
+def calculate_video_cost(model_id: str, video_count: int = 1, duration_seconds: float = 1.0) -> float:
+    """
+    Calculate video generation cost based on model, video count, and duration.
+    
+    ⚠️  IMPORTANT: This function uses CURRENT pricing configuration.
+    ⚠️  NEVER use this to recalculate historical video generation costs.
+    ⚠️  Historical video usage logs should preserve their original cost values.
+    
+    Args:
+        model_id: Video model identifier (e.g., "runwayml/gen4-video")
+        video_count: Number of videos to generate
+        duration_seconds: Duration of each video in seconds
+        
+    Returns:
+        Cost in USD (rounded to 6 decimal places) using CURRENT pricing
+    """
+    if video_count <= 0:
+        raise ValueError("Video count must be positive")
+    if duration_seconds <= 0:
+        raise ValueError("Video duration must be positive")
+        
+    # For now, use a flat rate per video since video models typically charge per generation
+    # In the future, this could be enhanced to include duration-based pricing
+    pricing_config = get_pricing_config()
+    
+    if "video" not in pricing_config or model_id not in pricing_config["video"]:
+        logger.warning(f"Unknown video model '{model_id}', using default cost of $0.10 per video")
+        return round(0.10 * video_count, 6)
+    
+    model_cost = pricing_config["video"][model_id]["cost"]
+    total_cost = model_cost * video_count
+    return round(total_cost, 6)
+
+
 def get_all_supported_models() -> dict[str, list]:
     """Get list of all supported models by provider."""
     pricing_config = get_pricing_config()

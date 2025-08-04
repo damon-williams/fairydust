@@ -25,7 +25,6 @@ from models import (
 )
 
 from shared.database import Database, get_db
-from shared.ai_usage_logger import get_ai_usage_logger
 
 security = HTTPBearer()
 
@@ -101,6 +100,71 @@ def _get_identity_service_url() -> str:
     environment = os.getenv("ENVIRONMENT", "staging")
     base_url_suffix = "production" if environment == "production" else "staging"
     return f"https://fairydust-identity-{base_url_suffix}.up.railway.app"
+
+
+def _get_apps_service_url() -> str:
+    """Get apps service URL based on environment"""
+    environment = os.getenv("ENVIRONMENT", "staging")
+    base_url_suffix = "production" if environment == "production" else "staging"
+    return f"https://fairydust-apps-{base_url_suffix}.up.railway.app"
+
+
+async def _log_image_usage(
+    user_id: str,
+    app_id: str,
+    provider: str,
+    model_id: str,
+    images_generated: int,
+    image_dimensions: str,
+    latency_ms: int,
+    prompt_text: str,
+    finish_reason: str = "completed",
+    was_fallback: bool = False,
+    fallback_reason: str = None,
+    request_metadata: dict = None
+):
+    """Log image usage to apps service"""
+    apps_service_url = _get_apps_service_url()
+    service_token = os.getenv("SERVICE_JWT_TOKEN")
+    
+    if not service_token:
+        # Log warning but don't fail the request
+        print("WARNING: SERVICE_JWT_TOKEN not configured, skipping usage logging")
+        return
+    
+    usage_data = {
+        "user_id": user_id,
+        "app_id": app_id,
+        "provider": provider,
+        "model_id": model_id,
+        "images_generated": images_generated,
+        "image_dimensions": image_dimensions,
+        "latency_ms": latency_ms,
+        "prompt_text": prompt_text,
+        "finish_reason": finish_reason,
+        "was_fallback": was_fallback,
+        "fallback_reason": fallback_reason,
+        "request_metadata": request_metadata or {}
+    }
+    
+    try:
+        # Call apps service image usage endpoint
+        async with httpx.AsyncClient() as client:
+            response = await client.post(
+                f"{apps_service_url}/image/usage",
+                json=usage_data,
+                headers={"Authorization": f"Bearer {service_token}"},
+                timeout=5.0
+            )
+            
+            if response.status_code != 201:
+                print(f"WARNING: Failed to log image usage: {response.status_code} - {response.text}")
+            else:
+                print("✅ Image usage logged successfully")
+                
+    except Exception as e:
+        # Log warning but don't fail the request
+        print(f"WARNING: Failed to log image usage: {str(e)}")
 
 
 @image_router.post("/generate", response_model=ImageGenerateResponse)
@@ -195,15 +259,13 @@ async def generate_image(request: ImageGenerateRequest, db: Database = Depends(g
                 dimensions = full_metadata.get("dimensions", "1024x1024")
                 
                 # Log the usage
-                ai_logger = await get_ai_usage_logger(db)
-                await ai_logger.log_image_usage(
-                    user_id=request.user_id,
-                    app_id=image_app["id"],
+                await _log_image_usage(
+                    user_id=str(request.user_id),
+                    app_id=str(image_app["id"]),
                     provider=provider,
                     model_id=model_used,
                     images_generated=1,
                     image_dimensions=dimensions,
-                    cost_usd=actual_cost,
                     latency_ms=generation_metadata["generation_time_ms"],
                     prompt_text=request.prompt,
                     finish_reason="completed",
@@ -381,15 +443,13 @@ async def regenerate_image(
                 dimensions = full_metadata.get("dimensions", "1024x1024")
                 
                 # Log the usage
-                ai_logger = await get_ai_usage_logger(db)
-                await ai_logger.log_image_usage(
-                    user_id=request.user_id,
-                    app_id=image_app["id"],
+                await _log_image_usage(
+                    user_id=str(request.user_id),
+                    app_id=str(image_app["id"]),
                     provider=provider,
                     model_id=model_used,
                     images_generated=1,
                     image_dimensions=dimensions,
-                    cost_usd=actual_cost,
                     latency_ms=generation_metadata["generation_time_ms"],
                     prompt_text=enhanced_prompt,
                     finish_reason="completed",
