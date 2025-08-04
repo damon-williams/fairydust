@@ -91,19 +91,6 @@ export function AppConfig() {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Helper function to display user-friendly status
-  const getStatusDisplay = (status: string) => {
-    switch (status) {
-      case 'approved':
-        return 'Active';
-      case 'pending':
-        return 'Pending';
-      case 'rejected':
-        return 'Rejected';
-      default:
-        return status;
-    }
-  };
 
   useEffect(() => {
     if (appId) {
@@ -374,12 +361,6 @@ export function AppConfig() {
             <div>
               <Label className="text-sm font-medium text-slate-600">Slug</Label>
               <p className="text-sm font-mono">{app?.slug}</p>
-            </div>
-            <div>
-              <Label className="text-sm font-medium text-slate-600">Status</Label>
-              <Badge variant={app?.status === 'approved' ? 'default' : 'secondary'}>
-                {getStatusDisplay(app?.status || '')}
-              </Badge>
             </div>
           </div>
         </CardContent>

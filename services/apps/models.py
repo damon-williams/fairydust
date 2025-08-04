@@ -65,11 +65,18 @@ class LLMProvider(str, Enum):
 
 
 class ModelParameters(BaseModel):
+    # Text model parameters
     temperature: Optional[float] = Field(None, ge=0.0, le=2.0)
     max_tokens: Optional[int] = Field(None, ge=1, le=8000)
     top_p: Optional[float] = Field(None, ge=0.0, le=1.0)
     frequency_penalty: Optional[float] = Field(None, ge=-2.0, le=2.0)
     presence_penalty: Optional[float] = Field(None, ge=-2.0, le=2.0)
+    
+    # Image model parameters
+    image_models: Optional[dict] = Field(None)
+    
+    # Video model parameters  
+    video_models: Optional[dict] = Field(None)
 
 
 class FallbackModel(BaseModel):

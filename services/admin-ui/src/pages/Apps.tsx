@@ -299,18 +299,6 @@ export function Apps() {
     loadActionPricing();
   }, []);
 
-  const getStatusIcon = (status: string) => {
-    // Convert old status to new active/inactive model
-    const isActive = status === 'approved';
-    return isActive ? 
-      <CheckCircle className="h-4 w-4 text-green-600" /> : 
-      <XCircle className="h-4 w-4 text-red-600" />;
-  };
-
-  const getStatusDisplay = (status: string) => {
-    return status === 'approved' ? 'active' : 'inactive';
-  };
-
   return (
     <div className="space-y-6">
       {/* Header */}
@@ -459,7 +447,6 @@ export function Apps() {
               <TableRow>
                 <TableHead>App</TableHead>
                 <TableHead>Slug</TableHead>
-                <TableHead>Status</TableHead>
                 <TableHead>Actions</TableHead>
               </TableRow>
             </TableHeader>
@@ -484,17 +471,6 @@ export function Apps() {
                   <TableCell>
                     <div className="text-sm font-mono text-slate-700 max-w-[200px] truncate" title={app.slug}>
                       {app.slug}
-                    </div>
-                  </TableCell>
-                  <TableCell>
-                    <div className="flex items-center space-x-2">
-                      {getStatusIcon(app.status)}
-                      <Badge 
-                        variant={app.status === 'approved' ? 'default' : 'destructive'}
-                        className="capitalize"
-                      >
-                        {getStatusDisplay(app.status)}
-                      </Badge>
                     </div>
                   </TableCell>
                   <TableCell>
