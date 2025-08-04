@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -38,6 +39,7 @@ import { AdminAPI } from '@/lib/admin-api';
 import { toast } from 'sonner';
 
 export function Apps() {
+  const navigate = useNavigate();
   const [apps, setApps] = useState<App[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -519,7 +521,7 @@ export function Apps() {
                       <Button 
                         variant="ghost" 
                         size="sm"
-                        onClick={() => handleConfigureApp(app)}
+                        onClick={() => navigate(`/apps/${app.id}/config`)}
                         className="text-blue-600 hover:text-blue-800"
                       >
                         <Settings className="h-4 w-4 mr-1" />
@@ -712,10 +714,10 @@ export function Apps() {
                         <SelectValue placeholder="Select standard model" />
                       </SelectTrigger>
                       <SelectContent>
-                        <SelectItem value="black-forest-labs/flux-1.1-pro">FLUX 1.1 Pro</SelectItem>
-                        <SelectItem value="black-forest-labs/flux-schnell">FLUX Schnell (Faster)</SelectItem>
-                        <SelectItem value="stability-ai/sdxl">Stable Diffusion XL</SelectItem>
-                        <SelectItem value="dall-e-3">DALL-E 3</SelectItem>
+                        <SelectItem value="black-forest-labs/flux-1.1-pro">FLUX 1.1 Pro ($0.040)</SelectItem>
+                        <SelectItem value="black-forest-labs/flux-schnell">FLUX Schnell ($0.003)</SelectItem>
+                        <SelectItem value="stability-ai/sdxl">Stable Diffusion XL ($0.020) [Placeholder]</SelectItem>
+                        <SelectItem value="dall-e-3">DALL-E 3 ($0.040) [Placeholder]</SelectItem>
                       </SelectContent>
                     </Select>
                   </div>
@@ -739,9 +741,10 @@ export function Apps() {
                         <SelectValue placeholder="Select reference model" />
                       </SelectTrigger>
                       <SelectContent>
-                        <SelectItem value="runwayml/gen4-image">Runway Gen-4 (Best for faces)</SelectItem>
-                        <SelectItem value="playgroundai/face-to-sticker">Face to Sticker</SelectItem>
-                        <SelectItem value="stability-ai/stable-diffusion-img2img">SD Image-to-Image</SelectItem>
+                        <SelectItem value="runwayml/gen4-image">Runway Gen-4 ($0.050)</SelectItem>
+                        <SelectItem value="black-forest-labs/flux-1.1-pro">FLUX 1.1 Pro ($0.040)</SelectItem>
+                        <SelectItem value="playgroundai/face-to-sticker">Face to Sticker ($0.030) [Placeholder]</SelectItem>
+                        <SelectItem value="stability-ai/stable-diffusion-img2img">SD Image-to-Image ($0.020) [Placeholder]</SelectItem>
                       </SelectContent>
                     </Select>
                   </div>

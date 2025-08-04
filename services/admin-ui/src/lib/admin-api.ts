@@ -214,6 +214,42 @@ export class AdminAPI {
   }
 
   // Apps APIs
+  static async getApp(appId: string): Promise<App> {
+    try {
+      const response = await fetch(`${API_BASE}/admin/apps/${appId}`, {
+        method: 'GET',
+        credentials: 'include',
+      });
+
+      if (!response.ok) {
+        throw new Error(`Failed to fetch app: ${response.statusText}`);
+      }
+
+      return await response.json();
+    } catch (error) {
+      console.error('Error fetching app:', error);
+      throw error;
+    }
+  }
+
+  static async getAppModelConfig(appId: string): Promise<any> {
+    try {
+      const response = await fetch(`${API_BASE}/admin/apps/${appId}/model-config`, {
+        method: 'GET',
+        credentials: 'include',
+      });
+
+      if (!response.ok) {
+        throw new Error(`Failed to fetch app model config: ${response.statusText}`);
+      }
+
+      return await response.json();
+    } catch (error) {
+      console.error('Error fetching app model config:', error);
+      throw error;
+    }
+  }
+
   static async getApps(page: number = 1, limit: number = 50, status?: string): Promise<{ apps: App[]; total: number; pages: number }> {
     try {
       const params = new URLSearchParams({
