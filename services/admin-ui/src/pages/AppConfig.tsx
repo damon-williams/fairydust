@@ -513,8 +513,6 @@ export function AppConfig() {
                     <SelectContent>
                       <SelectItem value="black-forest-labs/flux-1.1-pro">FLUX 1.1 Pro ($0.040)</SelectItem>
                       <SelectItem value="black-forest-labs/flux-schnell">FLUX Schnell ($0.003)</SelectItem>
-                      <SelectItem value="stability-ai/sdxl">Stable Diffusion XL ($0.020)</SelectItem>
-                      <SelectItem value="dall-e-3">DALL-E 3 ($0.040)</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
@@ -537,7 +535,6 @@ export function AppConfig() {
                     <SelectContent>
                       <SelectItem value="runwayml/gen4-image">Runway Gen-4 ($0.050)</SelectItem>
                       <SelectItem value="black-forest-labs/flux-1.1-pro">FLUX 1.1 Pro ($0.040)</SelectItem>
-                      <SelectItem value="playgroundai/face-to-sticker">Face to Sticker ($0.030)</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>

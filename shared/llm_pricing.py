@@ -39,11 +39,6 @@ PRICING_CONFIG = {
         "black-forest-labs/flux-1.1-pro": {"cost": 0.04},
         "black-forest-labs/flux-schnell": {"cost": 0.003},  # $3.00 per 1000 images
         "runwayml/gen4-image": {"cost": 0.05},
-        # Placeholder models (may not be fully supported yet)
-        "stability-ai/sdxl": {"cost": 0.02},
-        "dall-e-3": {"cost": 0.04},
-        "playgroundai/face-to-sticker": {"cost": 0.03},
-        "stability-ai/stable-diffusion-img2img": {"cost": 0.02},
     },
 }
 
@@ -237,6 +232,64 @@ def get_image_model_pricing(model_id: str) -> float:
 def get_all_supported_models() -> dict[str, list]:
     """Get list of all supported models by provider."""
     return {provider: list(models.keys()) for provider, models in PRICING_CONFIG.items()}
+
+
+def get_model_type_from_id(model_id: str) -> str:
+    """
+    Determine model type from model ID.
+    
+    Args:
+        model_id: Model identifier
+        
+    Returns:
+        Model type: 'text', 'image', or 'video'
+    """
+    # Check if it's an image model
+    if model_id in PRICING_CONFIG.get("image", {}):
+        return "image"
+    
+    # Check if it's a text model (in anthropic or openai)
+    for provider in ["anthropic", "openai"]:
+        if model_id in PRICING_CONFIG.get(provider, {}):
+            return "text"
+    
+    # Default to text for unknown models
+    return "text"
+
+
+def get_all_models_with_type() -> list[dict]:
+    """
+    Get all supported models with their types and pricing info.
+    
+    Returns:
+        List of dicts with model info including type, provider, model_id, and pricing
+    """
+    models = []
+    
+    # Add text models
+    for provider in ["anthropic", "openai"]:
+        if provider in PRICING_CONFIG:
+            for model_id, pricing in PRICING_CONFIG[provider].items():
+                models.append({
+                    "provider": provider,
+                    "model_id": model_id,
+                    "model_type": "text",
+                    "pricing": pricing
+                })
+    
+    # Add image models
+    if "image" in PRICING_CONFIG:
+        for model_id, pricing in PRICING_CONFIG["image"].items():
+            # Extract provider from model_id (e.g., "black-forest-labs/flux-1.1-pro")
+            provider = model_id.split("/")[0] if "/" in model_id else "unknown"
+            models.append({
+                "provider": provider,
+                "model_id": model_id,
+                "model_type": "image",
+                "pricing": pricing
+            })
+    
+    return models
 
 
 def update_pricing_config(new_config: dict) -> bool:

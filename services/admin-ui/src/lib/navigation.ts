@@ -39,8 +39,8 @@ export const navigation: NavigationItem[] = [
     icon: Smartphone,
   },
   {
-    name: 'LLM Analytics',
-    href: '/admin/llm',
+    name: 'AI Analytics',
+    href: '/admin/ai-analytics',
     icon: Brain,
   },
   {

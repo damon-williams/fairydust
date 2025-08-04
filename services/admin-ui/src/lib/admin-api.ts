@@ -375,7 +375,42 @@ export class AdminAPI {
     }
   }
 
-  // LLM Analytics APIs
+  // AI Analytics APIs (replacing LLM-only APIs)
+  static async getAIUsageMetrics(timeframe: string = '7d'): Promise<any> {
+    try {
+      const response = await fetch(`${API_BASE}/admin/ai/usage?timeframe=${timeframe}`, {
+        credentials: 'include',
+      });
+      
+      if (response.ok) {
+        return await response.json();
+      }
+      
+      throw new Error('Failed to fetch AI usage metrics');
+    } catch (error) {
+      console.error('Failed to get AI usage metrics:', error);
+      throw error;
+    }
+  }
+
+  static async getAIModelUsage(modelTypeFilter: string = 'all'): Promise<any[]> {
+    try {
+      const response = await fetch(`${API_BASE}/admin/ai/model-usage?type=${modelTypeFilter}`, {
+        credentials: 'include',
+      });
+      
+      if (response.ok) {
+        return await response.json();
+      }
+      
+      throw new Error('Failed to fetch AI model usage');
+    } catch (error) {
+      console.error('Failed to get AI model usage:', error);
+      throw error;
+    }
+  }
+
+  // Legacy LLM Analytics APIs (for backward compatibility)
   static async getLLMUsageMetrics(timeframe: string = '7d'): Promise<LLMUsageMetrics> {
     try {
       const response = await fetch(`${API_BASE}/admin/llm/usage?timeframe=${timeframe}`, {
@@ -485,7 +520,7 @@ export class AdminAPI {
 
   static async getActionAnalytics(timeframe: string = '7d'): Promise<any> {
     try {
-      const response = await fetch(`${API_BASE}/admin/llm/action-analytics?timeframe=${timeframe}`, {
+      const response = await fetch(`${API_BASE}/admin/ai/action-analytics?timeframe=${timeframe}`, {
         credentials: 'include',
       });
       
@@ -502,7 +537,7 @@ export class AdminAPI {
 
   static async getFallbackAnalytics(timeframe: string = '7d'): Promise<any> {
     try {
-      const response = await fetch(`${API_BASE}/admin/llm/fallback-analytics?timeframe=${timeframe}`, {
+      const response = await fetch(`${API_BASE}/admin/ai/fallback-analytics?timeframe=${timeframe}`, {
         credentials: 'include',
       });
       
