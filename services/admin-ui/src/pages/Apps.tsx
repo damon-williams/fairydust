@@ -459,9 +459,7 @@ export function Apps() {
               <TableRow>
                 <TableHead>App</TableHead>
                 <TableHead>Slug</TableHead>
-                <TableHead>Category</TableHead>
                 <TableHead>Status</TableHead>
-                <TableHead>Model</TableHead>
                 <TableHead>Actions</TableHead>
               </TableRow>
             </TableHeader>
@@ -489,11 +487,6 @@ export function Apps() {
                     </div>
                   </TableCell>
                   <TableCell>
-                    <Badge variant="outline" className="capitalize">
-                      {app.category}
-                    </Badge>
-                  </TableCell>
-                  <TableCell>
                     <div className="flex items-center space-x-2">
                       {getStatusIcon(app.status)}
                       <Badge 
@@ -502,18 +495,6 @@ export function Apps() {
                       >
                         {getStatusDisplay(app.status)}
                       </Badge>
-                    </div>
-                  </TableCell>
-                  <TableCell>
-                    <div className="text-sm">
-                      {app.primary_model_id ? (
-                        <div>
-                          <div className="font-mono text-slate-700">{app.primary_model_id}</div>
-                          <div className="text-xs text-slate-500 capitalize">{app.primary_provider}</div>
-                        </div>
-                      ) : (
-                        <div className="text-slate-400 italic">Not configured</div>
-                      )}
                     </div>
                   </TableCell>
                   <TableCell>

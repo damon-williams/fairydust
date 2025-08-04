@@ -215,7 +215,6 @@ async def get_app_model_config(app_id: str, db: Database = Depends(get_db)):
         "fallback_models": parse_model_config_field(config_dict, "fallback_models"),
         "cost_limits": parse_model_config_field(config_dict, "cost_limits"),
         "feature_flags": parse_model_config_field(config_dict, "feature_flags"),
-        "is_enabled": config_dict["is_enabled"],
         "created_at": config_dict["created_at"].isoformat() if config_dict["created_at"] else None,
         "updated_at": config_dict["updated_at"].isoformat() if config_dict["updated_at"] else None,
     }
