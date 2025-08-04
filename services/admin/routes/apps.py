@@ -329,6 +329,101 @@ async def get_supported_models_api(
         raise HTTPException(status_code=500, detail="Failed to fetch supported models")
 
 
+@apps_router.get("/{app_id}")
+async def get_app_api(
+    app_id: str,
+    admin_user: dict = Depends(get_current_admin_user),
+):
+    """Get individual app details via proxy to Apps service"""
+    import logging
+
+    logger = logging.getLogger(__name__)
+
+    try:
+        # Create JWT token for cross-service auth
+        token_data = {
+            "sub": str(admin_user["user_id"]),
+            "user_id": str(admin_user["user_id"]),
+            "fairyname": admin_user["fairyname"],
+            "is_admin": True,
+            "exp": datetime.utcnow() + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES),
+        }
+        access_token = jwt.encode(token_data, JWT_SECRET_KEY, algorithm=JWT_ALGORITHM)
+
+        # Proxy request to apps service
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            response = await client.get(
+                f"{APPS_SERVICE_URL}/admin/apps/{app_id}",
+                headers={"Authorization": f"Bearer {access_token}"},
+            )
+
+            if response.status_code == 200:
+                return response.json()
+            else:
+                logger.error(f"Apps service error: {response.status_code} - {response.text}")
+                raise HTTPException(status_code=response.status_code, detail="Failed to fetch app")
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error fetching app: {e}")
+        raise HTTPException(status_code=500, detail="Failed to fetch app")
+
+
+@apps_router.get("/{app_id}/model-config")
+async def get_app_model_config_api(
+    app_id: str,
+    admin_user: dict = Depends(get_current_admin_user),
+):
+    """Get app model configuration via proxy to apps service"""
+    import logging
+
+    logger = logging.getLogger(__name__)
+
+    try:
+        # Determine apps service URL based on environment
+        environment = os.getenv("ENVIRONMENT", "staging")
+        base_url_suffix = "production" if environment == "production" else "staging"
+        apps_url = f"https://fairydust-apps-{base_url_suffix}.up.railway.app"
+
+        # Create token data for admin user
+        token_data = {
+            "sub": str(admin_user["user_id"]),
+            "user_id": str(admin_user["user_id"]),
+            "fairyname": admin_user["fairyname"],
+            "is_admin": True,
+            "exp": datetime.utcnow() + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES),
+            "type": "access",
+        }
+
+        # Create JWT token
+        access_token = jwt.encode(token_data, JWT_SECRET_KEY, algorithm=JWT_ALGORITHM)
+
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            response = await client.get(
+                f"{apps_url}/llm/{app_id}/model-config",
+                headers={
+                    "Authorization": f"Bearer {access_token}",
+                },
+            )
+
+            if response.status_code == 200:
+                result = response.json()
+                logger.info(f"✅ Successfully fetched model config for app {app_id}")
+                return result
+            else:
+                logger.error(
+                    f"❌ Apps service error {response.status_code}: {response.text}"
+                )
+                raise HTTPException(
+                    status_code=response.status_code, detail="Failed to fetch model configuration"
+                )
+
+    except Exception as e:
+        logger.error(f"Error fetching model config: {e}")
+        raise HTTPException(status_code=500, detail="Failed to fetch model configuration")
+
+
 @apps_router.put("/{app_id}/model-config")
 async def update_app_model_config_api(
     app_id: str,
