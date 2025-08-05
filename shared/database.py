@@ -612,6 +612,8 @@ async def create_tables():
             primary_model_id VARCHAR(200) NOT NULL,
             fallback_provider VARCHAR(50),
             fallback_model_id VARCHAR(200),
+            trigger_condition VARCHAR(50) DEFAULT 'provider_error',
+            priority INTEGER DEFAULT 1,
             parameters JSONB DEFAULT '{}',
             is_enabled BOOLEAN DEFAULT true,
             created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
@@ -620,6 +622,10 @@ async def create_tables():
         );
 
         CREATE INDEX IF NOT EXISTS idx_global_fallback_models_type ON global_fallback_models(model_type);
+        
+        -- Add missing columns to existing global_fallback_models table
+        ALTER TABLE global_fallback_models ADD COLUMN IF NOT EXISTS trigger_condition VARCHAR(50) DEFAULT 'provider_error';
+        ALTER TABLE global_fallback_models ADD COLUMN IF NOT EXISTS priority INTEGER DEFAULT 1;
     """
     )
 
