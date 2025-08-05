@@ -772,21 +772,18 @@ async def create_tables():
     await db.execute_schema(
         """
         INSERT INTO global_fallback_models (
-            model_type, primary_provider, primary_model_id,
-            fallback_provider, fallback_model_id, parameters
+            model_type, provider, model_id, parameters
         ) VALUES
-        -- Text model fallbacks
-        ('text', 'anthropic', 'claude-3-5-haiku-20241022', 'openai', 'gpt-4o-mini', '{"temperature": 0.7, "max_tokens": 1000, "top_p": 0.9}'::jsonb),
-        -- Image model fallbacks
-        ('image', 'replicate', 'black-forest-labs/flux-schnell', 'replicate', 'black-forest-labs/flux-1.1-pro', '{"standard_model": "black-forest-labs/flux-schnell", "reference_model": "runwayml/gen4-image"}'::jsonb),
-        -- Video model fallbacks (future)
-        ('video', 'runwayml', 'gen4-video', NULL, NULL, '{"duration": 5, "fps": 24, "resolution": "1080p"}'::jsonb)
+        -- Text model fallback
+        ('text', 'anthropic', 'claude-3-5-haiku-20241022', '{"temperature": 0.7, "max_tokens": 1000, "top_p": 0.9}'::jsonb),
+        -- Image model fallback
+        ('image', 'replicate', 'black-forest-labs/flux-schnell', '{"guidance_scale": 2.5}'::jsonb),
+        -- Video model fallback (future)
+        ('video', 'runwayml', 'runwayml/gen4-video', '{"duration": 5, "fps": 24, "resolution": "1080p"}'::jsonb)
         ON CONFLICT (model_type)
         DO UPDATE SET
-            primary_provider = EXCLUDED.primary_provider,
-            primary_model_id = EXCLUDED.primary_model_id,
-            fallback_provider = EXCLUDED.fallback_provider,
-            fallback_model_id = EXCLUDED.fallback_model_id,
+            provider = EXCLUDED.provider,
+            model_id = EXCLUDED.model_id,
             parameters = EXCLUDED.parameters,
             updated_at = CURRENT_TIMESTAMP;
     """
