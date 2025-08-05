@@ -8,8 +8,14 @@ from uuid import UUID, uuid4
 from typing import Optional
 
 from fastapi import APIRouter, HTTPException, Depends, UploadFile, File
-from PIL import Image
 import httpx
+
+try:
+    from PIL import Image, ImageDraw, ImageFont
+    PIL_AVAILABLE = True
+except ImportError:
+    PIL_AVAILABLE = False
+    print("⚠️ PIL (Pillow) not available - video thumbnail generation will be disabled")
 
 from models import (
     VideoGenerateRequest, VideoAnimateRequest, VideoListRequest, VideoUpdateRequest,
@@ -68,10 +74,12 @@ async def _generate_video_thumbnail(video_data: bytes, user_id: UUID, video_id: 
     
     For now, this creates a placeholder. In production, you'd use ffmpeg.
     """
+    if not PIL_AVAILABLE:
+        print("⚠️ PIL not available - skipping thumbnail generation")
+        return None
+        
     try:
         # Create a simple placeholder thumbnail
-        from PIL import Image, ImageDraw, ImageFont
-        
         # Create 640x360 thumbnail (16:9 aspect ratio)
         thumbnail = Image.new('RGB', (640, 360), color='#1a1a1a')
         draw = ImageDraw.Draw(thumbnail)
