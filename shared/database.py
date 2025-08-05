@@ -1507,6 +1507,35 @@ async def create_tables():
     """
     )
 
+    # User Videos table for Video app
+    await db.execute_schema(
+        """
+        CREATE TABLE IF NOT EXISTS user_videos (
+            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            url TEXT NOT NULL,
+            thumbnail_url TEXT,
+            prompt TEXT NOT NULL,
+            generation_type VARCHAR(20) NOT NULL CHECK (generation_type IN ('text_to_video', 'image_to_video')),
+            source_image_url TEXT, -- For image-to-video generation
+            duration_seconds INTEGER NOT NULL CHECK (duration_seconds > 0),
+            resolution VARCHAR(10) NOT NULL CHECK (resolution IN ('sd_480p', 'hd_1080p')),
+            aspect_ratio VARCHAR(10) NOT NULL CHECK (aspect_ratio IN ('16:9', '4:3', '1:1', '3:4', '9:16', '21:9', '9:21')),
+            reference_person JSONB, -- Single reference person (MiniMax Video-01 limitation)
+            metadata JSONB DEFAULT '{}',
+            is_favorited BOOLEAN DEFAULT FALSE,
+            created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_user_videos_user_id ON user_videos(user_id);
+        CREATE INDEX IF NOT EXISTS idx_user_videos_created_at ON user_videos(created_at DESC);
+        CREATE INDEX IF NOT EXISTS idx_user_videos_generation_type ON user_videos(generation_type);
+        CREATE INDEX IF NOT EXISTS idx_user_videos_favorited ON user_videos(user_id, is_favorited);
+        CREATE INDEX IF NOT EXISTS idx_user_videos_has_reference ON user_videos(user_id) WHERE reference_person IS NOT NULL;
+    """
+    )
+
     # Insert Image app if it doesn't exist
     try:
         await db.execute_schema(

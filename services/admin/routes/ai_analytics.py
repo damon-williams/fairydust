@@ -18,62 +18,82 @@ async def get_ai_usage_metrics(
     interval_map = {"1d": "1 day", "7d": "7 days", "30d": "30 days", "90d": "90 days"}
     interval = interval_map.get(timeframe, "7 days")
 
-    # Get LLM/Text model stats
-    llm_stats = await db.fetch_one(
+    # Get LLM/Text model stats from ai_usage_logs
+    text_stats = await db.fetch_one(
         f"""
         SELECT
             COUNT(*) as total_requests,
-            SUM(prompt_tokens + completion_tokens) as total_tokens,
+            SUM(COALESCE(prompt_tokens, 0) + COALESCE(completion_tokens, 0)) as total_tokens,
             SUM(cost_usd) as total_cost_usd,
             AVG(latency_ms) as avg_latency_ms
-        FROM llm_usage_logs
+        FROM ai_usage_logs
         WHERE created_at >= NOW() - INTERVAL '{interval}'
+        AND model_type = 'text'
         """
     )
 
-    # TODO: Add image usage stats when image_usage_logs table is implemented
-    # For now, return zeros for image/video metrics
-    image_stats = {"total_images": 0, "total_cost_usd": 0.0, "avg_latency_ms": 0.0}
+    # Get image usage stats from ai_usage_logs
+    image_stats = await db.fetch_one(
+        f"""
+        SELECT
+            COUNT(*) as total_images,
+            SUM(cost_usd) as total_cost_usd,
+            AVG(latency_ms) as avg_latency_ms
+        FROM ai_usage_logs
+        WHERE created_at >= NOW() - INTERVAL '{interval}'
+        AND model_type = 'image'
+        """
+    )
 
-    video_stats = {"total_videos": 0, "total_cost_usd": 0.0, "avg_latency_ms": 0.0}
+    # Get video usage stats from ai_usage_logs
+    video_stats = await db.fetch_one(
+        f"""
+        SELECT
+            COUNT(*) as total_videos,
+            SUM(cost_usd) as total_cost_usd,
+            AVG(latency_ms) as avg_latency_ms
+        FROM ai_usage_logs
+        WHERE created_at >= NOW() - INTERVAL '{interval}'
+        AND model_type = 'video'
+        """
+    )
 
     # Combine stats (convert Decimal to float for JSON serialization)
     total_stats = {
-        "total_requests": (llm_stats["total_requests"] if llm_stats else 0),
-        "total_tokens": (llm_stats["total_tokens"] if llm_stats else 0),
-        "total_images": image_stats["total_images"],
-        "total_videos": video_stats["total_videos"],
+        "total_requests": (text_stats["total_requests"] if text_stats else 0) + 
+                         (image_stats["total_images"] if image_stats else 0) + 
+                         (video_stats["total_videos"] if video_stats else 0),
+        "total_tokens": (text_stats["total_tokens"] if text_stats else 0),
+        "total_images": (image_stats["total_images"] if image_stats else 0),
+        "total_videos": (video_stats["total_videos"] if video_stats else 0),
         "total_cost_usd": (
-            float(llm_stats["total_cost_usd"] if llm_stats else 0)
-            + image_stats["total_cost_usd"]
-            + video_stats["total_cost_usd"]
+            float(text_stats["total_cost_usd"] if text_stats and text_stats["total_cost_usd"] else 0)
+            + float(image_stats["total_cost_usd"] if image_stats and image_stats["total_cost_usd"] else 0)
+            + float(video_stats["total_cost_usd"] if video_stats and video_stats["total_cost_usd"] else 0)
         ),
-        "avg_latency_ms": float(llm_stats["avg_latency_ms"] if llm_stats else 0),
+        "avg_latency_ms": float(text_stats["avg_latency_ms"] if text_stats and text_stats["avg_latency_ms"] else 0),
     }
 
-    # Get model breakdown for text models
-    text_model_stats = await db.fetch_all(
+    # Get model breakdown for all model types
+    all_model_stats = await db.fetch_all(
         f"""
         SELECT
             provider,
             model_id,
-            'text' as model_type,
+            model_type,
             COUNT(*) as requests,
             SUM(cost_usd) as cost,
             AVG(latency_ms) as avg_latency,
-            SUM(prompt_tokens + completion_tokens) as tokens,
-            0 as images,
-            0 as videos
-        FROM llm_usage_logs
+            SUM(COALESCE(prompt_tokens, 0) + COALESCE(completion_tokens, 0)) as tokens,
+            SUM(CASE WHEN model_type = 'image' THEN images_generated ELSE 0 END) as images,
+            SUM(CASE WHEN model_type = 'video' THEN videos_generated ELSE 0 END) as videos
+        FROM ai_usage_logs
         WHERE created_at >= NOW() - INTERVAL '{interval}'
-        GROUP BY provider, model_id
+        GROUP BY provider, model_id, model_type
         ORDER BY cost DESC
-        LIMIT 10
+        LIMIT 15
         """
     )
-
-    # TODO: Add image model stats when implemented
-    # TODO: Add video model stats when implemented
 
     # Get per-app usage analytics
     app_usage_stats = await db.fetch_all(
@@ -82,15 +102,15 @@ async def get_ai_usage_metrics(
             a.name as app_name,
             a.slug as app_slug,
             COUNT(l.id) as total_requests,
-            AVG(l.prompt_tokens) as avg_prompt_tokens,
-            AVG(l.completion_tokens) as avg_completion_tokens,
-            AVG(l.prompt_tokens + l.completion_tokens) as avg_total_tokens,
-            0 as total_images,
-            0 as total_videos,
+            AVG(COALESCE(l.prompt_tokens, 0)) as avg_prompt_tokens,
+            AVG(COALESCE(l.completion_tokens, 0)) as avg_completion_tokens,
+            AVG(COALESCE(l.prompt_tokens, 0) + COALESCE(l.completion_tokens, 0)) as avg_total_tokens,
+            SUM(CASE WHEN l.model_type = 'image' THEN l.images_generated ELSE 0 END) as total_images,
+            SUM(CASE WHEN l.model_type = 'video' THEN l.videos_generated ELSE 0 END) as total_videos,
             AVG(l.cost_usd) as avg_cost_per_request,
             SUM(l.cost_usd) as total_cost
         FROM apps a
-        LEFT JOIN llm_usage_logs l ON a.id = l.app_id
+        LEFT JOIN ai_usage_logs l ON a.id = l.app_id
             AND l.created_at >= NOW() - INTERVAL '{interval}'
         WHERE l.id IS NOT NULL
         GROUP BY a.id, a.name, a.slug
@@ -106,14 +126,14 @@ async def get_ai_usage_metrics(
             f"""
             SELECT DISTINCT
                 model_id,
-                'text' as model_type,
+                model_type,
                 COUNT(*) as requests,
                 SUM(cost_usd) as cost,
                 AVG(latency_ms) as avg_latency_ms
-            FROM llm_usage_logs
+            FROM ai_usage_logs
             WHERE app_id = (SELECT id FROM apps WHERE slug = $1)
                 AND created_at >= NOW() - INTERVAL '{interval}'
-            GROUP BY model_id
+            GROUP BY model_id, model_type
             ORDER BY cost DESC
             """,
             app["app_slug"],
@@ -144,7 +164,7 @@ async def get_ai_usage_metrics(
 
     # Convert model breakdown Decimal types to float
     model_breakdown = []
-    for row in text_model_stats:
+    for row in all_model_stats:
         row_dict = dict(row)
         for key in ["cost", "avg_latency"]:
             if row_dict.get(key) is not None:
@@ -169,35 +189,32 @@ async def get_ai_model_usage(
 
     models = []
 
-    # Always include text models
-    if type in ["all", "text"]:
-        text_models = await db.fetch_all(
+    # Get models based on type filter
+    if type == "all":
+        model_types = ["text", "image", "video"]
+    else:
+        model_types = [type]
+
+    for model_type in model_types:
+        type_models = await db.fetch_all(
             """
             SELECT
                 CONCAT(provider, '/', model_id) as model,
-                'text' as model_type,
+                model_type,
                 provider,
                 COUNT(*) as requests,
                 SUM(cost_usd) as cost,
                 AVG(latency_ms) as avg_latency
-            FROM llm_usage_logs
+            FROM ai_usage_logs
             WHERE created_at >= NOW() - INTERVAL '30 days'
-            GROUP BY provider, model_id
+            AND model_type = $1
+            GROUP BY provider, model_id, model_type
             ORDER BY cost DESC
             LIMIT 20
-            """
+            """,
+            model_type
         )
-        models.extend([dict(row) for row in text_models])
-
-    # TODO: Add image models when image_usage_logs is implemented
-    if type in ["all", "image"]:
-        # Placeholder for image models
-        pass
-
-    # TODO: Add video models when video_usage_logs is implemented
-    if type in ["all", "video"]:
-        # Placeholder for video models
-        pass
+        models.extend([dict(row) for row in type_models])
 
     return models
 
@@ -214,32 +231,29 @@ async def get_ai_action_analytics(
     interval_map = {"1d": "1 day", "7d": "7 days", "30d": "30 days", "90d": "90 days"}
     interval = interval_map.get(timeframe, "7 days")
 
-    # Get action-level analytics from text models
-    text_action_stats = await db.fetch_all(
+    # Get action-level analytics from all model types
+    action_stats = await db.fetch_all(
         f"""
         SELECT
             l.request_metadata->>'action' as action_slug,
             a.name as app_name,
-            'text' as model_type,
+            l.model_type,
             l.model_id,
             COUNT(l.id) as total_requests,
             AVG(l.cost_usd) as avg_cost_per_request,
             SUM(l.cost_usd) as total_cost,
-            AVG(l.prompt_tokens + l.completion_tokens) as avg_total_tokens,
-            0 as total_images,
-            0 as total_videos,
+            AVG(COALESCE(l.prompt_tokens, 0) + COALESCE(l.completion_tokens, 0)) as avg_total_tokens,
+            SUM(CASE WHEN l.model_type = 'image' THEN l.images_generated ELSE 0 END) as total_images,
+            SUM(CASE WHEN l.model_type = 'video' THEN l.videos_generated ELSE 0 END) as total_videos,
             AVG(l.latency_ms) as avg_latency_ms
-        FROM llm_usage_logs l
+        FROM ai_usage_logs l
         LEFT JOIN apps a ON l.app_id = a.id
         WHERE l.created_at >= NOW() - INTERVAL '{interval}'
             AND l.request_metadata->>'action' IS NOT NULL
-        GROUP BY l.request_metadata->>'action', a.name, l.model_id
+        GROUP BY l.request_metadata->>'action', a.name, l.model_type, l.model_id
         ORDER BY total_cost DESC
         """
     )
-
-    # TODO: Add image action analytics when implemented
-    # TODO: Add video action analytics when implemented
 
     # Get current DUST pricing for comparison
     dust_pricing = await db.fetch_all(
@@ -256,7 +270,7 @@ async def get_ai_action_analytics(
 
     # Format results with DUST pricing comparison
     formatted_results = []
-    for row in text_action_stats:
+    for row in action_stats:
         action_slug = row["action_slug"]
         avg_cost_usd = float(row["avg_cost_per_request"]) if row["avg_cost_per_request"] else 0
         dust_cost = dust_cost_map.get(action_slug, 0)

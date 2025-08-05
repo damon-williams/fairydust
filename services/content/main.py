@@ -29,6 +29,7 @@ from recipe_routes import router as recipe_router
 from restaurant_routes import router as restaurant_router
 from routes import content_router
 from story_routes import router as story_router
+from video_routes import video_router
 from wyr_routes import router as wyr_router
 
 # Import modules with minimal logging
@@ -170,6 +171,7 @@ app.include_router(fortune_router, tags=["fortune-teller"])
 app.include_router(character_router, tags=["characters"])
 app.include_router(wyr_router, tags=["would-you-rather"])
 app.include_router(image_router, tags=["images"])
+app.include_router(video_router, prefix="/videos", tags=["videos"])
 
 
 @app.get("/")

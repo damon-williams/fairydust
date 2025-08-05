@@ -50,6 +50,14 @@ PRICING_CONFIG = {
         "bytedance/seedream-3": {"cost": 0.008},  # Estimated cost per image
         "runwayml/gen4-image": {"cost": 0.05},
     },
+    "video": {
+        # Video models - per video generation
+        "bytedance/seedance-1-pro": {
+            "480p": {"cost_per_second": 0.03},
+            "1080p": {"cost_per_second": 0.15}
+        },
+        "minimax/video-01": {"cost": 0.50},  # Fixed cost per video
+    },
 }
 
 # Default fallback rates (per million tokens) if model not found
@@ -369,20 +377,93 @@ async def get_image_model_pricing_async(model_id: str) -> float:
     return pricing_config["image"][model_id]["cost"]
 
 
+def get_video_model_pricing(model_id: str, resolution: str = "1080p") -> dict:
+    """
+    Get pricing information for a specific video model.
+
+    Args:
+        model_id: Video model identifier
+        resolution: Video resolution for models that support it
+
+    Returns:
+        Dict with pricing information
+    """
+    pricing_config = get_pricing_config()
+
+    if "video" not in pricing_config or model_id not in pricing_config["video"]:
+        logger.warning(f"Unknown video model '{model_id}', using default pricing")
+        return {"cost": 0.10, "type": "fixed"}
+
+    model_pricing = pricing_config["video"][model_id]
+    
+    if model_id == "bytedance/seedance-1-pro":
+        if resolution not in model_pricing:
+            resolution = "1080p"
+        return {
+            "cost_per_second": model_pricing[resolution]["cost_per_second"],
+            "type": "per_second",
+            "resolution": resolution
+        }
+    elif model_id == "minimax/video-01":
+        return {
+            "cost": model_pricing["cost"],
+            "type": "fixed"
+        }
+    else:
+        return model_pricing
+
+
+async def get_video_model_pricing_async(model_id: str, resolution: str = "1080p") -> dict:
+    """
+    Async version of get_video_model_pricing that loads fresh config from database.
+
+    Args:
+        model_id: Video model identifier
+        resolution: Video resolution for models that support it
+
+    Returns:
+        Dict with pricing information
+    """
+    pricing_config = await load_pricing_from_db()
+
+    if "video" not in pricing_config or model_id not in pricing_config["video"]:
+        logger.warning(f"Unknown video model '{model_id}', using default pricing")
+        return {"cost": 0.10, "type": "fixed"}
+
+    model_pricing = pricing_config["video"][model_id]
+    
+    if model_id == "bytedance/seedance-1-pro":
+        if resolution not in model_pricing:
+            resolution = "1080p"
+        return {
+            "cost_per_second": model_pricing[resolution]["cost_per_second"],
+            "type": "per_second",
+            "resolution": resolution
+        }
+    elif model_id == "minimax/video-01":
+        return {
+            "cost": model_pricing["cost"],
+            "type": "fixed"
+        }
+    else:
+        return model_pricing
+
+
 def calculate_video_cost(
-    model_id: str, video_count: int = 1, duration_seconds: float = 1.0
+    model_id: str, video_count: int = 1, duration_seconds: float = 1.0, resolution: str = "1080p"
 ) -> float:
     """
-    Calculate video generation cost based on model, video count, and duration.
+    Calculate video generation cost based on model, video count, duration, and resolution.
 
     ⚠️  IMPORTANT: This function uses CURRENT pricing configuration.
     ⚠️  NEVER use this to recalculate historical video generation costs.
     ⚠️  Historical video usage logs should preserve their original cost values.
 
     Args:
-        model_id: Video model identifier (e.g., "runwayml/gen4-video")
+        model_id: Video model identifier (e.g., "bytedance/seedance-1-pro")
         video_count: Number of videos to generate
         duration_seconds: Duration of each video in seconds
+        resolution: Video resolution ("480p" or "1080p")
 
     Returns:
         Cost in USD (rounded to 6 decimal places) using CURRENT pricing
@@ -392,16 +473,36 @@ def calculate_video_cost(
     if duration_seconds <= 0:
         raise ValueError("Video duration must be positive")
 
-    # For now, use a flat rate per video since video models typically charge per generation
-    # In the future, this could be enhanced to include duration-based pricing
     pricing_config = get_pricing_config()
 
     if "video" not in pricing_config or model_id not in pricing_config["video"]:
         logger.warning(f"Unknown video model '{model_id}', using default cost of $0.10 per video")
         return round(0.10 * video_count, 6)
 
-    model_cost = pricing_config["video"][model_id]["cost"]
-    total_cost = model_cost * video_count
+    model_pricing = pricing_config["video"][model_id]
+    
+    # Handle SeeDance-1-Pro duration and resolution-based pricing
+    if model_id == "bytedance/seedance-1-pro":
+        if resolution not in model_pricing:
+            logger.warning(f"Unknown resolution '{resolution}' for {model_id}, using 1080p pricing")
+            resolution = "1080p"
+        
+        cost_per_second = model_pricing[resolution]["cost_per_second"]
+        total_cost = cost_per_second * duration_seconds * video_count
+    
+    # Handle MiniMax Video-01 fixed pricing
+    elif model_id == "minimax/video-01":
+        model_cost = model_pricing["cost"]
+        total_cost = model_cost * video_count
+    
+    # Handle unknown model structure
+    else:
+        if "cost" in model_pricing:
+            total_cost = model_pricing["cost"] * video_count
+        else:
+            logger.warning(f"Unknown pricing structure for '{model_id}', using default cost")
+            return round(0.10 * video_count, 6)
+    
     return round(total_cost, 6)
 
 

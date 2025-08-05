@@ -1,5 +1,6 @@
 # services/apps/routes.py
 import json
+import os
 from datetime import datetime
 from typing import Optional
 from uuid import UUID, uuid4
@@ -977,6 +978,312 @@ async def log_video_usage(usage: VideoUsageLogCreate, db: Database = Depends(get
     )
 
     return {"message": "Video usage logged successfully", "usage_id": str(usage_id)}
+
+
+# ============================================================================
+# VIDEO GENERATION ENDPOINTS
+# ============================================================================
+
+
+@video_router.post("/generate")
+async def generate_video(
+    request: dict,
+    current_user: TokenData = Depends(get_current_user),
+    db: Database = Depends(get_db),
+):
+    """Generate a video from text prompt (with optional reference person)"""
+    import httpx
+    from shared.llm_pricing import calculate_video_cost
+
+    try:
+        user_id = UUID(request["user_id"])
+        prompt = request["prompt"]
+        duration = request.get("duration", "short")  # short=5s, medium=10s
+        resolution = request.get("resolution", "hd_1080p")
+        aspect_ratio = request.get("aspect_ratio", "16:9")
+        reference_person = request.get("reference_person")
+        camera_fixed = request.get("camera_fixed", False)
+
+        # Validate user authorization
+        if user_id != current_user.user_id:
+            raise HTTPException(status_code=403, detail="Not authorized for this user")
+
+        # Map duration to seconds for cost calculation
+        duration_seconds = 5 if duration == "short" else 10
+        
+        # Map resolution for cost calculation
+        cost_resolution = "1080p" if resolution == "hd_1080p" else "480p"
+        
+        # Determine model based on reference person
+        if reference_person:
+            model_id = "minimax/video-01"
+            cost = calculate_video_cost(model_id, 1, duration_seconds, cost_resolution)
+        else:
+            model_id = "bytedance/seedance-1-pro"
+            cost = calculate_video_cost(model_id, 1, duration_seconds, cost_resolution)
+
+        # Check DUST balance and deduct
+        from shared.ledger_client import check_and_deduct_dust
+        
+        # Get DUST cost from action pricing
+        dust_pricing = await db.fetch_one(
+            "SELECT dust_cost FROM action_pricing WHERE action_slug = 'video_generate' AND is_active = true"
+        )
+        
+        if not dust_pricing:
+            raise HTTPException(status_code=500, detail="Video generation pricing not configured")
+        
+        dust_cost = dust_pricing["dust_cost"]
+        
+        # Check and deduct DUST
+        balance_result = await check_and_deduct_dust(
+            user_id=user_id,
+            amount=dust_cost,
+            description=f"Video generation: {prompt[:50]}...",
+            metadata={"action": "video_generate", "model": model_id}
+        )
+        
+        if not balance_result["success"]:
+            raise HTTPException(
+                status_code=400,
+                detail={
+                    "error": "Insufficient DUST balance",
+                    "current_balance": balance_result.get("current_balance", 0),
+                    "required_amount": dust_cost
+                }
+            )
+
+        # Call content service for actual generation
+        content_service_url = os.getenv("CONTENT_SERVICE_URL", "http://localhost:8006")
+        
+        async with httpx.AsyncClient() as client:
+            generation_response = await client.post(
+                f"{content_service_url}/videos/generate",
+                json={
+                    "user_id": str(user_id),
+                    "prompt": prompt,
+                    "duration": duration,
+                    "resolution": resolution,
+                    "aspect_ratio": aspect_ratio,
+                    "reference_person": reference_person,
+                    "camera_fixed": camera_fixed
+                },
+                headers={"Authorization": f"Bearer {current_user.token}" if hasattr(current_user, 'token') else {}},
+                timeout=300.0  # 5 minute timeout for video generation
+            )
+            
+            if generation_response.status_code != 200:
+                # Refund DUST if generation fails
+                from shared.ledger_client import add_dust
+                await add_dust(
+                    user_id=user_id,
+                    amount=dust_cost,
+                    description=f"Refund for failed video generation: {prompt[:50]}...",
+                    metadata={"action": "video_generate_refund", "model": model_id}
+                )
+                
+                error_detail = generation_response.json() if generation_response.content else {}
+                raise HTTPException(
+                    status_code=generation_response.status_code,
+                    detail=error_detail.get("detail", "Video generation failed")
+                )
+            
+            result = generation_response.json()
+
+        # Log usage for analytics
+        await db.execute(
+            """
+            INSERT INTO ai_usage_logs (
+                id, user_id, app_id, model_type, provider, model_id,
+                videos_generated, video_duration_seconds, video_resolution,
+                cost_usd, latency_ms, prompt_text, finish_reason,
+                was_fallback, fallback_reason, request_metadata, created_at
+            ) VALUES (
+                $1, $2, $3, 'video', $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, NOW()
+            )
+            """,
+            uuid4(),
+            user_id,
+            None,  # No specific app for direct generation
+            model_id.split("/")[0],  # provider
+            model_id,
+            1,  # videos_generated
+            duration_seconds,
+            cost_resolution,
+            cost,
+            result.get("generation_info", {}).get("generation_time_ms", 0),
+            prompt,
+            "completed",
+            False,  # was_fallback
+            None,  # fallback_reason
+            json.dumps({
+                "action": "video_generate",
+                "duration": duration,
+                "resolution": resolution,
+                "aspect_ratio": aspect_ratio,
+                "has_reference": reference_person is not None
+            })
+        )
+
+        return {
+            "success": True,
+            "video": result["video"],
+            "generation_info": result["generation_info"],
+            "new_dust_balance": balance_result["new_balance"]
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"❌ VIDEO GENERATION ERROR: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Video generation failed: {str(e)}")
+
+
+@video_router.post("/animate")
+async def animate_image(
+    request: dict,
+    current_user: TokenData = Depends(get_current_user),
+    db: Database = Depends(get_db),
+):
+    """Animate an existing image into a video"""
+    import httpx
+    from shared.llm_pricing import calculate_video_cost
+
+    try:
+        user_id = UUID(request["user_id"])
+        image_url = request["image_url"]
+        prompt = request["prompt"]
+        duration = request.get("duration", "short")  # short=5s, medium=10s
+        resolution = request.get("resolution", "hd_1080p")
+        camera_fixed = request.get("camera_fixed", False)
+
+        # Validate user authorization
+        if user_id != current_user.user_id:
+            raise HTTPException(status_code=403, detail="Not authorized for this user")
+
+        # Map duration to seconds for cost calculation
+        duration_seconds = 5 if duration == "short" else 10
+        
+        # Map resolution for cost calculation
+        cost_resolution = "1080p" if resolution == "hd_1080p" else "480p"
+        
+        # Use SeeDance for image-to-video
+        model_id = "bytedance/seedance-1-pro"
+        cost = calculate_video_cost(model_id, 1, duration_seconds, cost_resolution)
+
+        # Check DUST balance and deduct
+        from shared.ledger_client import check_and_deduct_dust
+        
+        # Get DUST cost from action pricing
+        dust_pricing = await db.fetch_one(
+            "SELECT dust_cost FROM action_pricing WHERE action_slug = 'video_animate' AND is_active = true"
+        )
+        
+        if not dust_pricing:
+            raise HTTPException(status_code=500, detail="Video animation pricing not configured")
+        
+        dust_cost = dust_pricing["dust_cost"]
+        
+        # Check and deduct DUST
+        balance_result = await check_and_deduct_dust(
+            user_id=user_id,
+            amount=dust_cost,
+            description=f"Video animation: {prompt[:50]}...",
+            metadata={"action": "video_animate", "model": model_id}
+        )
+        
+        if not balance_result["success"]:
+            raise HTTPException(
+                status_code=400,
+                detail={
+                    "error": "Insufficient DUST balance",
+                    "current_balance": balance_result.get("current_balance", 0),
+                    "required_amount": dust_cost
+                }
+            )
+
+        # Call content service for actual animation
+        content_service_url = os.getenv("CONTENT_SERVICE_URL", "http://localhost:8006")
+        
+        async with httpx.AsyncClient() as client:
+            animation_response = await client.post(
+                f"{content_service_url}/videos/animate",
+                json={
+                    "user_id": str(user_id),
+                    "image_url": image_url,
+                    "prompt": prompt,
+                    "duration": duration,
+                    "resolution": resolution,
+                    "camera_fixed": camera_fixed
+                },
+                headers={"Authorization": f"Bearer {current_user.token}" if hasattr(current_user, 'token') else {}},
+                timeout=300.0  # 5 minute timeout for video animation
+            )
+            
+            if animation_response.status_code != 200:
+                # Refund DUST if animation fails
+                from shared.ledger_client import add_dust
+                await add_dust(
+                    user_id=user_id,
+                    amount=dust_cost,
+                    description=f"Refund for failed video animation: {prompt[:50]}...",
+                    metadata={"action": "video_animate_refund", "model": model_id}
+                )
+                
+                error_detail = animation_response.json() if animation_response.content else {}
+                raise HTTPException(
+                    status_code=animation_response.status_code,
+                    detail=error_detail.get("detail", "Video animation failed")
+                )
+            
+            result = animation_response.json()
+
+        # Log usage for analytics
+        await db.execute(
+            """
+            INSERT INTO ai_usage_logs (
+                id, user_id, app_id, model_type, provider, model_id,
+                videos_generated, video_duration_seconds, video_resolution,
+                cost_usd, latency_ms, prompt_text, finish_reason,
+                was_fallback, fallback_reason, request_metadata, created_at
+            ) VALUES (
+                $1, $2, $3, 'video', $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, NOW()
+            )
+            """,
+            uuid4(),
+            user_id,
+            None,  # No specific app for direct generation
+            model_id.split("/")[0],  # provider
+            model_id,
+            1,  # videos_generated
+            duration_seconds,
+            cost_resolution,
+            cost,
+            result.get("generation_info", {}).get("generation_time_ms", 0),
+            prompt,
+            "completed",
+            False,  # was_fallback
+            None,  # fallback_reason
+            json.dumps({
+                "action": "video_animate",
+                "source_image": image_url,
+                "duration": duration,
+                "resolution": resolution
+            })
+        )
+
+        return {
+            "success": True,
+            "video": result["video"],
+            "generation_info": result["generation_info"],
+            "new_dust_balance": balance_result["new_balance"]
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"❌ VIDEO ANIMATION ERROR: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Video animation failed: {str(e)}")
 
 
 # Action-based DUST pricing endpoints
