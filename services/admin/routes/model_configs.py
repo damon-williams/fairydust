@@ -38,7 +38,7 @@ async def get_app_model_configs_api(
 
         # Create token data
         token_data = {
-            "user_id": str(admin_user["id"]),
+            "user_id": str(admin_user["user_id"]),
             "fairyname": admin_user["fairyname"],
             "is_admin": True,
             "exp": datetime.now(timezone.utc) + timedelta(hours=1),
@@ -103,7 +103,7 @@ async def update_app_model_config_by_type_api(
 
         # Create token data
         token_data = {
-            "user_id": str(admin_user["id"]),
+            "user_id": str(admin_user["user_id"]),
             "fairyname": admin_user["fairyname"],
             "is_admin": True,
             "exp": datetime.now(timezone.utc) + timedelta(hours=1),
@@ -172,7 +172,7 @@ async def create_app_model_config_api(
 
         # Create token data
         token_data = {
-            "user_id": str(admin_user["id"]),
+            "user_id": str(admin_user["user_id"]),
             "fairyname": admin_user["fairyname"],
             "is_admin": True,
             "exp": datetime.now(timezone.utc) + timedelta(hours=1),
@@ -238,7 +238,7 @@ async def delete_app_model_config_api(
 
         # Create token data
         token_data = {
-            "user_id": str(admin_user["id"]),
+            "user_id": str(admin_user["user_id"]),
             "fairyname": admin_user["fairyname"],
             "is_admin": True,
             "exp": datetime.now(timezone.utc) + timedelta(hours=1),
@@ -303,7 +303,7 @@ async def get_global_fallbacks_api(
 
         # Create token data
         token_data = {
-            "user_id": str(admin_user["id"]),
+            "user_id": str(admin_user["user_id"]),
             "fairyname": admin_user["fairyname"],
             "is_admin": True,
             "exp": datetime.now(timezone.utc) + timedelta(hours=1),
