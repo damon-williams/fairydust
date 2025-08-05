@@ -14,12 +14,11 @@ from shared.redis_client import get_redis
 auth_router = APIRouter()
 
 # Environment-based service URLs
-environment = os.getenv('ENVIRONMENT', 'staging')
-base_url_suffix = 'production' if environment == 'production' else 'staging'
+environment = os.getenv("ENVIRONMENT", "staging")
+base_url_suffix = "production" if environment == "production" else "staging"
 
 IDENTITY_SERVICE_URL = os.getenv(
-    "IDENTITY_SERVICE_URL", 
-    f"https://fairydust-identity-{base_url_suffix}.up.railway.app"
+    "IDENTITY_SERVICE_URL", f"https://fairydust-identity-{base_url_suffix}.up.railway.app"
 )
 
 # JWT Configuration - same as identity service
@@ -148,12 +147,14 @@ async def login(
     async with httpx.AsyncClient(timeout=30.0) as client:
         try:
             print(f"🔐 Admin OTP verification - URL: {IDENTITY_SERVICE_URL}/auth/otp/verify")
-            print(f"🔐 Admin OTP verification - Payload: identifier={identifier}, code=***{otp[-2:]}")
-            
+            print(
+                f"🔐 Admin OTP verification - Payload: identifier={identifier}, code=***{otp[-2:]}"
+            )
+
             response = await client.post(
                 f"{IDENTITY_SERVICE_URL}/auth/otp/verify",
                 json={"identifier": identifier, "code": otp},
-                headers={"Content-Type": "application/json"}
+                headers={"Content-Type": "application/json"},
             )
 
             print(f"🔐 Admin OTP verification - Response status: {response.status_code}")
@@ -206,11 +207,11 @@ async def request_otp(identifier: str = Form(...)):
             identifier_type = "email" if "@" in identifier else "phone"
             print(f"📧 Admin OTP request - URL: {IDENTITY_SERVICE_URL}/auth/otp/request")
             print(f"📧 Admin OTP request - Payload: identifier={identifier}, type={identifier_type}")
-            
+
             response = await client.post(
                 f"{IDENTITY_SERVICE_URL}/auth/otp/request",
                 json={"identifier": identifier, "identifier_type": identifier_type},
-                headers={"Content-Type": "application/json"}
+                headers={"Content-Type": "application/json"},
             )
 
             print(f"📧 Admin OTP request - Response status: {response.status_code}")

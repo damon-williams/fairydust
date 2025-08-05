@@ -576,9 +576,120 @@ export class AdminAPI {
     }
   }
 
+  // New normalized model configuration APIs
+  static async getAppModelConfigs(appId: string): Promise<any> {
+    try {
+      const response = await fetch(`${API_BASE}/admin/model-configs/${appId}/configs`, {
+        method: 'GET',
+        credentials: 'include',
+      });
+
+      if (!response.ok) {
+        throw new Error(`Failed to fetch app model configs: ${response.statusText}`);
+      }
+
+      return await response.json();
+    } catch (error) {
+      console.error('❌ Failed to get app model configs:', error);
+      throw error;
+    }
+  }
+
+  static async updateAppModelConfigByType(appId: string, modelType: string, modelConfig: any): Promise<any> {
+    try {
+      console.log('🔧 Updating model config for app:', appId, 'type:', modelType, modelConfig);
+      
+      const response = await fetch(`${API_BASE}/admin/model-configs/${appId}/configs/${modelType}`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        credentials: 'include',
+        body: JSON.stringify(modelConfig),
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(`Failed to update model config: ${response.statusText} - ${errorText}`);
+      }
+
+      return await response.json();
+    } catch (error) {
+      console.error('❌ Failed to update app model config:', error);
+      throw error;
+    }
+  }
+
+  static async createAppModelConfig(appId: string, modelConfig: any): Promise<any> {
+    try {
+      console.log('🔧 Creating model config for app:', appId, modelConfig);
+      
+      const response = await fetch(`${API_BASE}/admin/model-configs/${appId}/configs`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        credentials: 'include',
+        body: JSON.stringify(modelConfig),
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(`Failed to create model config: ${response.statusText} - ${errorText}`);
+      }
+
+      return await response.json();
+    } catch (error) {
+      console.error('❌ Failed to create app model config:', error);
+      throw error;
+    }
+  }
+
+  static async deleteAppModelConfig(appId: string, modelType: string): Promise<any> {
+    try {
+      const response = await fetch(`${API_BASE}/admin/model-configs/${appId}/configs/${modelType}`, {
+        method: 'DELETE',
+        credentials: 'include',
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(`Failed to delete model config: ${response.statusText} - ${errorText}`);
+      }
+
+      return await response.json();
+    } catch (error) {
+      console.error('❌ Failed to delete app model config:', error);
+      throw error;
+    }
+  }
+
+  static async getGlobalFallbacks(modelType?: string): Promise<any> {
+    try {
+      const url = modelType 
+        ? `${API_BASE}/admin/model-configs/fallbacks?model_type=${modelType}`
+        : `${API_BASE}/admin/model-configs/fallbacks`;
+        
+      const response = await fetch(url, {
+        method: 'GET',
+        credentials: 'include',
+      });
+
+      if (!response.ok) {
+        throw new Error(`Failed to fetch global fallbacks: ${response.statusText}`);
+      }
+
+      return await response.json();
+    } catch (error) {
+      console.error('❌ Failed to get global fallbacks:', error);
+      throw error;
+    }
+  }
+
+  // Legacy method - kept for backward compatibility
   static async updateAppModelConfig(appId: string, modelConfig: any): Promise<any> {
     try {
-      console.log('🔧 Updating model config for app:', appId, modelConfig);
+      console.log('🔧 Updating model config for app (legacy):', appId, modelConfig);
       
       const response = await fetch(`${API_BASE}/admin/apps/${appId}/model-config`, {
         method: 'PUT',

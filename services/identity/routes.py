@@ -631,8 +631,8 @@ async def oauth_login(
     extracted_first_name = user_info.get("first_name") if user_info else None
     extracted_last_name = user_info.get("last_name") if user_info else None
     extracted_birthdate = user_info.get("birthdate") if user_info else None
-    
-    print(f"📤 OAUTH RESPONSE: Returning to client:")
+
+    print("📤 OAUTH RESPONSE: Returning to client:")
     print(f"   - extracted_name: {extracted_name}")
     print(f"   - extracted_first_name: {extracted_first_name}")
     print(f"   - extracted_last_name: {extracted_last_name}")
@@ -648,14 +648,14 @@ async def oauth_login(
         daily_bonus_eligible=daily_bonus_value,
         extracted_name=extracted_name,
     )
-    
+
     # Add additional fields to response for client
     if extracted_first_name or extracted_last_name:
         response_data.extracted_first_name = extracted_first_name
         response_data.extracted_last_name = extracted_last_name
     if extracted_birthdate:
         response_data.extracted_birthdate = extracted_birthdate
-    
+
     return response_data
 
 

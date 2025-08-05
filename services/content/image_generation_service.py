@@ -20,47 +20,46 @@ class ImageGenerationService:
             raise ValueError("Missing REPLICATE_API_TOKEN environment variable")
 
     async def _get_image_model_config(self) -> dict:
-        """Get image model configuration from app config"""
+        """Get image model configuration from app config (normalized structure)"""
         try:
-            from shared.app_config_cache import get_app_config_cache
             from shared.database import get_db
-            from shared.json_utils import parse_jsonb_field, parse_model_config_field
+            from shared.json_utils import parse_jsonb_field
 
-            # Get the Image app ID
-            IMAGE_APP_ID = "fairydust-image"
+            # Get the Story app ID (which has image generation capabilities)
+            STORY_APP_ID = "fairydust-story"
 
-            # Try to get from cache first
-            cache = await get_app_config_cache()
-            cached_config = await cache.get_model_config(IMAGE_APP_ID)
-
-            if cached_config:
-                # Extract image model settings from parameters
-                params = cached_config.get("primary_parameters", {})
-                if isinstance(params, str):
-                    params = parse_jsonb_field(params, default={}, field_name="primary_parameters")
-                return params.get("image_models", {})
-
-            # Cache miss - fetch from database
+            # Fetch from database using new normalized structure
             db = await get_db()
             config = await db.fetch_one(
                 """
-                SELECT primary_parameters FROM app_model_configs
+                SELECT parameters FROM app_model_configs
                 WHERE app_id = (SELECT id FROM apps WHERE slug = $1)
+                AND model_type = 'image'
+                AND is_enabled = true
                 """,
-                IMAGE_APP_ID,
+                STORY_APP_ID,
             )
 
-            if config and config["primary_parameters"]:
-                params = parse_model_config_field(config, "primary_parameters") or {}
-                return params.get("image_models", {})
+            if config and config["parameters"]:
+                # Parse the JSONB parameters field
+                params = parse_jsonb_field(
+                    config["parameters"], default={}, field_name="image_parameters"
+                )
+                return params
 
             # Return defaults if no config found
-            return {}
+            return {
+                "standard_model": "black-forest-labs/flux-1.1-pro",
+                "reference_model": "runwayml/gen4-image",
+            }
 
         except Exception as e:
             print(f"⚠️ IMAGE_MODEL_CONFIG: Error loading config: {e}")
-            # Return empty dict to use defaults
-            return {}
+            # Return defaults on error
+            return {
+                "standard_model": "black-forest-labs/flux-1.1-pro",
+                "reference_model": "runwayml/gen4-image",
+            }
 
     async def generate_image(
         self,

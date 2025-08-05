@@ -102,10 +102,11 @@ from routes import (
     system_router,
     users_router,
 )
-from routes.ai_analytics import ai_router
-from routes.pricing import pricing_router
 from routes.activity import activity_router
+from routes.ai_analytics import ai_router
+from routes.model_configs import model_configs_router
 from routes.payments import payments_router
+from routes.pricing import pricing_router
 from routes.terms import terms_router
 
 # Include all route modules FIRST
@@ -121,6 +122,7 @@ app.include_router(activity_router, prefix="/admin/activity")
 app.include_router(payments_router, prefix="/admin/payments")
 app.include_router(terms_router, prefix="/admin/terms")
 app.include_router(system_router, prefix="/admin/system")
+app.include_router(model_configs_router, prefix="/admin/model-configs")
 
 # Dynamic asset serving for any file with cache-busting
 static_dir = Path(__file__).parent / "static"

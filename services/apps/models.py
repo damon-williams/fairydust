@@ -71,11 +71,11 @@ class ModelParameters(BaseModel):
     top_p: Optional[float] = Field(None, ge=0.0, le=1.0)
     frequency_penalty: Optional[float] = Field(None, ge=-2.0, le=2.0)
     presence_penalty: Optional[float] = Field(None, ge=-2.0, le=2.0)
-    
+
     # Image model parameters
     image_models: Optional[dict] = Field(None)
-    
-    # Video model parameters  
+
+    # Video model parameters
     video_models: Optional[dict] = Field(None)
 
 
@@ -100,7 +100,51 @@ class FeatureFlags(BaseModel):
     log_prompts: bool = False
 
 
+# New model configuration structure
+class ModelType(str, Enum):
+    TEXT = "text"
+    IMAGE = "image"
+    VIDEO = "video"
+
+
 class AppModelConfig(BaseModel):
+    """Single model configuration for an app"""
+
+    model_config = {"protected_namespaces": (), "from_attributes": True}
+
+    id: UUID
+    app_id: UUID
+    model_type: ModelType
+    provider: str = Field(..., max_length=50)
+    model_id: str = Field(..., max_length=200)
+    parameters: dict = Field(default_factory=dict)
+    is_enabled: bool = True
+    created_at: datetime
+    updated_at: datetime
+
+
+class GlobalFallbackModel(BaseModel):
+    """Global fallback configuration"""
+
+    model_config = {"protected_namespaces": (), "from_attributes": True}
+
+    id: UUID
+    model_type: ModelType
+    primary_provider: str = Field(..., max_length=50)
+    primary_model_id: str = Field(..., max_length=200)
+    fallback_provider: str = Field(..., max_length=50)
+    fallback_model_id: str = Field(..., max_length=200)
+    trigger_condition: str = Field(
+        ..., max_length=50
+    )  # 'provider_error', 'rate_limit', 'cost_threshold'
+    priority: int = Field(default=1, ge=1)
+    is_active: bool = True
+    created_at: datetime
+    updated_at: datetime
+
+
+# Legacy models - kept for backward compatibility during migration
+class AppModelConfigLegacy(BaseModel):
     model_config = {"protected_namespaces": (), "from_attributes": True}
 
     id: UUID
@@ -115,7 +159,62 @@ class AppModelConfig(BaseModel):
     updated_at: datetime
 
 
+# New normalized model configuration models
 class AppModelConfigCreate(BaseModel):
+    """Create a single model configuration for an app"""
+
+    model_config = {"protected_namespaces": ()}
+
+    app_id: UUID
+    model_type: ModelType
+    provider: str = Field(..., max_length=50)
+    model_id: str = Field(..., max_length=200)
+    parameters: dict = Field(default_factory=dict)
+    is_enabled: bool = True
+
+
+class AppModelConfigUpdate(BaseModel):
+    """Update a single model configuration for an app"""
+
+    model_config = {"protected_namespaces": ()}
+
+    provider: Optional[str] = Field(None, max_length=50)
+    model_id: Optional[str] = Field(None, max_length=200)
+    parameters: Optional[dict] = None
+    is_enabled: Optional[bool] = None
+
+
+class GlobalFallbackModelCreate(BaseModel):
+    """Create a global fallback configuration"""
+
+    model_config = {"protected_namespaces": ()}
+
+    model_type: ModelType
+    primary_provider: str = Field(..., max_length=50)
+    primary_model_id: str = Field(..., max_length=200)
+    fallback_provider: str = Field(..., max_length=50)
+    fallback_model_id: str = Field(..., max_length=200)
+    trigger_condition: str = Field(..., max_length=50)
+    priority: int = Field(default=1, ge=1)
+    is_active: bool = True
+
+
+class GlobalFallbackModelUpdate(BaseModel):
+    """Update a global fallback configuration"""
+
+    model_config = {"protected_namespaces": ()}
+
+    primary_provider: Optional[str] = Field(None, max_length=50)
+    primary_model_id: Optional[str] = Field(None, max_length=200)
+    fallback_provider: Optional[str] = Field(None, max_length=50)
+    fallback_model_id: Optional[str] = Field(None, max_length=200)
+    trigger_condition: Optional[str] = Field(None, max_length=50)
+    priority: Optional[int] = Field(None, ge=1)
+    is_active: Optional[bool] = None
+
+
+# Legacy models kept for backward compatibility
+class AppModelConfigCreateLegacy(BaseModel):
     model_config = {"protected_namespaces": ()}
 
     primary_provider: LLMProvider
@@ -126,7 +225,7 @@ class AppModelConfigCreate(BaseModel):
     feature_flags: FeatureFlags = Field(default_factory=FeatureFlags)
 
 
-class AppModelConfigUpdate(BaseModel):
+class AppModelConfigUpdateLegacy(BaseModel):
     model_config = {"protected_namespaces": ()}
 
     primary_provider: Optional[LLMProvider] = None

@@ -173,7 +173,7 @@ async def get_recent_activity(
     """Get recent DUST consumption activity for React app"""
     recent_activity = await db.fetch_all(
         """
-        SELECT 
+        SELECT
             dt.id,
             dt.amount,
             dt.type,

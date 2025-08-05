@@ -107,10 +107,10 @@ export function AppConfig() {
       const appData = await AdminAPI.getApp(appId!);
       setApp(appData);
       
-      // Load configuration (handle 404 gracefully)
+      // Load normalized model configurations
       let configData = null;
       try {
-        configData = await AdminAPI.getAppModelConfig(appId!);
+        configData = await AdminAPI.getAppModelConfigs(appId!);
       } catch (configError: any) {
         if (configError.message?.includes('404') || configError.message?.includes('not found')) {
           console.info('No model configuration found for app, using defaults');
@@ -120,29 +120,30 @@ export function AppConfig() {
         }
       }
       
-      // Parse configuration with defaults
-      if (configData?.primary_parameters) {
-        const params = configData.primary_parameters;
+      // Parse normalized configuration structure
+      if (configData) {
+        const textConfig = configData.text_config;
+        const imageConfig = configData.image_config;
+        const videoConfig = configData.video_config;
+        
         setConfig({
-          text_models_enabled: !!(params.primary_provider && params.primary_model_id),
-          image_models_enabled: !!(params.image_models),
-          video_models_enabled: !!(params.video_models),
+          text_models_enabled: !!(textConfig && textConfig.is_enabled),
+          image_models_enabled: !!(imageConfig && imageConfig.is_enabled),
+          video_models_enabled: !!(videoConfig && videoConfig.is_enabled),
           
-          text_config: params.primary_provider ? {
-            primary_provider: params.primary_provider || 'anthropic',
-            primary_model_id: params.primary_model_id || 'claude-3-5-sonnet-20241022',
-            fallback_provider: params.fallback_provider,
-            fallback_model_id: params.fallback_model_id,
+          text_config: textConfig ? {
+            primary_provider: textConfig.provider || 'anthropic',
+            primary_model_id: textConfig.model_id || 'claude-3-5-sonnet-20241022',
             parameters: {
-              temperature: params.temperature || 0.7,
-              max_tokens: params.max_tokens || 1000,
-              top_p: params.top_p || 0.9,
+              temperature: textConfig.parameters?.temperature || 0.7,
+              max_tokens: textConfig.parameters?.max_tokens || 1000,
+              top_p: textConfig.parameters?.top_p || 0.9,
             }
           } : undefined,
           
-          image_config: params.image_models ? {
-            standard_model: params.image_models.standard_model || 'black-forest-labs/flux-1.1-pro',
-            reference_model: params.image_models.reference_model || 'runwayml/gen4-image',
+          image_config: imageConfig ? {
+            standard_model: imageConfig.parameters?.standard_model || 'black-forest-labs/flux-1.1-pro',
+            reference_model: imageConfig.parameters?.reference_model || 'runwayml/gen4-image',
             parameters: {
               default_style: 'realistic',
               default_size: 'standard',
@@ -150,8 +151,8 @@ export function AppConfig() {
             }
           } : undefined,
           
-          video_config: params.video_models ? {
-            standard_model: params.video_models.standard_model || 'runwayml/gen4-video',
+          video_config: videoConfig ? {
+            standard_model: videoConfig.parameters?.standard_model || 'runwayml/gen4-video',
             parameters: {
               duration: 5,
               fps: 24,
@@ -180,55 +181,93 @@ export function AppConfig() {
       setSaving(true);
       setError(null);
 
-      // Build the configuration payload with correct structure
-      const payload: any = {};
-      
-      // Text model configuration - provider and model_id go to top level
+      console.log('🔍 FRONTEND: Saving app configuration with new normalized structure');
+
+      // Save text model configuration
       if (config.text_models_enabled && config.text_config) {
-        payload.primary_provider = config.text_config.primary_provider;
-        payload.primary_model_id = config.text_config.primary_model_id;
-        
-        // Parameters go in primary_parameters
-        payload.primary_parameters = {
-          temperature: config.text_config.parameters.temperature,
-          max_tokens: config.text_config.parameters.max_tokens,
-          top_p: config.text_config.parameters.top_p,
+        const textPayload = {
+          provider: config.text_config.primary_provider,
+          model_id: config.text_config.primary_model_id,
+          parameters: {
+            temperature: config.text_config.parameters.temperature,
+            max_tokens: config.text_config.parameters.max_tokens,
+            top_p: config.text_config.parameters.top_p,
+          },
+          is_enabled: true,
         };
-        
-        // Add fallback models if configured
-        if (config.text_config.fallback_provider && config.text_config.fallback_model_id) {
-          payload.fallback_models = [{
-            provider: config.text_config.fallback_provider,
-            model_id: config.text_config.fallback_model_id,
-            trigger: "provider_error",
-            parameters: config.text_config.parameters,
-          }];
-        }
+
+        console.log('🔍 FRONTEND: Saving text config:', textPayload);
+        await AdminAPI.updateAppModelConfigByType(appId!, 'text', textPayload);
       } else {
-        // Initialize empty parameters object
-        payload.primary_parameters = {};
-      }
-      
-      // Add image models to primary_parameters if enabled
-      if (config.image_models_enabled && config.image_config) {
-        payload.primary_parameters.image_models = {
-          standard_model: config.image_config.standard_model,
-          reference_model: config.image_config.reference_model,
-          parameters: config.image_config.parameters,
-        };
-      }
-      
-      // Add video models to primary_parameters if enabled  
-      if (config.video_models_enabled && config.video_config) {
-        payload.primary_parameters.video_models = {
-          standard_model: config.video_config.standard_model,
-          parameters: config.video_config.parameters,
-        };
+        // Disable text models if not enabled
+        try {
+          await AdminAPI.updateAppModelConfigByType(appId!, 'text', { is_enabled: false });
+        } catch (error: any) {
+          // Ignore 404 errors for configs that don't exist yet
+          if (!error.message?.includes('404')) {
+            throw error;
+          }
+        }
       }
 
-      console.log('🔍 FRONTEND: Saving app configuration:', JSON.stringify(payload, null, 2));
-      await AdminAPI.updateAppModelConfig(appId!, payload);
-      console.log('✅ FRONTEND: Save request completed successfully');
+      // Save image model configuration
+      if (config.image_models_enabled && config.image_config) {
+        const imagePayload = {
+          provider: 'replicate',
+          model_id: config.image_config.standard_model,
+          parameters: {
+            standard_model: config.image_config.standard_model,
+            reference_model: config.image_config.reference_model,
+            default_style: config.image_config.parameters.default_style,
+            default_size: config.image_config.parameters.default_size,
+            quality: config.image_config.parameters.quality,
+          },
+          is_enabled: true,
+        };
+
+        console.log('🔍 FRONTEND: Saving image config:', imagePayload);
+        await AdminAPI.updateAppModelConfigByType(appId!, 'image', imagePayload);
+      } else {
+        // Disable image models if not enabled
+        try {
+          await AdminAPI.updateAppModelConfigByType(appId!, 'image', { is_enabled: false });
+        } catch (error: any) {
+          // Ignore 404 errors for configs that don't exist yet
+          if (!error.message?.includes('404')) {
+            throw error;
+          }
+        }
+      }
+
+      // Save video model configuration (when enabled)
+      if (config.video_models_enabled && config.video_config) {
+        const videoPayload = {
+          provider: 'runwayml',
+          model_id: config.video_config.standard_model,
+          parameters: {
+            standard_model: config.video_config.standard_model,
+            duration: config.video_config.parameters.duration,
+            fps: config.video_config.parameters.fps,
+            resolution: config.video_config.parameters.resolution,
+          },
+          is_enabled: true,
+        };
+
+        console.log('🔍 FRONTEND: Saving video config:', videoPayload);
+        await AdminAPI.updateAppModelConfigByType(appId!, 'video', videoPayload);
+      } else {
+        // Disable video models if not enabled
+        try {
+          await AdminAPI.updateAppModelConfigByType(appId!, 'video', { is_enabled: false });
+        } catch (error: any) {
+          // Ignore 404 errors for configs that don't exist yet
+          if (!error.message?.includes('404')) {
+            throw error;
+          }
+        }
+      }
+
+      console.log('✅ FRONTEND: All model configurations saved successfully');
       toast.success('App configuration saved successfully!');
       
     } catch (err) {

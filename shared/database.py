@@ -478,28 +478,40 @@ async def create_tables():
         CREATE TABLE IF NOT EXISTS app_model_configs (
             id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
             app_id UUID NOT NULL REFERENCES apps(id) ON DELETE CASCADE,
-
-            -- Primary model configuration
-            primary_provider VARCHAR(50) NOT NULL,
-            primary_model_id VARCHAR(100) NOT NULL,
-            primary_parameters JSONB DEFAULT '{}',
-
-            -- Fallback models (array of objects)
-            fallback_models JSONB DEFAULT '[]',
-
-            -- Cost and usage limits
-            cost_limits JSONB DEFAULT '{}',
-
-            -- Feature flags
-            feature_flags JSONB DEFAULT '{}',
-
+            model_type VARCHAR(20) NOT NULL CHECK (model_type IN ('text', 'image', 'video')),
+            provider VARCHAR(50) NOT NULL,
+            model_id VARCHAR(200) NOT NULL,
+            parameters JSONB DEFAULT '{}',
+            is_enabled BOOLEAN DEFAULT true,
             created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
             updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
-
-            UNIQUE(app_id)
+            UNIQUE(app_id, model_type)
         );
 
         CREATE INDEX IF NOT EXISTS idx_app_model_configs_app_id ON app_model_configs(app_id);
+        CREATE INDEX IF NOT EXISTS idx_app_model_configs_model_type ON app_model_configs(model_type);
+    """
+    )
+
+    # Global fallback models table
+    await db.execute_schema(
+        """
+        CREATE TABLE IF NOT EXISTS global_fallback_models (
+            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            model_type VARCHAR(20) NOT NULL CHECK (model_type IN ('text', 'image', 'video')),
+            primary_provider VARCHAR(50) NOT NULL,
+            primary_model_id VARCHAR(200) NOT NULL,
+            fallback_provider VARCHAR(50) NOT NULL,
+            fallback_model_id VARCHAR(200) NOT NULL,
+            trigger_condition VARCHAR(50) NOT NULL, -- 'provider_error', 'rate_limit', 'cost_threshold'
+            priority INTEGER DEFAULT 1, -- For multiple fallbacks
+            is_active BOOLEAN DEFAULT true,
+            created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE(model_type, primary_provider, primary_model_id, fallback_provider, fallback_model_id)
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_global_fallback_models_type ON global_fallback_models(model_type, is_active);
     """
     )
 
@@ -574,22 +586,15 @@ async def create_tables():
     """
     )
 
-    # Insert default model configurations for existing apps
-    # First, try to insert configurations for apps that exist
+    # Insert default model configurations for existing apps (normalized structure)
     await db.execute_schema(
         """
-        INSERT INTO app_model_configs (
-            app_id, primary_provider, primary_model_id, primary_parameters,
-            fallback_models, cost_limits, feature_flags
-        )
+        -- Insert text model configurations for existing apps
+        INSERT INTO app_model_configs (app_id, model_type, provider, model_id, parameters, is_enabled)
         SELECT
             a.id,
-            CASE
-                WHEN a.slug = 'fairydust-inspire' THEN 'anthropic'
-                WHEN a.slug = 'fairydust-recipe' THEN 'anthropic'
-                WHEN a.slug = 'fairydust-fortune-teller' THEN 'anthropic'
-                ELSE 'anthropic'
-            END,
+            'text',
+            'anthropic',
             CASE
                 WHEN a.slug = 'fairydust-inspire' THEN 'claude-3-5-haiku-20241022'
                 WHEN a.slug = 'fairydust-recipe' THEN 'claude-3-5-sonnet-20241022'
@@ -602,55 +607,57 @@ async def create_tables():
                 WHEN a.slug = 'fairydust-fortune-teller' THEN '{"temperature": 0.8, "max_tokens": 400, "top_p": 0.9}'::jsonb
                 ELSE '{"temperature": 0.8, "max_tokens": 150, "top_p": 0.9}'::jsonb
             END,
-            CASE
-                WHEN a.slug = 'fairydust-inspire' THEN '[
-                    {
-                        "provider": "openai",
-                        "model_id": "gpt-4o-mini",
-                        "trigger": "provider_error",
-                        "parameters": {"temperature": 0.8, "max_tokens": 150}
-                    }
-                ]'::jsonb
-                WHEN a.slug = 'fairydust-recipe' THEN '[
-                    {
-                        "provider": "openai",
-                        "model_id": "gpt-4o",
-                        "trigger": "provider_error",
-                        "parameters": {"temperature": 0.7, "max_tokens": 1000}
-                    },
-                    {
-                        "provider": "openai",
-                        "model_id": "gpt-4o-mini",
-                        "trigger": "cost_threshold_exceeded",
-                        "parameters": {"temperature": 0.7, "max_tokens": 1000}
-                    }
-                ]'::jsonb
-                WHEN a.slug = 'fairydust-fortune-teller' THEN '[
-                    {
-                        "provider": "openai",
-                        "model_id": "gpt-4o",
-                        "trigger": "provider_error",
-                        "parameters": {"temperature": 0.8, "max_tokens": 400}
-                    }
-                ]'::jsonb
-                ELSE '[]'::jsonb
-            END,
-            CASE
-                WHEN a.slug = 'fairydust-inspire' THEN '{"per_request_max": 0.05, "daily_max": 10.0, "monthly_max": 100.0}'::jsonb
-                WHEN a.slug = 'fairydust-recipe' THEN '{"per_request_max": 0.15, "daily_max": 25.0, "monthly_max": 200.0}'::jsonb
-                WHEN a.slug = 'fairydust-fortune-teller' THEN '{"per_request_max": 0.10, "daily_max": 15.0, "monthly_max": 150.0}'::jsonb
-                ELSE '{"per_request_max": 0.05, "daily_max": 10.0, "monthly_max": 100.0}'::jsonb
-            END,
-            '{"streaming_enabled": true, "cache_responses": true, "log_prompts": false}'::jsonb
+            true
         FROM apps a
         WHERE a.slug IN ('fairydust-inspire', 'fairydust-recipe', 'fairydust-fortune-teller')
-        ON CONFLICT (app_id) DO UPDATE SET
-            primary_provider = EXCLUDED.primary_provider,
-            primary_model_id = EXCLUDED.primary_model_id,
-            primary_parameters = EXCLUDED.primary_parameters,
-            fallback_models = EXCLUDED.fallback_models,
-            cost_limits = EXCLUDED.cost_limits,
-            feature_flags = EXCLUDED.feature_flags,
+        ON CONFLICT (app_id, model_type) DO UPDATE SET
+            provider = EXCLUDED.provider,
+            model_id = EXCLUDED.model_id,
+            parameters = EXCLUDED.parameters,
+            is_enabled = EXCLUDED.is_enabled,
+            updated_at = CURRENT_TIMESTAMP;
+
+        -- Insert image model configurations for Story app (has image generation)
+        INSERT INTO app_model_configs (app_id, model_type, provider, model_id, parameters, is_enabled)
+        SELECT
+            a.id,
+            'image',
+            'replicate',
+            'black-forest-labs/flux-1.1-pro',
+            '{"standard_model": "black-forest-labs/flux-1.1-pro", "reference_model": "runwayml/gen4-image"}'::jsonb,
+            true
+        FROM apps a
+        WHERE a.slug = 'fairydust-story'
+        ON CONFLICT (app_id, model_type) DO UPDATE SET
+            provider = EXCLUDED.provider,
+            model_id = EXCLUDED.model_id,
+            parameters = EXCLUDED.parameters,
+            is_enabled = EXCLUDED.is_enabled,
+            updated_at = CURRENT_TIMESTAMP;
+    """
+    )
+
+    # Insert default global fallback models
+    await db.execute_schema(
+        """
+        INSERT INTO global_fallback_models (
+            model_type, primary_provider, primary_model_id,
+            fallback_provider, fallback_model_id, trigger_condition, priority
+        ) VALUES
+        -- Text model fallbacks
+        ('text', 'anthropic', 'claude-3-5-sonnet-20241022', 'anthropic', 'claude-3-5-haiku-20241022', 'provider_error', 1),
+        ('text', 'anthropic', 'claude-3-5-sonnet-20241022', 'openai', 'gpt-4o', 'provider_error', 2),
+        ('text', 'anthropic', 'claude-3-5-haiku-20241022', 'openai', 'gpt-4o-mini', 'provider_error', 1),
+        ('text', 'openai', 'gpt-4o', 'anthropic', 'claude-3-5-sonnet-20241022', 'provider_error', 1),
+        ('text', 'openai', 'gpt-4o-mini', 'anthropic', 'claude-3-5-haiku-20241022', 'provider_error', 1),
+        -- Image model fallbacks
+        ('image', 'replicate', 'black-forest-labs/flux-1.1-pro', 'replicate', 'black-forest-labs/flux-schnell', 'provider_error', 1),
+        ('image', 'replicate', 'runwayml/gen4-image', 'replicate', 'black-forest-labs/flux-1.1-pro', 'provider_error', 1)
+        ON CONFLICT (model_type, primary_provider, primary_model_id, fallback_provider, fallback_model_id)
+        DO UPDATE SET
+            trigger_condition = EXCLUDED.trigger_condition,
+            priority = EXCLUDED.priority,
+            is_active = EXCLUDED.is_active,
             updated_at = CURRENT_TIMESTAMP;
     """
     )
@@ -1453,41 +1460,41 @@ async def create_tables():
             id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
             user_id UUID NOT NULL,
             app_id UUID NOT NULL,
-            
+
             -- Model identification
             model_type VARCHAR(20) NOT NULL CHECK (model_type IN ('text', 'image', 'video')),
             provider VARCHAR(50) NOT NULL,
             model_id VARCHAR(200) NOT NULL,
-            
+
             -- Usage metrics (varies by model type)
             -- Text models
             prompt_tokens INTEGER DEFAULT NULL,
             completion_tokens INTEGER DEFAULT NULL,
             total_tokens INTEGER DEFAULT NULL,
-            
+
             -- Image models
             images_generated INTEGER DEFAULT NULL,
             image_dimensions VARCHAR(20) DEFAULT NULL, -- e.g., "1024x1024"
-            
+
             -- Video models (for future use)
             videos_generated INTEGER DEFAULT NULL,
             video_duration_seconds DECIMAL(10,2) DEFAULT NULL,
             video_resolution VARCHAR(20) DEFAULT NULL, -- e.g., "1080p"
-            
+
             -- Common metrics
             cost_usd DECIMAL(12,8) NOT NULL,
             latency_ms INTEGER NOT NULL,
-            
+
             -- Request details
             prompt_hash VARCHAR(64), -- SHA-256 hash of the prompt/request
             finish_reason VARCHAR(50),
             was_fallback BOOLEAN DEFAULT FALSE,
             fallback_reason TEXT,
-            
+
             -- Metadata and context
             request_metadata JSONB DEFAULT '{}',
             created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
-            
+
             -- Indexes for performance
             FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
             FOREIGN KEY (app_id) REFERENCES apps(id) ON DELETE CASCADE
@@ -1510,8 +1517,8 @@ async def create_tables():
     # Create a view that unions old LLM logs with new AI logs for backward compatibility
     await db.execute_schema(
         """
-        CREATE OR REPLACE VIEW unified_ai_usage AS 
-        SELECT 
+        CREATE OR REPLACE VIEW unified_ai_usage AS
+        SELECT
             id,
             user_id,
             app_id,
@@ -1536,7 +1543,7 @@ async def create_tables():
             created_at
         FROM llm_usage_logs
         UNION ALL
-        SELECT 
+        SELECT
             id,
             user_id,
             app_id,

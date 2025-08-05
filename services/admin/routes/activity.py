@@ -25,7 +25,10 @@ async def get_activity_json(
     params = []
 
     if user_search:
-        where_conditions.append("(u.fairyname ILIKE $%d OR u.first_name ILIKE $%d OR u.email ILIKE $%d)" % (len(params) + 1, len(params) + 1, len(params) + 1))
+        where_conditions.append(
+            "(u.fairyname ILIKE $%d OR u.first_name ILIKE $%d OR u.email ILIKE $%d)"
+            % (len(params) + 1, len(params) + 1, len(params) + 1)
+        )
         params.append(f"%{user_search}%")
 
     if activity_type and activity_type != "all":
@@ -46,14 +49,20 @@ async def get_activity_json(
             where_conditions.append("dt.description ILIKE $%d" % (len(params) + 1))
             params.append("%image%")
         elif activity_type == "inspiration":
-            where_conditions.append("(dt.description ILIKE $%d OR dt.description ILIKE $%d)" % (len(params) + 1, len(params) + 2))
+            where_conditions.append(
+                "(dt.description ILIKE $%d OR dt.description ILIKE $%d)"
+                % (len(params) + 1, len(params) + 2)
+            )
             params.append("%inspiration%")
             params.append("%inspire%")
         elif activity_type == "fortune":
             where_conditions.append("dt.description ILIKE $%d" % (len(params) + 1))
             params.append("%fortune%")
         elif activity_type == "wyr":
-            where_conditions.append("(dt.description ILIKE $%d OR dt.description ILIKE $%d)" % (len(params) + 1, len(params) + 2))
+            where_conditions.append(
+                "(dt.description ILIKE $%d OR dt.description ILIKE $%d)"
+                % (len(params) + 1, len(params) + 2)
+            )
             params.append("%would you rather%")
             params.append("%wyr%")
 
@@ -72,7 +81,7 @@ async def get_activity_json(
 
     # Get activity with pagination
     activity_query = f"""
-        SELECT 
+        SELECT
             dt.id,
             dt.amount,
             dt.type,
@@ -124,26 +133,30 @@ async def get_activity_json(
             activity_type = "other"
             icon = "💫"
 
-        formatted_activities.append({
-            "id": str(activity["id"]),
-            "amount": abs(activity["amount"]),  # Show as positive for display
-            "type": activity["type"],
-            "activity_type": activity_type,
-            "icon": icon,
-            "description": activity["description"],
-            "created_at": activity["created_at"].isoformat() if activity["created_at"] else None,
-            "user": {
-                "id": str(activity["user_id"]),
-                "fairyname": activity["fairyname"],
-                "first_name": activity["first_name"],
-                "avatar_url": activity["avatar_url"]
+        formatted_activities.append(
+            {
+                "id": str(activity["id"]),
+                "amount": abs(activity["amount"]),  # Show as positive for display
+                "type": activity["type"],
+                "activity_type": activity_type,
+                "icon": icon,
+                "description": activity["description"],
+                "created_at": activity["created_at"].isoformat()
+                if activity["created_at"]
+                else None,
+                "user": {
+                    "id": str(activity["user_id"]),
+                    "fairyname": activity["fairyname"],
+                    "first_name": activity["first_name"],
+                    "avatar_url": activity["avatar_url"],
+                },
             }
-        })
+        )
 
     return {
         "activities": formatted_activities,
         "total": total_count,
         "pages": total_pages,
         "current_page": page,
-        "has_more": page < total_pages
+        "has_more": page < total_pages,
     }

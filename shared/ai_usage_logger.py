@@ -7,8 +7,7 @@ Tracks usage metrics for analytics and billing purposes.
 import hashlib
 import json
 import logging
-from datetime import datetime
-from typing import Dict, Any, Optional
+from typing import Any, Optional
 from uuid import UUID, uuid4
 
 from shared.database import Database
@@ -18,10 +17,10 @@ logger = logging.getLogger(__name__)
 
 class AIUsageLogger:
     """Centralized logging for all AI model usage"""
-    
+
     def __init__(self, db: Database):
         self.db = db
-    
+
     async def log_text_usage(
         self,
         user_id: UUID,
@@ -36,11 +35,11 @@ class AIUsageLogger:
         finish_reason: str = "stop",
         was_fallback: bool = False,
         fallback_reason: Optional[str] = None,
-        request_metadata: Optional[Dict[str, Any]] = None
+        request_metadata: Optional[dict[str, Any]] = None,
     ) -> UUID:
         """
         Log text model (LLM) usage
-        
+
         Args:
             user_id: User who made the request
             app_id: App that processed the request
@@ -55,14 +54,14 @@ class AIUsageLogger:
             was_fallback: Whether fallback model was used
             fallback_reason: Why fallback was needed
             request_metadata: Additional context (action, user data, etc.)
-            
+
         Returns:
             UUID of the created log entry
         """
         usage_id = uuid4()
         total_tokens = prompt_tokens + completion_tokens
         prompt_hash = hashlib.sha256(prompt_text.encode()).hexdigest()
-        
+
         await self.db.execute(
             """
             INSERT INTO ai_usage_logs (
@@ -87,12 +86,14 @@ class AIUsageLogger:
             finish_reason,
             was_fallback,
             fallback_reason,
-            json.dumps(request_metadata or {})
+            json.dumps(request_metadata or {}),
         )
-        
-        logger.info(f"✅ Logged text usage: {provider}/{model_id} - {total_tokens} tokens - ${cost_usd:.6f}")
+
+        logger.info(
+            f"✅ Logged text usage: {provider}/{model_id} - {total_tokens} tokens - ${cost_usd:.6f}"
+        )
         return usage_id
-    
+
     async def log_image_usage(
         self,
         user_id: UUID,
@@ -107,11 +108,11 @@ class AIUsageLogger:
         finish_reason: str = "completed",
         was_fallback: bool = False,
         fallback_reason: Optional[str] = None,
-        request_metadata: Optional[Dict[str, Any]] = None
+        request_metadata: Optional[dict[str, Any]] = None,
     ) -> UUID:
         """
         Log image model usage
-        
+
         Args:
             user_id: User who made the request
             app_id: App that processed the request
@@ -126,13 +127,13 @@ class AIUsageLogger:
             was_fallback: Whether fallback model was used
             fallback_reason: Why fallback was needed
             request_metadata: Additional context (action, style, etc.)
-            
+
         Returns:
             UUID of the created log entry
         """
         usage_id = uuid4()
         prompt_hash = hashlib.sha256(prompt_text.encode()).hexdigest()
-        
+
         await self.db.execute(
             """
             INSERT INTO ai_usage_logs (
@@ -156,12 +157,14 @@ class AIUsageLogger:
             finish_reason,
             was_fallback,
             fallback_reason,
-            json.dumps(request_metadata or {})
+            json.dumps(request_metadata or {}),
         )
-        
-        logger.info(f"✅ Logged image usage: {provider}/{model_id} - {images_generated} images - ${cost_usd:.6f}")
+
+        logger.info(
+            f"✅ Logged image usage: {provider}/{model_id} - {images_generated} images - ${cost_usd:.6f}"
+        )
         return usage_id
-    
+
     async def log_video_usage(
         self,
         user_id: UUID,
@@ -177,11 +180,11 @@ class AIUsageLogger:
         finish_reason: str = "completed",
         was_fallback: bool = False,
         fallback_reason: Optional[str] = None,
-        request_metadata: Optional[Dict[str, Any]] = None
+        request_metadata: Optional[dict[str, Any]] = None,
     ) -> UUID:
         """
         Log video model usage
-        
+
         Args:
             user_id: User who made the request
             app_id: App that processed the request
@@ -197,13 +200,13 @@ class AIUsageLogger:
             was_fallback: Whether fallback model was used
             fallback_reason: Why fallback was needed
             request_metadata: Additional context (action, style, etc.)
-            
+
         Returns:
             UUID of the created log entry
         """
         usage_id = uuid4()
         prompt_hash = hashlib.sha256(prompt_text.encode()).hexdigest()
-        
+
         await self.db.execute(
             """
             INSERT INTO ai_usage_logs (
@@ -228,10 +231,12 @@ class AIUsageLogger:
             finish_reason,
             was_fallback,
             fallback_reason,
-            json.dumps(request_metadata or {})
+            json.dumps(request_metadata or {}),
         )
-        
-        logger.info(f"✅ Logged video usage: {provider}/{model_id} - {videos_generated} videos - ${cost_usd:.6f}")
+
+        logger.info(
+            f"✅ Logged video usage: {provider}/{model_id} - {videos_generated} videos - ${cost_usd:.6f}"
+        )
         return usage_id
 
 
@@ -255,7 +260,7 @@ async def log_llm_usage(
     finish_reason: str = "stop",
     was_fallback: bool = False,
     fallback_reason: Optional[str] = None,
-    request_metadata: Optional[Dict[str, Any]] = None
+    request_metadata: Optional[dict[str, Any]] = None,
 ) -> UUID:
     """Backward compatibility function for LLM usage logging"""
     logger_instance = await get_ai_usage_logger(db)
@@ -272,5 +277,5 @@ async def log_llm_usage(
         finish_reason=finish_reason,
         was_fallback=was_fallback,
         fallback_reason=fallback_reason,
-        request_metadata=request_metadata
+        request_metadata=request_metadata,
     )

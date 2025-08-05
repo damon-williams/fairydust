@@ -207,7 +207,7 @@ class AuthService:
                 # Check user_data first, then fallback to token
                 print(f"🔍 APPLE: Raw user_data received: {user_data}")
                 print(f"🔍 APPLE: Decoded token data: {decoded_token}")
-                
+
                 if user_data and user_data.get("name"):
                     # User data from first sign-in (native apps)
                     print(f"📝 APPLE: Using name from user_data: {user_data['name']}")
@@ -227,14 +227,18 @@ class AuthService:
                     token_name = decoded_token.get("name")
                     print(f"📝 APPLE: Using name from token: {token_name}")
                     normalized["name"] = token_name
-                
+
                 # Check for DOB in various possible fields
                 dob = None
                 if user_data:
-                    dob = user_data.get("birthdate") or user_data.get("birthday") or user_data.get("dob")
+                    dob = (
+                        user_data.get("birthdate")
+                        or user_data.get("birthday")
+                        or user_data.get("dob")
+                    )
                 if not dob and decoded_token:
                     dob = decoded_token.get("birthdate") or decoded_token.get("birthday")
-                
+
                 normalized["birthdate"] = dob
                 print(f"🎂 APPLE: DOB found: {dob}")
 

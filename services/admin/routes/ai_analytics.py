@@ -1,8 +1,6 @@
-import json
-from uuid import UUID
 
 from auth import get_current_admin_user
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends
 
 from shared.database import Database, get_db
 
@@ -34,19 +32,11 @@ async def get_ai_usage_metrics(
         """
     )
 
-    # TODO: Add image usage stats when image_usage_logs table is implemented  
+    # TODO: Add image usage stats when image_usage_logs table is implemented
     # For now, return zeros for image/video metrics
-    image_stats = {
-        "total_images": 0,
-        "total_cost_usd": 0.0,
-        "avg_latency_ms": 0.0
-    }
-    
-    video_stats = {
-        "total_videos": 0,
-        "total_cost_usd": 0.0,
-        "avg_latency_ms": 0.0
-    }
+    image_stats = {"total_images": 0, "total_cost_usd": 0.0, "avg_latency_ms": 0.0}
+
+    video_stats = {"total_videos": 0, "total_cost_usd": 0.0, "avg_latency_ms": 0.0}
 
     # Combine stats (convert Decimal to float for JSON serialization)
     total_stats = {
@@ -55,11 +45,11 @@ async def get_ai_usage_metrics(
         "total_images": image_stats["total_images"],
         "total_videos": video_stats["total_videos"],
         "total_cost_usd": (
-            float(llm_stats["total_cost_usd"] if llm_stats else 0) +
-            image_stats["total_cost_usd"] +
-            video_stats["total_cost_usd"]
+            float(llm_stats["total_cost_usd"] if llm_stats else 0)
+            + image_stats["total_cost_usd"]
+            + video_stats["total_cost_usd"]
         ),
-        "avg_latency_ms": float(llm_stats["avg_latency_ms"] if llm_stats else 0)
+        "avg_latency_ms": float(llm_stats["avg_latency_ms"] if llm_stats else 0),
     }
 
     # Get model breakdown for text models
@@ -127,15 +117,21 @@ async def get_ai_usage_metrics(
             GROUP BY model_id
             ORDER BY cost DESC
             """,
-            app["app_slug"]
+            app["app_slug"],
         )
 
         # Convert Decimal types to float for JSON serialization
         app_dict = dict(app)
-        for key in ["avg_prompt_tokens", "avg_completion_tokens", "avg_total_tokens", "avg_cost_per_request", "total_cost"]:
+        for key in [
+            "avg_prompt_tokens",
+            "avg_completion_tokens",
+            "avg_total_tokens",
+            "avg_cost_per_request",
+            "total_cost",
+        ]:
             if app_dict.get(key) is not None:
                 app_dict[key] = float(app_dict[key])
-        
+
         # Convert model data Decimal types to float
         models_dict = []
         for model in models_used:
@@ -144,11 +140,8 @@ async def get_ai_usage_metrics(
                 if model_dict.get(key) is not None:
                     model_dict[key] = float(model_dict[key])
             models_dict.append(model_dict)
-        
-        formatted_app_usage.append({
-            **app_dict,
-            "models_used": models_dict
-        })
+
+        formatted_app_usage.append({**app_dict, "models_used": models_dict})
 
     # Convert model breakdown Decimal types to float
     model_breakdown = []
@@ -272,22 +265,26 @@ async def get_ai_action_analytics(
         # Calculate cost efficiency (USD cost per DUST charged)
         cost_efficiency = avg_cost_usd / dust_cost if dust_cost > 0 else 0
 
-        formatted_results.append({
-            "action_slug": action_slug,
-            "app_name": row["app_name"],
-            "model_type": row["model_type"],
-            "model_id": row["model_id"],
-            "total_requests": row["total_requests"],
-            "avg_cost_per_request": avg_cost_usd,
-            "total_cost": float(row["total_cost"]) if row["total_cost"] else 0,
-            "avg_total_tokens": float(row["avg_total_tokens"]) if row["avg_total_tokens"] else 0,
-            "total_images": row["total_images"],
-            "total_videos": row["total_videos"],
-            "avg_latency_ms": float(row["avg_latency_ms"]) if row["avg_latency_ms"] else 0,
-            "current_dust_cost": dust_cost,
-            "cost_efficiency": cost_efficiency,
-            "cost_per_dust": cost_efficiency if cost_efficiency > 0 else None,
-        })
+        formatted_results.append(
+            {
+                "action_slug": action_slug,
+                "app_name": row["app_name"],
+                "model_type": row["model_type"],
+                "model_id": row["model_id"],
+                "total_requests": row["total_requests"],
+                "avg_cost_per_request": avg_cost_usd,
+                "total_cost": float(row["total_cost"]) if row["total_cost"] else 0,
+                "avg_total_tokens": float(row["avg_total_tokens"])
+                if row["avg_total_tokens"]
+                else 0,
+                "total_images": row["total_images"],
+                "total_videos": row["total_videos"],
+                "avg_latency_ms": float(row["avg_latency_ms"]) if row["avg_latency_ms"] else 0,
+                "current_dust_cost": dust_cost,
+                "cost_efficiency": cost_efficiency,
+                "cost_per_dust": cost_efficiency if cost_efficiency > 0 else None,
+            }
+        )
 
     return {
         "timeframe": timeframe,

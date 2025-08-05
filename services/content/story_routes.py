@@ -670,9 +670,10 @@ async def _get_user_context(db: Database, user_id: uuid.UUID) -> str:
 
 
 async def _get_llm_model_config() -> dict:
-    """Get LLM configuration for story app (with caching)"""
+    """Get LLM configuration for story app using normalized structure (with caching)"""
     from shared.app_config_cache import get_app_config_cache
     from shared.database import get_db
+    from shared.json_utils import parse_jsonb_field
 
     app_slug = "fairydust-story"
 
@@ -690,7 +691,7 @@ async def _get_llm_model_config() -> dict:
 
     app_id = str(app_result["id"])
 
-    # Try to get from cache first
+    # Try to get from cache first (cache key uses legacy format)
     cache = await get_app_config_cache()
     cached_config = await cache.get_model_config(app_id)
 
@@ -702,34 +703,39 @@ async def _get_llm_model_config() -> dict:
                 "primary_parameters", {"temperature": 0.8, "max_tokens": 3000, "top_p": 0.9}
             ),
         }
-
         return config
 
-    # Cache miss - check database directly
-
+    # Cache miss - fetch from new normalized database structure
     try:
-        # Don't need to get_db again, we already have it
-        db_config = await db.fetch_one("SELECT * FROM app_model_configs WHERE app_id = $1", app_id)
+        db_config = await db.fetch_one(
+            """
+            SELECT provider, model_id, parameters FROM app_model_configs
+            WHERE app_id = $1 AND model_type = 'text' AND is_enabled = true
+            """,
+            app_result["id"],
+        )
 
         if db_config:
-            # Parse and cache the database config
-            from shared.json_utils import parse_model_config_field
+            # Parse parameters from JSONB field
+            parameters = parse_jsonb_field(
+                db_config["parameters"],
+                default={"temperature": 0.8, "max_tokens": 3000, "top_p": 0.9},
+                field_name="text_parameters",
+            )
 
+            # Format as legacy structure for LLM client compatibility
             parsed_config = {
-                "primary_provider": db_config["primary_provider"],
-                "primary_model_id": db_config["primary_model_id"],
-                "primary_parameters": parse_model_config_field(
-                    dict(db_config), "primary_parameters"
-                )
-                or {"temperature": 0.8, "max_tokens": 3000, "top_p": 0.9},
+                "primary_provider": db_config["provider"],
+                "primary_model_id": db_config["model_id"],
+                "primary_parameters": parameters,
             }
 
-            # Cache the database config
+            # Cache the config in legacy format
             await cache.set_model_config(app_id, parsed_config)
             return parsed_config
 
-    except Exception:
-        pass
+    except Exception as e:
+        print(f"⚠️ LLM_CONFIG: Error loading normalized config: {e}")
 
     # Fallback to default config
     default_config = {

@@ -412,9 +412,7 @@ async def get_app_model_config_api(
                 logger.info(f"✅ Successfully fetched model config for app {app_id}")
                 return result
             else:
-                logger.error(
-                    f"❌ Apps service error {response.status_code}: {response.text}"
-                )
+                logger.error(f"❌ Apps service error {response.status_code}: {response.text}")
                 raise HTTPException(
                     status_code=response.status_code, detail="Failed to fetch model configuration"
                 )
@@ -490,6 +488,9 @@ async def update_app_model_config_api(
         logger = logging.getLogger(__name__)
         logger.error(f"Error updating model config: {e}")
         raise HTTPException(status_code=500, detail="Failed to update model configuration")
+
+
+# New normalized model configuration proxy endpoints (must be registered with main.py)
 
 
 @apps_router.post("/{app_id}/model-config/invalidate-cache")

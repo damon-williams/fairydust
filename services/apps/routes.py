@@ -9,12 +9,17 @@ from models import (
     App,
     AppCreate,
     AppModelConfig,
+    AppModelConfigCreate,
     AppModelConfigUpdate,
+    AppModelConfigUpdateLegacy,
     AppStatus,
     AppValidation,
+    GlobalFallbackModel,
+    GlobalFallbackModelCreate,
     ImageUsageLogCreate,
     LLMUsageLogCreate,
     LLMUsageStats,
+    ModelType,
     PromotionalReferralRedeemRequest,
     PromotionalReferralRedeemResponse,
     PromotionalReferralValidateRequest,
@@ -183,13 +188,13 @@ async def get_app_model_config(app_id: str, db: Database = Depends(get_db)):
 
     if not config:
         # Return default configuration for apps without model config
-        from models import LLMProvider, ModelParameters, CostLimits, FeatureFlags
-        
+        from models import CostLimits, FeatureFlags, LLMProvider, ModelParameters
+
         # Verify the app exists first
         app = await db.fetch_one("SELECT id, name FROM apps WHERE id = $1", app_id)
         if not app:
             raise HTTPException(status_code=404, detail=f"App {app_id} not found")
-        
+
         # Return default configuration
         return AppModelConfig(
             id=uuid4(),
@@ -201,7 +206,7 @@ async def get_app_model_config(app_id: str, db: Database = Depends(get_db)):
             cost_limits=CostLimits(),
             feature_flags=FeatureFlags(),
             created_at=datetime.utcnow(),
-            updated_at=datetime.utcnow()
+            updated_at=datetime.utcnow(),
         )
 
     # Parse JSONB fields for caching
@@ -228,15 +233,16 @@ async def get_app_model_config(app_id: str, db: Database = Depends(get_db)):
 @llm_router.put("/{app_id}/model-config", response_model=AppModelConfig)
 async def update_app_model_config(
     app_id: str,
-    config_update: AppModelConfigUpdate,
+    config_update: AppModelConfigUpdateLegacy,
     current_user: TokenData = Depends(require_admin),
     db: Database = Depends(get_db),
 ):
-    """Update LLM model configuration for an app (admin only)"""
+    """Update LLM model configuration for an app (admin only) - LEGACY ENDPOINT"""
     import json
     import logging
+
     logger = logging.getLogger(__name__)
-    
+
     logger.info(f"🔍 BACKEND: Updating model config for app {app_id}")
     logger.info(f"🔍 BACKEND: Config update payload: {config_update}")
 
@@ -320,10 +326,12 @@ async def update_app_model_config(
     update_values = []
     param_count = 1
 
-    logger.info(f"🔍 BACKEND: Processing update fields...")
-    
+    logger.info("🔍 BACKEND: Processing update fields...")
+
     if config_update.primary_provider is not None:
-        logger.info(f"🔍 BACKEND: Updating primary_provider to {config_update.primary_provider.value}")
+        logger.info(
+            f"🔍 BACKEND: Updating primary_provider to {config_update.primary_provider.value}"
+        )
         update_fields.append(f"primary_provider = ${param_count}")
         update_values.append(config_update.primary_provider.value)
         param_count += 1
@@ -385,9 +393,9 @@ async def update_app_model_config(
 
     logger.info(f"🔍 BACKEND: Executing update query: {query}")
     logger.info(f"🔍 BACKEND: Update values: {update_values}")
-    
+
     updated_config = await db.fetch_one(query, *update_values)
-    
+
     if updated_config:
         logger.info(f"✅ BACKEND: Successfully updated config for app {app_id}")
     else:
@@ -662,6 +670,301 @@ async def get_user_llm_usage(
 
 
 # ============================================================================
+# NEW NORMALIZED MODEL CONFIGURATION ROUTES
+# ============================================================================
+
+model_config_router = APIRouter()
+
+
+@model_config_router.get("/{app_id}/configs")
+async def get_app_model_configs(app_id: str, db: Database = Depends(get_db)) -> dict:
+    """Get all model configurations for an app (normalized structure)"""
+    try:
+        app_uuid = UUID(app_id)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid app ID format")
+
+    # Verify app exists
+    app = await db.fetch_one("SELECT id FROM apps WHERE id = $1", app_uuid)
+    if not app:
+        raise HTTPException(status_code=404, detail="App not found")
+
+    # Get all model configs for this app
+    configs = await db.fetch_all(
+        """
+        SELECT * FROM app_model_configs
+        WHERE app_id = $1
+        ORDER BY model_type, created_at
+        """,
+        app_uuid,
+    )
+
+    # Organize by model type
+    result = {"app_id": app_id, "text_config": None, "image_config": None, "video_config": None}
+
+    for config in configs:
+        config_dict = dict(config)
+        config_dict["id"] = str(config_dict["id"])
+        config_dict["app_id"] = str(config_dict["app_id"])
+
+        if config["model_type"] == "text":
+            result["text_config"] = config_dict
+        elif config["model_type"] == "image":
+            result["image_config"] = config_dict
+        elif config["model_type"] == "video":
+            result["video_config"] = config_dict
+
+    return result
+
+
+@model_config_router.post("/{app_id}/configs", status_code=status.HTTP_201_CREATED)
+async def create_app_model_config(
+    app_id: str,
+    config: AppModelConfigCreate,
+    current_user: TokenData = Depends(require_admin),
+    db: Database = Depends(get_db),
+) -> AppModelConfig:
+    """Create a new model configuration for an app"""
+    import json
+
+    try:
+        app_uuid = UUID(app_id)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid app ID format")
+
+    # Verify app exists
+    app = await db.fetch_one("SELECT id FROM apps WHERE id = $1", app_uuid)
+    if not app:
+        raise HTTPException(status_code=404, detail="App not found")
+
+    # Check if config already exists for this app/model_type
+    existing = await db.fetch_one(
+        """
+        SELECT id FROM app_model_configs
+        WHERE app_id = $1 AND model_type = $2
+        """,
+        app_uuid,
+        config.model_type.value,
+    )
+
+    if existing:
+        raise HTTPException(
+            status_code=409,
+            detail=f"Configuration for {config.model_type.value} model already exists",
+        )
+
+    # Create new config
+    config_id = uuid4()
+    await db.execute(
+        """
+        INSERT INTO app_model_configs (
+            id, app_id, model_type, provider, model_id, parameters, is_enabled
+        ) VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7)
+        """,
+        config_id,
+        app_uuid,
+        config.model_type.value,
+        config.provider,
+        config.model_id,
+        json.dumps(config.parameters),
+        config.is_enabled,
+    )
+
+    # Return created config
+    created_config = await db.fetch_one("SELECT * FROM app_model_configs WHERE id = $1", config_id)
+
+    config_dict = dict(created_config)
+    config_dict["id"] = str(config_dict["id"])
+    config_dict["app_id"] = str(config_dict["app_id"])
+
+    return AppModelConfig(**config_dict)
+
+
+@model_config_router.put("/{app_id}/configs/{model_type}")
+async def update_app_model_config_by_type(
+    app_id: str,
+    model_type: ModelType,
+    config_update: AppModelConfigUpdate,
+    current_user: TokenData = Depends(require_admin),
+    db: Database = Depends(get_db),
+) -> AppModelConfig:
+    """Update a specific model configuration for an app"""
+    import json
+
+    try:
+        app_uuid = UUID(app_id)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid app ID format")
+
+    # Get existing config
+    existing_config = await db.fetch_one(
+        """
+        SELECT * FROM app_model_configs
+        WHERE app_id = $1 AND model_type = $2
+        """,
+        app_uuid,
+        model_type.value,
+    )
+
+    if not existing_config:
+        raise HTTPException(status_code=404, detail="Model configuration not found")
+
+    # Build update query
+    update_fields = []
+    update_values = []
+    param_count = 1
+
+    if config_update.provider is not None:
+        update_fields.append(f"provider = ${param_count}")
+        update_values.append(config_update.provider)
+        param_count += 1
+
+    if config_update.model_id is not None:
+        update_fields.append(f"model_id = ${param_count}")
+        update_values.append(config_update.model_id)
+        param_count += 1
+
+    if config_update.parameters is not None:
+        update_fields.append(f"parameters = ${param_count}::jsonb")
+        update_values.append(json.dumps(config_update.parameters))
+        param_count += 1
+
+    if config_update.is_enabled is not None:
+        update_fields.append(f"is_enabled = ${param_count}")
+        update_values.append(config_update.is_enabled)
+        param_count += 1
+
+    if not update_fields:
+        # No updates, return existing config
+        config_dict = dict(existing_config)
+        config_dict["id"] = str(config_dict["id"])
+        config_dict["app_id"] = str(config_dict["app_id"])
+        return AppModelConfig(**config_dict)
+
+    # Add updated_at
+    update_fields.append(f"updated_at = ${param_count}")
+    update_values.append(datetime.utcnow())
+    param_count += 1
+
+    # Add WHERE clause parameters
+    update_values.extend([app_uuid, model_type.value])
+
+    query = f"""
+        UPDATE app_model_configs
+        SET {', '.join(update_fields)}
+        WHERE app_id = ${param_count} AND model_type = ${param_count + 1}
+        RETURNING *
+    """
+
+    updated_config = await db.fetch_one(query, *update_values)
+
+    config_dict = dict(updated_config)
+    config_dict["id"] = str(config_dict["id"])
+    config_dict["app_id"] = str(config_dict["app_id"])
+
+    return AppModelConfig(**config_dict)
+
+
+@model_config_router.delete("/{app_id}/configs/{model_type}")
+async def delete_app_model_config(
+    app_id: str,
+    model_type: ModelType,
+    current_user: TokenData = Depends(require_admin),
+    db: Database = Depends(get_db),
+):
+    """Delete a specific model configuration for an app"""
+    try:
+        app_uuid = UUID(app_id)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid app ID format")
+
+    result = await db.execute(
+        """
+        DELETE FROM app_model_configs
+        WHERE app_id = $1 AND model_type = $2
+        """,
+        app_uuid,
+        model_type.value,
+    )
+
+    if "DELETE 0" in result:
+        raise HTTPException(status_code=404, detail="Model configuration not found")
+
+    return {"message": f"Deleted {model_type.value} model configuration"}
+
+
+# Global fallback model management
+@model_config_router.get("/fallbacks")
+async def get_global_fallbacks(
+    model_type: Optional[ModelType] = Query(None), db: Database = Depends(get_db)
+) -> list[GlobalFallbackModel]:
+    """Get global fallback models, optionally filtered by type"""
+    if model_type:
+        fallbacks = await db.fetch_all(
+            """
+            SELECT * FROM global_fallback_models
+            WHERE model_type = $1 AND is_active = true
+            ORDER BY priority, created_at
+            """,
+            model_type.value,
+        )
+    else:
+        fallbacks = await db.fetch_all(
+            """
+            SELECT * FROM global_fallback_models
+            WHERE is_active = true
+            ORDER BY model_type, priority, created_at
+            """
+        )
+
+    result = []
+    for fallback in fallbacks:
+        fallback_dict = dict(fallback)
+        fallback_dict["id"] = str(fallback_dict["id"])
+        result.append(GlobalFallbackModel(**fallback_dict))
+
+    return result
+
+
+@model_config_router.post("/fallbacks", status_code=status.HTTP_201_CREATED)
+async def create_global_fallback(
+    fallback: GlobalFallbackModelCreate,
+    current_user: TokenData = Depends(require_admin),
+    db: Database = Depends(get_db),
+) -> GlobalFallbackModel:
+    """Create a new global fallback model configuration"""
+    fallback_id = uuid4()
+
+    await db.execute(
+        """
+        INSERT INTO global_fallback_models (
+            id, model_type, primary_provider, primary_model_id,
+            fallback_provider, fallback_model_id, trigger_condition,
+            priority, is_active
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+        """,
+        fallback_id,
+        fallback.model_type.value,
+        fallback.primary_provider,
+        fallback.primary_model_id,
+        fallback.fallback_provider,
+        fallback.fallback_model_id,
+        fallback.trigger_condition,
+        fallback.priority,
+        fallback.is_active,
+    )
+
+    created_fallback = await db.fetch_one(
+        "SELECT * FROM global_fallback_models WHERE id = $1", fallback_id
+    )
+
+    fallback_dict = dict(created_fallback)
+    fallback_dict["id"] = str(fallback_dict["id"])
+
+    return GlobalFallbackModel(**fallback_dict)
+
+
+# ============================================================================
 # IMAGE MODEL USAGE LOGGING
 # ============================================================================
 
@@ -670,6 +973,7 @@ async def get_user_llm_usage(
 async def log_image_usage(usage: ImageUsageLogCreate, db: Database = Depends(get_db)):
     """Log image generation usage for analytics and cost tracking"""
     import json
+
     from shared.llm_pricing import calculate_image_cost
 
     # Verify app exists and get UUID (handle both UUID and slug)
@@ -742,6 +1046,7 @@ async def log_image_usage(usage: ImageUsageLogCreate, db: Database = Depends(get
 async def log_video_usage(usage: VideoUsageLogCreate, db: Database = Depends(get_db)):
     """Log video generation usage for analytics and cost tracking"""
     import json
+
     from shared.llm_pricing import calculate_video_cost
 
     # Verify app exists and get UUID (handle both UUID and slug)
@@ -1073,7 +1378,6 @@ async def create_app_api(
         raise HTTPException(status_code=500, detail="Failed to create app")
 
 
-
 @admin_router.put("/apps/{app_id}")
 async def update_app_api(
     app_id: str,
@@ -1207,13 +1511,13 @@ async def get_app_api(
 
         # Convert to dict for JSON response
         app_dict = dict(app)
-        
+
         # Add model configuration if available
         model_config = await db.fetch_one(
             "SELECT * FROM app_model_configs WHERE app_id = $1",
             app_id,
         )
-        
+
         if model_config:
             app_dict["primary_provider"] = model_config["primary_provider"]
             app_dict["primary_model_id"] = model_config["primary_model_id"]

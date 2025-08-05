@@ -121,20 +121,20 @@ async def _log_image_usage(
     finish_reason: str = "completed",
     was_fallback: bool = False,
     fallback_reason: str = None,
-    request_metadata: dict = None
+    request_metadata: dict = None,
 ):
     """Log image usage to apps service"""
     apps_service_url = _get_apps_service_url()
     service_token = os.getenv("SERVICE_JWT_TOKEN")
-    
+
     if not service_token:
         # Log warning but don't fail the request
         print("WARNING: SERVICE_JWT_TOKEN not configured, skipping usage logging")
         return
-    
+
     usage_data = {
         "user_id": user_id,  # Already converted to string by caller
-        "app_id": app_id,    # Already converted to string by caller  
+        "app_id": app_id,  # Already converted to string by caller
         "provider": provider,
         "model_id": model_id,
         "images_generated": images_generated,
@@ -144,9 +144,9 @@ async def _log_image_usage(
         "finish_reason": finish_reason,
         "was_fallback": was_fallback,
         "fallback_reason": fallback_reason,
-        "request_metadata": request_metadata or {}
+        "request_metadata": request_metadata or {},
     }
-    
+
     try:
         # Call apps service image usage endpoint
         async with httpx.AsyncClient() as client:
@@ -154,14 +154,16 @@ async def _log_image_usage(
                 f"{apps_service_url}/image/usage",
                 json=usage_data,
                 headers={"Authorization": f"Bearer {service_token}"},
-                timeout=5.0
+                timeout=5.0,
             )
-            
+
             if response.status_code != 201:
-                print(f"WARNING: Failed to log image usage: {response.status_code} - {response.text}")
+                print(
+                    f"WARNING: Failed to log image usage: {response.status_code} - {response.text}"
+                )
             else:
                 print("✅ Image usage logged successfully")
-                
+
     except Exception as e:
         # Log warning but don't fail the request
         print(f"WARNING: Failed to log image usage: {str(e)}")
@@ -235,18 +237,17 @@ async def generate_image(request: ImageGenerateRequest, db: Database = Depends(g
         image_data["metadata"] = json.loads(image_record["metadata"])
 
         user_image = UserImage(**image_data)
-        
+
         # Calculate actual cost based on model used
         from shared.llm_pricing import get_image_model_pricing
+
         model_used = generation_metadata["model_used"]
         actual_cost = get_image_model_pricing(model_used)
-        
+
         # Log AI usage for analytics
         try:
             # Get Image app ID
-            image_app = await db.fetch_one(
-                "SELECT id FROM apps WHERE slug = 'fairydust-image'"
-            )
+            image_app = await db.fetch_one("SELECT id FROM apps WHERE slug = 'fairydust-image'")
             if image_app:
                 # Determine provider from model
                 provider = "replicate"  # All image models use Replicate
@@ -254,15 +255,19 @@ async def generate_image(request: ImageGenerateRequest, db: Database = Depends(g
                     provider = "replicate/black-forest-labs"
                 elif "runwayml" in model_used:
                     provider = "replicate/runwayml"
-                
+
                 # Get image dimensions from metadata or generation_metadata
                 dimensions_raw = full_metadata.get("dimensions", "1024x1024")
                 # Convert dimensions to string format if it's an object
-                if isinstance(dimensions_raw, dict) and 'width' in dimensions_raw and 'height' in dimensions_raw:
+                if (
+                    isinstance(dimensions_raw, dict)
+                    and "width" in dimensions_raw
+                    and "height" in dimensions_raw
+                ):
                     dimensions = f"{dimensions_raw['width']}x{dimensions_raw['height']}"
                 else:
                     dimensions = str(dimensions_raw) if dimensions_raw else "1024x1024"
-                
+
                 # Log the usage
                 await _log_image_usage(
                     user_id=str(request.user_id),
@@ -280,17 +285,20 @@ async def generate_image(request: ImageGenerateRequest, db: Database = Depends(g
                         "action": "generate",
                         "style": request.style.value,
                         "size": request.image_size.value,
-                        "reference_people_count": len(request.reference_people) if request.reference_people else 0,
+                        "reference_people_count": len(request.reference_people)
+                        if request.reference_people
+                        else 0,
                         "api_provider": generation_metadata.get("api_provider", "replicate"),
-                        "generation_approach": generation_metadata.get("generation_approach")
-                    }
+                        "generation_approach": generation_metadata.get("generation_approach"),
+                    },
                 )
         except Exception as log_error:
             # Don't fail the request if logging fails
             import logging
-            logger = logging.getLogger(__name__) 
+
+            logger = logging.getLogger(__name__)
             logger.error(f"Failed to log image usage: {log_error}")
-        
+
         generation_info = ImageGenerationInfo(
             model_used=model_used,
             generation_time_ms=generation_metadata["generation_time_ms"],
@@ -424,18 +432,17 @@ async def regenerate_image(
         image_data["metadata"] = json.loads(new_image_record["metadata"])
 
         user_image = UserImage(**image_data)
-        
+
         # Calculate actual cost based on model used
         from shared.llm_pricing import get_image_model_pricing
+
         model_used = generation_metadata["model_used"]
         actual_cost = get_image_model_pricing(model_used)
-        
+
         # Log AI usage for analytics
         try:
             # Get Image app ID
-            image_app = await db.fetch_one(
-                "SELECT id FROM apps WHERE slug = 'fairydust-image'"
-            )
+            image_app = await db.fetch_one("SELECT id FROM apps WHERE slug = 'fairydust-image'")
             if image_app:
                 # Determine provider from model
                 provider = "replicate"  # All image models use Replicate
@@ -443,15 +450,19 @@ async def regenerate_image(
                     provider = "replicate/black-forest-labs"
                 elif "runwayml" in model_used:
                     provider = "replicate/runwayml"
-                
+
                 # Get image dimensions from metadata or generation_metadata
                 dimensions_raw = full_metadata.get("dimensions", "1024x1024")
                 # Convert dimensions to string format if it's an object
-                if isinstance(dimensions_raw, dict) and 'width' in dimensions_raw and 'height' in dimensions_raw:
+                if (
+                    isinstance(dimensions_raw, dict)
+                    and "width" in dimensions_raw
+                    and "height" in dimensions_raw
+                ):
                     dimensions = f"{dimensions_raw['width']}x{dimensions_raw['height']}"
                 else:
                     dimensions = str(dimensions_raw) if dimensions_raw else "1024x1024"
-                
+
                 # Log the usage
                 await _log_image_usage(
                     user_id=str(request.user_id),
@@ -473,15 +484,16 @@ async def regenerate_image(
                         "api_provider": generation_metadata.get("api_provider", "replicate"),
                         "generation_approach": generation_metadata.get("generation_approach"),
                         "original_image_id": image_id,
-                        "feedback": request.feedback
-                    }
+                        "feedback": request.feedback,
+                    },
                 )
         except Exception as log_error:
             # Don't fail the request if logging fails
             import logging
-            logger = logging.getLogger(__name__) 
+
+            logger = logging.getLogger(__name__)
             logger.error(f"Failed to log image regeneration usage: {log_error}")
-        
+
         generation_info = ImageGenerationInfo(
             model_used=model_used,
             generation_time_ms=generation_metadata["generation_time_ms"],

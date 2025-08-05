@@ -34,7 +34,10 @@ async def get_users_json(
     where_conditions = []
 
     if search:
-        where_conditions.append("(fairyname ILIKE $%d OR email ILIKE $%d OR phone ILIKE $%d OR first_name ILIKE $%d)" % (len(params) + 1, len(params) + 1, len(params) + 1, len(params) + 1))
+        where_conditions.append(
+            "(fairyname ILIKE $%d OR email ILIKE $%d OR phone ILIKE $%d OR first_name ILIKE $%d)"
+            % (len(params) + 1, len(params) + 1, len(params) + 1, len(params) + 1)
+        )
         params.append(f"%{search}%")
 
     if filter:
@@ -480,7 +483,7 @@ async def get_user_people(
         "SELECT * FROM people_in_my_life WHERE user_id = $1 ORDER BY created_at ASC",
         user_id,
     )
-    
+
     return [dict(person) for person in people]
 
 
@@ -494,10 +497,10 @@ async def get_user_app_usage(
     # Get app usage from dust transactions
     app_usage = await db.fetch_all(
         """
-        SELECT 
-            CASE 
+        SELECT
+            CASE
                 WHEN description LIKE '%Recipe%' THEN 'Recipe Generator'
-                WHEN description LIKE '%Story%' THEN 'Story Generator'  
+                WHEN description LIKE '%Story%' THEN 'Story Generator'
                 WHEN description LIKE '%Activity%' THEN 'Activity Finder'
                 WHEN description LIKE '%Restaurant%' THEN 'Restaurant Finder'
                 WHEN description LIKE '%Fortune%' THEN 'Fortune Teller'
@@ -507,7 +510,7 @@ async def get_user_app_usage(
             COUNT(*) as total_uses,
             SUM(ABS(amount)) as dust_spent,
             MAX(created_at) as last_used
-        FROM dust_transactions 
+        FROM dust_transactions
         WHERE user_id = $1 AND amount < 0 AND type = 'spend'
         GROUP BY app_name
         HAVING app_name != 'Other'
@@ -515,7 +518,7 @@ async def get_user_app_usage(
         """,
         user_id,
     )
-    
+
     return [dict(usage) for usage in app_usage]
 
 
@@ -528,30 +531,33 @@ async def get_user_generated_content(
 ):
     """Get user's generated content"""
     content = []
-    
+
     # Get recipes
     recipes = await db.fetch_all(
         "SELECT id, title, created_at, 'recipe' as type FROM user_recipes WHERE user_id = $1 ORDER BY created_at DESC LIMIT $2",
-        user_id, limit,
+        user_id,
+        limit,
     )
     content.extend([dict(recipe) for recipe in recipes])
-    
+
     # Get stories
     stories = await db.fetch_all(
         "SELECT id, title, created_at, 'story' as type FROM user_stories WHERE user_id = $1 ORDER BY created_at DESC LIMIT $2",
-        user_id, limit,
+        user_id,
+        limit,
     )
     content.extend([dict(story) for story in stories])
-    
+
     # Get images
     images = await db.fetch_all(
         "SELECT id, prompt as title, created_at, 'image' as type FROM user_images WHERE user_id = $1 ORDER BY created_at DESC LIMIT $2",
-        user_id, limit,
+        user_id,
+        limit,
     )
     content.extend([dict(image) for image in images])
-    
+
     # Sort by creation date and limit
-    content.sort(key=lambda x: x['created_at'], reverse=True)
+    content.sort(key=lambda x: x["created_at"], reverse=True)
     return content[:limit]
 
 
@@ -565,9 +571,10 @@ async def get_user_dust_transactions(
     """Get user's DUST transaction history"""
     transactions = await db.fetch_all(
         "SELECT id, amount, type as transaction_type, description, created_at FROM dust_transactions WHERE user_id = $1 ORDER BY created_at DESC LIMIT $2",
-        user_id, limit,
+        user_id,
+        limit,
     )
-    
+
     return [dict(transaction) for transaction in transactions]
 
 
@@ -581,8 +588,8 @@ async def get_user_payments(
     """Get user's payment history"""
     payments = await db.fetch_all(
         """
-        SELECT 
-            id, 
+        SELECT
+            id,
             payment_method,
             amount_usd,
             dust_amount,
@@ -590,12 +597,13 @@ async def get_user_payments(
             transaction_id,
             created_at,
             completed_at
-        FROM payments 
-        WHERE user_id = $1 
-        ORDER BY created_at DESC 
+        FROM payments
+        WHERE user_id = $1
+        ORDER BY created_at DESC
         LIMIT $2
         """,
-        user_id, limit,
+        user_id,
+        limit,
     )
-    
+
     return [dict(payment) for payment in payments]
