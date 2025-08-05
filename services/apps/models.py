@@ -132,10 +132,10 @@ class GlobalFallbackModel(BaseModel):
     model_type: ModelType
     primary_provider: str = Field(..., max_length=50)
     primary_model_id: str = Field(..., max_length=200)
-    fallback_provider: str = Field(..., max_length=50)
-    fallback_model_id: str = Field(..., max_length=200)
-    trigger_condition: str = Field(
-        ..., max_length=50
+    fallback_provider: Optional[str] = Field(None, max_length=50)
+    fallback_model_id: Optional[str] = Field(None, max_length=200)
+    trigger_condition: Optional[str] = Field(
+        "provider_error", max_length=50
     )  # 'provider_error', 'rate_limit', 'cost_threshold'
     priority: int = Field(default=1, ge=1)
     is_enabled: bool = True
@@ -192,9 +192,9 @@ class GlobalFallbackModelCreate(BaseModel):
     model_type: ModelType
     primary_provider: str = Field(..., max_length=50)
     primary_model_id: str = Field(..., max_length=200)
-    fallback_provider: str = Field(..., max_length=50)
-    fallback_model_id: str = Field(..., max_length=200)
-    trigger_condition: str = Field(..., max_length=50)
+    fallback_provider: Optional[str] = Field(None, max_length=50)
+    fallback_model_id: Optional[str] = Field(None, max_length=200)
+    trigger_condition: Optional[str] = Field("provider_error", max_length=50)
     priority: int = Field(default=1, ge=1)
     is_enabled: bool = True
 
