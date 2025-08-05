@@ -17,7 +17,6 @@ project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
 
 
-
 async def run_migration():
     """Run the AI usage logs migration"""
     database_url = os.getenv("DATABASE_URL")

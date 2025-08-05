@@ -472,26 +472,135 @@ async def create_tables():
     """
     )
 
-    # LLM Architecture Tables
-    await db.execute_schema(
-        """
-        CREATE TABLE IF NOT EXISTS app_model_configs (
-            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-            app_id UUID NOT NULL REFERENCES apps(id) ON DELETE CASCADE,
-            model_type VARCHAR(20) NOT NULL CHECK (model_type IN ('text', 'image', 'video')),
-            provider VARCHAR(50) NOT NULL,
-            model_id VARCHAR(200) NOT NULL,
-            parameters JSONB DEFAULT '{}',
-            is_enabled BOOLEAN DEFAULT true,
-            created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
-            updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
-            UNIQUE(app_id, model_type)
-        );
+    # LLM Architecture Tables - Migration to normalized structure
+    logger.info("Creating/migrating app_model_configs table to normalized structure...")
 
-        CREATE INDEX IF NOT EXISTS idx_app_model_configs_app_id ON app_model_configs(app_id);
-        CREATE INDEX IF NOT EXISTS idx_app_model_configs_model_type ON app_model_configs(model_type);
+    # Check if table exists and has old structure (no model_type column)
+    table_info = await db.fetch_one(
+        """
+        SELECT COUNT(*) as count
+        FROM information_schema.columns
+        WHERE table_name = 'app_model_configs'
+        AND column_name = 'model_type'
     """
     )
+
+    has_new_structure = table_info and table_info["count"] > 0
+
+    if not has_new_structure:
+        logger.info("Migrating app_model_configs to normalized structure...")
+
+        # Backup existing data if the old table exists
+        old_data = []
+        try:
+            old_data = await db.fetch_all(
+                """
+                SELECT app_id, text_config, image_config, video_config, created_at, updated_at
+                FROM app_model_configs
+                WHERE text_config IS NOT NULL OR image_config IS NOT NULL OR video_config IS NOT NULL
+            """
+            )
+            logger.info(f"Backing up {len(old_data)} existing model configurations")
+        except Exception as e:
+            logger.info(f"No existing data to backup: {e}")
+
+        # Drop old table and recreate with new structure
+        await db.execute_schema("DROP TABLE IF EXISTS app_model_configs CASCADE")
+        logger.info("Dropped old app_model_configs table structure")
+
+        # Create new normalized table
+        await db.execute_schema(
+            """
+            CREATE TABLE app_model_configs (
+                id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+                app_id UUID NOT NULL REFERENCES apps(id) ON DELETE CASCADE,
+                model_type VARCHAR(20) NOT NULL CHECK (model_type IN ('text', 'image', 'video')),
+                provider VARCHAR(50) NOT NULL,
+                model_id VARCHAR(200) NOT NULL,
+                parameters JSONB DEFAULT '{}',
+                is_enabled BOOLEAN DEFAULT true,
+                created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+                UNIQUE(app_id, model_type)
+            );
+            CREATE INDEX idx_app_model_configs_app_id ON app_model_configs(app_id);
+            CREATE INDEX idx_app_model_configs_model_type ON app_model_configs(model_type);
+        """
+        )
+        logger.info("Created new normalized app_model_configs table")
+
+        # Migrate old data to new structure
+        if old_data:
+            logger.info(f"Migrating {len(old_data)} configurations to normalized structure...")
+            for row in old_data:
+                app_id = row["app_id"]
+
+                # Migrate text config
+                if row.get("text_config"):
+                    text_config = row["text_config"]
+                    await db.execute(
+                        """
+                        INSERT INTO app_model_configs (app_id, model_type, provider, model_id, parameters, is_enabled, created_at)
+                        VALUES ($1, 'text', $2, $3, $4, true, $5)
+                    """,
+                        app_id,
+                        text_config.get("primary_provider", "anthropic"),
+                        text_config.get("primary_model_id", "claude-3-5-haiku-20241022"),
+                        text_config.get("parameters", {}),
+                        row.get("created_at"),
+                    )
+
+                # Migrate image config
+                if row.get("image_config"):
+                    image_config = row["image_config"]
+                    await db.execute(
+                        """
+                        INSERT INTO app_model_configs (app_id, model_type, provider, model_id, parameters, is_enabled, created_at)
+                        VALUES ($1, 'image', $2, $3, $4, true, $5)
+                    """,
+                        app_id,
+                        image_config.get("primary_provider", "replicate"),
+                        image_config.get("primary_model_id", "black-forest-labs/flux-schnell"),
+                        image_config.get("parameters", {}),
+                        row.get("created_at"),
+                    )
+
+                # Migrate video config
+                if row.get("video_config"):
+                    video_config = row["video_config"]
+                    await db.execute(
+                        """
+                        INSERT INTO app_model_configs (app_id, model_type, provider, model_id, parameters, is_enabled, created_at)
+                        VALUES ($1, 'video', $2, $3, $4, true, $5)
+                    """,
+                        app_id,
+                        video_config.get("primary_provider", "runwayml"),
+                        video_config.get("primary_model_id", "gen4-video"),
+                        video_config.get("parameters", {}),
+                        row.get("created_at"),
+                    )
+            logger.info("Migration of existing data completed")
+    else:
+        # Table already has new structure, just ensure it exists
+        await db.execute_schema(
+            """
+            CREATE TABLE IF NOT EXISTS app_model_configs (
+                id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+                app_id UUID NOT NULL REFERENCES apps(id) ON DELETE CASCADE,
+                model_type VARCHAR(20) NOT NULL CHECK (model_type IN ('text', 'image', 'video')),
+                provider VARCHAR(50) NOT NULL,
+                model_id VARCHAR(200) NOT NULL,
+                parameters JSONB DEFAULT '{}',
+                is_enabled BOOLEAN DEFAULT true,
+                created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+                UNIQUE(app_id, model_type)
+            );
+            CREATE INDEX IF NOT EXISTS idx_app_model_configs_app_id ON app_model_configs(app_id);
+            CREATE INDEX IF NOT EXISTS idx_app_model_configs_model_type ON app_model_configs(model_type);
+        """
+        )
+        logger.info("Verified normalized app_model_configs table structure")
 
     # Global fallback models table
     await db.execute_schema(
@@ -501,17 +610,16 @@ async def create_tables():
             model_type VARCHAR(20) NOT NULL CHECK (model_type IN ('text', 'image', 'video')),
             primary_provider VARCHAR(50) NOT NULL,
             primary_model_id VARCHAR(200) NOT NULL,
-            fallback_provider VARCHAR(50) NOT NULL,
-            fallback_model_id VARCHAR(200) NOT NULL,
-            trigger_condition VARCHAR(50) NOT NULL, -- 'provider_error', 'rate_limit', 'cost_threshold'
-            priority INTEGER DEFAULT 1, -- For multiple fallbacks
-            is_active BOOLEAN DEFAULT true,
+            fallback_provider VARCHAR(50),
+            fallback_model_id VARCHAR(200),
+            parameters JSONB DEFAULT '{}',
+            is_enabled BOOLEAN DEFAULT true,
             created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
             updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
-            UNIQUE(model_type, primary_provider, primary_model_id, fallback_provider, fallback_model_id)
+            UNIQUE(model_type)
         );
 
-        CREATE INDEX IF NOT EXISTS idx_global_fallback_models_type ON global_fallback_models(model_type, is_active);
+        CREATE INDEX IF NOT EXISTS idx_global_fallback_models_type ON global_fallback_models(model_type);
     """
     )
 
@@ -642,22 +750,21 @@ async def create_tables():
         """
         INSERT INTO global_fallback_models (
             model_type, primary_provider, primary_model_id,
-            fallback_provider, fallback_model_id, trigger_condition, priority
+            fallback_provider, fallback_model_id, parameters
         ) VALUES
         -- Text model fallbacks
-        ('text', 'anthropic', 'claude-3-5-sonnet-20241022', 'anthropic', 'claude-3-5-haiku-20241022', 'provider_error', 1),
-        ('text', 'anthropic', 'claude-3-5-sonnet-20241022', 'openai', 'gpt-4o', 'provider_error', 2),
-        ('text', 'anthropic', 'claude-3-5-haiku-20241022', 'openai', 'gpt-4o-mini', 'provider_error', 1),
-        ('text', 'openai', 'gpt-4o', 'anthropic', 'claude-3-5-sonnet-20241022', 'provider_error', 1),
-        ('text', 'openai', 'gpt-4o-mini', 'anthropic', 'claude-3-5-haiku-20241022', 'provider_error', 1),
+        ('text', 'anthropic', 'claude-3-5-haiku-20241022', 'openai', 'gpt-4o-mini', '{"temperature": 0.7, "max_tokens": 1000, "top_p": 0.9}'::jsonb),
         -- Image model fallbacks
-        ('image', 'replicate', 'black-forest-labs/flux-1.1-pro', 'replicate', 'black-forest-labs/flux-schnell', 'provider_error', 1),
-        ('image', 'replicate', 'runwayml/gen4-image', 'replicate', 'black-forest-labs/flux-1.1-pro', 'provider_error', 1)
-        ON CONFLICT (model_type, primary_provider, primary_model_id, fallback_provider, fallback_model_id)
+        ('image', 'replicate', 'black-forest-labs/flux-schnell', 'replicate', 'black-forest-labs/flux-1.1-pro', '{"standard_model": "black-forest-labs/flux-schnell", "reference_model": "runwayml/gen4-image"}'::jsonb),
+        -- Video model fallbacks (future)
+        ('video', 'runwayml', 'gen4-video', NULL, NULL, '{"duration": 5, "fps": 24, "resolution": "1080p"}'::jsonb)
+        ON CONFLICT (model_type)
         DO UPDATE SET
-            trigger_condition = EXCLUDED.trigger_condition,
-            priority = EXCLUDED.priority,
-            is_active = EXCLUDED.is_active,
+            primary_provider = EXCLUDED.primary_provider,
+            primary_model_id = EXCLUDED.primary_model_id,
+            fallback_provider = EXCLUDED.fallback_provider,
+            fallback_model_id = EXCLUDED.fallback_model_id,
+            parameters = EXCLUDED.parameters,
             updated_at = CURRENT_TIMESTAMP;
     """
     )

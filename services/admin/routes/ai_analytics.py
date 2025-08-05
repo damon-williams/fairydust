@@ -1,4 +1,3 @@
-
 from auth import get_current_admin_user
 from fastapi import APIRouter, Depends
 
