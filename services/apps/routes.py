@@ -512,6 +512,13 @@ async def get_app_model_configs(app_id: str, db: Database = Depends(get_db)) -> 
         config_dict = dict(config)
         config_dict["id"] = str(config_dict["id"])
         config_dict["app_id"] = str(config_dict["app_id"])
+        
+        # Parse JSON parameters back to dict
+        if config_dict["parameters"]:
+            import json
+            config_dict["parameters"] = json.loads(config_dict["parameters"])
+        else:
+            config_dict["parameters"] = {}
 
         if config["model_type"] == "text":
             result["text_config"] = config_dict
@@ -526,12 +533,19 @@ async def get_app_model_configs(app_id: str, db: Database = Depends(get_db)) -> 
 @model_config_router.post("/{app_id}/configs", status_code=status.HTTP_201_CREATED)
 async def create_app_model_config(
     app_id: str,
-    config: AppModelConfigCreate,
+    config_data: dict,
     current_user: TokenData = Depends(require_admin),
     db: Database = Depends(get_db),
 ) -> AppModelConfig:
     """Create a new model configuration for an app"""
     import json
+    import logging
+    
+    logger = logging.getLogger(__name__)
+    logger.info(f"🔍 APPS_DEBUG: Creating model config for app {app_id}")
+    logger.info(f"🔍 APPS_DEBUG: Received config_data: {config_data}")
+    logger.info(f"🔍 APPS_DEBUG: Parameters in data: {config_data.get('parameters')}")
+    logger.info(f"🔍 APPS_DEBUG: Parameters type: {type(config_data.get('parameters'))}")
 
     try:
         app_uuid = UUID(app_id)
@@ -542,6 +556,32 @@ async def create_app_model_config(
     app = await db.fetch_one("SELECT id FROM apps WHERE id = $1", app_uuid)
     if not app:
         raise HTTPException(status_code=404, detail="App not found")
+
+    # Handle parameters - if it's a string, parse it; if it's already a dict, use it
+    parameters = config_data.get('parameters', {})
+    if isinstance(parameters, str):
+        logger.info(f"🔍 APPS_DEBUG: Parameters is string, parsing: {parameters}")
+        try:
+            parameters = json.loads(parameters)
+        except json.JSONDecodeError:
+            logger.error(f"🔍 APPS_DEBUG: Failed to parse parameters JSON: {parameters}")
+            parameters = {}
+    
+    logger.info(f"🔍 APPS_DEBUG: Final parameters: {parameters} (type: {type(parameters)})")
+
+    # Create the Pydantic model with corrected parameters
+    try:
+        config = AppModelConfigCreate(
+            app_id=config_data['app_id'],
+            model_type=config_data['model_type'],
+            provider=config_data['provider'],
+            model_id=config_data['model_id'],
+            parameters=parameters,
+            is_enabled=config_data.get('is_enabled', True)
+        )
+    except Exception as e:
+        logger.error(f"🔍 APPS_DEBUG: Failed to create Pydantic model: {e}")
+        raise HTTPException(status_code=400, detail=f"Invalid model configuration: {e}")
 
     # Check if config already exists for this app/model_type
     existing = await db.fetch_one(
@@ -582,6 +622,12 @@ async def create_app_model_config(
     config_dict = dict(created_config)
     config_dict["id"] = str(config_dict["id"])
     config_dict["app_id"] = str(config_dict["app_id"])
+    
+    # Parse JSON parameters back to dict
+    if config_dict["parameters"]:
+        config_dict["parameters"] = json.loads(config_dict["parameters"])
+    else:
+        config_dict["parameters"] = {}
 
     return AppModelConfig(**config_dict)
 
@@ -667,6 +713,12 @@ async def update_app_model_config_by_type(
     config_dict = dict(updated_config)
     config_dict["id"] = str(config_dict["id"])
     config_dict["app_id"] = str(config_dict["app_id"])
+    
+    # Parse JSON parameters back to dict
+    if config_dict["parameters"]:
+        config_dict["parameters"] = json.loads(config_dict["parameters"])
+    else:
+        config_dict["parameters"] = {}
 
     return AppModelConfig(**config_dict)
 
