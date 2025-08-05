@@ -762,7 +762,7 @@ async def get_global_fallbacks(
             """
             SELECT * FROM global_fallback_models
             WHERE model_type = $1 AND is_enabled = true
-            ORDER BY priority, created_at
+            ORDER BY created_at
             """,
             model_type.value,
         )
@@ -771,7 +771,7 @@ async def get_global_fallbacks(
             """
             SELECT * FROM global_fallback_models
             WHERE is_enabled = true
-            ORDER BY model_type, priority, created_at
+            ORDER BY model_type, created_at
             """
         )
 
@@ -779,6 +779,13 @@ async def get_global_fallbacks(
     for fallback in fallbacks:
         fallback_dict = dict(fallback)
         fallback_dict["id"] = str(fallback_dict["id"])
+        
+        # Parse JSON parameters back to dict
+        if fallback_dict["parameters"]:
+            fallback_dict["parameters"] = json.loads(fallback_dict["parameters"])
+        else:
+            fallback_dict["parameters"] = {}
+            
         result.append(GlobalFallbackModel(**fallback_dict))
 
     return result
@@ -796,19 +803,14 @@ async def create_global_fallback(
     await db.execute(
         """
         INSERT INTO global_fallback_models (
-            id, model_type, primary_provider, primary_model_id,
-            fallback_provider, fallback_model_id, trigger_condition,
-            priority, is_enabled
-        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+            id, model_type, provider, model_id, parameters, is_enabled
+        ) VALUES ($1, $2, $3, $4, $5, $6)
         """,
         fallback_id,
         fallback.model_type.value,
-        fallback.primary_provider,
-        fallback.primary_model_id,
-        fallback.fallback_provider,
-        fallback.fallback_model_id,
-        fallback.trigger_condition,
-        fallback.priority,
+        fallback.provider,
+        fallback.model_id,
+        json.dumps(fallback.parameters),
         fallback.is_enabled,
     )
 
@@ -818,6 +820,12 @@ async def create_global_fallback(
 
     fallback_dict = dict(created_fallback)
     fallback_dict["id"] = str(fallback_dict["id"])
+    
+    # Parse JSON parameters back to dict
+    if fallback_dict["parameters"]:
+        fallback_dict["parameters"] = json.loads(fallback_dict["parameters"])
+    else:
+        fallback_dict["parameters"] = {}
 
     return GlobalFallbackModel(**fallback_dict)
 

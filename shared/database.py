@@ -608,12 +608,8 @@ async def create_tables():
         CREATE TABLE IF NOT EXISTS global_fallback_models (
             id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
             model_type VARCHAR(20) NOT NULL CHECK (model_type IN ('text', 'image', 'video')),
-            primary_provider VARCHAR(50) NOT NULL,
-            primary_model_id VARCHAR(200) NOT NULL,
-            fallback_provider VARCHAR(50),
-            fallback_model_id VARCHAR(200),
-            trigger_condition VARCHAR(50) DEFAULT 'provider_error',
-            priority INTEGER DEFAULT 1,
+            provider VARCHAR(50) NOT NULL,
+            model_id VARCHAR(200) NOT NULL,
             parameters JSONB DEFAULT '{}',
             is_enabled BOOLEAN DEFAULT true,
             created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
@@ -623,9 +619,30 @@ async def create_tables():
 
         CREATE INDEX IF NOT EXISTS idx_global_fallback_models_type ON global_fallback_models(model_type);
         
-        -- Add missing columns to existing global_fallback_models table
-        ALTER TABLE global_fallback_models ADD COLUMN IF NOT EXISTS trigger_condition VARCHAR(50) DEFAULT 'provider_error';
-        ALTER TABLE global_fallback_models ADD COLUMN IF NOT EXISTS priority INTEGER DEFAULT 1;
+        -- Migrate existing global_fallback_models table to simplified structure
+        -- Drop old columns that are no longer needed
+        ALTER TABLE global_fallback_models DROP COLUMN IF EXISTS primary_provider;
+        ALTER TABLE global_fallback_models DROP COLUMN IF EXISTS primary_model_id;
+        ALTER TABLE global_fallback_models DROP COLUMN IF EXISTS fallback_provider;
+        ALTER TABLE global_fallback_models DROP COLUMN IF EXISTS fallback_model_id;
+        ALTER TABLE global_fallback_models DROP COLUMN IF EXISTS trigger_condition;
+        ALTER TABLE global_fallback_models DROP COLUMN IF EXISTS priority;
+        
+        -- Add new simplified columns
+        ALTER TABLE global_fallback_models ADD COLUMN IF NOT EXISTS provider VARCHAR(50);
+        ALTER TABLE global_fallback_models ADD COLUMN IF NOT EXISTS model_id VARCHAR(200);
+        
+        -- Update any NULL values in new columns (shouldn't happen with new structure, but just in case)
+        UPDATE global_fallback_models SET provider = 'anthropic' WHERE provider IS NULL AND model_type = 'text';
+        UPDATE global_fallback_models SET model_id = 'claude-3-5-haiku-20241022' WHERE model_id IS NULL AND model_type = 'text';
+        UPDATE global_fallback_models SET provider = 'replicate' WHERE provider IS NULL AND model_type = 'image';
+        UPDATE global_fallback_models SET model_id = 'black-forest-labs/flux-schnell' WHERE model_id IS NULL AND model_type = 'image';
+        UPDATE global_fallback_models SET provider = 'runwayml' WHERE provider IS NULL AND model_type = 'video';
+        UPDATE global_fallback_models SET model_id = 'runwayml/gen4-video' WHERE model_id IS NULL AND model_type = 'video';
+        
+        -- Make the columns NOT NULL after setting defaults
+        ALTER TABLE global_fallback_models ALTER COLUMN provider SET NOT NULL;
+        ALTER TABLE global_fallback_models ALTER COLUMN model_id SET NOT NULL;
     """
     )
 
@@ -1600,6 +1617,7 @@ async def create_tables():
 
             -- Request details
             prompt_hash VARCHAR(64), -- SHA-256 hash of the prompt/request
+            prompt_text TEXT, -- Full prompt text for debugging/analysis
             finish_reason VARCHAR(50),
             was_fallback BOOLEAN DEFAULT FALSE,
             fallback_reason TEXT,
@@ -1624,6 +1642,9 @@ async def create_tables():
         -- Composite indexes for analytics queries
         CREATE INDEX IF NOT EXISTS idx_ai_usage_logs_analytics ON ai_usage_logs(model_type, provider, created_at);
         CREATE INDEX IF NOT EXISTS idx_ai_usage_logs_app_analytics ON ai_usage_logs(app_id, model_type, created_at);
+        
+        -- Add missing prompt_text column for existing deployments
+        ALTER TABLE ai_usage_logs ADD COLUMN IF NOT EXISTS prompt_text TEXT;
     """
     )
 

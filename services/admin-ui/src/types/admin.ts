@@ -264,10 +264,8 @@ export interface TermsComplianceStats {
 export interface GlobalFallbackModel {
   id: string;
   model_type: 'text' | 'image' | 'video';
-  primary_provider: string;
-  primary_model_id: string;
-  fallback_provider?: string;
-  fallback_model_id?: string;
+  provider: string;
+  model_id: string;
   parameters: Record<string, any>;
   is_enabled: boolean;
   created_at: string;
@@ -276,10 +274,8 @@ export interface GlobalFallbackModel {
 
 export interface GlobalFallbackModelCreate {
   model_type: 'text' | 'image' | 'video';
-  primary_provider: string;
-  primary_model_id: string;
-  fallback_provider?: string;
-  fallback_model_id?: string;
+  provider: string;
+  model_id: string;
   parameters: Record<string, any>;
   is_enabled: boolean;
 }

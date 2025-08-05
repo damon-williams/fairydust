@@ -614,6 +614,7 @@ export function AppConfig() {
                     <SelectContent>
                       <SelectItem value="black-forest-labs/flux-1.1-pro">FLUX 1.1 Pro ($0.040)</SelectItem>
                       <SelectItem value="black-forest-labs/flux-schnell">FLUX Schnell ($0.003)</SelectItem>
+                      <SelectItem value="bytedance/seedream-3">ByteDance SeeDream-3 ($0.008)</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>

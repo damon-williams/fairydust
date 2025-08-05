@@ -124,20 +124,15 @@ class AppModelConfig(BaseModel):
 
 
 class GlobalFallbackModel(BaseModel):
-    """Global fallback configuration"""
+    """Global fallback configuration - one fallback model per type (text/image/video)"""
 
     model_config = {"protected_namespaces": (), "from_attributes": True}
 
     id: UUID
     model_type: ModelType
-    primary_provider: str = Field(..., max_length=50)
-    primary_model_id: str = Field(..., max_length=200)
-    fallback_provider: Optional[str] = Field(None, max_length=50)
-    fallback_model_id: Optional[str] = Field(None, max_length=200)
-    trigger_condition: Optional[str] = Field(
-        "provider_error", max_length=50
-    )  # 'provider_error', 'rate_limit', 'cost_threshold'
-    priority: int = Field(default=1, ge=1)
+    provider: str = Field(..., max_length=50)
+    model_id: str = Field(..., max_length=200)
+    parameters: dict = Field(default_factory=dict)
     is_enabled: bool = True
     created_at: datetime
     updated_at: datetime
@@ -190,12 +185,9 @@ class GlobalFallbackModelCreate(BaseModel):
     model_config = {"protected_namespaces": ()}
 
     model_type: ModelType
-    primary_provider: str = Field(..., max_length=50)
-    primary_model_id: str = Field(..., max_length=200)
-    fallback_provider: Optional[str] = Field(None, max_length=50)
-    fallback_model_id: Optional[str] = Field(None, max_length=200)
-    trigger_condition: Optional[str] = Field("provider_error", max_length=50)
-    priority: int = Field(default=1, ge=1)
+    provider: str = Field(..., max_length=50)
+    model_id: str = Field(..., max_length=200)
+    parameters: dict = Field(default_factory=dict)
     is_enabled: bool = True
 
 
@@ -204,12 +196,9 @@ class GlobalFallbackModelUpdate(BaseModel):
 
     model_config = {"protected_namespaces": ()}
 
-    primary_provider: Optional[str] = Field(None, max_length=50)
-    primary_model_id: Optional[str] = Field(None, max_length=200)
-    fallback_provider: Optional[str] = Field(None, max_length=50)
-    fallback_model_id: Optional[str] = Field(None, max_length=200)
-    trigger_condition: Optional[str] = Field(None, max_length=50)
-    priority: Optional[int] = Field(None, ge=1)
+    provider: Optional[str] = Field(None, max_length=50)
+    model_id: Optional[str] = Field(None, max_length=200)
+    parameters: Optional[dict] = None
     is_enabled: Optional[bool] = None
 
 
