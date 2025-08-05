@@ -9,7 +9,8 @@ import {
   Trash2,
   FileText,
   CreditCard,
-  Zap
+  Zap,
+  Shield
 } from 'lucide-react';
 
 export interface NavigationItem {
@@ -42,6 +43,11 @@ export const navigation: NavigationItem[] = [
     name: 'AI Analytics',
     href: '/admin/ai-analytics',
     icon: Brain,
+  },
+  {
+    name: 'Global Fallbacks',
+    href: '/admin/global-fallbacks',
+    icon: Shield,
   },
   {
     name: 'Referrals',

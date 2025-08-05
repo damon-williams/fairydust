@@ -1570,4 +1570,76 @@ export class AdminAPI {
       throw error;
     }
   }
+
+  // Global Fallback Model Management APIs
+  static async createGlobalFallback(fallbackData: any): Promise<any> {
+    try {
+      console.log('🔧 Creating global fallback model:', fallbackData);
+      
+      const response = await fetch(`${API_BASE}/admin/model-configs/fallbacks`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        credentials: 'include',
+        body: JSON.stringify(fallbackData),
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(`Failed to create global fallback: ${response.statusText} - ${errorText}`);
+      }
+
+      return await response.json();
+    } catch (error) {
+      console.error('❌ Failed to create global fallback:', error);
+      throw error;
+    }
+  }
+
+  static async updateGlobalFallback(fallbackId: string, fallbackData: any): Promise<any> {
+    try {
+      console.log('🔧 Updating global fallback model:', fallbackId, fallbackData);
+      
+      const response = await fetch(`${API_BASE}/admin/model-configs/fallbacks/${fallbackId}`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        credentials: 'include',
+        body: JSON.stringify(fallbackData),
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(`Failed to update global fallback: ${response.statusText} - ${errorText}`);
+      }
+
+      return await response.json();
+    } catch (error) {
+      console.error('❌ Failed to update global fallback:', error);
+      throw error;
+    }
+  }
+
+  static async deleteGlobalFallback(fallbackId: string): Promise<any> {
+    try {
+      console.log('🗑️ Deleting global fallback model:', fallbackId);
+      
+      const response = await fetch(`${API_BASE}/admin/model-configs/fallbacks/${fallbackId}`, {
+        method: 'DELETE',
+        credentials: 'include',
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(`Failed to delete global fallback: ${response.statusText} - ${errorText}`);
+      }
+
+      return await response.json();
+    } catch (error) {
+      console.error('❌ Failed to delete global fallback:', error);
+      throw error;
+    }
+  }
 }

@@ -338,3 +338,203 @@ async def get_global_fallbacks_api(
     except Exception as e:
         logger.error(f"Error fetching global fallbacks: {e}")
         raise HTTPException(status_code=500, detail="Failed to fetch global fallbacks")
+
+
+@model_configs_router.post("/fallbacks")
+async def create_global_fallback_api(
+    fallback_data: dict,
+    admin_user: dict = Depends(get_current_admin_user),
+):
+    """Create global fallback model via proxy to apps service"""
+    import logging
+
+    logger = logging.getLogger(__name__)
+
+    try:
+        logger.info("🔧 ADMIN_API: Creating global fallback model")
+        logger.info(f"🔧 ADMIN_API: Fallback data: {fallback_data}")
+
+        # Get apps service URL
+        import os
+
+        environment = os.getenv("ENVIRONMENT", "staging")
+        base_url_suffix = "production" if environment == "production" else "staging"
+        apps_url = f"https://fairydust-apps-{base_url_suffix}.up.railway.app"
+
+        # Create admin JWT token for service-to-service auth
+        from datetime import datetime, timedelta, timezone
+
+        import jwt
+
+        JWT_SECRET_KEY = os.getenv("JWT_SECRET_KEY", "development-secret-key")
+        JWT_ALGORITHM = "HS256"
+
+        # Create token data
+        token_data = {
+            "user_id": str(admin_user["user_id"]),
+            "fairyname": admin_user["fairyname"],
+            "is_admin": True,
+            "exp": datetime.now(timezone.utc) + timedelta(hours=1),
+        }
+
+        # Create JWT token
+        access_token = jwt.encode(token_data, JWT_SECRET_KEY, algorithm=JWT_ALGORITHM)
+
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            response = await client.post(
+                f"{apps_url}/model-configs/fallbacks",
+                json=fallback_data,
+                headers={
+                    "Content-Type": "application/json",
+                    "Authorization": f"Bearer {access_token}",
+                },
+            )
+
+            if response.status_code == 201:
+                result = response.json()
+                logger.info("✅ ADMIN_EDIT: Successfully created global fallback model")
+                return result
+            else:
+                logger.error(f"Apps service returned {response.status_code}: {response.text}")
+                raise HTTPException(
+                    status_code=response.status_code, detail=f"Apps service error: {response.text}"
+                )
+
+    except Exception as e:
+        logger = logging.getLogger(__name__)
+        logger.error(f"Error creating global fallback model: {e}")
+        raise HTTPException(status_code=500, detail="Failed to create global fallback model")
+
+
+@model_configs_router.put("/fallbacks/{fallback_id}")
+async def update_global_fallback_api(
+    fallback_id: str,
+    fallback_data: dict,
+    admin_user: dict = Depends(get_current_admin_user),
+):
+    """Update global fallback model via proxy to apps service"""
+    import logging
+
+    logger = logging.getLogger(__name__)
+
+    try:
+        logger.info(f"🔧 ADMIN_API: Updating global fallback model {fallback_id}")
+        logger.info(f"🔧 ADMIN_API: Fallback data: {fallback_data}")
+
+        # Get apps service URL
+        import os
+
+        environment = os.getenv("ENVIRONMENT", "staging")
+        base_url_suffix = "production" if environment == "production" else "staging"
+        apps_url = f"https://fairydust-apps-{base_url_suffix}.up.railway.app"
+
+        # Create admin JWT token for service-to-service auth
+        from datetime import datetime, timedelta, timezone
+
+        import jwt
+
+        JWT_SECRET_KEY = os.getenv("JWT_SECRET_KEY", "development-secret-key")
+        JWT_ALGORITHM = "HS256"
+
+        # Create token data
+        token_data = {
+            "user_id": str(admin_user["user_id"]),
+            "fairyname": admin_user["fairyname"],
+            "is_admin": True,
+            "exp": datetime.now(timezone.utc) + timedelta(hours=1),
+        }
+
+        # Create JWT token
+        access_token = jwt.encode(token_data, JWT_SECRET_KEY, algorithm=JWT_ALGORITHM)
+
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            response = await client.put(
+                f"{apps_url}/model-configs/fallbacks/{fallback_id}",
+                json=fallback_data,
+                headers={
+                    "Content-Type": "application/json",
+                    "Authorization": f"Bearer {access_token}",
+                },
+            )
+
+            if response.status_code == 200:
+                result = response.json()
+                logger.info(
+                    f"✅ ADMIN_EDIT: Successfully updated global fallback model {fallback_id}"
+                )
+                return result
+            else:
+                logger.error(f"Apps service returned {response.status_code}: {response.text}")
+                raise HTTPException(
+                    status_code=response.status_code, detail=f"Apps service error: {response.text}"
+                )
+
+    except Exception as e:
+        logger = logging.getLogger(__name__)
+        logger.error(f"Error updating global fallback model: {e}")
+        raise HTTPException(status_code=500, detail="Failed to update global fallback model")
+
+
+@model_configs_router.delete("/fallbacks/{fallback_id}")
+async def delete_global_fallback_api(
+    fallback_id: str,
+    admin_user: dict = Depends(get_current_admin_user),
+):
+    """Delete global fallback model via proxy to apps service"""
+    import logging
+
+    logger = logging.getLogger(__name__)
+
+    try:
+        logger.info(f"🔧 ADMIN_API: Deleting global fallback model {fallback_id}")
+
+        # Get apps service URL
+        import os
+
+        environment = os.getenv("ENVIRONMENT", "staging")
+        base_url_suffix = "production" if environment == "production" else "staging"
+        apps_url = f"https://fairydust-apps-{base_url_suffix}.up.railway.app"
+
+        # Create admin JWT token for service-to-service auth
+        from datetime import datetime, timedelta, timezone
+
+        import jwt
+
+        JWT_SECRET_KEY = os.getenv("JWT_SECRET_KEY", "development-secret-key")
+        JWT_ALGORITHM = "HS256"
+
+        # Create token data
+        token_data = {
+            "user_id": str(admin_user["user_id"]),
+            "fairyname": admin_user["fairyname"],
+            "is_admin": True,
+            "exp": datetime.now(timezone.utc) + timedelta(hours=1),
+        }
+
+        # Create JWT token
+        access_token = jwt.encode(token_data, JWT_SECRET_KEY, algorithm=JWT_ALGORITHM)
+
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            response = await client.delete(
+                f"{apps_url}/model-configs/fallbacks/{fallback_id}",
+                headers={
+                    "Authorization": f"Bearer {access_token}",
+                },
+            )
+
+            if response.status_code == 200:
+                result = response.json()
+                logger.info(
+                    f"✅ ADMIN_EDIT: Successfully deleted global fallback model {fallback_id}"
+                )
+                return result
+            else:
+                logger.error(f"Apps service returned {response.status_code}: {response.text}")
+                raise HTTPException(
+                    status_code=response.status_code, detail=f"Apps service error: {response.text}"
+                )
+
+    except Exception as e:
+        logger = logging.getLogger(__name__)
+        logger.error(f"Error deleting global fallback model: {e}")
+        raise HTTPException(status_code=500, detail="Failed to delete global fallback model")

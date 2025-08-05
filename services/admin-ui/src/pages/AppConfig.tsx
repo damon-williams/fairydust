@@ -127,9 +127,9 @@ export function AppConfig() {
         const videoConfig = configData.video_config;
         
         setConfig({
-          text_models_enabled: !!(textConfig && textConfig.is_enabled),
-          image_models_enabled: !!(imageConfig && imageConfig.is_enabled),
-          video_models_enabled: !!(videoConfig && videoConfig.is_enabled),
+          text_models_enabled: !!(textConfig),
+          image_models_enabled: !!(imageConfig),
+          video_models_enabled: !!(videoConfig),
           
           text_config: textConfig ? {
             primary_provider: textConfig.provider || 'anthropic',

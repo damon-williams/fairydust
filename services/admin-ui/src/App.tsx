@@ -14,6 +14,7 @@ import DeletionLogs from '@/pages/DeletionLogs';
 import Terms from '@/pages/Terms';
 import { SystemStatus } from '@/pages/SystemStatus';
 import Settings from '@/pages/Settings';
+import GlobalModelFallbacksPage from '@/pages/GlobalModelFallbacks';
 import { Toaster } from '@/components/ui/sonner';
 import { AuthProvider } from '@/contexts/AuthContext';
 import { ProtectedRoute } from '@/components/auth/ProtectedRoute';
@@ -39,6 +40,7 @@ function App() {
                     <Route path="apps/:appId/config" element={<AppConfig />} />
                     <Route path="llm" element={<LLM />} />
                     <Route path="ai-analytics" element={<AIAnalytics />} />
+                    <Route path="global-fallbacks" element={<GlobalModelFallbacksPage />} />
                     <Route path="referrals" element={<Referrals />} />
                     <Route path="activity" element={<Activity />} />
                     <Route path="payments" element={<Payments />} />
