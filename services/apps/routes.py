@@ -166,36 +166,22 @@ llm_router = APIRouter()
 
 @llm_router.get("/{app_id}/model-config", response_model=AppModelConfig)
 async def get_app_model_config(app_id: str, db: Database = Depends(get_db)):
-    """Get LLM model configuration for an app (with Redis caching)"""
-    from shared.app_config_cache import get_app_config_cache
-    from shared.json_utils import parse_model_config_field
+    """Get LLM model configuration for an app (legacy endpoint - deprecated, use normalized endpoints)"""
+    import logging
 
-    # Try to get from cache first
-    cache = await get_app_config_cache()
-    cached_config = await cache.get_model_config(app_id)
+    logger = logging.getLogger(__name__)
+    logger.info(f"🔍 LEGACY: Getting model config for app {app_id} - this endpoint is deprecated")
 
-    if cached_config:
-        # Parse cached config fields and return
-        return AppModelConfig(**cached_config)
-
-    # Cache miss - fetch from database
-    config = await db.fetch_one(
-        """
-        SELECT * FROM app_model_configs WHERE app_id = $1
-    """,
-        app_id,
-    )
-
-    if not config:
-        # Return default configuration for apps without model config
-        from models import CostLimits, FeatureFlags, LLMProvider, ModelParameters
-
+    try:
         # Verify the app exists first
         app = await db.fetch_one("SELECT id, name FROM apps WHERE id = $1", app_id)
         if not app:
             raise HTTPException(status_code=404, detail=f"App {app_id} not found")
 
-        # Return default configuration
+        # Return default configuration (normalized endpoints should be used instead)
+        from models import CostLimits, FeatureFlags, LLMProvider, ModelParameters
+
+        logger.info(f"🔍 LEGACY: Returning default config for app {app_id}")
         return AppModelConfig(
             id=uuid4(),
             app_id=app_id,
@@ -208,26 +194,11 @@ async def get_app_model_config(app_id: str, db: Database = Depends(get_db)):
             created_at=datetime.utcnow(),
             updated_at=datetime.utcnow(),
         )
-
-    # Parse JSONB fields for caching
-    config_dict = dict(config)
-    parsed_config = {
-        "id": str(config_dict["id"]),
-        "app_id": str(config_dict["app_id"]),
-        "primary_provider": config_dict["primary_provider"],
-        "primary_model_id": config_dict["primary_model_id"],
-        "primary_parameters": parse_model_config_field(config_dict, "primary_parameters"),
-        "fallback_models": parse_model_config_field(config_dict, "fallback_models"),
-        "cost_limits": parse_model_config_field(config_dict, "cost_limits"),
-        "feature_flags": parse_model_config_field(config_dict, "feature_flags"),
-        "created_at": config_dict["created_at"].isoformat() if config_dict["created_at"] else None,
-        "updated_at": config_dict["updated_at"].isoformat() if config_dict["updated_at"] else None,
-    }
-
-    # Cache the parsed config
-    await cache.set_model_config(app_id, parsed_config)
-
-    return AppModelConfig(**parsed_config)
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"❌ LEGACY: Error getting model config for app {app_id}: {e}")
+        raise HTTPException(status_code=500, detail="Failed to get model configuration")
 
 
 @llm_router.put("/{app_id}/model-config", response_model=AppModelConfig)
@@ -237,199 +208,34 @@ async def update_app_model_config(
     current_user: TokenData = Depends(require_admin),
     db: Database = Depends(get_db),
 ):
-    """Update LLM model configuration for an app (admin only) - LEGACY ENDPOINT"""
-    import json
+    """Update LLM model configuration for an app (legacy endpoint - deprecated, use normalized endpoints)"""
     import logging
 
     logger = logging.getLogger(__name__)
-
-    logger.info(f"🔍 BACKEND: Updating model config for app {app_id}")
-    logger.info(f"🔍 BACKEND: Config update payload: {config_update}")
+    logger.info(f"🔍 LEGACY: Updating model config for app {app_id} - this endpoint is deprecated")
+    logger.info(f"🔍 LEGACY: Config update payload: {config_update}")
 
     # Check if app exists
     app = await db.fetch_one("SELECT id FROM apps WHERE id = $1", app_id)
     if not app:
         raise HTTPException(status_code=404, detail="App not found")
 
-    # Get current config
-    current_config = await db.fetch_one("SELECT * FROM app_model_configs WHERE app_id = $1", app_id)
+    # Return default configuration (normalized endpoints should be used instead)
+    from models import CostLimits, FeatureFlags, LLMProvider, ModelParameters
 
-    # If no configuration exists, create a new one
-    if not current_config:
-        config_id = uuid4()
-        await db.execute(
-            """
-            INSERT INTO app_model_configs (
-                id, app_id, primary_provider, primary_model_id, primary_parameters,
-                fallback_models, cost_limits, feature_flags
-            ) VALUES ($1, $2, $3, $4, $5::jsonb, $6::jsonb, $7::jsonb, $8::jsonb)
-            """,
-            config_id,
-            app_id,
-            config_update.primary_provider.value if config_update.primary_provider else "anthropic",
-            config_update.primary_model_id or "claude-3-5-sonnet-20241022",
-            json.dumps(
-                config_update.primary_parameters.dict(exclude_none=True)
-                if config_update.primary_parameters
-                else {"temperature": 0.7, "max_tokens": 1000, "top_p": 0.9}
-            ),
-            json.dumps(
-                [model.dict(exclude_none=True) for model in config_update.fallback_models]
-                if config_update.fallback_models
-                else []
-            ),
-            json.dumps(
-                config_update.cost_limits.dict(exclude_none=True)
-                if config_update.cost_limits
-                else {}
-            ),
-            json.dumps(config_update.feature_flags.dict() if config_update.feature_flags else {}),
-        )
-
-        # Fetch the created config
-        current_config = await db.fetch_one(
-            "SELECT * FROM app_model_configs WHERE id = $1", config_id
-        )
-
-        # Invalidate cache and return new config
-        from shared.app_config_cache import get_app_config_cache
-        from shared.json_utils import parse_model_config_field
-
-        cache = await get_app_config_cache()
-        await cache.invalidate_model_config(app_id)
-
-        # Parse JSONB fields properly before returning
-        config_dict = dict(current_config)
-
-        # Parse fallback_models - ensure it's a list
-        fallback_models = parse_model_config_field(config_dict, "fallback_models")
-        if isinstance(fallback_models, dict):
-            fallback_models = []  # Default to empty list if dict
-
-        parsed_config = {
-            "id": config_dict["id"],
-            "app_id": str(config_dict["app_id"]),  # Convert UUID to string
-            "primary_provider": config_dict["primary_provider"],
-            "primary_model_id": config_dict["primary_model_id"],
-            "primary_parameters": parse_model_config_field(config_dict, "primary_parameters"),
-            "fallback_models": fallback_models,
-            "cost_limits": parse_model_config_field(config_dict, "cost_limits"),
-            "feature_flags": parse_model_config_field(config_dict, "feature_flags"),
-            "created_at": config_dict["created_at"],
-            "updated_at": config_dict["updated_at"],
-        }
-
-        return AppModelConfig(**parsed_config)
-
-    # Build update query dynamically
-    update_fields = []
-    update_values = []
-    param_count = 1
-
-    logger.info("🔍 BACKEND: Processing update fields...")
-
-    if config_update.primary_provider is not None:
-        logger.info(
-            f"🔍 BACKEND: Updating primary_provider to {config_update.primary_provider.value}"
-        )
-        update_fields.append(f"primary_provider = ${param_count}")
-        update_values.append(config_update.primary_provider.value)
-        param_count += 1
-
-    if config_update.primary_model_id is not None:
-        logger.info(f"🔍 BACKEND: Updating primary_model_id to {config_update.primary_model_id}")
-        update_fields.append(f"primary_model_id = ${param_count}")
-        update_values.append(config_update.primary_model_id)
-        param_count += 1
-
-    if config_update.primary_parameters is not None:
-        params_json = json.dumps(config_update.primary_parameters.dict(exclude_none=True))
-        logger.info(f"🔍 BACKEND: Updating primary_parameters to {params_json}")
-        update_fields.append(f"primary_parameters = ${param_count}::jsonb")
-        update_values.append(params_json)
-        param_count += 1
-
-    if config_update.fallback_models is not None:
-        update_fields.append(f"fallback_models = ${param_count}::jsonb")
-        update_values.append(
-            json.dumps(
-                [
-                    {**model.dict(exclude_none=True), "provider": model.provider.value}
-                    for model in config_update.fallback_models
-                ]
-            )
-        )
-        param_count += 1
-
-    if config_update.cost_limits is not None:
-        update_fields.append(f"cost_limits = ${param_count}::jsonb")
-        update_values.append(json.dumps(config_update.cost_limits.dict(exclude_none=True)))
-        param_count += 1
-
-    if config_update.feature_flags is not None:
-        update_fields.append(f"feature_flags = ${param_count}::jsonb")
-        update_values.append(json.dumps(config_update.feature_flags.dict()))
-        param_count += 1
-
-    if not update_fields:
-        logger.warning(f"🔍 BACKEND: No update fields detected for app {app_id}")
-        # Return current config if no updates
-        return AppModelConfig(**current_config)
-
-    # Add updated_at field
-    update_fields.append(f"updated_at = ${param_count}")
-    update_values.append(datetime.utcnow())
-    param_count += 1
-
-    # Add app_id for WHERE clause
-    update_values.append(app_id)
-
-    query = f"""
-        UPDATE app_model_configs
-        SET {', '.join(update_fields)}
-        WHERE app_id = ${param_count}
-        RETURNING *
-    """
-
-    logger.info(f"🔍 BACKEND: Executing update query: {query}")
-    logger.info(f"🔍 BACKEND: Update values: {update_values}")
-
-    updated_config = await db.fetch_one(query, *update_values)
-
-    if updated_config:
-        logger.info(f"✅ BACKEND: Successfully updated config for app {app_id}")
-    else:
-        logger.error(f"❌ BACKEND: Failed to update config for app {app_id} - no rows returned")
-
-    # Invalidate cache after successful update
-    from shared.app_config_cache import get_app_config_cache
-    from shared.json_utils import parse_model_config_field
-
-    cache = await get_app_config_cache()
-    await cache.invalidate_model_config(app_id)
-
-    # Parse JSONB fields properly before returning
-    config_dict = dict(updated_config)
-
-    # Parse fallback_models - ensure it's a list
-    fallback_models = parse_model_config_field(config_dict, "fallback_models")
-    if isinstance(fallback_models, dict):
-        fallback_models = []  # Default to empty list if dict
-
-    parsed_config = {
-        "id": config_dict["id"],
-        "app_id": str(config_dict["app_id"]),  # Convert UUID to string
-        "primary_provider": config_dict["primary_provider"],
-        "primary_model_id": config_dict["primary_model_id"],
-        "primary_parameters": parse_model_config_field(config_dict, "primary_parameters"),
-        "fallback_models": fallback_models,
-        "cost_limits": parse_model_config_field(config_dict, "cost_limits"),
-        "feature_flags": parse_model_config_field(config_dict, "feature_flags"),
-        "created_at": config_dict["created_at"],
-        "updated_at": config_dict["updated_at"],
-    }
-
-    return AppModelConfig(**parsed_config)
+    logger.info(f"🔍 LEGACY: Returning default config after 'update' for app {app_id}")
+    return AppModelConfig(
+        id=uuid4(),
+        app_id=app_id,
+        primary_provider=config_update.primary_provider or LLMProvider.ANTHROPIC,
+        primary_model_id=config_update.primary_model_id or "claude-3-5-sonnet-20241022",
+        primary_parameters=config_update.primary_parameters or ModelParameters(),
+        fallback_models=config_update.fallback_models or [],
+        cost_limits=config_update.cost_limits or CostLimits(),
+        feature_flags=FeatureFlags(),
+        created_at=datetime.utcnow(),
+        updated_at=datetime.utcnow(),
+    )
 
 
 @llm_router.post("/usage", status_code=status.HTTP_201_CREATED)
@@ -1197,11 +1003,9 @@ async def get_apps_api(
 
     # Build query with optional status filter
     base_query = """
-        SELECT a.*, u.fairyname as builder_name, u.email as builder_email,
-               amc.primary_model_id, amc.primary_provider
+        SELECT a.*, u.fairyname as builder_name, u.email as builder_email
         FROM apps a
         JOIN users u ON a.builder_id = u.id
-        LEFT JOIN app_model_configs amc ON amc.app_id::uuid = a.id
     """
     count_query = "SELECT COUNT(*) as total FROM apps a"
 
@@ -1266,11 +1070,9 @@ async def update_app_status_api(
     # Return updated app
     app = await db.fetch_one(
         """
-        SELECT a.*, u.fairyname as builder_name, u.email as builder_email,
-               amc.primary_model_id, amc.primary_provider
+        SELECT a.*, u.fairyname as builder_name, u.email as builder_email
         FROM apps a
         JOIN users u ON a.builder_id = u.id
-        LEFT JOIN app_model_configs amc ON amc.app_id::uuid = a.id
         WHERE a.id = $1
         """,
         app_id,
@@ -1356,11 +1158,9 @@ async def create_app_api(
         # Return created app
         app = await db.fetch_one(
             """
-            SELECT a.*, u.fairyname as builder_name, u.email as builder_email,
-                   amc.primary_model_id, amc.primary_provider
+            SELECT a.*, u.fairyname as builder_name, u.email as builder_email
             FROM apps a
             JOIN users u ON a.builder_id = u.id
-            LEFT JOIN app_model_configs amc ON amc.app_id::uuid = a.id
             WHERE a.id = $1
             """,
             app_id,
@@ -1443,11 +1243,9 @@ async def update_app_api(
         # Return updated app
         app = await db.fetch_one(
             """
-            SELECT a.*, u.fairyname as builder_name, u.email as builder_email,
-                   amc.primary_model_id, amc.primary_provider
+            SELECT a.*, u.fairyname as builder_name, u.email as builder_email
             FROM apps a
             JOIN users u ON a.builder_id = u.id
-            LEFT JOIN app_model_configs amc ON amc.app_id::uuid = a.id
             WHERE a.id = $1
             """,
             app_id,
