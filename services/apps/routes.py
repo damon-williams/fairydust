@@ -283,17 +283,17 @@ async def log_llm_usage(usage: LLMUsageLogCreate, db: Database = Depends(get_db)
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"Cost calculation failed: {str(e)}")
 
-    # Insert usage log
+    # Insert usage log into unified ai_usage_logs table
     usage_id = uuid4()
     await db.execute(
         """
-        INSERT INTO llm_usage_logs (
-            id, user_id, app_id, provider, model_id,
-            prompt_tokens, completion_tokens, total_tokens,
-            cost_usd, latency_ms, prompt_hash, finish_reason,
-            was_fallback, fallback_reason, request_metadata
-        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15::jsonb)
-    """,
+        INSERT INTO ai_usage_logs (
+            id, user_id, app_id, model_type, provider, model_id,
+            prompt_tokens, completion_tokens, cost_usd, latency_ms,
+            prompt_text, finish_reason, was_fallback, fallback_reason,
+            request_metadata, created_at
+        ) VALUES ($1, $2, $3, 'text', $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, NOW())
+        """,
         usage_id,
         usage.user_id,
         app_uuid,
@@ -301,10 +301,9 @@ async def log_llm_usage(usage: LLMUsageLogCreate, db: Database = Depends(get_db)
         usage.model_id,
         usage.prompt_tokens,
         usage.completion_tokens,
-        usage.total_tokens,
         calculated_cost,
         usage.latency_ms,
-        usage.prompt_hash,
+        usage.prompt_hash,  # Store prompt_hash in prompt_text field
         usage.finish_reason,
         usage.was_fallback,
         usage.fallback_reason,
@@ -423,32 +422,32 @@ async def get_user_llm_usage(
 
     where_clause = " AND ".join(conditions)
 
-    # Get aggregate stats
+    # Get aggregate stats from ai_usage_logs for text models
     stats = await db.fetch_one(
         f"""
         SELECT
             COUNT(*) as total_requests,
-            SUM(total_tokens) as total_tokens,
+            SUM(COALESCE(prompt_tokens, 0) + COALESCE(completion_tokens, 0)) as total_tokens,
             SUM(cost_usd) as total_cost_usd,
             AVG(latency_ms) as average_latency_ms
-        FROM llm_usage_logs
-        WHERE {where_clause}
+        FROM ai_usage_logs
+        WHERE {where_clause} AND model_type = 'text'
     """,
         *params,
     )
 
-    # Get model breakdown
+    # Get model breakdown from ai_usage_logs for text models
     model_stats = await db.fetch_all(
         f"""
         SELECT
             provider,
             model_id,
             COUNT(*) as requests,
-            SUM(total_tokens) as tokens,
+            SUM(COALESCE(prompt_tokens, 0) + COALESCE(completion_tokens, 0)) as tokens,
             SUM(cost_usd) as cost,
             AVG(latency_ms) as avg_latency
-        FROM llm_usage_logs
-        WHERE {where_clause}
+        FROM ai_usage_logs
+        WHERE {where_clause} AND model_type = 'text'
         GROUP BY provider, model_id
         ORDER BY cost DESC
     """,
