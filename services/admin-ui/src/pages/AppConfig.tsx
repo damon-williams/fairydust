@@ -204,6 +204,7 @@ export function AppConfig() {
         // Use POST to create new config
         const createPayload = {
           ...payload,
+          app_id: appId!,
           model_type: modelType,
         };
         await AdminAPI.createAppModelConfig(appId!, createPayload);
@@ -213,6 +214,7 @@ export function AppConfig() {
       if (exists && error.message?.includes('404')) {
         const createPayload = {
           ...payload,
+          app_id: appId!,
           model_type: modelType,
         };
         await AdminAPI.createAppModelConfig(appId!, createPayload);
