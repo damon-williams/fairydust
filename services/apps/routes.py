@@ -1310,15 +1310,15 @@ async def get_app_api(
         # Convert to dict for JSON response
         app_dict = dict(app)
 
-        # Add model configuration if available
+        # Add model configuration if available (prioritize text model)
         model_config = await db.fetch_one(
-            "SELECT * FROM app_model_configs WHERE app_id = $1",
+            "SELECT * FROM app_model_configs WHERE app_id = $1 AND model_type = 'text' LIMIT 1",
             app_id,
         )
 
         if model_config:
-            app_dict["primary_provider"] = model_config["primary_provider"]
-            app_dict["primary_model_id"] = model_config["primary_model_id"]
+            app_dict["primary_provider"] = model_config["provider"]
+            app_dict["primary_model_id"] = model_config["model_id"]
         else:
             app_dict["primary_provider"] = None
             app_dict["primary_model_id"] = None
