@@ -52,22 +52,60 @@ const GlobalModelFallbacks: React.FC = () => {
     is_enabled: true
   });
 
-  const modelProviders = [
-    'anthropic',
-    'openai',
-    'gemini',
-    'claude',
-    'gpt',
-    'dall-e',
-    'midjourney',
-    'stable-diffusion'
-  ];
+  const textProviders = ['anthropic', 'openai'];
+  const imageProviders = ['replicate', 'runwayml'];
+  const videoProviders = ['runwayml'];
+
+  const textModels = {
+    anthropic: [
+      { value: 'claude-3-5-sonnet-20241022', label: 'Claude 3.5 Sonnet' },
+      { value: 'claude-3-5-haiku-20241022', label: 'Claude 3.5 Haiku' },
+    ],
+    openai: [
+      { value: 'gpt-4o', label: 'GPT-4o' },
+      { value: 'gpt-4o-mini', label: 'GPT-4o Mini' },
+    ],
+  };
+
+  const imageModels = {
+    replicate: [
+      { value: 'black-forest-labs/flux-1.1-pro', label: 'FLUX 1.1 Pro ($0.040)' },
+      { value: 'black-forest-labs/flux-schnell', label: 'FLUX Schnell ($0.003)' },
+    ],
+    runwayml: [
+      { value: 'runwayml/gen4-image', label: 'Runway Gen-4 ($0.050)' },
+    ],
+  };
+
+  const videoModels = {
+    runwayml: [
+      { value: 'runwayml/gen4-video', label: 'Runway Gen-4 Video' },
+    ],
+  };
 
   const modelTypes = [
     { value: 'text', label: 'Text' },
     { value: 'image', label: 'Image' },
     { value: 'video', label: 'Video' }
   ];
+
+  const getAvailableProviders = (modelType: 'text' | 'image' | 'video') => {
+    switch (modelType) {
+      case 'text': return textProviders;
+      case 'image': return imageProviders;
+      case 'video': return videoProviders;
+      default: return [];
+    }
+  };
+
+  const getAvailableModels = (modelType: 'text' | 'image' | 'video', provider: string) => {
+    switch (modelType) {
+      case 'text': return textModels[provider as keyof typeof textModels] || [];
+      case 'image': return imageModels[provider as keyof typeof imageModels] || [];
+      case 'video': return videoModels[provider as keyof typeof videoModels] || [];
+      default: return [];
+    }
+  };
 
   useEffect(() => {
     loadFallbacks();
@@ -90,11 +128,14 @@ const GlobalModelFallbacks: React.FC = () => {
     setEditingFallback(null);
     setFormData({
       model_type: 'text',
-      primary_provider: '',
+      primary_provider: textProviders[0] || '',
       primary_model_id: '',
       fallback_provider: '',
       fallback_model_id: '',
-      parameters: {},
+      parameters: {
+        temperature: 0.7,
+        max_tokens: 1000,
+      },
       is_enabled: true
     });
     setDialogOpen(true);
@@ -271,7 +312,24 @@ const GlobalModelFallbacks: React.FC = () => {
               <Label>Model Type</Label>
               <Select
                 value={formData.model_type}
-                onValueChange={(value: 'text' | 'image' | 'video') => setFormData({ ...formData, model_type: value })}
+                onValueChange={(value: 'text' | 'image' | 'video') => {
+                  const availableProviders = getAvailableProviders(value);
+                  const defaultParams = value === 'text' 
+                    ? { temperature: 0.7, max_tokens: 1000 }
+                    : value === 'image'
+                    ? { default_style: 'realistic' }
+                    : { duration: 5, resolution: '1080p' };
+                  
+                  setFormData({ 
+                    ...formData, 
+                    model_type: value,
+                    primary_provider: availableProviders[0] || '',
+                    primary_model_id: '',
+                    fallback_provider: '',
+                    fallback_model_id: '',
+                    parameters: defaultParams,
+                  });
+                }}
               >
                 <SelectTrigger>
                   <SelectValue />
@@ -288,59 +346,209 @@ const GlobalModelFallbacks: React.FC = () => {
 
             <div className="space-y-2">
               <Label>Primary Provider</Label>
-              <Input
+              <Select
                 value={formData.primary_provider}
-                onChange={(e) => setFormData({ ...formData, primary_provider: e.target.value })}
-                placeholder="e.g., anthropic, openai"
-                required
-              />
+                onValueChange={(value) => setFormData({ 
+                  ...formData, 
+                  primary_provider: value,
+                  primary_model_id: '', // Reset model when provider changes
+                })}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Select a provider" />
+                </SelectTrigger>
+                <SelectContent>
+                  {getAvailableProviders(formData.model_type).map((provider) => (
+                    <SelectItem key={provider} value={provider}>
+                      {provider.charAt(0).toUpperCase() + provider.slice(1)}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
 
             <div className="space-y-2">
-              <Label>Primary Model ID</Label>
-              <Input
+              <Label>Primary Model</Label>
+              <Select
                 value={formData.primary_model_id}
-                onChange={(e) => setFormData({ ...formData, primary_model_id: e.target.value })}
-                placeholder="e.g., claude-3-5-sonnet-20241022"
-                required
-              />
+                onValueChange={(value) => setFormData({ ...formData, primary_model_id: value })}
+                disabled={!formData.primary_provider}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Select a model" />
+                </SelectTrigger>
+                <SelectContent>
+                  {getAvailableModels(formData.model_type, formData.primary_provider).map((model) => (
+                    <SelectItem key={model.value} value={model.value}>
+                      {model.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
 
             <div className="space-y-2">
               <Label>Fallback Provider (Optional)</Label>
-              <Input
-                value={formData.fallback_provider}
-                onChange={(e) => setFormData({ ...formData, fallback_provider: e.target.value })}
-                placeholder="e.g., openai"
-              />
+              <Select
+                value={formData.fallback_provider || ''}
+                onValueChange={(value) => setFormData({ 
+                  ...formData, 
+                  fallback_provider: value || undefined,
+                  fallback_model_id: value ? '' : undefined, // Reset fallback model when provider changes
+                })}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Select a fallback provider" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="">None</SelectItem>
+                  {getAvailableProviders(formData.model_type).map((provider) => (
+                    <SelectItem key={provider} value={provider}>
+                      {provider.charAt(0).toUpperCase() + provider.slice(1)}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
 
             <div className="space-y-2">
-              <Label>Fallback Model ID (Optional)</Label>
-              <Input
-                value={formData.fallback_model_id}
-                onChange={(e) => setFormData({ ...formData, fallback_model_id: e.target.value })}
-                placeholder="e.g., gpt-4o"
-              />
+              <Label>Fallback Model (Optional)</Label>
+              <Select
+                value={formData.fallback_model_id || ''}
+                onValueChange={(value) => setFormData({ ...formData, fallback_model_id: value || undefined })}
+                disabled={!formData.fallback_provider}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Select a fallback model" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="">None</SelectItem>
+                  {formData.fallback_provider && getAvailableModels(formData.model_type, formData.fallback_provider).map((model) => (
+                    <SelectItem key={model.value} value={model.value}>
+                      {model.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
 
-            <div className="space-y-2">
-              <Label>Parameters (JSON)</Label>
-              <Textarea
-                value={JSON.stringify(formData.parameters, null, 2)}
-                onChange={(e) => {
-                  try {
-                    const params = JSON.parse(e.target.value);
-                    setFormData({ ...formData, parameters: params });
-                  } catch {
-                    // Invalid JSON, keep current value
-                  }
-                }}
-                rows={4}
-                placeholder='{"temperature": 0.7, "max_tokens": 1000}'
-              />
-              <p className="text-sm text-slate-500">Enter model parameters as JSON</p>
-            </div>
+            {formData.model_type === 'text' && (
+              <div className="space-y-4">
+                <Label>Text Model Parameters</Label>
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label>Temperature</Label>
+                    <Input
+                      type="number"
+                      step="0.1"
+                      min="0"
+                      max="2"
+                      value={formData.parameters.temperature || 0.7}
+                      onChange={(e) => setFormData({ 
+                        ...formData, 
+                        parameters: { 
+                          ...formData.parameters, 
+                          temperature: parseFloat(e.target.value) || 0.7 
+                        } 
+                      })}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Max Tokens</Label>
+                    <Input
+                      type="number"
+                      min="1"
+                      max="4000"
+                      value={formData.parameters.max_tokens || 1000}
+                      onChange={(e) => setFormData({ 
+                        ...formData, 
+                        parameters: { 
+                          ...formData.parameters, 
+                          max_tokens: parseInt(e.target.value) || 1000 
+                        } 
+                      })}
+                    />
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {formData.model_type === 'image' && (
+              <div className="space-y-4">
+                <Label>Image Model Parameters</Label>
+                <div className="space-y-2">
+                  <Label>Default Style</Label>
+                  <Select
+                    value={formData.parameters.default_style || 'realistic'}
+                    onValueChange={(value) => setFormData({ 
+                      ...formData, 
+                      parameters: { 
+                        ...formData.parameters, 
+                        default_style: value 
+                      } 
+                    })}
+                  >
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="realistic">Realistic</SelectItem>
+                      <SelectItem value="artistic">Artistic</SelectItem>
+                      <SelectItem value="cartoon">Cartoon</SelectItem>
+                      <SelectItem value="abstract">Abstract</SelectItem>
+                      <SelectItem value="vintage">Vintage</SelectItem>
+                      <SelectItem value="modern">Modern</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+            )}
+
+            {formData.model_type === 'video' && (
+              <div className="space-y-4">
+                <Label>Video Model Parameters</Label>
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label>Duration (seconds)</Label>
+                    <Input
+                      type="number"
+                      min="1"
+                      max="30"
+                      value={formData.parameters.duration || 5}
+                      onChange={(e) => setFormData({ 
+                        ...formData, 
+                        parameters: { 
+                          ...formData.parameters, 
+                          duration: parseInt(e.target.value) || 5 
+                        } 
+                      })}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Resolution</Label>
+                    <Select
+                      value={formData.parameters.resolution || '1080p'}
+                      onValueChange={(value) => setFormData({ 
+                        ...formData, 
+                        parameters: { 
+                          ...formData.parameters, 
+                          resolution: value 
+                        } 
+                      })}
+                    >
+                      <SelectTrigger>
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="720p">720p</SelectItem>
+                        <SelectItem value="1080p">1080p</SelectItem>
+                        <SelectItem value="4k">4K</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
+              </div>
+            )}
 
             <div className="flex items-center space-x-2">
               <Switch
