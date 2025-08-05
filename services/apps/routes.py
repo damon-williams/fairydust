@@ -761,7 +761,7 @@ async def get_global_fallbacks(
         fallbacks = await db.fetch_all(
             """
             SELECT * FROM global_fallback_models
-            WHERE model_type = $1 AND is_active = true
+            WHERE model_type = $1 AND is_enabled = true
             ORDER BY priority, created_at
             """,
             model_type.value,
@@ -770,7 +770,7 @@ async def get_global_fallbacks(
         fallbacks = await db.fetch_all(
             """
             SELECT * FROM global_fallback_models
-            WHERE is_active = true
+            WHERE is_enabled = true
             ORDER BY model_type, priority, created_at
             """
         )
@@ -798,7 +798,7 @@ async def create_global_fallback(
         INSERT INTO global_fallback_models (
             id, model_type, primary_provider, primary_model_id,
             fallback_provider, fallback_model_id, trigger_condition,
-            priority, is_active
+            priority, is_enabled
         ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
         """,
         fallback_id,
@@ -809,7 +809,7 @@ async def create_global_fallback(
         fallback.fallback_model_id,
         fallback.trigger_condition,
         fallback.priority,
-        fallback.is_active,
+        fallback.is_enabled,
     )
 
     created_fallback = await db.fetch_one(

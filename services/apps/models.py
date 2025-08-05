@@ -138,7 +138,7 @@ class GlobalFallbackModel(BaseModel):
         ..., max_length=50
     )  # 'provider_error', 'rate_limit', 'cost_threshold'
     priority: int = Field(default=1, ge=1)
-    is_active: bool = True
+    is_enabled: bool = True
     created_at: datetime
     updated_at: datetime
 
@@ -196,7 +196,7 @@ class GlobalFallbackModelCreate(BaseModel):
     fallback_model_id: str = Field(..., max_length=200)
     trigger_condition: str = Field(..., max_length=50)
     priority: int = Field(default=1, ge=1)
-    is_active: bool = True
+    is_enabled: bool = True
 
 
 class GlobalFallbackModelUpdate(BaseModel):
@@ -210,7 +210,7 @@ class GlobalFallbackModelUpdate(BaseModel):
     fallback_model_id: Optional[str] = Field(None, max_length=200)
     trigger_condition: Optional[str] = Field(None, max_length=50)
     priority: Optional[int] = Field(None, ge=1)
-    is_active: Optional[bool] = None
+    is_enabled: Optional[bool] = None
 
 
 # Legacy models kept for backward compatibility

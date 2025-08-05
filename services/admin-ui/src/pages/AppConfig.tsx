@@ -635,7 +635,6 @@ export function AppConfig() {
                     </SelectTrigger>
                     <SelectContent>
                       <SelectItem value="runwayml/gen4-image">Runway Gen-4 ($0.050)</SelectItem>
-                      <SelectItem value="black-forest-labs/flux-1.1-pro">FLUX 1.1 Pro ($0.040)</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
