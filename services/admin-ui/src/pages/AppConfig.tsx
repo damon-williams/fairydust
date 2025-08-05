@@ -87,6 +87,15 @@ export function AppConfig() {
     image_models_enabled: false,
     video_models_enabled: false,
   });
+  const [existingConfigs, setExistingConfigs] = useState<{
+    text: boolean;
+    image: boolean;
+    video: boolean;
+  }>({
+    text: false,
+    image: false,
+    video: false,
+  });
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -125,6 +134,12 @@ export function AppConfig() {
         const textConfig = configData.text_config;
         const imageConfig = configData.image_config;
         const videoConfig = configData.video_config;
+        
+        setExistingConfigs({
+          text: !!(textConfig),
+          image: !!(imageConfig),
+          video: !!(videoConfig),
+        });
         
         setConfig({
           text_models_enabled: !!(textConfig),
@@ -176,6 +191,37 @@ export function AppConfig() {
     }
   };
 
+  const saveModelConfig = async (
+    modelType: 'text' | 'image' | 'video',
+    payload: any,
+    exists: boolean
+  ) => {
+    try {
+      if (exists) {
+        // Use PUT to update existing config
+        await AdminAPI.updateAppModelConfigByType(appId!, modelType, payload);
+      } else {
+        // Use POST to create new config
+        const createPayload = {
+          ...payload,
+          model_type: modelType,
+        };
+        await AdminAPI.createAppModelConfig(appId!, createPayload);
+      }
+    } catch (error: any) {
+      // If PUT fails with 404, try creating instead
+      if (exists && error.message?.includes('404')) {
+        const createPayload = {
+          ...payload,
+          model_type: modelType,
+        };
+        await AdminAPI.createAppModelConfig(appId!, createPayload);
+      } else {
+        throw error;
+      }
+    }
+  };
+
   const handleSave = async () => {
     try {
       setSaving(true);
@@ -197,17 +243,10 @@ export function AppConfig() {
         };
 
         console.log('🔍 FRONTEND: Saving text config:', textPayload);
-        await AdminAPI.updateAppModelConfigByType(appId!, 'text', textPayload);
-      } else {
-        // Disable text models if not enabled
-        try {
-          await AdminAPI.updateAppModelConfigByType(appId!, 'text', { is_enabled: false });
-        } catch (error: any) {
-          // Ignore 404 errors for configs that don't exist yet
-          if (!error.message?.includes('404')) {
-            throw error;
-          }
-        }
+        await saveModelConfig('text', textPayload, existingConfigs.text);
+      } else if (existingConfigs.text) {
+        // Disable text models if not enabled but config exists
+        await AdminAPI.updateAppModelConfigByType(appId!, 'text', { is_enabled: false });
       }
 
       // Save image model configuration
@@ -226,17 +265,10 @@ export function AppConfig() {
         };
 
         console.log('🔍 FRONTEND: Saving image config:', imagePayload);
-        await AdminAPI.updateAppModelConfigByType(appId!, 'image', imagePayload);
-      } else {
-        // Disable image models if not enabled
-        try {
-          await AdminAPI.updateAppModelConfigByType(appId!, 'image', { is_enabled: false });
-        } catch (error: any) {
-          // Ignore 404 errors for configs that don't exist yet
-          if (!error.message?.includes('404')) {
-            throw error;
-          }
-        }
+        await saveModelConfig('image', imagePayload, existingConfigs.image);
+      } else if (existingConfigs.image) {
+        // Disable image models if not enabled but config exists
+        await AdminAPI.updateAppModelConfigByType(appId!, 'image', { is_enabled: false });
       }
 
       // Save video model configuration (when enabled)
@@ -254,21 +286,21 @@ export function AppConfig() {
         };
 
         console.log('🔍 FRONTEND: Saving video config:', videoPayload);
-        await AdminAPI.updateAppModelConfigByType(appId!, 'video', videoPayload);
-      } else {
-        // Disable video models if not enabled
-        try {
-          await AdminAPI.updateAppModelConfigByType(appId!, 'video', { is_enabled: false });
-        } catch (error: any) {
-          // Ignore 404 errors for configs that don't exist yet
-          if (!error.message?.includes('404')) {
-            throw error;
-          }
-        }
+        await saveModelConfig('video', videoPayload, existingConfigs.video);
+      } else if (existingConfigs.video) {
+        // Disable video models if not enabled but config exists
+        await AdminAPI.updateAppModelConfigByType(appId!, 'video', { is_enabled: false });
       }
 
       console.log('✅ FRONTEND: All model configurations saved successfully');
       toast.success('App configuration saved successfully!');
+      
+      // Update existingConfigs state to reflect what now exists
+      setExistingConfigs({
+        text: config.text_models_enabled,
+        image: config.image_models_enabled,
+        video: config.video_models_enabled,
+      });
       
     } catch (err) {
       console.error('Failed to save app configuration:', err);

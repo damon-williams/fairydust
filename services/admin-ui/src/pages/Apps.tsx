@@ -37,6 +37,7 @@ import { MoreHorizontal, CheckCircle, XCircle, Clock, RefreshCw, AlertTriangle, 
 import { formatDistanceToNow } from 'date-fns';
 import { AdminAPI } from '@/lib/admin-api';
 import { toast } from 'sonner';
+import GlobalModelFallbacks from '@/components/model-configs/GlobalModelFallbacks';
 
 export function Apps() {
   const navigate = useNavigate();
@@ -313,6 +314,7 @@ export function Apps() {
         <TabsList>
           <TabsTrigger value="apps">Apps Management</TabsTrigger>
           <TabsTrigger value="pricing">Action Pricing</TabsTrigger>
+          <TabsTrigger value="fallbacks">Global Fallbacks</TabsTrigger>
         </TabsList>
 
         <TabsContent value="apps" className="space-y-6">
@@ -952,6 +954,10 @@ export function Apps() {
               </DialogFooter>
             </DialogContent>
           </Dialog>
+        </TabsContent>
+
+        <TabsContent value="fallbacks" className="space-y-6">
+          <GlobalModelFallbacks />
         </TabsContent>
       </Tabs>
     </div>
