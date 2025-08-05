@@ -183,6 +183,45 @@ class StorageService:
         except ClientError:
             return False
 
+    async def upload_file_to_r2(
+        self, content: bytes, file_path: str, content_type: str, metadata: Optional[dict] = None
+    ) -> str:
+        """
+        Upload arbitrary file content to R2
+
+        Args:
+            content: File content as bytes
+            file_path: Full path/key for the file in R2 (e.g., "videos/user123/video.mp4")
+            content_type: MIME type of the file
+            metadata: Optional metadata dictionary
+
+        Returns:
+            str: Public URL to the uploaded file
+
+        Raises:
+            HTTPException: If upload fails
+        """
+        try:
+            upload_metadata = metadata or {}
+            
+            # Upload to R2
+            self.client.put_object(
+                Bucket=self.bucket_name,
+                Key=file_path,
+                Body=content,
+                ContentType=content_type,
+                CacheControl="public, max-age=31536000",  # Cache for 1 year
+                Metadata=upload_metadata,
+            )
+
+            # Generate public URL using custom domain
+            public_url = f"https://images.fairydust.fun/{file_path}"
+
+            return public_url
+
+        except ClientError as e:
+            raise HTTPException(status_code=500, detail=f"Upload failed: {str(e)}")
+
     def _get_file_extension(self, filename: Optional[str], content_type: str) -> str:
         """Get file extension from filename or content type"""
         if filename and "." in filename:
@@ -311,3 +350,10 @@ async def delete_user_avatar(avatar_url: str) -> bool:
 async def delete_user_assets(user_id: str) -> dict:
     """Convenience function for deleting all user assets"""
     return await storage_service.delete_user_assets(user_id)
+
+
+async def upload_file_to_r2(
+    content: bytes, file_path: str, content_type: str, metadata: Optional[dict] = None
+) -> str:
+    """Convenience function for uploading arbitrary files to R2"""
+    return await storage_service.upload_file_to_r2(content, file_path, content_type, metadata)

@@ -2,6 +2,7 @@
 
 import os
 import io
+import json
 import tempfile
 from datetime import datetime
 from uuid import UUID, uuid4
@@ -47,7 +48,7 @@ async def _upload_video_to_r2(video_url: str, user_id: UUID, video_id: UUID) -> 
             video_data = video_response.content
 
         # Upload video to R2
-        from shared.r2_client import upload_file_to_r2
+        from shared.storage_service import upload_file_to_r2
         
         video_key = f"videos/{user_id}/{video_id}.mp4"
         final_video_url = await upload_file_to_r2(
@@ -102,7 +103,7 @@ async def _generate_video_thumbnail(video_data: bytes, user_id: UUID, video_id: 
         thumbnail_data = thumbnail_buffer.getvalue()
         
         # Upload thumbnail to R2
-        from shared.r2_client import upload_file_to_r2
+        from shared.storage_service import upload_file_to_r2
         
         thumbnail_key = f"video-thumbnails/{user_id}/{video_id}.jpg"
         thumbnail_url = await upload_file_to_r2(
@@ -166,7 +167,7 @@ async def generate_video(
             video_id, request.user_id, final_video_url, thumbnail_url, request.prompt,
             VideoGenerationType.TEXT_TO_VIDEO.value, duration_seconds, request.resolution.value,
             request.aspect_ratio.value, request.reference_person.dict() if request.reference_person else None,
-            generation_metadata, datetime.utcnow()
+            json.dumps(generation_metadata), datetime.utcnow()
         )
         
         # Fetch the created video
@@ -264,7 +265,7 @@ async def animate_image(
             """,
             video_id, request.user_id, final_video_url, thumbnail_url, request.prompt,
             VideoGenerationType.IMAGE_TO_VIDEO.value, request.image_url, duration_seconds,
-            request.resolution.value, aspect_ratio.value, generation_metadata, datetime.utcnow()
+            request.resolution.value, aspect_ratio.value, json.dumps(generation_metadata), datetime.utcnow()
         )
         
         # Fetch the created video
