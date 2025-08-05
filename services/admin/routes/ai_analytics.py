@@ -18,7 +18,7 @@ async def get_ai_usage_metrics(
     interval_map = {"1d": "1 day", "7d": "7 days", "30d": "30 days", "90d": "90 days"}
     interval = interval_map.get(timeframe, "7 days")
 
-    # Get LLM/Text model stats from ai_usage_logs
+    # Get text/LLM model stats from ai_usage_logs
     text_stats = await db.fetch_one(
         f"""
         SELECT
@@ -74,7 +74,7 @@ async def get_ai_usage_metrics(
         "avg_latency_ms": float(text_stats["avg_latency_ms"] if text_stats and text_stats["avg_latency_ms"] else 0),
     }
 
-    # Get model breakdown for all model types
+    # Get model breakdown for all model types from ai_usage_logs
     all_model_stats = await db.fetch_all(
         f"""
         SELECT
@@ -95,7 +95,7 @@ async def get_ai_usage_metrics(
         """
     )
 
-    # Get per-app usage analytics
+    # Get per-app usage analytics from ai_usage_logs
     app_usage_stats = await db.fetch_all(
         f"""
         SELECT
@@ -121,7 +121,7 @@ async def get_ai_usage_metrics(
     # Format app usage with models_used array
     formatted_app_usage = []
     for app in app_usage_stats:
-        # Get models used by this app
+        # Get models used by this app from ai_usage_logs
         models_used = await db.fetch_all(
             f"""
             SELECT DISTINCT
