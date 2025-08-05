@@ -191,7 +191,7 @@ async def generate_video(
             resolution=VideoResolution(video_row["resolution"]),
             aspect_ratio=VideoAspectRatio(video_row["aspect_ratio"]),
             reference_person=VideoReferencePerson(**video_row["reference_person"]) if video_row["reference_person"] else None,
-            metadata=video_row["metadata"] or {},
+            metadata=json.loads(video_row["metadata"]) if video_row["metadata"] else {},
             is_favorited=video_row["is_favorited"],
             created_at=video_row["created_at"],
             updated_at=video_row["updated_at"]
@@ -289,7 +289,7 @@ async def animate_image(
             resolution=VideoResolution(video_row["resolution"]),
             aspect_ratio=VideoAspectRatio(video_row["aspect_ratio"]),
             reference_person=VideoReferencePerson(**video_row["reference_person"]) if video_row["reference_person"] else None,
-            metadata=video_row["metadata"] or {},
+            metadata=json.loads(video_row["metadata"]) if video_row["metadata"] else {},
             is_favorited=video_row["is_favorited"],
             created_at=video_row["created_at"],
             updated_at=video_row["updated_at"]
@@ -427,7 +427,7 @@ async def get_video(
             resolution=VideoResolution(video_row["resolution"]),
             aspect_ratio=VideoAspectRatio(video_row["aspect_ratio"]),
             reference_person=VideoReferencePerson(**video_row["reference_person"]) if video_row["reference_person"] else None,
-            metadata=video_row["metadata"] or {},
+            metadata=json.loads(video_row["metadata"]) if video_row["metadata"] else {},
             is_favorited=video_row["is_favorited"],
             created_at=video_row["created_at"],
             updated_at=video_row["updated_at"]
