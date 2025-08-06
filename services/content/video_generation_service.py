@@ -161,7 +161,7 @@ class VideoGenerationService:
                     f"https://api.replicate.com/v1/models/{model}/predictions",
                     headers=headers,
                     json=payload,
-                    timeout=10.0,
+                    timeout=60.0,
                 )
                 api_request_time = time.time() - api_request_start
                 print(f"⏱️ API_TIMING: Initial request took {api_request_time:.2f}s")
@@ -268,7 +268,7 @@ class VideoGenerationService:
                     f"https://api.replicate.com/v1/models/{model}/predictions",
                     headers=headers,
                     json=payload,
-                    timeout=10.0,
+                    timeout=60.0,
                 )
                 api_request_time = time.time() - api_request_start
                 print(f"⏱️ API_TIMING: Initial request took {api_request_time:.2f}s")

@@ -110,4 +110,13 @@ async def health():
 if __name__ == "__main__":
     import uvicorn
 
-    uvicorn.run(app, host="0.0.0.0", port=int(os.getenv("PORT", 8003)))
+    # Configure for longer video generation requests
+    timeout_seconds = int(os.getenv("REQUEST_TIMEOUT", "600"))  # Default 10 minutes
+    
+    uvicorn.run(
+        app, 
+        host="0.0.0.0", 
+        port=int(os.getenv("PORT", 8003)),
+        timeout_keep_alive=timeout_seconds,
+        timeout_graceful_shutdown=timeout_seconds,
+    )

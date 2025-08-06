@@ -71,31 +71,90 @@ async def _upload_video_to_r2(video_url: str, user_id: UUID, video_id: UUID) -> 
 
 async def _generate_video_thumbnail(video_data: bytes, user_id: UUID, video_id: UUID) -> Optional[str]:
     """
-    Generate thumbnail from video first frame
-    
-    For now, this creates a placeholder. In production, you'd use ffmpeg.
+    Generate thumbnail from video first frame using imageio
     """
     if not PIL_AVAILABLE:
         print("⚠️ PIL not available - skipping thumbnail generation")
         return None
         
     try:
-        # Create a simple placeholder thumbnail
-        # Create 640x360 thumbnail (16:9 aspect ratio)
-        thumbnail = Image.new('RGB', (640, 360), color='#1a1a1a')
-        draw = ImageDraw.Draw(thumbnail)
-        
-        # Add play button icon
-        center_x, center_y = 320, 180
-        triangle_size = 40
-        
-        # Draw play triangle
-        triangle = [
-            (center_x - triangle_size//2, center_y - triangle_size//2),
-            (center_x - triangle_size//2, center_y + triangle_size//2),
-            (center_x + triangle_size//2, center_y)
-        ]
-        draw.polygon(triangle, fill='white')
+        # Try to extract first frame using imageio
+        try:
+            import imageio.v3 as iio
+            import tempfile
+            import os
+            
+            # Write video data to temporary file
+            with tempfile.NamedTemporaryFile(suffix='.mp4', delete=False) as temp_video:
+                temp_video.write(video_data)
+                temp_video_path = temp_video.name
+            
+            try:
+                # Read first frame from video
+                print(f"🎬 THUMBNAIL: Extracting first frame from video ({len(video_data)} bytes)")
+                
+                # Get video properties and read first frame
+                properties = iio.improps(temp_video_path)
+                print(f"🎬 THUMBNAIL: Video properties: {properties}")
+                
+                # Read just the first frame
+                frame = iio.imread(temp_video_path, index=0)
+                print(f"🎬 THUMBNAIL: Extracted frame shape: {frame.shape}")
+                
+                # Convert numpy array to PIL Image
+                thumbnail = Image.fromarray(frame)
+                
+                # Resize to standard thumbnail size (maintain aspect ratio)
+                thumbnail.thumbnail((640, 360), Image.Resampling.LANCZOS)
+                
+                # Convert to RGB if necessary
+                if thumbnail.mode != 'RGB':
+                    thumbnail = thumbnail.convert('RGB')
+                
+                print(f"🎬 THUMBNAIL: Generated thumbnail size: {thumbnail.size}")
+                
+            finally:
+                # Clean up temp file
+                try:
+                    os.unlink(temp_video_path)
+                except:
+                    pass
+                    
+        except ImportError:
+            print("⚠️ imageio not available - falling back to placeholder thumbnail")
+            # Fall back to placeholder if imageio not available
+            thumbnail = Image.new('RGB', (640, 360), color='#1a1a1a')
+            draw = ImageDraw.Draw(thumbnail)
+            
+            # Add play button icon
+            center_x, center_y = 320, 180
+            triangle_size = 40
+            
+            # Draw play triangle
+            triangle = [
+                (center_x - triangle_size//2, center_y - triangle_size//2),
+                (center_x - triangle_size//2, center_y + triangle_size//2),
+                (center_x + triangle_size//2, center_y)
+            ]
+            draw.polygon(triangle, fill='white')
+            
+        except Exception as video_error:
+            print(f"⚠️ Video frame extraction failed: {video_error} - falling back to placeholder")
+            # Fall back to placeholder if video processing fails
+            thumbnail = Image.new('RGB', (640, 360), color='#1a1a1a')
+            draw = ImageDraw.Draw(thumbnail)
+            
+            # Add play button icon
+            center_x, center_y = 320, 180
+            triangle_size = 40
+            
+            # Draw play triangle
+            triangle = [
+                (center_x - triangle_size//2, center_y - triangle_size//2),
+                (center_x - triangle_size//2, center_y + triangle_size//2),
+                (center_x + triangle_size//2, center_y)
+            ]
+            draw.polygon(triangle, fill='white')
         
         # Save thumbnail to bytes
         thumbnail_buffer = io.BytesIO()
@@ -112,6 +171,7 @@ async def _generate_video_thumbnail(video_data: bytes, user_id: UUID, video_id: 
             content_type="image/jpeg"
         )
         
+        print(f"✅ THUMBNAIL: Successfully generated and uploaded to {thumbnail_url}")
         return thumbnail_url
         
     except Exception as e:
