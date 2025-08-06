@@ -182,10 +182,15 @@ async def get_ai_usage_metrics(
 @ai_router.get("/model-usage")
 async def get_ai_model_usage(
     type: str = "all",
+    timeframe: str = "7d",
     admin_user: dict = Depends(get_current_admin_user),
     db: Database = Depends(get_db),
 ):
     """Get model usage statistics for all AI model types"""
+
+    # Map timeframe to SQL interval (same as overview)
+    interval_map = {"1d": "1 day", "7d": "7 days", "30d": "30 days", "90d": "90 days"}
+    interval = interval_map.get(timeframe, "7 days")
 
     models = []
 
@@ -197,7 +202,7 @@ async def get_ai_model_usage(
 
     for model_type in model_types:
         type_models = await db.fetch_all(
-            """
+            f"""
             SELECT
                 CONCAT(provider, '/', model_id) as model,
                 model_type,
@@ -206,7 +211,7 @@ async def get_ai_model_usage(
                 SUM(cost_usd) as cost,
                 AVG(latency_ms) as avg_latency
             FROM ai_usage_logs
-            WHERE created_at >= NOW() - INTERVAL '30 days'
+            WHERE created_at >= NOW() - INTERVAL '{interval}'
             AND model_type = $1
             GROUP BY provider, model_id, model_type
             ORDER BY cost DESC
