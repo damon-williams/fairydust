@@ -210,6 +210,59 @@ async def generate_video(
         
         print(f"✅ VIDEO GENERATED: {video_url}")
         
+        # Log video usage for analytics
+        try:
+            import os
+            import httpx
+            
+            # Calculate duration for cost calculation
+            duration_seconds = 5 if request.duration == VideoDuration.SHORT else 10
+            
+            # Apps Service URL - environment-based routing
+            environment = os.getenv("ENVIRONMENT", "staging")
+            if environment == "staging":
+                apps_service_url = "https://fairydust-apps-staging.up.railway.app"
+            else:
+                apps_service_url = "https://fairydust-apps-production.up.railway.app"
+            
+            # Prepare video usage payload
+            usage_payload = {
+                "user_id": str(request.user_id),
+                "app_id": "fairydust-video",
+                "provider": generation_metadata.get("model_used", "unknown").split("/")[0] if "/" in generation_metadata.get("model_used", "") else "replicate",
+                "model_id": generation_metadata.get("model_used", "unknown"),
+                "videos_generated": 1,
+                "video_duration_seconds": duration_seconds,
+                "video_resolution": request.resolution.value,
+                "latency_ms": generation_metadata.get("generation_time_ms", 0),
+                "prompt_text": request.prompt[:500],  # Truncate long prompts
+                "finish_reason": "completed",
+                "was_fallback": False,
+                "fallback_reason": None,
+                "request_metadata": {
+                    "action": "video_generate",
+                    "duration": request.duration.value,
+                    "resolution": request.resolution.value,
+                    "aspect_ratio": request.aspect_ratio.value,
+                    "has_reference": request.reference_person is not None,
+                    "generation_type": "text_to_video"
+                }
+            }
+            
+            async with httpx.AsyncClient(timeout=10.0) as client:
+                response = await client.post(
+                    f"{apps_service_url}/video/usage",
+                    json=usage_payload,
+                )
+                
+                if response.status_code == 201:
+                    print("✅ VIDEO USAGE LOGGED to analytics")
+                else:
+                    print(f"⚠️ Failed to log video usage - HTTP {response.status_code}: {response.text}")
+                    
+        except Exception as e:
+            print(f"⚠️ Failed to log video usage: {str(e)}")
+        
         # Create video record
         video_id = uuid4()
         
@@ -308,6 +361,58 @@ async def animate_image(
         )
         
         print(f"✅ VIDEO ANIMATED: {video_url}")
+        
+        # Log video usage for analytics
+        try:
+            import os
+            import httpx
+            
+            # Calculate duration for cost calculation
+            duration_seconds = 5 if request.duration == VideoDuration.SHORT else 10
+            
+            # Apps Service URL - environment-based routing
+            environment = os.getenv("ENVIRONMENT", "staging")
+            if environment == "staging":
+                apps_service_url = "https://fairydust-apps-staging.up.railway.app"
+            else:
+                apps_service_url = "https://fairydust-apps-production.up.railway.app"
+            
+            # Prepare video usage payload
+            usage_payload = {
+                "user_id": str(request.user_id),
+                "app_id": "fairydust-video",
+                "provider": generation_metadata.get("model_used", "unknown").split("/")[0] if "/" in generation_metadata.get("model_used", "") else "replicate",
+                "model_id": generation_metadata.get("model_used", "unknown"),
+                "videos_generated": 1,
+                "video_duration_seconds": duration_seconds,
+                "video_resolution": request.resolution.value,
+                "latency_ms": generation_metadata.get("generation_time_ms", 0),
+                "prompt_text": request.prompt[:500],  # Truncate long prompts
+                "finish_reason": "completed",
+                "was_fallback": False,
+                "fallback_reason": None,
+                "request_metadata": {
+                    "action": "video_animate",
+                    "duration": request.duration.value,
+                    "resolution": request.resolution.value,
+                    "source_image": request.image_url,
+                    "generation_type": "image_to_video"
+                }
+            }
+            
+            async with httpx.AsyncClient(timeout=10.0) as client:
+                response = await client.post(
+                    f"{apps_service_url}/video/usage",
+                    json=usage_payload,
+                )
+                
+                if response.status_code == 201:
+                    print("✅ VIDEO USAGE LOGGED to analytics")
+                else:
+                    print(f"⚠️ Failed to log video usage - HTTP {response.status_code}: {response.text}")
+                    
+        except Exception as e:
+            print(f"⚠️ Failed to log video usage: {str(e)}")
         
         # Create video record
         video_id = uuid4()

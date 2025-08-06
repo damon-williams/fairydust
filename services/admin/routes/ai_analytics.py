@@ -280,8 +280,24 @@ async def get_ai_action_analytics(
         avg_cost_usd = float(row["avg_cost_per_request"]) if row["avg_cost_per_request"] else 0
         dust_cost = dust_cost_map.get(action_slug, 0)
 
+        # Determine if this is a user-facing action or internal operation
+        is_user_facing = dust_cost > 0
+        is_internal_operation = dust_cost == 0 and action_slug in [
+            'scene_intelligence_analysis', 'character_rendering', 'quality_enhancement',
+            'visual_composition', 'theme_variety_analysis', 'story_summary_generation',
+            'inspiration_generation'
+        ]
+        
         # Calculate cost efficiency (USD cost per DUST charged)
         cost_efficiency = avg_cost_usd / dust_cost if dust_cost > 0 else 0
+        
+        # Determine action category for display
+        if is_user_facing:
+            action_category = "User Action"
+        elif is_internal_operation:
+            action_category = "Internal Operation"
+        else:
+            action_category = "Unpriced Action"
 
         formatted_results.append(
             {
@@ -301,6 +317,9 @@ async def get_ai_action_analytics(
                 "current_dust_cost": dust_cost,
                 "cost_efficiency": cost_efficiency,
                 "cost_per_dust": cost_efficiency if cost_efficiency > 0 else None,
+                "action_category": action_category,
+                "is_user_facing": is_user_facing,
+                "is_internal_operation": is_internal_operation,
             }
         )
 
@@ -341,12 +360,12 @@ async def get_ai_fallback_analytics(
         """
     )
 
-    # Get fallback breakdown by provider and model type
+    # Get fallback breakdown by provider and model type (all types)
     provider_reliability = await db.fetch_all(
         f"""
         SELECT
             provider,
-            'text' as model_type,
+            model_type,
             COUNT(*) as total_requests,
             COUNT(*) FILTER (WHERE was_fallback = false) as primary_success,
             COUNT(*) FILTER (WHERE was_fallback = true) as fallback_usage,
@@ -359,9 +378,9 @@ async def get_ai_fallback_analytics(
             AVG(latency_ms) as avg_latency_ms,
             SUM(cost_usd) as total_cost
         FROM ai_usage_logs
-        WHERE model_type = 'text' AND created_at >= NOW() - INTERVAL '{interval}'
-        GROUP BY provider
-        ORDER BY total_requests DESC
+        WHERE created_at >= NOW() - INTERVAL '{interval}'
+        GROUP BY provider, model_type
+        ORDER BY model_type, total_requests DESC
         """
     )
 
