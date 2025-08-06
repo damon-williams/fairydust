@@ -377,7 +377,7 @@ async def list_videos(
                 resolution=VideoResolution(row["resolution"]),
                 aspect_ratio=VideoAspectRatio(row["aspect_ratio"]),
                 reference_person=VideoReferencePerson(**row["reference_person"]) if row["reference_person"] else None,
-                metadata=row["metadata"] or {},
+                metadata=json.loads(row["metadata"]) if row["metadata"] else {},
                 is_favorited=row["is_favorited"],
                 created_at=row["created_at"],
                 updated_at=row["updated_at"]
@@ -484,7 +484,7 @@ async def update_video(
             resolution=VideoResolution(updated_row["resolution"]),
             aspect_ratio=VideoAspectRatio(updated_row["aspect_ratio"]),
             reference_person=VideoReferencePerson(**updated_row["reference_person"]) if updated_row["reference_person"] else None,
-            metadata=updated_row["metadata"] or {},
+            metadata=json.loads(updated_row["metadata"]) if updated_row["metadata"] else {},
             is_favorited=updated_row["is_favorited"],
             created_at=updated_row["created_at"],
             updated_at=updated_row["updated_at"]
