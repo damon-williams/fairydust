@@ -368,18 +368,17 @@ async def get_ai_fallback_analytics(
             'text' as model_type,
             COUNT(*) as occurrences,
             CASE
-                WHEN (SELECT COUNT(*) FROM llm_usage_logs
-                     WHERE was_fallback = true
+                WHEN (SELECT COUNT(*) FROM ai_usage_logs
+                     WHERE model_type = 'text' AND was_fallback = true
                      AND created_at >= NOW() - INTERVAL '{interval}') = 0 THEN 0
                 ELSE ROUND((COUNT(*)::numeric /
-                    (SELECT COUNT(*) FROM llm_usage_logs
-                     WHERE was_fallback = true
+                    (SELECT COUNT(*) FROM ai_usage_logs
+                     WHERE model_type = 'text' AND was_fallback = true
                      AND created_at >= NOW() - INTERVAL '{interval}')
                 ) * 100, 2)
             END as percentage_of_fallbacks
         FROM ai_usage_logs
-        WHERE model_type = 'text'
-        WHERE was_fallback = true
+        WHERE model_type = 'text' AND was_fallback = true
           AND created_at >= NOW() - INTERVAL '{interval}'
           AND fallback_reason IS NOT NULL
         GROUP BY fallback_reason
@@ -430,8 +429,8 @@ async def get_ai_fallback_analytics(
             END as fallback_percentage,
             AVG(l.cost_usd) as avg_cost_per_request
         FROM apps a
-        LEFT JOIN llm_usage_logs l ON a.id = l.app_id
-            AND l.created_at >= NOW() - INTERVAL '{interval}'
+        LEFT JOIN ai_usage_logs l ON a.id = l.app_id
+            AND l.model_type = 'text' AND l.created_at >= NOW() - INTERVAL '{interval}'
         WHERE l.id IS NOT NULL
         GROUP BY a.id, a.name, a.slug
         ORDER BY fallback_percentage DESC, total_requests DESC
