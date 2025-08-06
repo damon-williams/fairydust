@@ -331,8 +331,8 @@ async def get_ai_fallback_analytics(
                     (COUNT(*) FILTER (WHERE was_fallback = true)::numeric / COUNT(*)) * 100, 2
                 )
             END as fallback_percentage
-        FROM llm_usage_logs
-        WHERE created_at >= NOW() - INTERVAL '{interval}'
+        FROM ai_usage_logs
+        WHERE model_type = 'text' AND created_at >= NOW() - INTERVAL '{interval}'
         """
     )
 
@@ -353,8 +353,8 @@ async def get_ai_fallback_analytics(
             END as reliability_percentage,
             AVG(latency_ms) as avg_latency_ms,
             SUM(cost_usd) as total_cost
-        FROM llm_usage_logs
-        WHERE created_at >= NOW() - INTERVAL '{interval}'
+        FROM ai_usage_logs
+        WHERE model_type = 'text' AND created_at >= NOW() - INTERVAL '{interval}'
         GROUP BY provider
         ORDER BY total_requests DESC
         """
@@ -377,7 +377,8 @@ async def get_ai_fallback_analytics(
                      AND created_at >= NOW() - INTERVAL '{interval}')
                 ) * 100, 2)
             END as percentage_of_fallbacks
-        FROM llm_usage_logs
+        FROM ai_usage_logs
+        WHERE model_type = 'text'
         WHERE was_fallback = true
           AND created_at >= NOW() - INTERVAL '{interval}'
           AND fallback_reason IS NOT NULL
@@ -406,8 +407,8 @@ async def get_ai_fallback_analytics(
                     (COUNT(*) FILTER (WHERE was_fallback = true)::numeric / COUNT(*)) * 100, 2
                 )
             END as fallback_rate
-        FROM llm_usage_logs
-        WHERE created_at >= NOW() - INTERVAL '{interval}'
+        FROM ai_usage_logs
+        WHERE model_type = 'text' AND created_at >= NOW() - INTERVAL '{interval}'
         GROUP BY {group_by}
         ORDER BY date
         """
