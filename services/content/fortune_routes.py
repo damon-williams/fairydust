@@ -475,23 +475,81 @@ CRITICAL OUTPUT INSTRUCTION: Return ONLY the mystical guidance response itself. 
 
 
 async def _get_llm_model_config() -> dict:
-    """Get LLM model configuration for fortune-teller app"""
+    """Get LLM model configuration for fortune-teller app using normalized structure"""
     from shared.app_config_cache import get_app_config_cache
+    from shared.database import get_db
+    from shared.json_utils import parse_jsonb_field
 
+    app_slug = "fairydust-fortune-teller"
+
+    # First, get the app UUID from the slug
+    db = await get_db()
+    app_result = await db.fetch_one("SELECT id FROM apps WHERE slug = $1", app_slug)
+
+    if not app_result:
+        # Return default config if app not found
+        return {
+            "primary_provider": "anthropic",
+            "primary_model_id": "claude-3-5-sonnet-20241022",
+            "primary_parameters": {"temperature": 0.8, "max_tokens": 400, "top_p": 0.9},
+        }
+
+    app_id = str(app_result["id"])
+
+    # Try to get from cache first (cache still uses legacy format)
     cache = await get_app_config_cache()
-    config = await cache.get_model_config("fairydust-fortune-teller")
+    cached_config = await cache.get_model_config(app_id)
 
-    if config:
-        return config
+    if cached_config:
+        return {
+            "primary_provider": cached_config.get("primary_provider", "anthropic"),
+            "primary_model_id": cached_config.get("primary_model_id", "claude-3-5-sonnet-20241022"),
+            "primary_parameters": cached_config.get(
+                "primary_parameters", {"temperature": 0.8, "max_tokens": 400, "top_p": 0.9}
+            ),
+        }
 
-    # Default configuration for fortune-teller
+    # Cache miss - fetch from new normalized database structure
+    try:
+        db_config = await db.fetch_one(
+            """
+            SELECT provider, model_id, parameters FROM app_model_configs
+            WHERE app_id = $1 AND model_type = 'text' AND is_enabled = true
+            """,
+            app_result["id"],
+        )
+
+        if db_config:
+            # Parse parameters from JSONB field
+            parameters = parse_jsonb_field(
+                db_config["parameters"],
+                default={"temperature": 0.8, "max_tokens": 400, "top_p": 0.9},
+                field_name="text_parameters",
+            )
+
+            # Format as legacy structure for LLM client compatibility
+            parsed_config = {
+                "primary_provider": db_config["provider"],
+                "primary_model_id": db_config["model_id"],
+                "primary_parameters": parameters,
+            }
+
+            # Cache the database config in legacy format
+            await cache.set_model_config(app_id, parsed_config)
+            return parsed_config
+
+    except Exception as e:
+        print(f"⚠️ FORTUNE_CONFIG: Error loading normalized config: {e}")
+
+    # Fallback to default config
     default_config = {
         "primary_provider": "anthropic",
         "primary_model_id": "claude-3-5-sonnet-20241022",
         "primary_parameters": {"temperature": 0.8, "max_tokens": 400, "top_p": 0.9},
     }
 
-    await cache.set_model_config("fairydust-fortune-teller", default_config)
+    # Cache the default config for future requests
+    await cache.set_model_config(app_id, default_config)
     return default_config
 
 

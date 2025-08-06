@@ -259,3 +259,23 @@ export interface TermsComplianceStats {
   compliance_rate: number;
   recent_acceptances: UserTermsAcceptance[];
 }
+
+// Global fallback model types
+export interface GlobalFallbackModel {
+  id: string;
+  model_type: 'text' | 'image' | 'video';
+  provider: string;
+  model_id: string;
+  parameters: Record<string, any>;
+  is_enabled: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface GlobalFallbackModelCreate {
+  model_type: 'text' | 'image' | 'video';
+  provider: string;
+  model_id: string;
+  parameters: Record<string, any>;
+  is_enabled: boolean;
+}

@@ -20,47 +20,46 @@ class ImageGenerationService:
             raise ValueError("Missing REPLICATE_API_TOKEN environment variable")
 
     async def _get_image_model_config(self) -> dict:
-        """Get image model configuration from app config"""
+        """Get image model configuration from app config (normalized structure)"""
         try:
-            from shared.app_config_cache import get_app_config_cache
             from shared.database import get_db
-            from shared.json_utils import parse_jsonb_field, parse_model_config_field
+            from shared.json_utils import parse_jsonb_field
 
-            # Get the Story app ID (hardcoded for now, could be made configurable)
+            # Get the Story app ID (which has image generation capabilities)
             STORY_APP_ID = "fairydust-story"
 
-            # Try to get from cache first
-            cache = await get_app_config_cache()
-            cached_config = await cache.get_model_config(STORY_APP_ID)
-
-            if cached_config:
-                # Extract image model settings from parameters
-                params = cached_config.get("primary_parameters", {})
-                if isinstance(params, str):
-                    params = parse_jsonb_field(params, default={}, field_name="primary_parameters")
-                return params.get("image_models", {})
-
-            # Cache miss - fetch from database
+            # Fetch from database using new normalized structure
             db = await get_db()
             config = await db.fetch_one(
                 """
-                SELECT primary_parameters FROM app_model_configs
+                SELECT parameters FROM app_model_configs
                 WHERE app_id = (SELECT id FROM apps WHERE slug = $1)
+                AND model_type = 'image'
+                AND is_enabled = true
                 """,
                 STORY_APP_ID,
             )
 
-            if config and config["primary_parameters"]:
-                params = parse_model_config_field(config, "primary_parameters") or {}
-                return params.get("image_models", {})
+            if config and config["parameters"]:
+                # Parse the JSONB parameters field
+                params = parse_jsonb_field(
+                    config["parameters"], default={}, field_name="image_parameters"
+                )
+                return params
 
             # Return defaults if no config found
-            return {}
+            return {
+                "standard_model": "black-forest-labs/flux-1.1-pro",
+                "reference_model": "runwayml/gen4-image",
+            }
 
         except Exception as e:
             print(f"⚠️ IMAGE_MODEL_CONFIG: Error loading config: {e}")
-            # Return empty dict to use defaults
-            return {}
+            # Return defaults on error
+            return {
+                "standard_model": "black-forest-labs/flux-1.1-pro",
+                "reference_model": "runwayml/gen4-image",
+            }
 
     async def generate_image(
         self,
@@ -110,11 +109,11 @@ class ImageGenerationService:
         else:
             # Use configured model for text-only generation
             model = image_models.get("standard_model", "black-forest-labs/flux-1.1-pro")
-            return await self._generate_standard_flux(
+            return await self._generate_standard_replicate(
                 model, prompt, style, image_size, reference_people
             )
 
-    async def _generate_standard_flux(
+    async def _generate_standard_replicate(
         self,
         model: str,
         prompt: str,
@@ -122,27 +121,43 @@ class ImageGenerationService:
         image_size: ImageSize,
         reference_people: list[ImageReferencePerson],
     ) -> tuple[str, dict]:
-        """Generate image using standard FLUX model (text-only)"""
+        """Generate image using standard Replicate models (text-only)"""
 
-        print("🎭 FLUX GENERATION STARTING")
+        # Detect model type for specific handling
+        is_seedream = "seedream" in model.lower()  # ByteDance SeeDream-3 via Replicate
+        is_flux = "flux" in model.lower()  # Black Forest Labs FLUX models
+        
+        print(f"🎭 REPLICATE GENERATION STARTING - Model: {model}")
         print(f"   Original prompt: {prompt}")
         print(f"   Style: {style.value}")
         print(f"   Image size: {image_size.value}")
 
-        # Map our styles to FLUX-optimized prompts
-        style_prompts = {
-            ImageStyle.REALISTIC: "photorealistic, professional photography, high detail, sharp focus, studio lighting",
-            ImageStyle.ARTISTIC: "artistic masterpiece, oil painting style, fine art, brush strokes, gallery quality",
-            ImageStyle.CARTOON: "cartoon illustration, animated style, vibrant colors, clean lines, stylized",
-            ImageStyle.ABSTRACT: "abstract art, modern artistic interpretation, geometric shapes, color theory",
-            ImageStyle.VINTAGE: "vintage photography, retro aesthetic, film grain, sepia tones, nostalgic",
-            ImageStyle.MODERN: "modern digital art, contemporary style, minimalist, clean composition",
-        }
+        # Map our styles to model-optimized prompts
+        if is_seedream:
+            # SeeDream-3 style optimization
+            style_prompts = {
+                ImageStyle.REALISTIC: "photorealistic, highly detailed, professional photography, 8K resolution",
+                ImageStyle.ARTISTIC: "artistic style, creative composition, masterpiece, fine art quality",
+                ImageStyle.CARTOON: "cartoon style, animated, colorful, clean lines, stylized illustration",
+                ImageStyle.ABSTRACT: "abstract art, creative interpretation, modern artistic style",
+                ImageStyle.VINTAGE: "vintage style, retro aesthetic, classic photography, nostalgic",
+                ImageStyle.MODERN: "modern style, contemporary design, clean and minimalist",
+            }
+        else:
+            # FLUX and other models style optimization
+            style_prompts = {
+                ImageStyle.REALISTIC: "photorealistic, professional photography, high detail, sharp focus, studio lighting",
+                ImageStyle.ARTISTIC: "artistic masterpiece, oil painting style, fine art, brush strokes, gallery quality",
+                ImageStyle.CARTOON: "cartoon illustration, animated style, vibrant colors, clean lines, stylized",
+                ImageStyle.ABSTRACT: "abstract art, modern artistic interpretation, geometric shapes, color theory",
+                ImageStyle.VINTAGE: "vintage photography, retro aesthetic, film grain, sepia tones, nostalgic",
+                ImageStyle.MODERN: "modern digital art, contemporary style, minimalist, clean composition",
+            }
 
         # Build enhanced prompt
         enhanced_prompt = f"{prompt}, {style_prompts[style]}"
 
-        # Add people descriptions if provided (text-only for standard FLUX)
+        # Add people descriptions if provided (text-only generation)
         if reference_people:
             people_descriptions = []
             for person in reference_people:
@@ -150,28 +165,54 @@ class ImageGenerationService:
             enhanced_prompt += f", featuring {', '.join(people_descriptions)}"
             print(f"   Added {len(reference_people)} people descriptions")
 
-        # Add quality enhancers for FLUX
+        # Add quality enhancers
         enhanced_prompt += ", high quality, detailed, professional"
 
-        # Map image sizes (FLUX max dimensions: 1440x1440)
-        size_map = {
-            ImageSize.STANDARD: {"width": 1024, "height": 1024},
-            ImageSize.LARGE: {"width": 1024, "height": 1440},  # FLUX max height is 1440
-            ImageSize.SQUARE: {"width": 1024, "height": 1024},
-        }
+        # Map image sizes based on model capabilities
+        if is_seedream:
+            # SeeDream-3 supports custom dimensions up to 2048x2048
+            size_map = {
+                ImageSize.STANDARD: {"width": 1024, "height": 1024, "aspect_ratio": "1:1"},
+                ImageSize.LARGE: {"width": 1024, "height": 1440, "aspect_ratio": "3:4"},
+                ImageSize.SQUARE: {"width": 1024, "height": 1024, "aspect_ratio": "1:1"},
+            }
+        else:
+            # FLUX and other models (FLUX max dimensions: 1440x1440)
+            size_map = {
+                ImageSize.STANDARD: {"width": 1024, "height": 1024},
+                ImageSize.LARGE: {"width": 1024, "height": 1440},
+                ImageSize.SQUARE: {"width": 1024, "height": 1024},
+            }
 
         dimensions = size_map[image_size]
 
-        payload = {
-            "input": {
-                "prompt": enhanced_prompt,
-                "width": dimensions["width"],
-                "height": dimensions["height"],
-                "output_format": "png",
-                "safety_tolerance": 2,
-                "prompt_upsampling": False,
+        # Build payload based on model type
+        if is_seedream:
+            # SeeDream-3 specific parameters
+            payload = {
+                "input": {
+                    "prompt": enhanced_prompt,
+                    "aspect_ratio": dimensions.get("aspect_ratio", "1:1"),
+                    "size": "regular",  # small, regular, big
+                    "guidance_scale": 2.5,  # Default guidance scale
+                }
             }
-        }
+            # Only add width/height if using custom aspect ratio
+            if dimensions.get("aspect_ratio") == "custom":
+                payload["input"]["width"] = dimensions["width"]
+                payload["input"]["height"] = dimensions["height"]
+        else:
+            # FLUX and other models - original parameter structure
+            payload = {
+                "input": {
+                    "prompt": enhanced_prompt,
+                    "width": dimensions["width"],
+                    "height": dimensions["height"],
+                    "output_format": "png",
+                    "safety_tolerance": 2,
+                    "prompt_upsampling": False,
+                }
+            }
 
         headers = {
             "Authorization": f"Token {self.replicate_api_token}",
@@ -294,13 +335,21 @@ class ImageGenerationService:
                         else result["output"]
                     )
 
+                    # Determine generation approach based on model
+                    if is_seedream:
+                        approach = "seedream_text_to_image"
+                    elif is_flux:
+                        approach = "flux_text_to_image"
+                    else:
+                        approach = "replicate_text_to_image"
+                    
                     metadata = {
                         "model_used": model,  # Use actual model name instead of hardcoded
                         "api_provider": "replicate",
                         "enhanced_prompt": enhanced_prompt,
                         "prediction_id": prediction_id,
                         "reference_people_count": len(reference_people),
-                        "generation_approach": "flux_universal",
+                        "generation_approach": approach,
                         "api_request_time": api_request_time,
                         "polling_time": total_poll_time,
                         "poll_count": poll_count,

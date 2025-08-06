@@ -29,6 +29,7 @@ from recipe_routes import router as recipe_router
 from restaurant_routes import router as restaurant_router
 from routes import content_router
 from story_routes import router as story_router
+from video_routes import video_router
 from wyr_routes import router as wyr_router
 
 # Import modules with minimal logging
@@ -170,6 +171,7 @@ app.include_router(fortune_router, tags=["fortune-teller"])
 app.include_router(character_router, tags=["characters"])
 app.include_router(wyr_router, tags=["would-you-rather"])
 app.include_router(image_router, tags=["images"])
+app.include_router(video_router, prefix="/videos", tags=["videos"])
 
 
 @app.get("/")
@@ -188,10 +190,15 @@ async def health():
 if __name__ == "__main__":
     import uvicorn
 
+    # Configure for longer video generation requests
+    timeout_seconds = int(os.getenv("REQUEST_TIMEOUT", "600"))  # Default 10 minutes
+    
     uvicorn.run(
         "main:app",
         host="0.0.0.0",
         port=int(os.getenv("PORT", 8006)),
         reload=os.getenv("ENVIRONMENT", "development") == "development",
         log_level="info",
+        timeout_keep_alive=timeout_seconds,
+        timeout_graceful_shutdown=timeout_seconds,
     )

@@ -1073,6 +1073,154 @@ class ImageErrorResponse(BaseModel):
     image_id: Optional[UUID] = None
 
 
+# Video App Models
+class VideoGenerationType(str, Enum):
+    TEXT_TO_VIDEO = "text_to_video"
+    IMAGE_TO_VIDEO = "image_to_video"
+
+
+class VideoDuration(str, Enum):
+    SHORT = "short"  # 5 seconds
+    MEDIUM = "medium"  # 10 seconds
+
+
+class VideoResolution(str, Enum):
+    SD_480P = "sd_480p"
+    HD_1080P = "hd_1080p"
+
+
+class VideoAspectRatio(str, Enum):
+    ASPECT_16_9 = "16:9"
+    ASPECT_4_3 = "4:3"
+    ASPECT_1_1 = "1:1"
+    ASPECT_3_4 = "3:4"
+    ASPECT_9_16 = "9:16"
+    ASPECT_21_9 = "21:9"
+    ASPECT_9_21 = "9:21"
+
+
+class VideoReferencePerson(BaseModel):
+    person_id: UUID
+    photo_url: str = Field(..., max_length=1000)
+    description: str = Field(..., min_length=1, max_length=500)
+
+
+class VideoGenerateRequest(BaseModel):
+    user_id: UUID
+    prompt: str = Field(..., min_length=1, max_length=1000)
+    duration: VideoDuration = VideoDuration.SHORT
+    resolution: VideoResolution = VideoResolution.HD_1080P
+    aspect_ratio: VideoAspectRatio = VideoAspectRatio.ASPECT_16_9
+    reference_person: Optional[VideoReferencePerson] = None  # Only 1 person supported
+    camera_fixed: bool = False
+    metadata: Optional[dict] = Field(default_factory=dict)
+
+
+class VideoAnimateRequest(BaseModel):
+    user_id: UUID
+    image_url: str = Field(..., max_length=1000)
+    prompt: str = Field(..., min_length=1, max_length=1000)
+    duration: VideoDuration = VideoDuration.SHORT
+    resolution: VideoResolution = VideoResolution.HD_1080P
+    camera_fixed: bool = False
+    metadata: Optional[dict] = Field(default_factory=dict)
+
+
+class VideoMetadata(BaseModel):
+    model_used: str
+    generation_time_ms: int
+    api_provider: str
+    file_size_bytes: Optional[int] = None
+    dimensions: Optional[dict] = None
+
+
+class UserVideo(BaseModel):
+    id: UUID
+    user_id: UUID
+    url: str
+    thumbnail_url: Optional[str] = None
+    prompt: str
+    generation_type: VideoGenerationType
+    source_image_url: Optional[str] = None  # For image-to-video
+    duration_seconds: int
+    resolution: VideoResolution
+    aspect_ratio: VideoAspectRatio
+    reference_person: Optional[VideoReferencePerson] = None
+    metadata: dict = Field(default_factory=dict)
+    is_favorited: bool = False
+    created_at: datetime
+    updated_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+class VideoGenerationInfo(BaseModel):
+    model_used: str
+    generation_time_ms: int
+
+
+class VideoGenerateResponse(BaseModel):
+    success: bool = True
+    video: UserVideo
+    generation_info: VideoGenerationInfo
+
+
+class VideoAnimateResponse(BaseModel):
+    success: bool = True
+    video: UserVideo
+    generation_info: VideoGenerationInfo
+
+
+class VideoListRequest(BaseModel):
+    limit: int = Field(20, ge=1, le=50)
+    offset: int = Field(0, ge=0)
+    favorites_only: bool = False
+    generation_type: Optional[VideoGenerationType] = None
+
+
+class VideoPagination(BaseModel):
+    total: int
+    limit: int
+    offset: int
+    has_more: bool
+
+
+class VideoListResponse(BaseModel):
+    success: bool = True
+    videos: list[UserVideo]
+    pagination: VideoPagination
+
+
+class VideoDetailResponse(BaseModel):
+    success: bool = True
+    video: UserVideo
+
+
+class VideoUpdateRequest(BaseModel):
+    is_favorited: bool
+
+
+class VideoUpdateResponse(BaseModel):
+    success: bool = True
+    video: UserVideo
+
+
+class VideoDeleteResponse(BaseModel):
+    success: bool = True
+    message: str = "Video deleted successfully"
+    deleted_from_storage: bool
+
+
+class VideoErrorResponse(BaseModel):
+    success: bool = False
+    error: str
+    error_code: Optional[str] = None
+    current_balance: Optional[int] = None
+    required_amount: Optional[int] = None
+    video_id: Optional[UUID] = None
+
+
 # Error Response Model
 class ErrorResponse(BaseModel):
     error: dict

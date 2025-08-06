@@ -1,4 +1,6 @@
 # services/apps/routes.py
+import json
+import os
 from datetime import datetime
 from typing import Optional
 from uuid import UUID, uuid4
@@ -9,11 +11,17 @@ from models import (
     App,
     AppCreate,
     AppModelConfig,
+    AppModelConfigCreate,
     AppModelConfigUpdate,
+    AppModelConfigUpdateLegacy,
     AppStatus,
     AppValidation,
+    GlobalFallbackModel,
+    GlobalFallbackModelCreate,
+    ImageUsageLogCreate,
     LLMUsageLogCreate,
     LLMUsageStats,
+    ModelType,
     PromotionalReferralRedeemRequest,
     PromotionalReferralRedeemResponse,
     PromotionalReferralValidateRequest,
@@ -24,6 +32,7 @@ from models import (
     ReferralStatsResponse,
     ReferralValidateRequest,
     ReferralValidateResponse,
+    VideoUsageLogCreate,
 )
 
 from shared.auth_middleware import TokenData, get_current_user, require_admin
@@ -34,6 +43,8 @@ app_router = APIRouter()
 admin_router = APIRouter()
 marketplace_router = APIRouter()
 referral_router = APIRouter()
+image_router = APIRouter()
+video_router = APIRouter()
 
 # ============================================================================
 # BASIC APP ROUTES
@@ -157,230 +168,76 @@ llm_router = APIRouter()
 
 @llm_router.get("/{app_id}/model-config", response_model=AppModelConfig)
 async def get_app_model_config(app_id: str, db: Database = Depends(get_db)):
-    """Get LLM model configuration for an app (with Redis caching)"""
-    from shared.app_config_cache import get_app_config_cache
-    from shared.json_utils import parse_model_config_field
+    """Get LLM model configuration for an app (legacy endpoint - deprecated, use normalized endpoints)"""
+    import logging
 
-    # Try to get from cache first
-    cache = await get_app_config_cache()
-    cached_config = await cache.get_model_config(app_id)
+    logger = logging.getLogger(__name__)
+    logger.info(f"🔍 LEGACY: Getting model config for app {app_id} - this endpoint is deprecated")
 
-    if cached_config:
-        # Parse cached config fields and return
-        return AppModelConfig(**cached_config)
+    try:
+        # Verify the app exists first
+        app = await db.fetch_one("SELECT id, name FROM apps WHERE id = $1", app_id)
+        if not app:
+            raise HTTPException(status_code=404, detail=f"App {app_id} not found")
 
-    # Cache miss - fetch from database
-    config = await db.fetch_one(
-        """
-        SELECT * FROM app_model_configs WHERE app_id = $1
-    """,
-        app_id,
-    )
+        # Return default configuration (normalized endpoints should be used instead)
+        from models import CostLimits, FeatureFlags, LLMProvider, ModelParameters
 
-    if not config:
-        raise HTTPException(
-            status_code=404, detail=f"Model configuration not found for app {app_id}"
+        logger.info(f"🔍 LEGACY: Returning default config for app {app_id}")
+        return AppModelConfig(
+            id=uuid4(),
+            app_id=app_id,
+            primary_provider=LLMProvider.ANTHROPIC,
+            primary_model_id="claude-3-5-sonnet-20241022",
+            primary_parameters=ModelParameters(),
+            fallback_models=[],
+            cost_limits=CostLimits(),
+            feature_flags=FeatureFlags(),
+            created_at=datetime.utcnow(),
+            updated_at=datetime.utcnow(),
         )
-
-    # Parse JSONB fields for caching
-    config_dict = dict(config)
-    parsed_config = {
-        "id": str(config_dict["id"]),
-        "app_id": config_dict["app_id"],
-        "primary_provider": config_dict["primary_provider"],
-        "primary_model_id": config_dict["primary_model_id"],
-        "primary_parameters": parse_model_config_field(config_dict, "primary_parameters"),
-        "fallback_models": parse_model_config_field(config_dict, "fallback_models"),
-        "cost_limits": parse_model_config_field(config_dict, "cost_limits"),
-        "feature_flags": parse_model_config_field(config_dict, "feature_flags"),
-        "is_enabled": config_dict["is_enabled"],
-        "created_at": config_dict["created_at"].isoformat() if config_dict["created_at"] else None,
-        "updated_at": config_dict["updated_at"].isoformat() if config_dict["updated_at"] else None,
-    }
-
-    # Cache the parsed config
-    await cache.set_model_config(app_id, parsed_config)
-
-    return AppModelConfig(**config)
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"❌ LEGACY: Error getting model config for app {app_id}: {e}")
+        raise HTTPException(status_code=500, detail="Failed to get model configuration")
 
 
 @llm_router.put("/{app_id}/model-config", response_model=AppModelConfig)
 async def update_app_model_config(
     app_id: str,
-    config_update: AppModelConfigUpdate,
+    config_update: AppModelConfigUpdateLegacy,
     current_user: TokenData = Depends(require_admin),
     db: Database = Depends(get_db),
 ):
-    """Update LLM model configuration for an app (admin only)"""
-    import json
+    """Update LLM model configuration for an app (legacy endpoint - deprecated, use normalized endpoints)"""
+    import logging
+
+    logger = logging.getLogger(__name__)
+    logger.info(f"🔍 LEGACY: Updating model config for app {app_id} - this endpoint is deprecated")
+    logger.info(f"🔍 LEGACY: Config update payload: {config_update}")
 
     # Check if app exists
     app = await db.fetch_one("SELECT id FROM apps WHERE id = $1", app_id)
     if not app:
         raise HTTPException(status_code=404, detail="App not found")
 
-    # Get current config
-    current_config = await db.fetch_one("SELECT * FROM app_model_configs WHERE app_id = $1", app_id)
+    # Return default configuration (normalized endpoints should be used instead)
+    from models import CostLimits, FeatureFlags, LLMProvider, ModelParameters
 
-    # If no configuration exists, create a new one
-    if not current_config:
-        config_id = uuid4()
-        await db.execute(
-            """
-            INSERT INTO app_model_configs (
-                id, app_id, primary_provider, primary_model_id, primary_parameters,
-                fallback_models, cost_limits, feature_flags
-            ) VALUES ($1, $2, $3, $4, $5::jsonb, $6::jsonb, $7::jsonb, $8::jsonb)
-            """,
-            config_id,
-            app_id,
-            config_update.primary_provider.value if config_update.primary_provider else "anthropic",
-            config_update.primary_model_id or "claude-3-5-sonnet-20241022",
-            json.dumps(
-                config_update.primary_parameters.dict(exclude_none=True)
-                if config_update.primary_parameters
-                else {"temperature": 0.7, "max_tokens": 1000, "top_p": 0.9}
-            ),
-            json.dumps(
-                [model.dict(exclude_none=True) for model in config_update.fallback_models]
-                if config_update.fallback_models
-                else []
-            ),
-            json.dumps(
-                config_update.cost_limits.dict(exclude_none=True)
-                if config_update.cost_limits
-                else {}
-            ),
-            json.dumps(config_update.feature_flags.dict() if config_update.feature_flags else {}),
-        )
-
-        # Fetch the created config
-        current_config = await db.fetch_one(
-            "SELECT * FROM app_model_configs WHERE id = $1", config_id
-        )
-
-        # Invalidate cache and return new config
-        from shared.app_config_cache import get_app_config_cache
-        from shared.json_utils import parse_model_config_field
-
-        cache = await get_app_config_cache()
-        await cache.invalidate_model_config(app_id)
-
-        # Parse JSONB fields properly before returning
-        config_dict = dict(current_config)
-
-        # Parse fallback_models - ensure it's a list
-        fallback_models = parse_model_config_field(config_dict, "fallback_models")
-        if isinstance(fallback_models, dict):
-            fallback_models = []  # Default to empty list if dict
-
-        parsed_config = {
-            "id": config_dict["id"],
-            "app_id": str(config_dict["app_id"]),  # Convert UUID to string
-            "primary_provider": config_dict["primary_provider"],
-            "primary_model_id": config_dict["primary_model_id"],
-            "primary_parameters": parse_model_config_field(config_dict, "primary_parameters"),
-            "fallback_models": fallback_models,
-            "cost_limits": parse_model_config_field(config_dict, "cost_limits"),
-            "feature_flags": parse_model_config_field(config_dict, "feature_flags"),
-            "created_at": config_dict["created_at"],
-            "updated_at": config_dict["updated_at"],
-        }
-
-        return AppModelConfig(**parsed_config)
-
-    # Build update query dynamically
-    update_fields = []
-    update_values = []
-    param_count = 1
-
-    if config_update.primary_provider is not None:
-        update_fields.append(f"primary_provider = ${param_count}")
-        update_values.append(config_update.primary_provider.value)
-        param_count += 1
-
-    if config_update.primary_model_id is not None:
-        update_fields.append(f"primary_model_id = ${param_count}")
-        update_values.append(config_update.primary_model_id)
-        param_count += 1
-
-    if config_update.primary_parameters is not None:
-        update_fields.append(f"primary_parameters = ${param_count}::jsonb")
-        update_values.append(json.dumps(config_update.primary_parameters.dict(exclude_none=True)))
-        param_count += 1
-
-    if config_update.fallback_models is not None:
-        update_fields.append(f"fallback_models = ${param_count}::jsonb")
-        update_values.append(
-            json.dumps(
-                [
-                    {**model.dict(exclude_none=True), "provider": model.provider.value}
-                    for model in config_update.fallback_models
-                ]
-            )
-        )
-        param_count += 1
-
-    if config_update.cost_limits is not None:
-        update_fields.append(f"cost_limits = ${param_count}::jsonb")
-        update_values.append(json.dumps(config_update.cost_limits.dict(exclude_none=True)))
-        param_count += 1
-
-    if config_update.feature_flags is not None:
-        update_fields.append(f"feature_flags = ${param_count}::jsonb")
-        update_values.append(json.dumps(config_update.feature_flags.dict()))
-        param_count += 1
-
-    if not update_fields:
-        # Return current config if no updates
-        return AppModelConfig(**current_config)
-
-    # Add updated_at field
-    update_fields.append(f"updated_at = ${param_count}")
-    update_values.append(datetime.utcnow())
-    param_count += 1
-
-    # Add app_id for WHERE clause
-    update_values.append(app_id)
-
-    query = f"""
-        UPDATE app_model_configs
-        SET {', '.join(update_fields)}
-        WHERE app_id = ${param_count}
-        RETURNING *
-    """
-
-    updated_config = await db.fetch_one(query, *update_values)
-
-    # Invalidate cache after successful update
-    from shared.app_config_cache import get_app_config_cache
-    from shared.json_utils import parse_model_config_field
-
-    cache = await get_app_config_cache()
-    await cache.invalidate_model_config(app_id)
-
-    # Parse JSONB fields properly before returning
-    config_dict = dict(updated_config)
-
-    # Parse fallback_models - ensure it's a list
-    fallback_models = parse_model_config_field(config_dict, "fallback_models")
-    if isinstance(fallback_models, dict):
-        fallback_models = []  # Default to empty list if dict
-
-    parsed_config = {
-        "id": config_dict["id"],
-        "app_id": str(config_dict["app_id"]),  # Convert UUID to string
-        "primary_provider": config_dict["primary_provider"],
-        "primary_model_id": config_dict["primary_model_id"],
-        "primary_parameters": parse_model_config_field(config_dict, "primary_parameters"),
-        "fallback_models": fallback_models,
-        "cost_limits": parse_model_config_field(config_dict, "cost_limits"),
-        "feature_flags": parse_model_config_field(config_dict, "feature_flags"),
-        "created_at": config_dict["created_at"],
-        "updated_at": config_dict["updated_at"],
-    }
-
-    return AppModelConfig(**parsed_config)
+    logger.info(f"🔍 LEGACY: Returning default config after 'update' for app {app_id}")
+    return AppModelConfig(
+        id=uuid4(),
+        app_id=app_id,
+        primary_provider=config_update.primary_provider or LLMProvider.ANTHROPIC,
+        primary_model_id=config_update.primary_model_id or "claude-3-5-sonnet-20241022",
+        primary_parameters=config_update.primary_parameters or ModelParameters(),
+        fallback_models=config_update.fallback_models or [],
+        cost_limits=config_update.cost_limits or CostLimits(),
+        feature_flags=FeatureFlags(),
+        created_at=datetime.utcnow(),
+        updated_at=datetime.utcnow(),
+    )
 
 
 @llm_router.post("/usage", status_code=status.HTTP_201_CREATED)
@@ -426,17 +283,17 @@ async def log_llm_usage(usage: LLMUsageLogCreate, db: Database = Depends(get_db)
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"Cost calculation failed: {str(e)}")
 
-    # Insert usage log
+    # Insert usage log into unified ai_usage_logs table
     usage_id = uuid4()
     await db.execute(
         """
-        INSERT INTO llm_usage_logs (
-            id, user_id, app_id, provider, model_id,
-            prompt_tokens, completion_tokens, total_tokens,
-            cost_usd, latency_ms, prompt_hash, finish_reason,
-            was_fallback, fallback_reason, request_metadata
-        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15::jsonb)
-    """,
+        INSERT INTO ai_usage_logs (
+            id, user_id, app_id, model_type, provider, model_id,
+            prompt_tokens, completion_tokens, cost_usd, latency_ms,
+            prompt_text, finish_reason, was_fallback, fallback_reason,
+            request_metadata, created_at
+        ) VALUES ($1, $2, $3, 'text', $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, NOW())
+        """,
         usage_id,
         usage.user_id,
         app_uuid,
@@ -444,10 +301,9 @@ async def log_llm_usage(usage: LLMUsageLogCreate, db: Database = Depends(get_db)
         usage.model_id,
         usage.prompt_tokens,
         usage.completion_tokens,
-        usage.total_tokens,
         calculated_cost,
         usage.latency_ms,
-        usage.prompt_hash,
+        usage.prompt_hash,  # Store prompt_hash in prompt_text field
         usage.finish_reason,
         usage.was_fallback,
         usage.fallback_reason,
@@ -566,32 +422,32 @@ async def get_user_llm_usage(
 
     where_clause = " AND ".join(conditions)
 
-    # Get aggregate stats
+    # Get aggregate stats from ai_usage_logs for text models
     stats = await db.fetch_one(
         f"""
         SELECT
             COUNT(*) as total_requests,
-            SUM(total_tokens) as total_tokens,
+            SUM(COALESCE(prompt_tokens, 0) + COALESCE(completion_tokens, 0)) as total_tokens,
             SUM(cost_usd) as total_cost_usd,
             AVG(latency_ms) as average_latency_ms
-        FROM llm_usage_logs
-        WHERE {where_clause}
+        FROM ai_usage_logs
+        WHERE {where_clause} AND model_type = 'text'
     """,
         *params,
     )
 
-    # Get model breakdown
+    # Get model breakdown from ai_usage_logs for text models
     model_stats = await db.fetch_all(
         f"""
         SELECT
             provider,
             model_id,
             COUNT(*) as requests,
-            SUM(total_tokens) as tokens,
+            SUM(COALESCE(prompt_tokens, 0) + COALESCE(completion_tokens, 0)) as tokens,
             SUM(cost_usd) as cost,
             AVG(latency_ms) as avg_latency
-        FROM llm_usage_logs
-        WHERE {where_clause}
+        FROM ai_usage_logs
+        WHERE {where_clause} AND model_type = 'text'
         GROUP BY provider, model_id
         ORDER BY cost DESC
     """,
@@ -618,6 +474,815 @@ async def get_user_llm_usage(
         period_start=start_date,
         period_end=end_date,
     )
+
+
+# ============================================================================
+# NEW NORMALIZED MODEL CONFIGURATION ROUTES
+# ============================================================================
+
+model_config_router = APIRouter()
+
+
+@model_config_router.get("/{app_id}/configs")
+async def get_app_model_configs(app_id: str, db: Database = Depends(get_db)) -> dict:
+    """Get all model configurations for an app (normalized structure)"""
+    try:
+        app_uuid = UUID(app_id)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid app ID format")
+
+    # Verify app exists
+    app = await db.fetch_one("SELECT id FROM apps WHERE id = $1", app_uuid)
+    if not app:
+        raise HTTPException(status_code=404, detail="App not found")
+
+    # Get all model configs for this app
+    configs = await db.fetch_all(
+        """
+        SELECT * FROM app_model_configs
+        WHERE app_id = $1
+        ORDER BY model_type, created_at
+        """,
+        app_uuid,
+    )
+
+    # Organize by model type
+    result = {"app_id": app_id, "text_config": None, "image_config": None, "video_config": None}
+
+    for config in configs:
+        config_dict = dict(config)
+        config_dict["id"] = str(config_dict["id"])
+        config_dict["app_id"] = str(config_dict["app_id"])
+        
+        # Parse JSON parameters back to dict
+        if config_dict["parameters"]:
+            import json
+            config_dict["parameters"] = json.loads(config_dict["parameters"])
+        else:
+            config_dict["parameters"] = {}
+
+        if config["model_type"] == "text":
+            result["text_config"] = config_dict
+        elif config["model_type"] == "image":
+            result["image_config"] = config_dict
+        elif config["model_type"] == "video":
+            result["video_config"] = config_dict
+
+    return result
+
+
+@model_config_router.post("/{app_id}/configs", status_code=status.HTTP_201_CREATED)
+async def create_app_model_config(
+    app_id: str,
+    config_data: dict,
+    current_user: TokenData = Depends(require_admin),
+    db: Database = Depends(get_db),
+) -> AppModelConfig:
+    """Create a new model configuration for an app"""
+    import json
+    import logging
+    
+    logger = logging.getLogger(__name__)
+    logger.info(f"🔍 APPS_DEBUG: Creating model config for app {app_id}")
+    logger.info(f"🔍 APPS_DEBUG: Received config_data: {config_data}")
+    logger.info(f"🔍 APPS_DEBUG: Parameters in data: {config_data.get('parameters')}")
+    logger.info(f"🔍 APPS_DEBUG: Parameters type: {type(config_data.get('parameters'))}")
+
+    try:
+        app_uuid = UUID(app_id)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid app ID format")
+
+    # Verify app exists
+    app = await db.fetch_one("SELECT id FROM apps WHERE id = $1", app_uuid)
+    if not app:
+        raise HTTPException(status_code=404, detail="App not found")
+
+    # Handle parameters - if it's a string, parse it; if it's already a dict, use it
+    parameters = config_data.get('parameters', {})
+    if isinstance(parameters, str):
+        logger.info(f"🔍 APPS_DEBUG: Parameters is string, parsing: {parameters}")
+        try:
+            parameters = json.loads(parameters)
+        except json.JSONDecodeError:
+            logger.error(f"🔍 APPS_DEBUG: Failed to parse parameters JSON: {parameters}")
+            parameters = {}
+    
+    logger.info(f"🔍 APPS_DEBUG: Final parameters: {parameters} (type: {type(parameters)})")
+
+    # Create the Pydantic model with corrected parameters
+    try:
+        config = AppModelConfigCreate(
+            app_id=config_data['app_id'],
+            model_type=config_data['model_type'],
+            provider=config_data['provider'],
+            model_id=config_data['model_id'],
+            parameters=parameters,
+            is_enabled=config_data.get('is_enabled', True)
+        )
+    except Exception as e:
+        logger.error(f"🔍 APPS_DEBUG: Failed to create Pydantic model: {e}")
+        raise HTTPException(status_code=400, detail=f"Invalid model configuration: {e}")
+
+    # Check if config already exists for this app/model_type
+    existing = await db.fetch_one(
+        """
+        SELECT id FROM app_model_configs
+        WHERE app_id = $1 AND model_type = $2
+        """,
+        app_uuid,
+        config.model_type.value,
+    )
+
+    if existing:
+        raise HTTPException(
+            status_code=409,
+            detail=f"Configuration for {config.model_type.value} model already exists",
+        )
+
+    # Create new config
+    config_id = uuid4()
+    await db.execute(
+        """
+        INSERT INTO app_model_configs (
+            id, app_id, model_type, provider, model_id, parameters, is_enabled
+        ) VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7)
+        """,
+        config_id,
+        app_uuid,
+        config.model_type.value,
+        config.provider,
+        config.model_id,
+        json.dumps(config.parameters),
+        config.is_enabled,
+    )
+
+    # Return created config
+    created_config = await db.fetch_one("SELECT * FROM app_model_configs WHERE id = $1", config_id)
+
+    config_dict = dict(created_config)
+    config_dict["id"] = str(config_dict["id"])
+    config_dict["app_id"] = str(config_dict["app_id"])
+    
+    # Parse JSON parameters back to dict
+    if config_dict["parameters"]:
+        config_dict["parameters"] = json.loads(config_dict["parameters"])
+    else:
+        config_dict["parameters"] = {}
+
+    return AppModelConfig(**config_dict)
+
+
+@model_config_router.put("/{app_id}/configs/{model_type}")
+async def update_app_model_config_by_type(
+    app_id: str,
+    model_type: ModelType,
+    config_update: AppModelConfigUpdate,
+    current_user: TokenData = Depends(require_admin),
+    db: Database = Depends(get_db),
+) -> AppModelConfig:
+    """Update a specific model configuration for an app"""
+    import json
+
+    try:
+        app_uuid = UUID(app_id)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid app ID format")
+
+    # Get existing config
+    existing_config = await db.fetch_one(
+        """
+        SELECT * FROM app_model_configs
+        WHERE app_id = $1 AND model_type = $2
+        """,
+        app_uuid,
+        model_type.value,
+    )
+
+    if not existing_config:
+        raise HTTPException(status_code=404, detail="Model configuration not found")
+
+    # Build update query
+    update_fields = []
+    update_values = []
+    param_count = 1
+
+    if config_update.provider is not None:
+        update_fields.append(f"provider = ${param_count}")
+        update_values.append(config_update.provider)
+        param_count += 1
+
+    if config_update.model_id is not None:
+        update_fields.append(f"model_id = ${param_count}")
+        update_values.append(config_update.model_id)
+        param_count += 1
+
+    if config_update.parameters is not None:
+        update_fields.append(f"parameters = ${param_count}::jsonb")
+        update_values.append(json.dumps(config_update.parameters))
+        param_count += 1
+
+    if config_update.is_enabled is not None:
+        update_fields.append(f"is_enabled = ${param_count}")
+        update_values.append(config_update.is_enabled)
+        param_count += 1
+
+    if not update_fields:
+        # No updates, return existing config
+        config_dict = dict(existing_config)
+        config_dict["id"] = str(config_dict["id"])
+        config_dict["app_id"] = str(config_dict["app_id"])
+        return AppModelConfig(**config_dict)
+
+    # Add updated_at
+    update_fields.append(f"updated_at = ${param_count}")
+    update_values.append(datetime.utcnow())
+    param_count += 1
+
+    # Add WHERE clause parameters
+    update_values.extend([app_uuid, model_type.value])
+
+    query = f"""
+        UPDATE app_model_configs
+        SET {', '.join(update_fields)}
+        WHERE app_id = ${param_count} AND model_type = ${param_count + 1}
+        RETURNING *
+    """
+
+    updated_config = await db.fetch_one(query, *update_values)
+
+    config_dict = dict(updated_config)
+    config_dict["id"] = str(config_dict["id"])
+    config_dict["app_id"] = str(config_dict["app_id"])
+    
+    # Parse JSON parameters back to dict
+    if config_dict["parameters"]:
+        config_dict["parameters"] = json.loads(config_dict["parameters"])
+    else:
+        config_dict["parameters"] = {}
+
+    return AppModelConfig(**config_dict)
+
+
+@model_config_router.delete("/{app_id}/configs/{model_type}")
+async def delete_app_model_config(
+    app_id: str,
+    model_type: ModelType,
+    current_user: TokenData = Depends(require_admin),
+    db: Database = Depends(get_db),
+):
+    """Delete a specific model configuration for an app"""
+    try:
+        app_uuid = UUID(app_id)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid app ID format")
+
+    result = await db.execute(
+        """
+        DELETE FROM app_model_configs
+        WHERE app_id = $1 AND model_type = $2
+        """,
+        app_uuid,
+        model_type.value,
+    )
+
+    if "DELETE 0" in result:
+        raise HTTPException(status_code=404, detail="Model configuration not found")
+
+    return {"message": f"Deleted {model_type.value} model configuration"}
+
+
+# Global fallback model management
+@model_config_router.get("/fallbacks")
+async def get_global_fallbacks(
+    model_type: Optional[ModelType] = Query(None), db: Database = Depends(get_db)
+) -> list[GlobalFallbackModel]:
+    """Get global fallback models, optionally filtered by type"""
+    if model_type:
+        fallbacks = await db.fetch_all(
+            """
+            SELECT * FROM global_fallback_models
+            WHERE model_type = $1 AND is_enabled = true
+            ORDER BY created_at
+            """,
+            model_type.value,
+        )
+    else:
+        fallbacks = await db.fetch_all(
+            """
+            SELECT * FROM global_fallback_models
+            WHERE is_enabled = true
+            ORDER BY model_type, created_at
+            """
+        )
+
+    result = []
+    for fallback in fallbacks:
+        fallback_dict = dict(fallback)
+        fallback_dict["id"] = str(fallback_dict["id"])
+        
+        # Parse JSON parameters back to dict
+        if fallback_dict["parameters"]:
+            fallback_dict["parameters"] = json.loads(fallback_dict["parameters"])
+        else:
+            fallback_dict["parameters"] = {}
+            
+        result.append(GlobalFallbackModel(**fallback_dict))
+
+    return result
+
+
+@model_config_router.post("/fallbacks", status_code=status.HTTP_201_CREATED)
+async def create_global_fallback(
+    fallback: GlobalFallbackModelCreate,
+    current_user: TokenData = Depends(require_admin),
+    db: Database = Depends(get_db),
+) -> GlobalFallbackModel:
+    """Create a new global fallback model configuration"""
+    fallback_id = uuid4()
+
+    await db.execute(
+        """
+        INSERT INTO global_fallback_models (
+            id, model_type, provider, model_id, parameters, is_enabled
+        ) VALUES ($1, $2, $3, $4, $5, $6)
+        """,
+        fallback_id,
+        fallback.model_type.value,
+        fallback.provider,
+        fallback.model_id,
+        json.dumps(fallback.parameters),
+        fallback.is_enabled,
+    )
+
+    created_fallback = await db.fetch_one(
+        "SELECT * FROM global_fallback_models WHERE id = $1", fallback_id
+    )
+
+    fallback_dict = dict(created_fallback)
+    fallback_dict["id"] = str(fallback_dict["id"])
+    
+    # Parse JSON parameters back to dict
+    if fallback_dict["parameters"]:
+        fallback_dict["parameters"] = json.loads(fallback_dict["parameters"])
+    else:
+        fallback_dict["parameters"] = {}
+
+    return GlobalFallbackModel(**fallback_dict)
+
+
+# ============================================================================
+# IMAGE MODEL USAGE LOGGING
+# ============================================================================
+
+
+@image_router.post("/usage", status_code=status.HTTP_201_CREATED)
+async def log_image_usage(usage: ImageUsageLogCreate, db: Database = Depends(get_db)):
+    """Log image generation usage for analytics and cost tracking"""
+    import json
+
+    from shared.llm_pricing import calculate_image_cost
+
+    # Verify app exists and get UUID (handle both UUID and slug)
+    try:
+        # Try as UUID first
+        app_uuid = UUID(usage.app_id)
+        app = await db.fetch_one("SELECT id FROM apps WHERE id = $1", app_uuid)
+    except ValueError:
+        # If not UUID, treat as slug
+        app = await db.fetch_one("SELECT id FROM apps WHERE slug = $1", usage.app_id)
+
+    if not app:
+        raise HTTPException(status_code=404, detail="App not found")
+
+    # Use the actual app UUID for database operations
+    app_uuid = app["id"]
+
+    # Verify user exists
+    user = await db.fetch_one("SELECT id FROM users WHERE id = $1", usage.user_id)
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    # Calculate cost server-side (SECURITY: never trust client-provided costs)
+    try:
+        calculated_cost = calculate_image_cost(
+            model_id=usage.model_id,
+            image_count=usage.images_generated,
+        )
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Cost calculation failed: {str(e)}")
+
+    # Insert usage log into ai_usage_logs table
+    usage_id = uuid4()
+    await db.execute(
+        """
+        INSERT INTO ai_usage_logs (
+            id, user_id, app_id, model_type, provider, model_id,
+            images_generated, image_dimensions, cost_usd, latency_ms,
+            prompt_text, finish_reason, was_fallback, fallback_reason,
+            request_metadata, created_at
+        ) VALUES (
+            $1, $2, $3, 'image', $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, NOW()
+        )
+        """,
+        usage_id,
+        usage.user_id,
+        app_uuid,
+        usage.provider,
+        usage.model_id,
+        usage.images_generated,
+        usage.image_dimensions,
+        calculated_cost,
+        usage.latency_ms,
+        usage.prompt_text,
+        usage.finish_reason,
+        usage.was_fallback,
+        usage.fallback_reason,
+        json.dumps(usage.request_metadata),
+    )
+
+    return {"message": "Image usage logged successfully", "usage_id": str(usage_id)}
+
+
+# ============================================================================
+# VIDEO MODEL USAGE LOGGING
+# ============================================================================
+
+
+@video_router.post("/usage", status_code=status.HTTP_201_CREATED)
+async def log_video_usage(usage: VideoUsageLogCreate, db: Database = Depends(get_db)):
+    """Log video generation usage for analytics and cost tracking"""
+    import json
+
+    from shared.llm_pricing import calculate_video_cost
+
+    # Verify app exists and get UUID (handle both UUID and slug)
+    try:
+        # Try as UUID first
+        app_uuid = UUID(usage.app_id)
+        app = await db.fetch_one("SELECT id FROM apps WHERE id = $1", app_uuid)
+    except ValueError:
+        # If not UUID, treat as slug
+        app = await db.fetch_one("SELECT id FROM apps WHERE slug = $1", usage.app_id)
+
+    if not app:
+        raise HTTPException(status_code=404, detail="App not found")
+
+    # Use the actual app UUID for database operations
+    app_uuid = app["id"]
+
+    # Verify user exists
+    user = await db.fetch_one("SELECT id FROM users WHERE id = $1", usage.user_id)
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    # Calculate cost server-side (SECURITY: never trust client-provided costs)
+    try:
+        calculated_cost = calculate_video_cost(
+            model_id=usage.model_id,
+            video_count=usage.videos_generated,
+            duration_seconds=usage.video_duration_seconds,
+        )
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Cost calculation failed: {str(e)}")
+
+    # Insert usage log into ai_usage_logs table
+    usage_id = uuid4()
+    await db.execute(
+        """
+        INSERT INTO ai_usage_logs (
+            id, user_id, app_id, model_type, provider, model_id,
+            videos_generated, video_duration_seconds, video_resolution,
+            cost_usd, latency_ms, prompt_text, finish_reason,
+            was_fallback, fallback_reason, request_metadata, created_at
+        ) VALUES (
+            $1, $2, $3, 'video', $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, NOW()
+        )
+        """,
+        usage_id,
+        usage.user_id,
+        app_uuid,
+        usage.provider,
+        usage.model_id,
+        usage.videos_generated,
+        usage.video_duration_seconds,
+        usage.video_resolution,
+        calculated_cost,
+        usage.latency_ms,
+        usage.prompt_text,
+        usage.finish_reason,
+        usage.was_fallback,
+        usage.fallback_reason,
+        json.dumps(usage.request_metadata),
+    )
+
+    return {"message": "Video usage logged successfully", "usage_id": str(usage_id)}
+
+
+# ============================================================================
+# VIDEO GENERATION ENDPOINTS
+# ============================================================================
+
+
+@video_router.post("/generate")
+async def generate_video(
+    request: dict,
+    current_user: TokenData = Depends(get_current_user),
+    db: Database = Depends(get_db),
+):
+    """Generate a video from text prompt (with optional reference person)"""
+    import httpx
+    from shared.llm_pricing import calculate_video_cost
+
+    try:
+        user_id = UUID(request["user_id"])
+        prompt = request["prompt"]
+        duration = request.get("duration", "short")  # short=5s, medium=10s
+        resolution = request.get("resolution", "hd_1080p")
+        aspect_ratio = request.get("aspect_ratio", "16:9")
+        reference_person = request.get("reference_person")
+        camera_fixed = request.get("camera_fixed", False)
+
+        # Validate user authorization
+        if user_id != current_user.user_id:
+            raise HTTPException(status_code=403, detail="Not authorized for this user")
+
+        # Map duration to seconds for cost calculation
+        duration_seconds = 5 if duration == "short" else 10
+        
+        # Map resolution for cost calculation
+        cost_resolution = "1080p" if resolution == "hd_1080p" else "480p"
+        
+        # Determine model based on reference person
+        if reference_person:
+            model_id = "minimax/video-01"
+            cost = calculate_video_cost(model_id, 1, duration_seconds, cost_resolution)
+        else:
+            model_id = "bytedance/seedance-1-pro"
+            cost = calculate_video_cost(model_id, 1, duration_seconds, cost_resolution)
+
+        # Check DUST balance and deduct
+        from shared.ledger_client import check_and_deduct_dust
+        
+        # Get DUST cost from action pricing
+        dust_pricing = await db.fetch_one(
+            "SELECT dust_cost FROM action_pricing WHERE action_slug = 'video_generate' AND is_active = true"
+        )
+        
+        if not dust_pricing:
+            raise HTTPException(status_code=500, detail="Video generation pricing not configured")
+        
+        dust_cost = dust_pricing["dust_cost"]
+        
+        # Check and deduct DUST
+        balance_result = await check_and_deduct_dust(
+            user_id=user_id,
+            amount=dust_cost,
+            description=f"Video generation: {prompt[:50]}...",
+            metadata={"action": "video_generate", "model": model_id}
+        )
+        
+        if not balance_result["success"]:
+            raise HTTPException(
+                status_code=400,
+                detail={
+                    "error": "Insufficient DUST balance",
+                    "current_balance": balance_result.get("current_balance", 0),
+                    "required_amount": dust_cost
+                }
+            )
+
+        # Call content service for actual generation
+        content_service_url = os.getenv("CONTENT_SERVICE_URL", "http://localhost:8006")
+        
+        async with httpx.AsyncClient() as client:
+            generation_response = await client.post(
+                f"{content_service_url}/videos/generate",
+                json={
+                    "user_id": str(user_id),
+                    "prompt": prompt,
+                    "duration": duration,
+                    "resolution": resolution,
+                    "aspect_ratio": aspect_ratio,
+                    "reference_person": reference_person,
+                    "camera_fixed": camera_fixed
+                },
+                headers={"Authorization": f"Bearer {current_user.token}" if hasattr(current_user, 'token') else {}},
+                timeout=300.0  # 5 minute timeout for video generation
+            )
+            
+            if generation_response.status_code != 200:
+                # Refund DUST if generation fails
+                from shared.ledger_client import add_dust
+                await add_dust(
+                    user_id=user_id,
+                    amount=dust_cost,
+                    description=f"Refund for failed video generation: {prompt[:50]}...",
+                    metadata={"action": "video_generate_refund", "model": model_id}
+                )
+                
+                error_detail = generation_response.json() if generation_response.content else {}
+                raise HTTPException(
+                    status_code=generation_response.status_code,
+                    detail=error_detail.get("detail", "Video generation failed")
+                )
+            
+            result = generation_response.json()
+
+        # Log usage for analytics
+        await db.execute(
+            """
+            INSERT INTO ai_usage_logs (
+                id, user_id, app_id, model_type, provider, model_id,
+                videos_generated, video_duration_seconds, video_resolution,
+                cost_usd, latency_ms, prompt_text, finish_reason,
+                was_fallback, fallback_reason, request_metadata, created_at
+            ) VALUES (
+                $1, $2, $3, 'video', $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, NOW()
+            )
+            """,
+            uuid4(),
+            user_id,
+            None,  # No specific app for direct generation
+            model_id.split("/")[0],  # provider
+            model_id,
+            1,  # videos_generated
+            duration_seconds,
+            cost_resolution,
+            cost,
+            result.get("generation_info", {}).get("generation_time_ms", 0),
+            prompt,
+            "completed",
+            False,  # was_fallback
+            None,  # fallback_reason
+            json.dumps({
+                "action": "video_generate",
+                "duration": duration,
+                "resolution": resolution,
+                "aspect_ratio": aspect_ratio,
+                "has_reference": reference_person is not None
+            })
+        )
+
+        return {
+            "success": True,
+            "video": result["video"],
+            "generation_info": result["generation_info"],
+            "new_dust_balance": balance_result["new_balance"]
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"❌ VIDEO GENERATION ERROR: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Video generation failed: {str(e)}")
+
+
+@video_router.post("/animate")
+async def animate_image(
+    request: dict,
+    current_user: TokenData = Depends(get_current_user),
+    db: Database = Depends(get_db),
+):
+    """Animate an existing image into a video"""
+    import httpx
+    from shared.llm_pricing import calculate_video_cost
+
+    try:
+        user_id = UUID(request["user_id"])
+        image_url = request["image_url"]
+        prompt = request["prompt"]
+        duration = request.get("duration", "short")  # short=5s, medium=10s
+        resolution = request.get("resolution", "hd_1080p")
+        camera_fixed = request.get("camera_fixed", False)
+
+        # Validate user authorization
+        if user_id != current_user.user_id:
+            raise HTTPException(status_code=403, detail="Not authorized for this user")
+
+        # Map duration to seconds for cost calculation
+        duration_seconds = 5 if duration == "short" else 10
+        
+        # Map resolution for cost calculation
+        cost_resolution = "1080p" if resolution == "hd_1080p" else "480p"
+        
+        # Use SeeDance for image-to-video
+        model_id = "bytedance/seedance-1-pro"
+        cost = calculate_video_cost(model_id, 1, duration_seconds, cost_resolution)
+
+        # Check DUST balance and deduct
+        from shared.ledger_client import check_and_deduct_dust
+        
+        # Get DUST cost from action pricing
+        dust_pricing = await db.fetch_one(
+            "SELECT dust_cost FROM action_pricing WHERE action_slug = 'video_animate' AND is_active = true"
+        )
+        
+        if not dust_pricing:
+            raise HTTPException(status_code=500, detail="Video animation pricing not configured")
+        
+        dust_cost = dust_pricing["dust_cost"]
+        
+        # Check and deduct DUST
+        balance_result = await check_and_deduct_dust(
+            user_id=user_id,
+            amount=dust_cost,
+            description=f"Video animation: {prompt[:50]}...",
+            metadata={"action": "video_animate", "model": model_id}
+        )
+        
+        if not balance_result["success"]:
+            raise HTTPException(
+                status_code=400,
+                detail={
+                    "error": "Insufficient DUST balance",
+                    "current_balance": balance_result.get("current_balance", 0),
+                    "required_amount": dust_cost
+                }
+            )
+
+        # Call content service for actual animation
+        content_service_url = os.getenv("CONTENT_SERVICE_URL", "http://localhost:8006")
+        
+        async with httpx.AsyncClient() as client:
+            animation_response = await client.post(
+                f"{content_service_url}/videos/animate",
+                json={
+                    "user_id": str(user_id),
+                    "image_url": image_url,
+                    "prompt": prompt,
+                    "duration": duration,
+                    "resolution": resolution,
+                    "camera_fixed": camera_fixed
+                },
+                headers={"Authorization": f"Bearer {current_user.token}" if hasattr(current_user, 'token') else {}},
+                timeout=300.0  # 5 minute timeout for video animation
+            )
+            
+            if animation_response.status_code != 200:
+                # Refund DUST if animation fails
+                from shared.ledger_client import add_dust
+                await add_dust(
+                    user_id=user_id,
+                    amount=dust_cost,
+                    description=f"Refund for failed video animation: {prompt[:50]}...",
+                    metadata={"action": "video_animate_refund", "model": model_id}
+                )
+                
+                error_detail = animation_response.json() if animation_response.content else {}
+                raise HTTPException(
+                    status_code=animation_response.status_code,
+                    detail=error_detail.get("detail", "Video animation failed")
+                )
+            
+            result = animation_response.json()
+
+        # Log usage for analytics
+        await db.execute(
+            """
+            INSERT INTO ai_usage_logs (
+                id, user_id, app_id, model_type, provider, model_id,
+                videos_generated, video_duration_seconds, video_resolution,
+                cost_usd, latency_ms, prompt_text, finish_reason,
+                was_fallback, fallback_reason, request_metadata, created_at
+            ) VALUES (
+                $1, $2, $3, 'video', $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, NOW()
+            )
+            """,
+            uuid4(),
+            user_id,
+            None,  # No specific app for direct generation
+            model_id.split("/")[0],  # provider
+            model_id,
+            1,  # videos_generated
+            duration_seconds,
+            cost_resolution,
+            cost,
+            result.get("generation_info", {}).get("generation_time_ms", 0),
+            prompt,
+            "completed",
+            False,  # was_fallback
+            None,  # fallback_reason
+            json.dumps({
+                "action": "video_animate",
+                "source_image": image_url,
+                "duration": duration,
+                "resolution": resolution
+            })
+        )
+
+        return {
+            "success": True,
+            "video": result["video"],
+            "generation_info": result["generation_info"],
+            "new_dust_balance": balance_result["new_balance"]
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"❌ VIDEO ANIMATION ERROR: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Video animation failed: {str(e)}")
 
 
 # Action-based DUST pricing endpoints
@@ -705,11 +1370,9 @@ async def get_apps_api(
 
     # Build query with optional status filter
     base_query = """
-        SELECT a.*, u.fairyname as builder_name, u.email as builder_email,
-               amc.primary_model_id, amc.primary_provider
+        SELECT a.*, u.fairyname as builder_name, u.email as builder_email
         FROM apps a
         JOIN users u ON a.builder_id = u.id
-        LEFT JOIN app_model_configs amc ON amc.app_id::uuid = a.id
     """
     count_query = "SELECT COUNT(*) as total FROM apps a"
 
@@ -774,11 +1437,9 @@ async def update_app_status_api(
     # Return updated app
     app = await db.fetch_one(
         """
-        SELECT a.*, u.fairyname as builder_name, u.email as builder_email,
-               amc.primary_model_id, amc.primary_provider
+        SELECT a.*, u.fairyname as builder_name, u.email as builder_email
         FROM apps a
         JOIN users u ON a.builder_id = u.id
-        LEFT JOIN app_model_configs amc ON amc.app_id::uuid = a.id
         WHERE a.id = $1
         """,
         app_id,
@@ -864,11 +1525,9 @@ async def create_app_api(
         # Return created app
         app = await db.fetch_one(
             """
-            SELECT a.*, u.fairyname as builder_name, u.email as builder_email,
-                   amc.primary_model_id, amc.primary_provider
+            SELECT a.*, u.fairyname as builder_name, u.email as builder_email
             FROM apps a
             JOIN users u ON a.builder_id = u.id
-            LEFT JOIN app_model_configs amc ON amc.app_id::uuid = a.id
             WHERE a.id = $1
             """,
             app_id,
@@ -951,11 +1610,9 @@ async def update_app_api(
         # Return updated app
         app = await db.fetch_one(
             """
-            SELECT a.*, u.fairyname as builder_name, u.email as builder_email,
-                   amc.primary_model_id, amc.primary_provider
+            SELECT a.*, u.fairyname as builder_name, u.email as builder_email
             FROM apps a
             JOIN users u ON a.builder_id = u.id
-            LEFT JOIN app_model_configs amc ON amc.app_id::uuid = a.id
             WHERE a.id = $1
             """,
             app_id,
@@ -989,6 +1646,58 @@ async def get_builders_api(
         "SELECT id, fairyname, email FROM users WHERE is_builder = true ORDER BY fairyname"
     )
     return [dict(builder) for builder in builders]
+
+
+@admin_router.get("/apps/{app_id}")
+async def get_app_api(
+    app_id: str,
+    admin_user: TokenData = Depends(require_admin),
+    db: Database = Depends(get_db),
+):
+    """Get individual app details via API for React app (admin only)"""
+    import logging
+
+    logger = logging.getLogger(__name__)
+    try:
+        # Fetch app details
+        app = await db.fetch_one(
+            """
+            SELECT a.*, u.fairyname as builder_name
+            FROM apps a
+            LEFT JOIN users u ON a.builder_id = u.id
+            WHERE a.id = $1
+            """,
+            app_id,
+        )
+
+        if not app:
+            logger.warning(f"App not found: {app_id}")
+            raise HTTPException(status_code=404, detail="App not found")
+
+        # Convert to dict for JSON response
+        app_dict = dict(app)
+
+        # Add model configuration if available (prioritize text model)
+        model_config = await db.fetch_one(
+            "SELECT * FROM app_model_configs WHERE app_id = $1 AND model_type = 'text' LIMIT 1",
+            app_id,
+        )
+
+        if model_config:
+            app_dict["primary_provider"] = model_config["provider"]
+            app_dict["primary_model_id"] = model_config["model_id"]
+        else:
+            app_dict["primary_provider"] = None
+            app_dict["primary_model_id"] = None
+
+        logger.info(f"✅ Successfully fetched app {app_id}")
+        return app_dict
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error fetching app {app_id}: {e}")
+        raise HTTPException(status_code=500, detail="Failed to fetch app")
 
 
 # Admin endpoints for managing action pricing

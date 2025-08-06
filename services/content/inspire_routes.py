@@ -620,9 +620,10 @@ async def _get_user_context(db: Database, user_id: uuid.UUID) -> str:
 
 
 async def _get_llm_model_config() -> dict:
-    """Get LLM configuration for inspire app (with caching)"""
+    """Get LLM configuration for inspire app using normalized structure (with caching)"""
     from shared.app_config_cache import get_app_config_cache
     from shared.database import get_db
+    from shared.json_utils import parse_jsonb_field
 
     app_slug = "fairydust-inspire"
 
@@ -635,53 +636,60 @@ async def _get_llm_model_config() -> dict:
         # Return default config if app not found
         return {
             "primary_provider": "anthropic",
-            "primary_model_id": "claude-3-haiku-20240307",
+            "primary_model_id": "claude-3-5-haiku-20241022",
             "primary_parameters": {"temperature": 0.8, "max_tokens": 150, "top_p": 0.9},
         }
 
     app_id = str(app_result["id"])
     print(f"🔍 INSPIRE_CONFIG: Resolved {app_slug} to UUID {app_id}", flush=True)
 
-    # Try to get from cache first
+    # Try to get from cache first (cache still uses legacy format)
     cache = await get_app_config_cache()
     cached_config = await cache.get_model_config(app_id)
 
     if cached_config:
         return {
             "primary_provider": cached_config.get("primary_provider", "anthropic"),
-            "primary_model_id": cached_config.get("primary_model_id", "claude-3-haiku-20240307"),
+            "primary_model_id": cached_config.get("primary_model_id", "claude-3-5-haiku-20241022"),
             "primary_parameters": cached_config.get(
                 "primary_parameters", {"temperature": 0.8, "max_tokens": 150, "top_p": 0.9}
             ),
         }
 
-    # Cache miss - check database directly
+    # Cache miss - fetch from new normalized database structure
     print("⚠️ INSPIRE_CONFIG: Cache miss, checking database directly", flush=True)
 
     try:
-        # Don't need to get_db again, we already have it
-        db_config = await db.fetch_one("SELECT * FROM app_model_configs WHERE app_id = $1", app_id)
+        db_config = await db.fetch_one(
+            """
+            SELECT provider, model_id, parameters FROM app_model_configs
+            WHERE app_id = $1 AND model_type = 'text' AND is_enabled = true
+            """,
+            app_result["id"],
+        )
 
         if db_config:
-            print("📊 INSPIRE_CONFIG: Found database config", flush=True)
-            print(f"📊 INSPIRE_CONFIG: DB Provider: {db_config['primary_provider']}", flush=True)
-            print(f"📊 INSPIRE_CONFIG: DB Model: {db_config['primary_model_id']}", flush=True)
+            print("📊 INSPIRE_CONFIG: Found normalized database config", flush=True)
+            print(f"📊 INSPIRE_CONFIG: DB Provider: {db_config['provider']}", flush=True)
+            print(f"📊 INSPIRE_CONFIG: DB Model: {db_config['model_id']}", flush=True)
 
-            # Parse and cache the database config
-            from shared.json_utils import parse_model_config_field
+            # Parse parameters from JSONB field
+            parameters = parse_jsonb_field(
+                db_config["parameters"],
+                default={"temperature": 0.8, "max_tokens": 150, "top_p": 0.9},
+                field_name="text_parameters",
+            )
 
+            # Format as legacy structure for LLM client compatibility
             parsed_config = {
-                "primary_provider": db_config["primary_provider"],
-                "primary_model_id": db_config["primary_model_id"],
-                "primary_parameters": parse_model_config_field(
-                    dict(db_config), "primary_parameters"
-                )
-                or {"temperature": 0.8, "max_tokens": 150, "top_p": 0.9},
+                "primary_provider": db_config["provider"],
+                "primary_model_id": db_config["model_id"],
+                "primary_parameters": parameters,
             }
 
-            # Cache the database config
+            # Cache the database config in legacy format
             await cache.set_model_config(app_id, parsed_config)
-            print(f"✅ INSPIRE_CONFIG: Cached database config: {parsed_config}", flush=True)
+            print(f"✅ INSPIRE_CONFIG: Cached normalized config: {parsed_config}", flush=True)
 
             return parsed_config
 
@@ -692,7 +700,7 @@ async def _get_llm_model_config() -> dict:
     print("🔄 INSPIRE_CONFIG: Using default config (no cache, no database)", flush=True)
     default_config = {
         "primary_provider": "anthropic",
-        "primary_model_id": "claude-3-haiku-20240307",
+        "primary_model_id": "claude-3-5-haiku-20241022",
         "primary_parameters": {"temperature": 0.8, "max_tokens": 150, "top_p": 0.9},
     }
 

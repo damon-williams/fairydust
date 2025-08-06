@@ -214,6 +214,42 @@ export class AdminAPI {
   }
 
   // Apps APIs
+  static async getApp(appId: string): Promise<App> {
+    try {
+      const response = await fetch(`${API_BASE}/admin/apps/${appId}`, {
+        method: 'GET',
+        credentials: 'include',
+      });
+
+      if (!response.ok) {
+        throw new Error(`Failed to fetch app: ${response.statusText}`);
+      }
+
+      return await response.json();
+    } catch (error) {
+      console.error('Error fetching app:', error);
+      throw error;
+    }
+  }
+
+  static async getAppModelConfig(appId: string): Promise<any> {
+    try {
+      const response = await fetch(`${API_BASE}/admin/apps/${appId}/model-config`, {
+        method: 'GET',
+        credentials: 'include',
+      });
+
+      if (!response.ok) {
+        throw new Error(`Failed to fetch app model config: ${response.statusText}`);
+      }
+
+      return await response.json();
+    } catch (error) {
+      console.error('Error fetching app model config:', error);
+      throw error;
+    }
+  }
+
   static async getApps(page: number = 1, limit: number = 50, status?: string): Promise<{ apps: App[]; total: number; pages: number }> {
     try {
       const params = new URLSearchParams({
@@ -339,7 +375,42 @@ export class AdminAPI {
     }
   }
 
-  // LLM Analytics APIs
+  // AI Analytics APIs (replacing LLM-only APIs)
+  static async getAIUsageMetrics(timeframe: string = '7d'): Promise<any> {
+    try {
+      const response = await fetch(`${API_BASE}/admin/ai/usage?timeframe=${timeframe}`, {
+        credentials: 'include',
+      });
+      
+      if (response.ok) {
+        return await response.json();
+      }
+      
+      throw new Error('Failed to fetch AI usage metrics');
+    } catch (error) {
+      console.error('Failed to get AI usage metrics:', error);
+      throw error;
+    }
+  }
+
+  static async getAIModelUsage(modelTypeFilter: string = 'all'): Promise<any[]> {
+    try {
+      const response = await fetch(`${API_BASE}/admin/ai/model-usage?type=${modelTypeFilter}`, {
+        credentials: 'include',
+      });
+      
+      if (response.ok) {
+        return await response.json();
+      }
+      
+      throw new Error('Failed to fetch AI model usage');
+    } catch (error) {
+      console.error('Failed to get AI model usage:', error);
+      throw error;
+    }
+  }
+
+  // Legacy LLM Analytics APIs (for backward compatibility)
   static async getLLMUsageMetrics(timeframe: string = '7d'): Promise<LLMUsageMetrics> {
     try {
       const response = await fetch(`${API_BASE}/admin/llm/usage?timeframe=${timeframe}`, {
@@ -449,7 +520,7 @@ export class AdminAPI {
 
   static async getActionAnalytics(timeframe: string = '7d'): Promise<any> {
     try {
-      const response = await fetch(`${API_BASE}/admin/llm/action-analytics?timeframe=${timeframe}`, {
+      const response = await fetch(`${API_BASE}/admin/ai/action-analytics?timeframe=${timeframe}`, {
         credentials: 'include',
       });
       
@@ -466,7 +537,7 @@ export class AdminAPI {
 
   static async getFallbackAnalytics(timeframe: string = '7d'): Promise<any> {
     try {
-      const response = await fetch(`${API_BASE}/admin/llm/fallback-analytics?timeframe=${timeframe}`, {
+      const response = await fetch(`${API_BASE}/admin/ai/fallback-analytics?timeframe=${timeframe}`, {
         credentials: 'include',
       });
       
@@ -505,9 +576,120 @@ export class AdminAPI {
     }
   }
 
+  // New normalized model configuration APIs
+  static async getAppModelConfigs(appId: string): Promise<any> {
+    try {
+      const response = await fetch(`${API_BASE}/admin/model-configs/${appId}/configs`, {
+        method: 'GET',
+        credentials: 'include',
+      });
+
+      if (!response.ok) {
+        throw new Error(`Failed to fetch app model configs: ${response.statusText}`);
+      }
+
+      return await response.json();
+    } catch (error) {
+      console.error('❌ Failed to get app model configs:', error);
+      throw error;
+    }
+  }
+
+  static async updateAppModelConfigByType(appId: string, modelType: string, modelConfig: any): Promise<any> {
+    try {
+      console.log('🔧 Updating model config for app:', appId, 'type:', modelType, modelConfig);
+      
+      const response = await fetch(`${API_BASE}/admin/model-configs/${appId}/configs/${modelType}`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        credentials: 'include',
+        body: JSON.stringify(modelConfig),
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(`Failed to update model config: ${response.statusText} - ${errorText}`);
+      }
+
+      return await response.json();
+    } catch (error) {
+      console.error('❌ Failed to update app model config:', error);
+      throw error;
+    }
+  }
+
+  static async createAppModelConfig(appId: string, modelConfig: any): Promise<any> {
+    try {
+      console.log('🔧 Creating model config for app:', appId, modelConfig);
+      
+      const response = await fetch(`${API_BASE}/admin/model-configs/${appId}/configs`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        credentials: 'include',
+        body: JSON.stringify(modelConfig),
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(`Failed to create model config: ${response.statusText} - ${errorText}`);
+      }
+
+      return await response.json();
+    } catch (error) {
+      console.error('❌ Failed to create app model config:', error);
+      throw error;
+    }
+  }
+
+  static async deleteAppModelConfig(appId: string, modelType: string): Promise<any> {
+    try {
+      const response = await fetch(`${API_BASE}/admin/model-configs/${appId}/configs/${modelType}`, {
+        method: 'DELETE',
+        credentials: 'include',
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(`Failed to delete model config: ${response.statusText} - ${errorText}`);
+      }
+
+      return await response.json();
+    } catch (error) {
+      console.error('❌ Failed to delete app model config:', error);
+      throw error;
+    }
+  }
+
+  static async getGlobalFallbacks(modelType?: string): Promise<any> {
+    try {
+      const url = modelType 
+        ? `${API_BASE}/admin/model-configs/fallbacks?model_type=${modelType}`
+        : `${API_BASE}/admin/model-configs/fallbacks`;
+        
+      const response = await fetch(url, {
+        method: 'GET',
+        credentials: 'include',
+      });
+
+      if (!response.ok) {
+        throw new Error(`Failed to fetch global fallbacks: ${response.statusText}`);
+      }
+
+      return await response.json();
+    } catch (error) {
+      console.error('❌ Failed to get global fallbacks:', error);
+      throw error;
+    }
+  }
+
+  // Legacy method - kept for backward compatibility
   static async updateAppModelConfig(appId: string, modelConfig: any): Promise<any> {
     try {
-      console.log('🔧 Updating model config for app:', appId, modelConfig);
+      console.log('🔧 Updating model config for app (legacy):', appId, modelConfig);
       
       const response = await fetch(`${API_BASE}/admin/apps/${appId}/model-config`, {
         method: 'PUT',
@@ -1201,6 +1383,159 @@ export class AdminAPI {
     }
   }
 
+  // Pricing Management APIs
+  static async getModelPricing(): Promise<any> {
+    try {
+      const response = await fetch(`${API_BASE}/admin/pricing/models`, {
+        credentials: 'include',
+      });
+      
+      if (response.ok) {
+        return await response.json();
+      }
+      
+      throw new Error('Failed to fetch model pricing');
+    } catch (error) {
+      console.error('Failed to get model pricing:', error);
+      throw error;
+    }
+  }
+
+  static async updateModelPricing(pricingData: any): Promise<any> {
+    try {
+      const response = await fetch(`${API_BASE}/admin/pricing/models`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        credentials: 'include',
+        body: JSON.stringify(pricingData),
+      });
+      
+      if (response.ok) {
+        return await response.json();
+      }
+      
+      throw new Error('Failed to update model pricing');
+    } catch (error) {
+      console.error('Failed to update model pricing:', error);
+      throw error;
+    }
+  }
+
+  static async getProviderPricing(provider: string): Promise<any> {
+    try {
+      const response = await fetch(`${API_BASE}/admin/pricing/models/${provider}`, {
+        credentials: 'include',
+      });
+      
+      if (response.ok) {
+        return await response.json();
+      }
+      
+      throw new Error(`Failed to fetch ${provider} pricing`);
+    } catch (error) {
+      console.error(`Failed to get ${provider} pricing:`, error);
+      throw error;
+    }
+  }
+
+  static async updateProviderPricing(provider: string, pricingData: any): Promise<any> {
+    try {
+      const response = await fetch(`${API_BASE}/admin/pricing/models/${provider}`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        credentials: 'include',
+        body: JSON.stringify(pricingData),
+      });
+      
+      if (response.ok) {
+        return await response.json();
+      }
+      
+      throw new Error(`Failed to update ${provider} pricing`);
+    } catch (error) {
+      console.error(`Failed to update ${provider} pricing:`, error);
+      throw error;
+    }
+  }
+
+  static async addModelPricing(provider: string, modelId: string, pricingData: any): Promise<any> {
+    try {
+      const response = await fetch(`${API_BASE}/admin/pricing/models/${provider}/${modelId}`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        credentials: 'include',
+        body: JSON.stringify(pricingData),
+      });
+      
+      if (response.ok) {
+        return await response.json();
+      }
+      
+      throw new Error(`Failed to add model ${modelId} pricing`);
+    } catch (error) {
+      console.error(`Failed to add model ${modelId} pricing:`, error);
+      throw error;
+    }
+  }
+
+  static async removeModelPricing(provider: string, modelId: string): Promise<any> {
+    try {
+      const response = await fetch(`${API_BASE}/admin/pricing/models/${provider}/${modelId}`, {
+        method: 'DELETE',
+        credentials: 'include',
+      });
+      
+      if (response.ok) {
+        return await response.json();
+      }
+      
+      throw new Error(`Failed to remove model ${modelId} pricing`);
+    } catch (error) {
+      console.error(`Failed to remove model ${modelId} pricing:`, error);
+      throw error;
+    }
+  }
+
+  static async getPricingHistory(): Promise<any> {
+    try {
+      const response = await fetch(`${API_BASE}/admin/pricing/history`, {
+        credentials: 'include',
+      });
+      
+      if (response.ok) {
+        return await response.json();
+      }
+      
+      throw new Error('Failed to fetch pricing history');
+    } catch (error) {
+      console.error('Failed to get pricing history:', error);
+      throw error;
+    }
+  }
+
+  static async getPricingComparison(): Promise<any> {
+    try {
+      const response = await fetch(`${API_BASE}/admin/pricing/current-vs-historical`, {
+        credentials: 'include',
+      });
+      
+      if (response.ok) {
+        return await response.json();
+      }
+      
+      throw new Error('Failed to fetch pricing comparison');
+    } catch (error) {
+      console.error('Failed to get pricing comparison:', error);
+      throw error;
+    }
+  }
+
   // Activity APIs
   static async getActivity(params?: {
     page?: number;
@@ -1232,6 +1567,78 @@ export class AdminAPI {
       throw new Error('Failed to fetch activity');
     } catch (error) {
       console.error('Failed to get activity:', error);
+      throw error;
+    }
+  }
+
+  // Global Fallback Model Management APIs
+  static async createGlobalFallback(fallbackData: any): Promise<any> {
+    try {
+      console.log('🔧 Creating global fallback model:', fallbackData);
+      
+      const response = await fetch(`${API_BASE}/admin/model-configs/fallbacks`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        credentials: 'include',
+        body: JSON.stringify(fallbackData),
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(`Failed to create global fallback: ${response.statusText} - ${errorText}`);
+      }
+
+      return await response.json();
+    } catch (error) {
+      console.error('❌ Failed to create global fallback:', error);
+      throw error;
+    }
+  }
+
+  static async updateGlobalFallback(fallbackId: string, fallbackData: any): Promise<any> {
+    try {
+      console.log('🔧 Updating global fallback model:', fallbackId, fallbackData);
+      
+      const response = await fetch(`${API_BASE}/admin/model-configs/fallbacks/${fallbackId}`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        credentials: 'include',
+        body: JSON.stringify(fallbackData),
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(`Failed to update global fallback: ${response.statusText} - ${errorText}`);
+      }
+
+      return await response.json();
+    } catch (error) {
+      console.error('❌ Failed to update global fallback:', error);
+      throw error;
+    }
+  }
+
+  static async deleteGlobalFallback(fallbackId: string): Promise<any> {
+    try {
+      console.log('🗑️ Deleting global fallback model:', fallbackId);
+      
+      const response = await fetch(`${API_BASE}/admin/model-configs/fallbacks/${fallbackId}`, {
+        method: 'DELETE',
+        credentials: 'include',
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(`Failed to delete global fallback: ${response.statusText} - ${errorText}`);
+      }
+
+      return await response.json();
+    } catch (error) {
+      console.error('❌ Failed to delete global fallback:', error);
       throw error;
     }
   }

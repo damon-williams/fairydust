@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -36,8 +37,10 @@ import { MoreHorizontal, CheckCircle, XCircle, Clock, RefreshCw, AlertTriangle, 
 import { formatDistanceToNow } from 'date-fns';
 import { AdminAPI } from '@/lib/admin-api';
 import { toast } from 'sonner';
+import GlobalModelFallbacks from '@/components/model-configs/GlobalModelFallbacks';
 
 export function Apps() {
+  const navigate = useNavigate();
   const [apps, setApps] = useState<App[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -297,18 +300,6 @@ export function Apps() {
     loadActionPricing();
   }, []);
 
-  const getStatusIcon = (status: string) => {
-    // Convert old status to new active/inactive model
-    const isActive = status === 'approved';
-    return isActive ? 
-      <CheckCircle className="h-4 w-4 text-green-600" /> : 
-      <XCircle className="h-4 w-4 text-red-600" />;
-  };
-
-  const getStatusDisplay = (status: string) => {
-    return status === 'approved' ? 'active' : 'inactive';
-  };
-
   return (
     <div className="space-y-6">
       {/* Header */}
@@ -323,6 +314,7 @@ export function Apps() {
         <TabsList>
           <TabsTrigger value="apps">Apps Management</TabsTrigger>
           <TabsTrigger value="pricing">Action Pricing</TabsTrigger>
+          <TabsTrigger value="fallbacks">Global Fallbacks</TabsTrigger>
         </TabsList>
 
         <TabsContent value="apps" className="space-y-6">
@@ -457,9 +449,6 @@ export function Apps() {
               <TableRow>
                 <TableHead>App</TableHead>
                 <TableHead>Slug</TableHead>
-                <TableHead>Category</TableHead>
-                <TableHead>Status</TableHead>
-                <TableHead>Model</TableHead>
                 <TableHead>Actions</TableHead>
               </TableRow>
             </TableHeader>
@@ -487,39 +476,11 @@ export function Apps() {
                     </div>
                   </TableCell>
                   <TableCell>
-                    <Badge variant="outline" className="capitalize">
-                      {app.category}
-                    </Badge>
-                  </TableCell>
-                  <TableCell>
-                    <div className="flex items-center space-x-2">
-                      {getStatusIcon(app.status)}
-                      <Badge 
-                        variant={app.status === 'approved' ? 'default' : 'destructive'}
-                        className="capitalize"
-                      >
-                        {getStatusDisplay(app.status)}
-                      </Badge>
-                    </div>
-                  </TableCell>
-                  <TableCell>
-                    <div className="text-sm">
-                      {app.primary_model_id ? (
-                        <div>
-                          <div className="font-mono text-slate-700">{app.primary_model_id}</div>
-                          <div className="text-xs text-slate-500 capitalize">{app.primary_provider}</div>
-                        </div>
-                      ) : (
-                        <div className="text-slate-400 italic">Not configured</div>
-                      )}
-                    </div>
-                  </TableCell>
-                  <TableCell>
                     <div className="flex items-center space-x-2">
                       <Button 
                         variant="ghost" 
                         size="sm"
-                        onClick={() => handleConfigureApp(app)}
+                        onClick={() => navigate(`/admin/apps/${app.id}/config`)}
                         className="text-blue-600 hover:text-blue-800"
                       >
                         <Settings className="h-4 w-4 mr-1" />
@@ -712,10 +673,8 @@ export function Apps() {
                         <SelectValue placeholder="Select standard model" />
                       </SelectTrigger>
                       <SelectContent>
-                        <SelectItem value="black-forest-labs/flux-1.1-pro">FLUX 1.1 Pro</SelectItem>
-                        <SelectItem value="black-forest-labs/flux-schnell">FLUX Schnell (Faster)</SelectItem>
-                        <SelectItem value="stability-ai/sdxl">Stable Diffusion XL</SelectItem>
-                        <SelectItem value="dall-e-3">DALL-E 3</SelectItem>
+                        <SelectItem value="black-forest-labs/flux-1.1-pro">FLUX 1.1 Pro ($0.040)</SelectItem>
+                        <SelectItem value="black-forest-labs/flux-schnell">FLUX Schnell ($0.003)</SelectItem>
                       </SelectContent>
                     </Select>
                   </div>
@@ -739,9 +698,8 @@ export function Apps() {
                         <SelectValue placeholder="Select reference model" />
                       </SelectTrigger>
                       <SelectContent>
-                        <SelectItem value="runwayml/gen4-image">Runway Gen-4 (Best for faces)</SelectItem>
-                        <SelectItem value="playgroundai/face-to-sticker">Face to Sticker</SelectItem>
-                        <SelectItem value="stability-ai/stable-diffusion-img2img">SD Image-to-Image</SelectItem>
+                        <SelectItem value="runwayml/gen4-image">Runway Gen-4 ($0.050)</SelectItem>
+                        <SelectItem value="black-forest-labs/flux-1.1-pro">FLUX 1.1 Pro ($0.040)</SelectItem>
                       </SelectContent>
                     </Select>
                   </div>
@@ -996,6 +954,10 @@ export function Apps() {
               </DialogFooter>
             </DialogContent>
           </Dialog>
+        </TabsContent>
+
+        <TabsContent value="fallbacks" className="space-y-6">
+          <GlobalModelFallbacks />
         </TabsContent>
       </Tabs>
     </div>

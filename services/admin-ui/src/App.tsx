@@ -4,7 +4,9 @@ import { Dashboard } from '@/pages/Dashboard';
 import { Users } from '@/pages/Users';
 import { UserProfile } from '@/pages/UserProfile';
 import { Apps } from '@/pages/Apps';
+import { AppConfig } from '@/pages/AppConfig';
 import { LLM } from '@/pages/LLM';
+import { AIAnalytics } from '@/pages/AIAnalytics';
 import { Referrals } from '@/pages/Referrals';
 import { Activity } from '@/pages/Activity';
 import Payments from '@/pages/Payments';
@@ -34,7 +36,9 @@ function App() {
                     <Route path="users" element={<Users />} />
                     <Route path="users/:userId/profile" element={<UserProfile />} />
                     <Route path="apps" element={<Apps />} />
+                    <Route path="apps/:appId/config" element={<AppConfig />} />
                     <Route path="llm" element={<LLM />} />
+                    <Route path="ai-analytics" element={<AIAnalytics />} />
                     <Route path="referrals" element={<Referrals />} />
                     <Route path="activity" element={<Activity />} />
                     <Route path="payments" element={<Payments />} />

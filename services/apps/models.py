@@ -65,11 +65,18 @@ class LLMProvider(str, Enum):
 
 
 class ModelParameters(BaseModel):
+    # Text model parameters
     temperature: Optional[float] = Field(None, ge=0.0, le=2.0)
     max_tokens: Optional[int] = Field(None, ge=1, le=8000)
     top_p: Optional[float] = Field(None, ge=0.0, le=1.0)
     frequency_penalty: Optional[float] = Field(None, ge=-2.0, le=2.0)
     presence_penalty: Optional[float] = Field(None, ge=-2.0, le=2.0)
+
+    # Image model parameters
+    image_models: Optional[dict] = Field(None)
+
+    # Video model parameters
+    video_models: Optional[dict] = Field(None)
 
 
 class FallbackModel(BaseModel):
@@ -93,7 +100,46 @@ class FeatureFlags(BaseModel):
     log_prompts: bool = False
 
 
+# New model configuration structure
+class ModelType(str, Enum):
+    TEXT = "text"
+    IMAGE = "image"
+    VIDEO = "video"
+
+
 class AppModelConfig(BaseModel):
+    """Single model configuration for an app"""
+
+    model_config = {"protected_namespaces": (), "from_attributes": True}
+
+    id: UUID
+    app_id: UUID
+    model_type: ModelType
+    provider: str = Field(..., max_length=50)
+    model_id: str = Field(..., max_length=200)
+    parameters: dict = Field(default_factory=dict)
+    is_enabled: bool = True
+    created_at: datetime
+    updated_at: datetime
+
+
+class GlobalFallbackModel(BaseModel):
+    """Global fallback configuration - one fallback model per type (text/image/video)"""
+
+    model_config = {"protected_namespaces": (), "from_attributes": True}
+
+    id: UUID
+    model_type: ModelType
+    provider: str = Field(..., max_length=50)
+    model_id: str = Field(..., max_length=200)
+    parameters: dict = Field(default_factory=dict)
+    is_enabled: bool = True
+    created_at: datetime
+    updated_at: datetime
+
+
+# Legacy models - kept for backward compatibility during migration
+class AppModelConfigLegacy(BaseModel):
     model_config = {"protected_namespaces": (), "from_attributes": True}
 
     id: UUID
@@ -108,7 +154,56 @@ class AppModelConfig(BaseModel):
     updated_at: datetime
 
 
+# New normalized model configuration models
 class AppModelConfigCreate(BaseModel):
+    """Create a single model configuration for an app"""
+
+    model_config = {"protected_namespaces": ()}
+
+    app_id: UUID
+    model_type: ModelType
+    provider: str = Field(..., max_length=50)
+    model_id: str = Field(..., max_length=200)
+    parameters: dict = Field(default_factory=dict)
+    is_enabled: bool = True
+
+
+class AppModelConfigUpdate(BaseModel):
+    """Update a single model configuration for an app"""
+
+    model_config = {"protected_namespaces": ()}
+
+    provider: Optional[str] = Field(None, max_length=50)
+    model_id: Optional[str] = Field(None, max_length=200)
+    parameters: Optional[dict] = None
+    is_enabled: Optional[bool] = None
+
+
+class GlobalFallbackModelCreate(BaseModel):
+    """Create a global fallback configuration"""
+
+    model_config = {"protected_namespaces": ()}
+
+    model_type: ModelType
+    provider: str = Field(..., max_length=50)
+    model_id: str = Field(..., max_length=200)
+    parameters: dict = Field(default_factory=dict)
+    is_enabled: bool = True
+
+
+class GlobalFallbackModelUpdate(BaseModel):
+    """Update a global fallback configuration"""
+
+    model_config = {"protected_namespaces": ()}
+
+    provider: Optional[str] = Field(None, max_length=50)
+    model_id: Optional[str] = Field(None, max_length=200)
+    parameters: Optional[dict] = None
+    is_enabled: Optional[bool] = None
+
+
+# Legacy models kept for backward compatibility
+class AppModelConfigCreateLegacy(BaseModel):
     model_config = {"protected_namespaces": ()}
 
     primary_provider: LLMProvider
@@ -119,7 +214,7 @@ class AppModelConfigCreate(BaseModel):
     feature_flags: FeatureFlags = Field(default_factory=FeatureFlags)
 
 
-class AppModelConfigUpdate(BaseModel):
+class AppModelConfigUpdateLegacy(BaseModel):
     model_config = {"protected_namespaces": ()}
 
     primary_provider: Optional[LLMProvider] = None
@@ -180,6 +275,43 @@ class LLMUsageStats(BaseModel):
     model_breakdown: dict[str, dict[str, int | float]]
     period_start: datetime
     period_end: datetime
+
+
+# Image generation usage models
+class ImageUsageLogCreate(BaseModel):
+    model_config = {"protected_namespaces": ()}
+
+    user_id: UUID
+    app_id: str = Field(..., max_length=255)
+    provider: str = Field(..., max_length=50)
+    model_id: str = Field(..., max_length=200)
+    images_generated: int = Field(..., ge=1)
+    image_dimensions: str = Field(..., max_length=20)  # e.g., "1024x1024"
+    latency_ms: int = Field(..., ge=0)
+    prompt_text: Optional[str] = Field(None, max_length=2000)
+    finish_reason: Optional[str] = Field(None, max_length=50)
+    was_fallback: bool = False
+    fallback_reason: Optional[str] = Field(None, max_length=100)
+    request_metadata: dict = Field(default_factory=dict)
+
+
+# Video generation usage models
+class VideoUsageLogCreate(BaseModel):
+    model_config = {"protected_namespaces": ()}
+
+    user_id: UUID
+    app_id: str = Field(..., max_length=255)
+    provider: str = Field(..., max_length=50)
+    model_id: str = Field(..., max_length=200)
+    videos_generated: int = Field(..., ge=1)
+    video_duration_seconds: float = Field(..., ge=0)
+    video_resolution: str = Field(..., max_length=20)  # e.g., "1280x720"
+    latency_ms: int = Field(..., ge=0)
+    prompt_text: Optional[str] = Field(None, max_length=2000)
+    finish_reason: Optional[str] = Field(None, max_length=50)
+    was_fallback: bool = False
+    fallback_reason: Optional[str] = Field(None, max_length=100)
+    request_metadata: dict = Field(default_factory=dict)
 
 
 # Referral models

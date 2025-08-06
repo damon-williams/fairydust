@@ -102,6 +102,73 @@ def _get_identity_service_url() -> str:
     return f"https://fairydust-identity-{base_url_suffix}.up.railway.app"
 
 
+def _get_apps_service_url() -> str:
+    """Get apps service URL based on environment"""
+    environment = os.getenv("ENVIRONMENT", "staging")
+    base_url_suffix = "production" if environment == "production" else "staging"
+    return f"https://fairydust-apps-{base_url_suffix}.up.railway.app"
+
+
+async def _log_image_usage(
+    user_id: str,
+    app_id: str,
+    provider: str,
+    model_id: str,
+    images_generated: int,
+    image_dimensions: str,
+    latency_ms: int,
+    prompt_text: str,
+    finish_reason: str = "completed",
+    was_fallback: bool = False,
+    fallback_reason: str = None,
+    request_metadata: dict = None,
+):
+    """Log image usage to apps service"""
+    apps_service_url = _get_apps_service_url()
+    service_token = os.getenv("SERVICE_JWT_TOKEN")
+
+    if not service_token:
+        # Log warning but don't fail the request
+        print("WARNING: SERVICE_JWT_TOKEN not configured, skipping usage logging")
+        return
+
+    usage_data = {
+        "user_id": user_id,  # Already converted to string by caller
+        "app_id": app_id,  # Already converted to string by caller
+        "provider": provider,
+        "model_id": model_id,
+        "images_generated": images_generated,
+        "image_dimensions": image_dimensions,
+        "latency_ms": latency_ms,
+        "prompt_text": prompt_text,
+        "finish_reason": finish_reason,
+        "was_fallback": was_fallback,
+        "fallback_reason": fallback_reason,
+        "request_metadata": request_metadata or {},
+    }
+
+    try:
+        # Call apps service image usage endpoint
+        async with httpx.AsyncClient() as client:
+            response = await client.post(
+                f"{apps_service_url}/image/usage",
+                json=usage_data,
+                headers={"Authorization": f"Bearer {service_token}"},
+                timeout=5.0,
+            )
+
+            if response.status_code != 201:
+                print(
+                    f"WARNING: Failed to log image usage: {response.status_code} - {response.text}"
+                )
+            else:
+                print("✅ Image usage logged successfully")
+
+    except Exception as e:
+        # Log warning but don't fail the request
+        print(f"WARNING: Failed to log image usage: {str(e)}")
+
+
 @image_router.post("/generate", response_model=ImageGenerateResponse)
 async def generate_image(request: ImageGenerateRequest, db: Database = Depends(get_db)):
     """Generate a new AI image from text prompt with optional reference people"""
@@ -170,10 +237,72 @@ async def generate_image(request: ImageGenerateRequest, db: Database = Depends(g
         image_data["metadata"] = json.loads(image_record["metadata"])
 
         user_image = UserImage(**image_data)
+
+        # Calculate actual cost based on model used
+        from shared.llm_pricing import get_image_model_pricing
+
+        model_used = generation_metadata["model_used"]
+        actual_cost = get_image_model_pricing(model_used)
+
+        # Log AI usage for analytics
+        try:
+            # Get Image app ID
+            image_app = await db.fetch_one("SELECT id FROM apps WHERE slug = 'fairydust-image'")
+            if image_app:
+                # Determine provider from model
+                provider = "replicate"  # All image models use Replicate
+                if "black-forest-labs" in model_used:
+                    provider = "replicate/black-forest-labs"
+                elif "runwayml" in model_used:
+                    provider = "replicate/runwayml"
+
+                # Get image dimensions from metadata or generation_metadata
+                dimensions_raw = full_metadata.get("dimensions", "1024x1024")
+                # Convert dimensions to string format if it's an object
+                if (
+                    isinstance(dimensions_raw, dict)
+                    and "width" in dimensions_raw
+                    and "height" in dimensions_raw
+                ):
+                    dimensions = f"{dimensions_raw['width']}x{dimensions_raw['height']}"
+                else:
+                    dimensions = str(dimensions_raw) if dimensions_raw else "1024x1024"
+
+                # Log the usage
+                await _log_image_usage(
+                    user_id=str(request.user_id),
+                    app_id=str(image_app["id"]),
+                    provider=provider,
+                    model_id=model_used,
+                    images_generated=1,
+                    image_dimensions=dimensions,
+                    latency_ms=generation_metadata["generation_time_ms"],
+                    prompt_text=request.prompt,
+                    finish_reason="completed",
+                    was_fallback=False,
+                    fallback_reason=None,
+                    request_metadata={
+                        "action": "generate",
+                        "style": request.style.value,
+                        "size": request.image_size.value,
+                        "reference_people_count": len(request.reference_people)
+                        if request.reference_people
+                        else 0,
+                        "api_provider": generation_metadata.get("api_provider", "replicate"),
+                        "generation_approach": generation_metadata.get("generation_approach"),
+                    },
+                )
+        except Exception as log_error:
+            # Don't fail the request if logging fails
+            import logging
+
+            logger = logging.getLogger(__name__)
+            logger.error(f"Failed to log image usage: {log_error}")
+
         generation_info = ImageGenerationInfo(
-            model_used=generation_metadata["model_used"],
+            model_used=model_used,
             generation_time_ms=generation_metadata["generation_time_ms"],
-            cost_estimate="$0.025",  # FLUX cost estimate - actual cost handled by apps service
+            cost_estimate=f"${actual_cost:.3f}",  # Actual cost based on model
         )
 
         return ImageGenerateResponse(image=user_image, generation_info=generation_info)
@@ -303,10 +432,72 @@ async def regenerate_image(
         image_data["metadata"] = json.loads(new_image_record["metadata"])
 
         user_image = UserImage(**image_data)
+
+        # Calculate actual cost based on model used
+        from shared.llm_pricing import get_image_model_pricing
+
+        model_used = generation_metadata["model_used"]
+        actual_cost = get_image_model_pricing(model_used)
+
+        # Log AI usage for analytics
+        try:
+            # Get Image app ID
+            image_app = await db.fetch_one("SELECT id FROM apps WHERE slug = 'fairydust-image'")
+            if image_app:
+                # Determine provider from model
+                provider = "replicate"  # All image models use Replicate
+                if "black-forest-labs" in model_used:
+                    provider = "replicate/black-forest-labs"
+                elif "runwayml" in model_used:
+                    provider = "replicate/runwayml"
+
+                # Get image dimensions from metadata or generation_metadata
+                dimensions_raw = full_metadata.get("dimensions", "1024x1024")
+                # Convert dimensions to string format if it's an object
+                if (
+                    isinstance(dimensions_raw, dict)
+                    and "width" in dimensions_raw
+                    and "height" in dimensions_raw
+                ):
+                    dimensions = f"{dimensions_raw['width']}x{dimensions_raw['height']}"
+                else:
+                    dimensions = str(dimensions_raw) if dimensions_raw else "1024x1024"
+
+                # Log the usage
+                await _log_image_usage(
+                    user_id=str(request.user_id),
+                    app_id=str(image_app["id"]),
+                    provider=provider,
+                    model_id=model_used,
+                    images_generated=1,
+                    image_dimensions=dimensions,
+                    latency_ms=generation_metadata["generation_time_ms"],
+                    prompt_text=enhanced_prompt,
+                    finish_reason="completed",
+                    was_fallback=False,
+                    fallback_reason=None,
+                    request_metadata={
+                        "action": "regenerate",
+                        "style": style,
+                        "size": original_image["image_size"],
+                        "reference_people_count": len(reference_people) if reference_people else 0,
+                        "api_provider": generation_metadata.get("api_provider", "replicate"),
+                        "generation_approach": generation_metadata.get("generation_approach"),
+                        "original_image_id": image_id,
+                        "feedback": request.feedback,
+                    },
+                )
+        except Exception as log_error:
+            # Don't fail the request if logging fails
+            import logging
+
+            logger = logging.getLogger(__name__)
+            logger.error(f"Failed to log image regeneration usage: {log_error}")
+
         generation_info = ImageGenerationInfo(
-            model_used=generation_metadata["model_used"],
+            model_used=model_used,
             generation_time_ms=generation_metadata["generation_time_ms"],
-            cost_estimate="$0.025",  # FLUX cost estimate - actual cost handled by apps service
+            cost_estimate=f"${actual_cost:.3f}",  # Actual cost based on model
         )
 
         return ImageRegenerateResponse(image=user_image, generation_info=generation_info)

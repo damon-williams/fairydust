@@ -146,6 +146,7 @@ export function Login() {
                     className="pl-10 text-center tracking-wider"
                     maxLength={6}
                     disabled={isLoading}
+                    autoFocus
                     required
                   />
                 </div>

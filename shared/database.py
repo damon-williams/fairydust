@@ -472,34 +472,177 @@ async def create_tables():
     """
     )
 
-    # LLM Architecture Tables
+    # LLM Architecture Tables - Migration to normalized structure
+    logger.info("Creating/migrating app_model_configs table to normalized structure...")
+
+    # Check if table exists and has old structure (no model_type column)
+    table_info = await db.fetch_one(
+        """
+        SELECT COUNT(*) as count
+        FROM information_schema.columns
+        WHERE table_name = 'app_model_configs'
+        AND column_name = 'model_type'
+    """
+    )
+
+    has_new_structure = table_info and table_info["count"] > 0
+
+    if not has_new_structure:
+        logger.info("Migrating app_model_configs to normalized structure...")
+
+        # Backup existing data if the old table exists
+        old_data = []
+        try:
+            old_data = await db.fetch_all(
+                """
+                SELECT app_id, text_config, image_config, video_config, created_at, updated_at
+                FROM app_model_configs
+                WHERE text_config IS NOT NULL OR image_config IS NOT NULL OR video_config IS NOT NULL
+            """
+            )
+            logger.info(f"Backing up {len(old_data)} existing model configurations")
+        except Exception as e:
+            logger.info(f"No existing data to backup: {e}")
+
+        # Drop old table and recreate with new structure
+        await db.execute_schema("DROP TABLE IF EXISTS app_model_configs CASCADE")
+        logger.info("Dropped old app_model_configs table structure")
+
+        # Create new normalized table
+        await db.execute_schema(
+            """
+            CREATE TABLE app_model_configs (
+                id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+                app_id UUID NOT NULL REFERENCES apps(id) ON DELETE CASCADE,
+                model_type VARCHAR(20) NOT NULL CHECK (model_type IN ('text', 'image', 'video')),
+                provider VARCHAR(50) NOT NULL,
+                model_id VARCHAR(200) NOT NULL,
+                parameters JSONB DEFAULT '{}',
+                is_enabled BOOLEAN DEFAULT true,
+                created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+                UNIQUE(app_id, model_type)
+            );
+            CREATE INDEX idx_app_model_configs_app_id ON app_model_configs(app_id);
+            CREATE INDEX idx_app_model_configs_model_type ON app_model_configs(model_type);
+        """
+        )
+        logger.info("Created new normalized app_model_configs table")
+
+        # Migrate old data to new structure
+        if old_data:
+            logger.info(f"Migrating {len(old_data)} configurations to normalized structure...")
+            for row in old_data:
+                app_id = row["app_id"]
+
+                # Migrate text config
+                if row.get("text_config"):
+                    text_config = row["text_config"]
+                    await db.execute(
+                        """
+                        INSERT INTO app_model_configs (app_id, model_type, provider, model_id, parameters, is_enabled, created_at)
+                        VALUES ($1, 'text', $2, $3, $4, true, $5)
+                    """,
+                        app_id,
+                        text_config.get("primary_provider", "anthropic"),
+                        text_config.get("primary_model_id", "claude-3-5-haiku-20241022"),
+                        text_config.get("parameters", {}),
+                        row.get("created_at"),
+                    )
+
+                # Migrate image config
+                if row.get("image_config"):
+                    image_config = row["image_config"]
+                    await db.execute(
+                        """
+                        INSERT INTO app_model_configs (app_id, model_type, provider, model_id, parameters, is_enabled, created_at)
+                        VALUES ($1, 'image', $2, $3, $4, true, $5)
+                    """,
+                        app_id,
+                        image_config.get("primary_provider", "replicate"),
+                        image_config.get("primary_model_id", "black-forest-labs/flux-schnell"),
+                        image_config.get("parameters", {}),
+                        row.get("created_at"),
+                    )
+
+                # Migrate video config
+                if row.get("video_config"):
+                    video_config = row["video_config"]
+                    await db.execute(
+                        """
+                        INSERT INTO app_model_configs (app_id, model_type, provider, model_id, parameters, is_enabled, created_at)
+                        VALUES ($1, 'video', $2, $3, $4, true, $5)
+                    """,
+                        app_id,
+                        video_config.get("primary_provider", "runwayml"),
+                        video_config.get("primary_model_id", "gen4-video"),
+                        video_config.get("parameters", {}),
+                        row.get("created_at"),
+                    )
+            logger.info("Migration of existing data completed")
+    else:
+        # Table already has new structure, just ensure it exists
+        await db.execute_schema(
+            """
+            CREATE TABLE IF NOT EXISTS app_model_configs (
+                id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+                app_id UUID NOT NULL REFERENCES apps(id) ON DELETE CASCADE,
+                model_type VARCHAR(20) NOT NULL CHECK (model_type IN ('text', 'image', 'video')),
+                provider VARCHAR(50) NOT NULL,
+                model_id VARCHAR(200) NOT NULL,
+                parameters JSONB DEFAULT '{}',
+                is_enabled BOOLEAN DEFAULT true,
+                created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+                UNIQUE(app_id, model_type)
+            );
+            CREATE INDEX IF NOT EXISTS idx_app_model_configs_app_id ON app_model_configs(app_id);
+            CREATE INDEX IF NOT EXISTS idx_app_model_configs_model_type ON app_model_configs(model_type);
+        """
+        )
+        logger.info("Verified normalized app_model_configs table structure")
+
+    # Global fallback models table
     await db.execute_schema(
         """
-        CREATE TABLE IF NOT EXISTS app_model_configs (
+        CREATE TABLE IF NOT EXISTS global_fallback_models (
             id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-            app_id UUID NOT NULL REFERENCES apps(id) ON DELETE CASCADE,
-
-            -- Primary model configuration
-            primary_provider VARCHAR(50) NOT NULL,
-            primary_model_id VARCHAR(100) NOT NULL,
-            primary_parameters JSONB DEFAULT '{}',
-
-            -- Fallback models (array of objects)
-            fallback_models JSONB DEFAULT '[]',
-
-            -- Cost and usage limits
-            cost_limits JSONB DEFAULT '{}',
-
-            -- Feature flags
-            feature_flags JSONB DEFAULT '{}',
-
+            model_type VARCHAR(20) NOT NULL CHECK (model_type IN ('text', 'image', 'video')),
+            provider VARCHAR(50) NOT NULL,
+            model_id VARCHAR(200) NOT NULL,
+            parameters JSONB DEFAULT '{}',
+            is_enabled BOOLEAN DEFAULT true,
             created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
             updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
-
-            UNIQUE(app_id)
+            UNIQUE(model_type)
         );
 
-        CREATE INDEX IF NOT EXISTS idx_app_model_configs_app_id ON app_model_configs(app_id);
+        CREATE INDEX IF NOT EXISTS idx_global_fallback_models_type ON global_fallback_models(model_type);
+        
+        -- Migrate existing global_fallback_models table to simplified structure
+        -- Drop old columns that are no longer needed
+        ALTER TABLE global_fallback_models DROP COLUMN IF EXISTS primary_provider;
+        ALTER TABLE global_fallback_models DROP COLUMN IF EXISTS primary_model_id;
+        ALTER TABLE global_fallback_models DROP COLUMN IF EXISTS fallback_provider;
+        ALTER TABLE global_fallback_models DROP COLUMN IF EXISTS fallback_model_id;
+        ALTER TABLE global_fallback_models DROP COLUMN IF EXISTS trigger_condition;
+        ALTER TABLE global_fallback_models DROP COLUMN IF EXISTS priority;
+        
+        -- Add new simplified columns
+        ALTER TABLE global_fallback_models ADD COLUMN IF NOT EXISTS provider VARCHAR(50);
+        ALTER TABLE global_fallback_models ADD COLUMN IF NOT EXISTS model_id VARCHAR(200);
+        
+        -- Update any NULL values in new columns (shouldn't happen with new structure, but just in case)
+        UPDATE global_fallback_models SET provider = 'anthropic' WHERE provider IS NULL AND model_type = 'text';
+        UPDATE global_fallback_models SET model_id = 'claude-3-5-haiku-20241022' WHERE model_id IS NULL AND model_type = 'text';
+        UPDATE global_fallback_models SET provider = 'replicate' WHERE provider IS NULL AND model_type = 'image';
+        UPDATE global_fallback_models SET model_id = 'black-forest-labs/flux-schnell' WHERE model_id IS NULL AND model_type = 'image';
+        UPDATE global_fallback_models SET provider = 'runwayml' WHERE provider IS NULL AND model_type = 'video';
+        UPDATE global_fallback_models SET model_id = 'runwayml/gen4-video' WHERE model_id IS NULL AND model_type = 'video';
+        
+        -- Make the columns NOT NULL after setting defaults
+        ALTER TABLE global_fallback_models ALTER COLUMN provider SET NOT NULL;
+        ALTER TABLE global_fallback_models ALTER COLUMN model_id SET NOT NULL;
     """
     )
 
@@ -574,22 +717,15 @@ async def create_tables():
     """
     )
 
-    # Insert default model configurations for existing apps
-    # First, try to insert configurations for apps that exist
+    # Insert default model configurations for existing apps (normalized structure)
     await db.execute_schema(
         """
-        INSERT INTO app_model_configs (
-            app_id, primary_provider, primary_model_id, primary_parameters,
-            fallback_models, cost_limits, feature_flags
-        )
+        -- Insert text model configurations for existing apps
+        INSERT INTO app_model_configs (app_id, model_type, provider, model_id, parameters, is_enabled)
         SELECT
             a.id,
-            CASE
-                WHEN a.slug = 'fairydust-inspire' THEN 'anthropic'
-                WHEN a.slug = 'fairydust-recipe' THEN 'anthropic'
-                WHEN a.slug = 'fairydust-fortune-teller' THEN 'anthropic'
-                ELSE 'anthropic'
-            END,
+            'text',
+            'anthropic',
             CASE
                 WHEN a.slug = 'fairydust-inspire' THEN 'claude-3-5-haiku-20241022'
                 WHEN a.slug = 'fairydust-recipe' THEN 'claude-3-5-sonnet-20241022'
@@ -602,55 +738,53 @@ async def create_tables():
                 WHEN a.slug = 'fairydust-fortune-teller' THEN '{"temperature": 0.8, "max_tokens": 400, "top_p": 0.9}'::jsonb
                 ELSE '{"temperature": 0.8, "max_tokens": 150, "top_p": 0.9}'::jsonb
             END,
-            CASE
-                WHEN a.slug = 'fairydust-inspire' THEN '[
-                    {
-                        "provider": "openai",
-                        "model_id": "gpt-4o-mini",
-                        "trigger": "provider_error",
-                        "parameters": {"temperature": 0.8, "max_tokens": 150}
-                    }
-                ]'::jsonb
-                WHEN a.slug = 'fairydust-recipe' THEN '[
-                    {
-                        "provider": "openai",
-                        "model_id": "gpt-4o",
-                        "trigger": "provider_error",
-                        "parameters": {"temperature": 0.7, "max_tokens": 1000}
-                    },
-                    {
-                        "provider": "openai",
-                        "model_id": "gpt-4o-mini",
-                        "trigger": "cost_threshold_exceeded",
-                        "parameters": {"temperature": 0.7, "max_tokens": 1000}
-                    }
-                ]'::jsonb
-                WHEN a.slug = 'fairydust-fortune-teller' THEN '[
-                    {
-                        "provider": "openai",
-                        "model_id": "gpt-4o",
-                        "trigger": "provider_error",
-                        "parameters": {"temperature": 0.8, "max_tokens": 400}
-                    }
-                ]'::jsonb
-                ELSE '[]'::jsonb
-            END,
-            CASE
-                WHEN a.slug = 'fairydust-inspire' THEN '{"per_request_max": 0.05, "daily_max": 10.0, "monthly_max": 100.0}'::jsonb
-                WHEN a.slug = 'fairydust-recipe' THEN '{"per_request_max": 0.15, "daily_max": 25.0, "monthly_max": 200.0}'::jsonb
-                WHEN a.slug = 'fairydust-fortune-teller' THEN '{"per_request_max": 0.10, "daily_max": 15.0, "monthly_max": 150.0}'::jsonb
-                ELSE '{"per_request_max": 0.05, "daily_max": 10.0, "monthly_max": 100.0}'::jsonb
-            END,
-            '{"streaming_enabled": true, "cache_responses": true, "log_prompts": false}'::jsonb
+            true
         FROM apps a
         WHERE a.slug IN ('fairydust-inspire', 'fairydust-recipe', 'fairydust-fortune-teller')
-        ON CONFLICT (app_id) DO UPDATE SET
-            primary_provider = EXCLUDED.primary_provider,
-            primary_model_id = EXCLUDED.primary_model_id,
-            primary_parameters = EXCLUDED.primary_parameters,
-            fallback_models = EXCLUDED.fallback_models,
-            cost_limits = EXCLUDED.cost_limits,
-            feature_flags = EXCLUDED.feature_flags,
+        ON CONFLICT (app_id, model_type) DO UPDATE SET
+            provider = EXCLUDED.provider,
+            model_id = EXCLUDED.model_id,
+            parameters = EXCLUDED.parameters,
+            is_enabled = EXCLUDED.is_enabled,
+            updated_at = CURRENT_TIMESTAMP;
+
+        -- Insert image model configurations for Story app (has image generation)
+        INSERT INTO app_model_configs (app_id, model_type, provider, model_id, parameters, is_enabled)
+        SELECT
+            a.id,
+            'image',
+            'replicate',
+            'black-forest-labs/flux-1.1-pro',
+            '{"standard_model": "black-forest-labs/flux-1.1-pro", "reference_model": "runwayml/gen4-image"}'::jsonb,
+            true
+        FROM apps a
+        WHERE a.slug = 'fairydust-story'
+        ON CONFLICT (app_id, model_type) DO UPDATE SET
+            provider = EXCLUDED.provider,
+            model_id = EXCLUDED.model_id,
+            parameters = EXCLUDED.parameters,
+            is_enabled = EXCLUDED.is_enabled,
+            updated_at = CURRENT_TIMESTAMP;
+    """
+    )
+
+    # Insert default global fallback models
+    await db.execute_schema(
+        """
+        INSERT INTO global_fallback_models (
+            model_type, provider, model_id, parameters
+        ) VALUES
+        -- Text model fallback
+        ('text', 'anthropic', 'claude-3-5-haiku-20241022', '{"temperature": 0.7, "max_tokens": 1000, "top_p": 0.9}'::jsonb),
+        -- Image model fallback
+        ('image', 'replicate', 'black-forest-labs/flux-schnell', '{"guidance_scale": 2.5}'::jsonb),
+        -- Video model fallback (future)
+        ('video', 'runwayml', 'runwayml/gen4-video', '{"duration": 5, "fps": 24, "resolution": "1080p"}'::jsonb)
+        ON CONFLICT (model_type)
+        DO UPDATE SET
+            provider = EXCLUDED.provider,
+            model_id = EXCLUDED.model_id,
+            parameters = EXCLUDED.parameters,
             updated_at = CURRENT_TIMESTAMP;
     """
     )
@@ -1373,6 +1507,35 @@ async def create_tables():
     """
     )
 
+    # User Videos table for Video app
+    await db.execute_schema(
+        """
+        CREATE TABLE IF NOT EXISTS user_videos (
+            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            url TEXT NOT NULL,
+            thumbnail_url TEXT,
+            prompt TEXT NOT NULL,
+            generation_type VARCHAR(20) NOT NULL CHECK (generation_type IN ('text_to_video', 'image_to_video')),
+            source_image_url TEXT, -- For image-to-video generation
+            duration_seconds INTEGER NOT NULL CHECK (duration_seconds > 0),
+            resolution VARCHAR(10) NOT NULL CHECK (resolution IN ('sd_480p', 'hd_1080p')),
+            aspect_ratio VARCHAR(10) NOT NULL CHECK (aspect_ratio IN ('16:9', '4:3', '1:1', '3:4', '9:16', '21:9', '9:21')),
+            reference_person JSONB, -- Single reference person (MiniMax Video-01 limitation)
+            metadata JSONB DEFAULT '{}',
+            is_favorited BOOLEAN DEFAULT FALSE,
+            created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_user_videos_user_id ON user_videos(user_id);
+        CREATE INDEX IF NOT EXISTS idx_user_videos_created_at ON user_videos(created_at DESC);
+        CREATE INDEX IF NOT EXISTS idx_user_videos_generation_type ON user_videos(generation_type);
+        CREATE INDEX IF NOT EXISTS idx_user_videos_favorited ON user_videos(user_id, is_favorited);
+        CREATE INDEX IF NOT EXISTS idx_user_videos_has_reference ON user_videos(user_id) WHERE reference_person IS NOT NULL;
+    """
+    )
+
     # Insert Image app if it doesn't exist
     try:
         await db.execute_schema(
@@ -1443,6 +1606,127 @@ async def create_tables():
 
         CREATE INDEX IF NOT EXISTS idx_user_terms_acceptance_user_type ON user_terms_acceptance(user_id, document_type);
         CREATE INDEX IF NOT EXISTS idx_user_terms_acceptance_accepted_at ON user_terms_acceptance(accepted_at);
+    """
+    )
+
+    # AI Usage Logs table for unified tracking of text, image, and video models
+    await db.execute_schema(
+        """
+        CREATE TABLE IF NOT EXISTS ai_usage_logs (
+            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            user_id UUID NOT NULL,
+            app_id UUID NOT NULL,
+
+            -- Model identification
+            model_type VARCHAR(20) NOT NULL CHECK (model_type IN ('text', 'image', 'video')),
+            provider VARCHAR(50) NOT NULL,
+            model_id VARCHAR(200) NOT NULL,
+
+            -- Usage metrics (varies by model type)
+            -- Text models
+            prompt_tokens INTEGER DEFAULT NULL,
+            completion_tokens INTEGER DEFAULT NULL,
+            total_tokens INTEGER DEFAULT NULL,
+
+            -- Image models
+            images_generated INTEGER DEFAULT NULL,
+            image_dimensions VARCHAR(20) DEFAULT NULL, -- e.g., "1024x1024"
+
+            -- Video models (for future use)
+            videos_generated INTEGER DEFAULT NULL,
+            video_duration_seconds DECIMAL(10,2) DEFAULT NULL,
+            video_resolution VARCHAR(20) DEFAULT NULL, -- e.g., "1080p"
+
+            -- Common metrics
+            cost_usd DECIMAL(12,8) NOT NULL,
+            latency_ms INTEGER NOT NULL,
+
+            -- Request details
+            prompt_hash VARCHAR(64), -- SHA-256 hash of the prompt/request
+            prompt_text TEXT, -- Full prompt text for debugging/analysis
+            finish_reason VARCHAR(50),
+            was_fallback BOOLEAN DEFAULT FALSE,
+            fallback_reason TEXT,
+
+            -- Metadata and context
+            request_metadata JSONB DEFAULT '{}',
+            created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+
+            -- Indexes for performance
+            FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+            FOREIGN KEY (app_id) REFERENCES apps(id) ON DELETE CASCADE
+        );
+
+        -- Create indexes for common queries
+        CREATE INDEX IF NOT EXISTS idx_ai_usage_logs_user_id ON ai_usage_logs(user_id);
+        CREATE INDEX IF NOT EXISTS idx_ai_usage_logs_app_id ON ai_usage_logs(app_id);
+        CREATE INDEX IF NOT EXISTS idx_ai_usage_logs_model_type ON ai_usage_logs(model_type);
+        CREATE INDEX IF NOT EXISTS idx_ai_usage_logs_provider ON ai_usage_logs(provider);
+        CREATE INDEX IF NOT EXISTS idx_ai_usage_logs_created_at ON ai_usage_logs(created_at);
+        CREATE INDEX IF NOT EXISTS idx_ai_usage_logs_cost_usd ON ai_usage_logs(cost_usd);
+
+        -- Composite indexes for analytics queries
+        CREATE INDEX IF NOT EXISTS idx_ai_usage_logs_analytics ON ai_usage_logs(model_type, provider, created_at);
+        CREATE INDEX IF NOT EXISTS idx_ai_usage_logs_app_analytics ON ai_usage_logs(app_id, model_type, created_at);
+        
+        -- Add missing prompt_text column for existing deployments
+        ALTER TABLE ai_usage_logs ADD COLUMN IF NOT EXISTS prompt_text TEXT;
+    """
+    )
+
+    # Create a view that unions old LLM logs with new AI logs for backward compatibility
+    await db.execute_schema(
+        """
+        CREATE OR REPLACE VIEW unified_ai_usage AS
+        SELECT
+            id,
+            user_id,
+            app_id,
+            'text' as model_type,
+            provider,
+            model_id,
+            prompt_tokens,
+            completion_tokens,
+            total_tokens,
+            NULL as images_generated,
+            NULL as image_dimensions,
+            NULL as videos_generated,
+            NULL as video_duration_seconds,
+            NULL as video_resolution,
+            cost_usd,
+            latency_ms,
+            prompt_hash,
+            finish_reason,
+            was_fallback,
+            fallback_reason,
+            request_metadata,
+            created_at
+        FROM llm_usage_logs
+        UNION ALL
+        SELECT
+            id,
+            user_id,
+            app_id,
+            model_type,
+            provider,
+            model_id,
+            prompt_tokens,
+            completion_tokens,
+            total_tokens,
+            images_generated,
+            image_dimensions,
+            videos_generated,
+            video_duration_seconds,
+            video_resolution,
+            cost_usd,
+            latency_ms,
+            prompt_hash,
+            finish_reason,
+            was_fallback,
+            fallback_reason,
+            request_metadata,
+            created_at
+        FROM ai_usage_logs;
     """
     )
 
