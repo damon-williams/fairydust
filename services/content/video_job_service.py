@@ -69,7 +69,7 @@ class VideoJobService:
         estimated_seconds = 240 if generation_type == VideoGenerationType.TEXT_TO_VIDEO else 180
 
         # Insert job into database
-        job_id = await db.fetch_val(
+        result = await db.fetch_one(
             """
             INSERT INTO video_generation_jobs (
                 user_id, status, generation_type, input_parameters, estimated_completion_seconds
@@ -83,6 +83,7 @@ class VideoJobService:
             json.dumps(input_params),
             estimated_seconds,
         )
+        job_id = result["id"]
 
         print(f"✅ VIDEO_JOB: Created job {job_id} for user {user_id}")
         return job_id

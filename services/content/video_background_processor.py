@@ -186,7 +186,7 @@ class VideoBackgroundProcessor:
                 "replicate_prediction_id": generation_metadata.get("prediction_id"),
             }
 
-            video_id = await db.fetch_val(
+            result = await db.fetch_one(
                 """
                 INSERT INTO user_videos (
                     id, user_id, url, thumbnail_url, prompt, duration, resolution,
@@ -208,6 +208,7 @@ class VideoBackgroundProcessor:
                 json.dumps([]),  # reference_people (empty for now)
                 json.dumps(video_metadata),
             )
+            video_id = result["id"]
 
             # Update job as completed
             await video_job_service.update_job_status(
