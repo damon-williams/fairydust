@@ -186,13 +186,24 @@ async def _generate_video_thumbnail(
         return None
 
 
-@video_router.post("/generate", response_model=VideoGenerateResponse)
+@video_router.post("/generate", response_model=VideoGenerateResponse, status_code=202)
 async def generate_video(
     request: VideoGenerateRequest,
     current_user: TokenData = Depends(get_current_user),
     db: Database = Depends(get_db),
 ):
-    """Generate a new video from text prompt (async processing with job tracking)"""
+    """Generate a new video from text prompt (async processing with job tracking)
+    
+    Returns immediately with a job_id. Poll /videos/jobs/{job_id}/status to check progress.
+    
+    DUST Cost: 10 DUST per video
+    Estimated Time: 3-4 minutes
+    
+    The video will be generated asynchronously. Use the returned job_id to:
+    - Check status: GET /videos/jobs/{job_id}/status
+    - Get result when ready: GET /videos/jobs/{job_id}/result
+    - Cancel if needed: DELETE /videos/jobs/{job_id}
+    """
 
     try:
         print(f"🎬 ASYNC VIDEO: Starting generation job for user {request.user_id}")
@@ -237,13 +248,49 @@ async def generate_video(
         raise HTTPException(status_code=500, detail=f"Video generation failed: {str(e)}")
 
 
-@video_router.get("/jobs/{job_id}/status")
+@video_router.get("/jobs/{job_id}/status", 
+    response_model=dict,
+    responses={
+        200: {
+            "description": "Job status retrieved successfully",
+            "content": {
+                "application/json": {
+                    "example": {
+                        "success": True,
+                        "job_id": "123e4567-e89b-12d3-a456-426614174000",
+                        "status": "processing",
+                        "progress": 0.75,
+                        "generation_info": {
+                            "current_step": "Generating frames",
+                            "estimated_remaining_seconds": 60
+                        },
+                        "created_at": "2024-01-10T12:00:00Z",
+                        "updated_at": "2024-01-10T12:01:30Z"
+                    }
+                }
+            }
+        },
+        404: {"description": "Job not found or access denied"}
+    }
+)
 async def get_video_job_status(
     job_id: UUID,
     current_user: TokenData = Depends(get_current_user),
     db: Database = Depends(get_db),
 ):
-    """Get current status and progress of a video generation job"""
+    """Get current status and progress of a video generation job
+    
+    Poll this endpoint to track video generation progress.
+    Recommended polling interval: 5-10 seconds.
+    
+    Status values:
+    - queued: Job is waiting to start
+    - starting: Job is initializing
+    - processing: Video is being generated
+    - completed: Video is ready (get result from /videos/jobs/{job_id}/result)
+    - failed: Generation failed (error details in result endpoint)
+    - cancelled: Job was cancelled by user
+    """
 
     try:
         from video_job_service import video_job_service
@@ -274,13 +321,68 @@ async def get_video_job_status(
         raise HTTPException(status_code=500, detail=f"Failed to get job status: {str(e)}")
 
 
-@video_router.get("/jobs/{job_id}/result")
+@video_router.get("/jobs/{job_id}/result",
+    responses={
+        200: {
+            "description": "Job result (completed, failed, or in-progress)",
+            "content": {
+                "application/json": {
+                    "examples": {
+                        "completed": {
+                            "summary": "Completed video",
+                            "value": {
+                                "success": True,
+                                "video": {
+                                    "id": "123e4567-e89b-12d3-a456-426614174000",
+                                    "url": "https://cdn.example.com/videos/abc.mp4",
+                                    "thumbnail_url": "https://cdn.example.com/thumbs/abc.jpg",
+                                    "prompt": "A cat playing piano",
+                                    "duration_seconds": 5,
+                                    "resolution": "hd_1080p"
+                                },
+                                "generation_info": {
+                                    "model_used": "replicate/minimax-video-01",
+                                    "generation_time_ms": 180000
+                                }
+                            }
+                        },
+                        "failed": {
+                            "summary": "Failed job",
+                            "value": {
+                                "success": False,
+                                "job_id": "123e4567-e89b-12d3-a456-426614174000",
+                                "status": "failed",
+                                "error": "Video generation failed: Model timeout"
+                            }
+                        },
+                        "in_progress": {
+                            "summary": "Still processing",
+                            "value": {
+                                "success": True,
+                                "job_id": "123e4567-e89b-12d3-a456-426614174000",
+                                "status": "processing",
+                                "message": "Video generation still in progress"
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        404: {"description": "Job not found or access denied"}
+    }
+)
 async def get_video_job_result(
     job_id: UUID,
     current_user: TokenData = Depends(get_current_user),
     db: Database = Depends(get_db),
 ):
-    """Get result of a video generation job (when completed)"""
+    """Get result of a video generation job
+    
+    Returns the completed video when status is 'completed', or error details when 'failed'.
+    For jobs still in progress, returns current status.
+    
+    Jobs are kept for 24 hours after completion.
+    """
 
     try:
         from video_job_service import video_job_service
@@ -352,13 +454,36 @@ async def get_video_job_result(
         raise HTTPException(status_code=500, detail=f"Failed to get job result: {str(e)}")
 
 
-@video_router.delete("/jobs/{job_id}")
+@video_router.delete("/jobs/{job_id}",
+    response_model=dict,
+    responses={
+        200: {
+            "description": "Job cancelled successfully",
+            "content": {
+                "application/json": {
+                    "example": {
+                        "success": True,
+                        "job_id": "123e4567-e89b-12d3-a456-426614174000",
+                        "status": "cancelled",
+                        "message": "Video generation job cancelled successfully"
+                    }
+                }
+            }
+        },
+        400: {"description": "Job cannot be cancelled (already completed or not found)"}
+    }
+)
 async def cancel_video_job(
     job_id: UUID,
     current_user: TokenData = Depends(get_current_user),
     db: Database = Depends(get_db),
 ):
-    """Cancel a video generation job (if not yet completed)"""
+    """Cancel a video generation job
+    
+    Can only cancel jobs that are in 'queued' or 'starting' status.
+    Jobs already processing cannot be cancelled.
+    DUST will be refunded for cancelled jobs.
+    """
 
     try:
         from video_job_service import video_job_service
@@ -388,12 +513,40 @@ async def cancel_video_job(
         raise HTTPException(status_code=500, detail=f"Failed to cancel job: {str(e)}")
 
 
-@video_router.get("/jobs/active")
+@video_router.get("/jobs/active",
+    response_model=dict,
+    responses={
+        200: {
+            "description": "List of active jobs",
+            "content": {
+                "application/json": {
+                    "example": {
+                        "success": True,
+                        "active_jobs": [
+                            {
+                                "job_id": "123e4567-e89b-12d3-a456-426614174000",
+                                "status": "processing",
+                                "generation_type": "text_to_video",
+                                "created_at": "2024-01-10T12:00:00Z",
+                                "estimated_completion_seconds": 240
+                            }
+                        ],
+                        "count": 1
+                    }
+                }
+            }
+        }
+    }
+)
 async def get_active_video_jobs(
     current_user: TokenData = Depends(get_current_user),
     db: Database = Depends(get_db),
 ):
-    """Get all active video generation jobs for the current user"""
+    """Get all active (non-completed) video generation jobs for the current user
+    
+    Returns jobs in queued, starting, or processing status.
+    Useful for showing ongoing video generations in the UI.
+    """
 
     try:
         from video_job_service import video_job_service
@@ -414,13 +567,27 @@ async def get_active_video_jobs(
         raise HTTPException(status_code=500, detail=f"Failed to get active jobs: {str(e)}")
 
 
-@video_router.post("/animate", response_model=VideoAnimateResponse)
+@video_router.post("/animate", response_model=VideoAnimateResponse, status_code=202)
 async def animate_image(
     request: VideoAnimateRequest,
     current_user: TokenData = Depends(get_current_user),
     db: Database = Depends(get_db),
 ):
-    """Animate an existing image into a video (async processing with job tracking)"""
+    """Animate an existing image into a video (async processing with job tracking)
+    
+    Returns immediately with a job_id. Poll /videos/jobs/{job_id}/status to check progress.
+    
+    DUST Cost: 8 DUST per video
+    Estimated Time: 2-3 minutes
+    
+    The image will be animated asynchronously. Use the returned job_id to:
+    - Check status: GET /videos/jobs/{job_id}/status
+    - Get result when ready: GET /videos/jobs/{job_id}/result
+    - Cancel if needed: DELETE /videos/jobs/{job_id}
+    
+    Supported image formats: JPEG, PNG, WebP
+    Recommended image size: 1920x1080 or similar aspect ratio
+    """
 
     try:
         print(f"🎬 ASYNC VIDEO: Starting animation job for user {request.user_id}")
@@ -477,7 +644,16 @@ async def list_videos(
     current_user: TokenData = Depends(get_current_user),
     db: Database = Depends(get_db),
 ):
-    """List videos for the current user"""
+    """List videos for the current user with pagination
+    
+    Query Parameters:
+    - limit: Number of videos to return (max 50)
+    - offset: Number of videos to skip for pagination
+    - favorites_only: Filter to show only favorited videos
+    - generation_type: Filter by type ('text_to_video', 'image_to_video', or 'all')
+    
+    Returns paginated list of videos sorted by creation date (newest first).
+    """
 
     try:
         # Build query conditions
@@ -559,7 +735,11 @@ async def get_video(
     current_user: TokenData = Depends(get_current_user),
     db: Database = Depends(get_db),
 ):
-    """Get a specific video by ID"""
+    """Get detailed information about a specific video
+    
+    Returns full video details including metadata, generation info, and URLs.
+    Only the video owner can access their videos.
+    """
 
     try:
         video_row = await db.fetch_one(
@@ -607,7 +787,11 @@ async def update_video(
     current_user: TokenData = Depends(get_current_user),
     db: Database = Depends(get_db),
 ):
-    """Update video (favorite/unfavorite)"""
+    """Update video properties (currently only favorite status)
+    
+    Use this endpoint to mark videos as favorites for easy filtering.
+    Future updates may support additional properties.
+    """
 
     try:
         # Check if video exists and belongs to user
@@ -666,7 +850,12 @@ async def delete_video(
     current_user: TokenData = Depends(get_current_user),
     db: Database = Depends(get_db),
 ):
-    """Delete a video"""
+    """Delete a video permanently
+    
+    Removes the video from the database and storage.
+    This action cannot be undone.
+    Only the video owner can delete their videos.
+    """
 
     try:
         # Check if video exists and belongs to user
@@ -695,9 +884,32 @@ async def delete_video(
         raise HTTPException(status_code=500, detail=f"Failed to delete video: {str(e)}")
 
 
-@video_router.get("/stats")
+@video_router.get("/stats",
+    response_model=dict,
+    responses={
+        200: {
+            "description": "Background processor statistics",
+            "content": {
+                "application/json": {
+                    "example": {
+                        "is_running": True,
+                        "jobs_processed": 156,
+                        "jobs_queued": 3,
+                        "jobs_in_progress": 1,
+                        "last_job_completed_at": "2024-01-10T12:00:00Z",
+                        "average_processing_time_seconds": 185.4
+                    }
+                }
+            }
+        }
+    }
+)
 async def video_processor_stats():
-    """Get video background processor statistics"""
+    """Get video background processor statistics
+    
+    Returns operational metrics for the video generation system.
+    Useful for monitoring system health and queue status.
+    """
     from video_background_processor import video_background_processor
 
     stats = await video_background_processor.get_stats()
