@@ -1775,19 +1775,29 @@ async def create_tables():
         CREATE INDEX IF NOT EXISTS idx_video_jobs_replicate_id ON video_generation_jobs(replicate_prediction_id);
         CREATE INDEX IF NOT EXISTS idx_video_jobs_user_status ON video_generation_jobs(user_id, status);
 
-        -- Function to automatically update updated_at timestamp
-        CREATE OR REPLACE FUNCTION update_updated_at_column()
-        RETURNS TRIGGER AS $$
+        -- Function to automatically update updated_at timestamp (only create if not exists)
+        DO $$
         BEGIN
-            NEW.updated_at = NOW();
-            RETURN NEW;
-        END;
-        $$ language 'plpgsql';
+            IF NOT EXISTS (SELECT 1 FROM pg_proc WHERE proname = 'update_updated_at_column') THEN
+                CREATE FUNCTION update_updated_at_column()
+                RETURNS TRIGGER AS $trigger$
+                BEGIN
+                    NEW.updated_at = NOW();
+                    RETURN NEW;
+                END;
+                $trigger$ language 'plpgsql';
+            END IF;
+        END $$;
 
-        -- Trigger to auto-update updated_at
-        CREATE TRIGGER update_video_jobs_updated_at 
-            BEFORE UPDATE ON video_generation_jobs 
-            FOR EACH ROW EXECUTE PROCEDURE update_updated_at_column();
+        -- Trigger to auto-update updated_at (only create if not exists)
+        DO $$
+        BEGIN
+            IF NOT EXISTS (SELECT 1 FROM pg_trigger WHERE tgname = 'update_video_jobs_updated_at') THEN
+                CREATE TRIGGER update_video_jobs_updated_at 
+                    BEFORE UPDATE ON video_generation_jobs 
+                    FOR EACH ROW EXECUTE PROCEDURE update_updated_at_column();
+            END IF;
+        END $$;
     """
     )
 
