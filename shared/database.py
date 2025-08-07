@@ -1738,31 +1738,31 @@ async def create_tables():
             user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
             status VARCHAR(20) NOT NULL DEFAULT 'queued',
             generation_type VARCHAR(20) NOT NULL, -- 'text_to_video' | 'image_to_video'
-            
+
             -- Input parameters (stored as JSONB for flexibility)
             input_parameters JSONB NOT NULL,
-            
+
             -- Progress tracking
             replicate_prediction_id VARCHAR(100),
             replicate_status VARCHAR(20), -- 'starting' | 'processing' | 'succeeded' | 'failed'
             estimated_completion_seconds INT DEFAULT 180,
-            
+
             -- Results
             video_id UUID, -- FK to user_videos table when completed
             video_url TEXT,
             thumbnail_url TEXT,
             generation_metadata JSONB,
-            
+
             -- Error handling
             error_code VARCHAR(50),
             error_message TEXT,
             error_details JSONB,
-            
+
             -- Timestamps
             created_at TIMESTAMP DEFAULT NOW(),
             updated_at TIMESTAMP DEFAULT NOW(),
             completed_at TIMESTAMP,
-            
+
             -- Constraints
             CONSTRAINT valid_status CHECK (status IN ('queued', 'starting', 'processing', 'completed', 'failed', 'cancelled')),
             CONSTRAINT valid_generation_type CHECK (generation_type IN ('text_to_video', 'image_to_video'))
@@ -1793,8 +1793,8 @@ async def create_tables():
         DO $$
         BEGIN
             IF NOT EXISTS (SELECT 1 FROM pg_trigger WHERE tgname = 'update_video_jobs_updated_at') THEN
-                CREATE TRIGGER update_video_jobs_updated_at 
-                    BEFORE UPDATE ON video_generation_jobs 
+                CREATE TRIGGER update_video_jobs_updated_at
+                    BEFORE UPDATE ON video_generation_jobs
                     FOR EACH ROW EXECUTE PROCEDURE update_updated_at_column();
             END IF;
         END $$;

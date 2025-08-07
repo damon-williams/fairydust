@@ -4,7 +4,7 @@ import io
 import json
 from datetime import datetime
 from typing import Optional
-from uuid import UUID, uuid4
+from uuid import UUID
 
 import httpx
 from fastapi import APIRouter, Depends, HTTPException
@@ -24,7 +24,6 @@ from models import (
     VideoAspectRatio,
     VideoDeleteResponse,
     VideoDetailResponse,
-    VideoDuration,
     VideoGenerateRequest,
     VideoGenerateResponse,
     VideoGenerationInfo,
@@ -36,7 +35,6 @@ from models import (
     VideoUpdateRequest,
     VideoUpdateResponse,
 )
-from video_generation_service import video_generation_service
 
 from shared.auth_middleware import TokenData, get_current_user
 from shared.database import Database, get_db
@@ -194,20 +192,27 @@ async def generate_video(
     current_user: TokenData = Depends(get_current_user),
     db: Database = Depends(get_db),
 ):
-    """Generate a new video from text prompt (with optional reference person)"""
+    """Generate a new video from text prompt (async processing with job tracking)"""
 
     try:
-        # Map duration to seconds
-        duration_seconds = 5 if request.duration == VideoDuration.SHORT else 10
-
-        print(f"🎬 VIDEO GENERATION: Starting for user {request.user_id}")
+        print(f"🎬 ASYNC VIDEO: Starting generation job for user {request.user_id}")
         print(f"   Prompt: {request.prompt[:100]}...")
-        print(f"   Duration: {request.duration.value} ({duration_seconds}s)")
+        print(f"   Duration: {request.duration.value}")
         print(f"   Resolution: {request.resolution.value}")
         print(f"   Has reference: {request.reference_person is not None}")
 
-        # Generate video using the service
-        video_url, generation_metadata = await video_generation_service.generate_video(
+        # Verify user can only create videos for themselves
+        if current_user.user_id != str(request.user_id):
+            raise HTTPException(
+                status_code=403, detail="Can only create video generation jobs for yourself"
+            )
+
+        # Create job using video job service
+        from video_job_service import video_job_service
+
+        job_id = await video_job_service.create_job(
+            db=db,
+            user_id=request.user_id,
             prompt=request.prompt,
             generation_type=VideoGenerationType.TEXT_TO_VIDEO,
             duration=request.duration,
@@ -217,129 +222,13 @@ async def generate_video(
             camera_fixed=request.camera_fixed,
         )
 
-        print(f"✅ VIDEO GENERATED: {video_url}")
-
-        # Log video usage for analytics
-        try:
-            import os
-
-            import httpx
-
-            # Calculate duration for cost calculation
-            duration_seconds = 5 if request.duration == VideoDuration.SHORT else 10
-
-            # Apps Service URL - environment-based routing
-            environment = os.getenv("ENVIRONMENT", "staging")
-            if environment == "staging":
-                apps_service_url = "https://fairydust-apps-staging.up.railway.app"
-            else:
-                apps_service_url = "https://fairydust-apps-production.up.railway.app"
-
-            # Prepare video usage payload
-            usage_payload = {
-                "user_id": str(request.user_id),
-                "app_id": "fairydust-video",
-                "provider": generation_metadata.get("model_used", "unknown").split("/")[0]
-                if "/" in generation_metadata.get("model_used", "")
-                else "replicate",
-                "model_id": generation_metadata.get("model_used", "unknown"),
-                "videos_generated": 1,
-                "video_duration_seconds": duration_seconds,
-                "video_resolution": request.resolution.value,
-                "latency_ms": generation_metadata.get("generation_time_ms", 0),
-                "prompt_text": request.prompt[:500],  # Truncate long prompts
-                "finish_reason": "completed",
-                "was_fallback": False,
-                "fallback_reason": None,
-                "request_metadata": {
-                    "action": "video_generate",
-                    "duration": request.duration.value,
-                    "resolution": request.resolution.value,
-                    "aspect_ratio": request.aspect_ratio.value,
-                    "has_reference": request.reference_person is not None,
-                    "generation_type": "text_to_video",
-                },
-            }
-
-            async with httpx.AsyncClient(timeout=10.0) as client:
-                response = await client.post(
-                    f"{apps_service_url}/video/usage",
-                    json=usage_payload,
-                )
-
-                if response.status_code == 201:
-                    print("✅ VIDEO USAGE LOGGED to analytics")
-                else:
-                    print(
-                        f"⚠️ Failed to log video usage - HTTP {response.status_code}: {response.text}"
-                    )
-
-        except Exception as e:
-            print(f"⚠️ Failed to log video usage: {str(e)}")
-
-        # Create video record
-        video_id = uuid4()
-
-        # Upload to R2 and generate thumbnail
-        final_video_url, thumbnail_url = await _upload_video_to_r2(
-            video_url, request.user_id, video_id
+        # Return job information immediately (async processing)
+        return VideoGenerateResponse(
+            job_id=job_id,
+            status="queued",
+            estimated_completion_seconds=240,  # 4 minutes for text-to-video
+            message="Video generation started. Use the job_id to check status.",
         )
-
-        # Store in database
-        await db.execute(
-            """
-            INSERT INTO user_videos (
-                id, user_id, url, thumbnail_url, prompt, generation_type,
-                duration_seconds, resolution, aspect_ratio, reference_person, metadata, created_at
-            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
-            """,
-            video_id,
-            request.user_id,
-            final_video_url,
-            thumbnail_url,
-            request.prompt,
-            VideoGenerationType.TEXT_TO_VIDEO.value,
-            duration_seconds,
-            request.resolution.value,
-            request.aspect_ratio.value,
-            request.reference_person.dict() if request.reference_person else None,
-            json.dumps(generation_metadata),
-            datetime.utcnow(),
-        )
-
-        # Fetch the created video
-        video_row = await db.fetch_one("SELECT * FROM user_videos WHERE id = $1", video_id)
-
-        if not video_row:
-            raise HTTPException(status_code=500, detail="Failed to create video record")
-
-        # Convert to UserVideo model
-        user_video = UserVideo(
-            id=video_row["id"],
-            user_id=video_row["user_id"],
-            url=video_row["url"],
-            thumbnail_url=video_row["thumbnail_url"],
-            prompt=video_row["prompt"],
-            generation_type=VideoGenerationType(video_row["generation_type"]),
-            source_image_url=video_row["source_image_url"],
-            duration_seconds=video_row["duration_seconds"],
-            resolution=VideoResolution(video_row["resolution"]),
-            aspect_ratio=VideoAspectRatio(video_row["aspect_ratio"]),
-            reference_person=VideoReferencePerson(**video_row["reference_person"])
-            if video_row["reference_person"]
-            else None,
-            metadata=json.loads(video_row["metadata"]) if video_row["metadata"] else {},
-            is_favorited=video_row["is_favorited"],
-            created_at=video_row["created_at"],
-            updated_at=video_row["updated_at"],
-        )
-
-        generation_info = VideoGenerationInfo(
-            model_used=generation_metadata.get("model_used", "unknown"),
-            generation_time_ms=generation_metadata.get("generation_time_ms", 0),
-        )
-
-        return VideoGenerateResponse(video=user_video, generation_info=generation_info)
 
     except HTTPException:
         raise
@@ -348,30 +237,213 @@ async def generate_video(
         raise HTTPException(status_code=500, detail=f"Video generation failed: {str(e)}")
 
 
+@video_router.get("/jobs/{job_id}/status")
+async def get_video_job_status(
+    job_id: UUID,
+    current_user: TokenData = Depends(get_current_user),
+    db: Database = Depends(get_db),
+):
+    """Get current status and progress of a video generation job"""
+
+    try:
+        from video_job_service import video_job_service
+
+        job_status = await video_job_service.get_job_status(
+            db=db,
+            job_id=job_id,
+            user_id=UUID(current_user.user_id),
+        )
+
+        if not job_status:
+            raise HTTPException(status_code=404, detail="Job not found or access denied")
+
+        return {
+            "success": True,
+            "job_id": job_status["job_id"],
+            "status": job_status["status"],
+            "progress": job_status["progress"],
+            "generation_info": job_status["generation_info"],
+            "created_at": job_status["created_at"],
+            "updated_at": job_status["updated_at"],
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"❌ ASYNC_VIDEO: Error getting job status: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Failed to get job status: {str(e)}")
+
+
+@video_router.get("/jobs/{job_id}/result")
+async def get_video_job_result(
+    job_id: UUID,
+    current_user: TokenData = Depends(get_current_user),
+    db: Database = Depends(get_db),
+):
+    """Get result of a video generation job (when completed)"""
+
+    try:
+        from video_job_service import video_job_service
+
+        job_result = await video_job_service.get_job_result(
+            db=db,
+            job_id=job_id,
+            user_id=UUID(current_user.user_id),
+        )
+
+        if not job_result:
+            raise HTTPException(status_code=404, detail="Job not found or access denied")
+
+        status = job_result["status"]
+
+        if status == "completed" and job_result.get("video"):
+            # Return completed video
+            video_data = job_result["video"]
+            video_metadata = video_data.get("metadata", {})
+
+            user_video = UserVideo(
+                id=video_data["id"],
+                user_id=UUID(current_user.user_id),
+                url=video_data["url"],
+                thumbnail_url=video_data["thumbnail_url"],
+                prompt=video_metadata.get("prompt", ""),
+                generation_type=VideoGenerationType(
+                    video_metadata.get("generation_type", "text_to_video")
+                ),
+                source_image_url=video_metadata.get("source_image_url"),
+                duration_seconds=video_metadata.get("duration_seconds", 5),
+                resolution=VideoResolution(video_metadata.get("resolution", "hd_1080p")),
+                aspect_ratio=VideoAspectRatio(video_metadata.get("aspect_ratio", "16:9")),
+                reference_person=None,  # Will be handled properly later
+                metadata=video_metadata,
+                is_favorited=False,
+                created_at=datetime.utcnow(),
+                updated_at=datetime.utcnow(),
+            )
+
+            generation_info = VideoGenerationInfo(
+                model_used=job_result["generation_info"]["model_used"],
+                generation_time_ms=job_result["generation_info"]["total_generation_time_ms"],
+            )
+
+            return VideoGenerateResponse(video=user_video, generation_info=generation_info)
+
+        elif status == "failed":
+            return {
+                "success": False,
+                "job_id": job_id,
+                "status": status,
+                "error": job_result["error"],
+            }
+
+        else:
+            # Still in progress
+            return {
+                "success": True,
+                "job_id": job_id,
+                "status": status,
+                "message": "Video generation still in progress",
+            }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"❌ ASYNC_VIDEO: Error getting job result: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Failed to get job result: {str(e)}")
+
+
+@video_router.delete("/jobs/{job_id}")
+async def cancel_video_job(
+    job_id: UUID,
+    current_user: TokenData = Depends(get_current_user),
+    db: Database = Depends(get_db),
+):
+    """Cancel a video generation job (if not yet completed)"""
+
+    try:
+        from video_job_service import video_job_service
+
+        success = await video_job_service.cancel_job(
+            db=db,
+            job_id=job_id,
+            user_id=UUID(current_user.user_id),
+        )
+
+        if not success:
+            raise HTTPException(
+                status_code=400, detail="Job not found, already completed, or cannot be cancelled"
+            )
+
+        return {
+            "success": True,
+            "job_id": job_id,
+            "status": "cancelled",
+            "message": "Video generation job cancelled successfully",
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"❌ ASYNC_VIDEO: Error cancelling job: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Failed to cancel job: {str(e)}")
+
+
+@video_router.get("/jobs/active")
+async def get_active_video_jobs(
+    current_user: TokenData = Depends(get_current_user),
+    db: Database = Depends(get_db),
+):
+    """Get all active video generation jobs for the current user"""
+
+    try:
+        from video_job_service import video_job_service
+
+        active_jobs = await video_job_service.get_user_active_jobs(
+            db=db,
+            user_id=UUID(current_user.user_id),
+        )
+
+        return {
+            "success": True,
+            "active_jobs": active_jobs,
+            "count": len(active_jobs),
+        }
+
+    except Exception as e:
+        print(f"❌ ASYNC_VIDEO: Error getting active jobs: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Failed to get active jobs: {str(e)}")
+
+
 @video_router.post("/animate", response_model=VideoAnimateResponse)
 async def animate_image(
     request: VideoAnimateRequest,
     current_user: TokenData = Depends(get_current_user),
     db: Database = Depends(get_db),
 ):
-    """Animate an existing image into a video"""
+    """Animate an existing image into a video (async processing with job tracking)"""
 
     try:
-        # Map duration to seconds
-        duration_seconds = 5 if request.duration == VideoDuration.SHORT else 10
-
-        print(f"🎬 VIDEO ANIMATION: Starting for user {request.user_id}")
+        print(f"🎬 ASYNC VIDEO: Starting animation job for user {request.user_id}")
         print(f"   Image URL: {request.image_url}")
         print(f"   Prompt: {request.prompt[:100]}...")
-        print(f"   Duration: {request.duration.value} ({duration_seconds}s)")
+        print(f"   Duration: {request.duration.value}")
         print(f"   Resolution: {request.resolution.value}")
 
-        # Get aspect ratio from the image
-        # For now, default to 16:9, but ideally we'd analyze the source image
+        # Verify user can only create videos for themselves
+        if current_user.user_id != str(request.user_id):
+            raise HTTPException(
+                status_code=403, detail="Can only create video animation jobs for yourself"
+            )
+
+        # Get aspect ratio from the image (default to 16:9 for now)
         aspect_ratio = VideoAspectRatio.ASPECT_16_9
 
-        # Generate video using the service
-        video_url, generation_metadata = await video_generation_service.generate_video(
+        # Create job using video job service
+        from video_job_service import video_job_service
+
+        job_id = await video_job_service.create_job(
+            db=db,
+            user_id=request.user_id,
             prompt=request.prompt,
             generation_type=VideoGenerationType.IMAGE_TO_VIDEO,
             duration=request.duration,
@@ -381,128 +453,13 @@ async def animate_image(
             camera_fixed=request.camera_fixed,
         )
 
-        print(f"✅ VIDEO ANIMATED: {video_url}")
-
-        # Log video usage for analytics
-        try:
-            import os
-
-            import httpx
-
-            # Calculate duration for cost calculation
-            duration_seconds = 5 if request.duration == VideoDuration.SHORT else 10
-
-            # Apps Service URL - environment-based routing
-            environment = os.getenv("ENVIRONMENT", "staging")
-            if environment == "staging":
-                apps_service_url = "https://fairydust-apps-staging.up.railway.app"
-            else:
-                apps_service_url = "https://fairydust-apps-production.up.railway.app"
-
-            # Prepare video usage payload
-            usage_payload = {
-                "user_id": str(request.user_id),
-                "app_id": "fairydust-video",
-                "provider": generation_metadata.get("model_used", "unknown").split("/")[0]
-                if "/" in generation_metadata.get("model_used", "")
-                else "replicate",
-                "model_id": generation_metadata.get("model_used", "unknown"),
-                "videos_generated": 1,
-                "video_duration_seconds": duration_seconds,
-                "video_resolution": request.resolution.value,
-                "latency_ms": generation_metadata.get("generation_time_ms", 0),
-                "prompt_text": request.prompt[:500],  # Truncate long prompts
-                "finish_reason": "completed",
-                "was_fallback": False,
-                "fallback_reason": None,
-                "request_metadata": {
-                    "action": "video_animate",
-                    "duration": request.duration.value,
-                    "resolution": request.resolution.value,
-                    "source_image": request.image_url,
-                    "generation_type": "image_to_video",
-                },
-            }
-
-            async with httpx.AsyncClient(timeout=10.0) as client:
-                response = await client.post(
-                    f"{apps_service_url}/video/usage",
-                    json=usage_payload,
-                )
-
-                if response.status_code == 201:
-                    print("✅ VIDEO USAGE LOGGED to analytics")
-                else:
-                    print(
-                        f"⚠️ Failed to log video usage - HTTP {response.status_code}: {response.text}"
-                    )
-
-        except Exception as e:
-            print(f"⚠️ Failed to log video usage: {str(e)}")
-
-        # Create video record
-        video_id = uuid4()
-
-        # Upload to R2 and generate thumbnail
-        final_video_url, thumbnail_url = await _upload_video_to_r2(
-            video_url, request.user_id, video_id
+        # Return job information immediately (async processing)
+        return VideoAnimateResponse(
+            job_id=job_id,
+            status="queued",
+            estimated_completion_seconds=180,  # 3 minutes for image-to-video
+            message="Video animation started. Use the job_id to check status.",
         )
-
-        # Store in database
-        await db.execute(
-            """
-            INSERT INTO user_videos (
-                id, user_id, url, thumbnail_url, prompt, generation_type, source_image_url,
-                duration_seconds, resolution, aspect_ratio, metadata, created_at
-            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
-            """,
-            video_id,
-            request.user_id,
-            final_video_url,
-            thumbnail_url,
-            request.prompt,
-            VideoGenerationType.IMAGE_TO_VIDEO.value,
-            request.image_url,
-            duration_seconds,
-            request.resolution.value,
-            aspect_ratio.value,
-            json.dumps(generation_metadata),
-            datetime.utcnow(),
-        )
-
-        # Fetch the created video
-        video_row = await db.fetch_one("SELECT * FROM user_videos WHERE id = $1", video_id)
-
-        if not video_row:
-            raise HTTPException(status_code=500, detail="Failed to create video record")
-
-        # Convert to UserVideo model
-        user_video = UserVideo(
-            id=video_row["id"],
-            user_id=video_row["user_id"],
-            url=video_row["url"],
-            thumbnail_url=video_row["thumbnail_url"],
-            prompt=video_row["prompt"],
-            generation_type=VideoGenerationType(video_row["generation_type"]),
-            source_image_url=video_row["source_image_url"],
-            duration_seconds=video_row["duration_seconds"],
-            resolution=VideoResolution(video_row["resolution"]),
-            aspect_ratio=VideoAspectRatio(video_row["aspect_ratio"]),
-            reference_person=VideoReferencePerson(**video_row["reference_person"])
-            if video_row["reference_person"]
-            else None,
-            metadata=json.loads(video_row["metadata"]) if video_row["metadata"] else {},
-            is_favorited=video_row["is_favorited"],
-            created_at=video_row["created_at"],
-            updated_at=video_row["updated_at"],
-        )
-
-        generation_info = VideoGenerationInfo(
-            model_used=generation_metadata.get("model_used", "unknown"),
-            generation_time_ms=generation_metadata.get("generation_time_ms", 0),
-        )
-
-        return VideoAnimateResponse(video=user_video, generation_info=generation_info)
 
     except HTTPException:
         raise
@@ -736,3 +693,12 @@ async def delete_video(
     except Exception as e:
         print(f"❌ VIDEO DELETE ERROR: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Failed to delete video: {str(e)}")
+
+
+@video_router.get("/stats")
+async def video_processor_stats():
+    """Get video background processor statistics"""
+    from video_background_processor import video_background_processor
+
+    stats = await video_background_processor.get_stats()
+    return stats

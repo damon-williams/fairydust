@@ -29,7 +29,6 @@ from recipe_routes import router as recipe_router
 from restaurant_routes import router as restaurant_router
 from routes import content_router
 from story_routes import router as story_router
-from video_async_routes import video_async_router
 from video_background_processor import video_background_processor
 from video_routes import video_router
 from wyr_routes import router as wyr_router
@@ -182,7 +181,6 @@ app.include_router(character_router, tags=["characters"])
 app.include_router(wyr_router, tags=["would-you-rather"])
 app.include_router(image_router, tags=["images"])
 app.include_router(video_router, prefix="/videos", tags=["videos"])
-app.include_router(video_async_router, prefix="/videos-async", tags=["videos-async"])
 
 
 @app.get("/")
@@ -193,13 +191,6 @@ async def root():
 @app.get("/health")
 async def health():
     return {"status": "healthy", "service": "content"}
-
-
-@app.get("/videos-async/stats")
-async def video_processor_stats():
-    """Get video background processor statistics"""
-    stats = await video_background_processor.get_stats()
-    return stats
 
 
 # Remove test endpoints - use only in development

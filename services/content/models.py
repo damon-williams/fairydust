@@ -1162,14 +1162,26 @@ class VideoGenerationInfo(BaseModel):
 
 class VideoGenerateResponse(BaseModel):
     success: bool = True
-    video: UserVideo
-    generation_info: VideoGenerationInfo
+    # Async job response fields
+    job_id: Optional[UUID] = None
+    status: Optional[str] = None
+    estimated_completion_seconds: Optional[int] = None
+    message: Optional[str] = None
+    # Completed job response fields (when video is ready)
+    video: Optional[UserVideo] = None
+    generation_info: Optional[VideoGenerationInfo] = None
 
 
 class VideoAnimateResponse(BaseModel):
     success: bool = True
-    video: UserVideo
-    generation_info: VideoGenerationInfo
+    # Async job response fields
+    job_id: Optional[UUID] = None
+    status: Optional[str] = None
+    estimated_completion_seconds: Optional[int] = None
+    message: Optional[str] = None
+    # Completed job response fields (when video is ready)
+    video: Optional[UserVideo] = None
+    generation_info: Optional[VideoGenerationInfo] = None
 
 
 class VideoListRequest(BaseModel):
