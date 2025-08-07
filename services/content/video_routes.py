@@ -1,33 +1,45 @@
 """Video generation and management routes for the Content service"""
 
-import os
 import io
 import json
-import tempfile
 from datetime import datetime
-from uuid import UUID, uuid4
 from typing import Optional
+from uuid import UUID, uuid4
 
-from fastapi import APIRouter, HTTPException, Depends, UploadFile, File
 import httpx
+from fastapi import APIRouter, Depends, HTTPException
 
 try:
     from PIL import Image, ImageDraw, ImageFont
+
     PIL_AVAILABLE = True
 except ImportError:
     PIL_AVAILABLE = False
     print("⚠️ PIL (Pillow) not available - video thumbnail generation will be disabled")
 
 from models import (
-    VideoGenerateRequest, VideoAnimateRequest, VideoListRequest, VideoUpdateRequest,
-    VideoGenerateResponse, VideoAnimateResponse, VideoListResponse, VideoDetailResponse,
-    VideoUpdateResponse, VideoDeleteResponse, VideoErrorResponse,
-    UserVideo, VideoGenerationType, VideoDuration, VideoResolution, VideoAspectRatio,
-    VideoReferencePerson, VideoGenerationInfo, VideoPagination
+    UserVideo,
+    VideoAnimateRequest,
+    VideoAnimateResponse,
+    VideoAspectRatio,
+    VideoDeleteResponse,
+    VideoDetailResponse,
+    VideoDuration,
+    VideoGenerateRequest,
+    VideoGenerateResponse,
+    VideoGenerationInfo,
+    VideoGenerationType,
+    VideoListResponse,
+    VideoPagination,
+    VideoReferencePerson,
+    VideoResolution,
+    VideoUpdateRequest,
+    VideoUpdateResponse,
 )
 from video_generation_service import video_generation_service
+
+from shared.auth_middleware import TokenData, get_current_user
 from shared.database import Database, get_db
-from shared.auth_middleware import get_current_user, TokenData
 
 video_router = APIRouter()
 
@@ -36,7 +48,7 @@ async def _upload_video_to_r2(video_url: str, user_id: UUID, video_id: UUID) -> 
     """
     Download video from Replicate and upload to CloudFlare R2
     Also generates and uploads a thumbnail
-    
+
     Returns:
         Tuple[str, str]: (final_video_url, thumbnail_url)
     """
@@ -49,131 +61,128 @@ async def _upload_video_to_r2(video_url: str, user_id: UUID, video_id: UUID) -> 
 
         # Upload video to R2
         from shared.storage_service import upload_file_to_r2
-        
+
         video_key = f"videos/{user_id}/{video_id}.mp4"
-        final_video_url = await upload_file_to_r2(
-            video_data, 
-            video_key, 
-            content_type="video/mp4"
-        )
+        final_video_url = await upload_file_to_r2(video_data, video_key, content_type="video/mp4")
 
         # Generate thumbnail from first frame using ffmpeg (if available)
         # For now, create a simple placeholder thumbnail
         thumbnail_url = await _generate_video_thumbnail(video_data, user_id, video_id)
-        
+
         return final_video_url, thumbnail_url
-        
+
     except Exception as e:
         print(f"❌ R2 UPLOAD ERROR: {str(e)}")
         # Return original URL if upload fails
         return video_url, None
 
 
-async def _generate_video_thumbnail(video_data: bytes, user_id: UUID, video_id: UUID) -> Optional[str]:
+async def _generate_video_thumbnail(
+    video_data: bytes, user_id: UUID, video_id: UUID
+) -> Optional[str]:
     """
     Generate thumbnail from video first frame using imageio
     """
     if not PIL_AVAILABLE:
         print("⚠️ PIL not available - skipping thumbnail generation")
         return None
-        
+
     try:
         # Try to extract first frame using imageio
         try:
-            import imageio.v3 as iio
-            import tempfile
             import os
-            
+            import tempfile
+
+            import imageio.v3 as iio
+
             # Write video data to temporary file
-            with tempfile.NamedTemporaryFile(suffix='.mp4', delete=False) as temp_video:
+            with tempfile.NamedTemporaryFile(suffix=".mp4", delete=False) as temp_video:
                 temp_video.write(video_data)
                 temp_video_path = temp_video.name
-            
+
             try:
                 # Read first frame from video
                 print(f"🎬 THUMBNAIL: Extracting first frame from video ({len(video_data)} bytes)")
-                
+
                 # Get video properties and read first frame
                 properties = iio.improps(temp_video_path)
                 print(f"🎬 THUMBNAIL: Video properties: {properties}")
-                
+
                 # Read just the first frame
                 frame = iio.imread(temp_video_path, index=0)
                 print(f"🎬 THUMBNAIL: Extracted frame shape: {frame.shape}")
-                
+
                 # Convert numpy array to PIL Image
                 thumbnail = Image.fromarray(frame)
-                
+
                 # Resize to standard thumbnail size (maintain aspect ratio)
                 thumbnail.thumbnail((640, 360), Image.Resampling.LANCZOS)
-                
+
                 # Convert to RGB if necessary
-                if thumbnail.mode != 'RGB':
-                    thumbnail = thumbnail.convert('RGB')
-                
+                if thumbnail.mode != "RGB":
+                    thumbnail = thumbnail.convert("RGB")
+
                 print(f"🎬 THUMBNAIL: Generated thumbnail size: {thumbnail.size}")
-                
+
             finally:
                 # Clean up temp file
                 try:
                     os.unlink(temp_video_path)
                 except:
                     pass
-                    
+
         except ImportError:
             print("⚠️ imageio not available - falling back to placeholder thumbnail")
             # Fall back to placeholder if imageio not available
-            thumbnail = Image.new('RGB', (640, 360), color='#1a1a1a')
+            thumbnail = Image.new("RGB", (640, 360), color="#1a1a1a")
             draw = ImageDraw.Draw(thumbnail)
-            
+
             # Add play button icon
             center_x, center_y = 320, 180
             triangle_size = 40
-            
+
             # Draw play triangle
             triangle = [
-                (center_x - triangle_size//2, center_y - triangle_size//2),
-                (center_x - triangle_size//2, center_y + triangle_size//2),
-                (center_x + triangle_size//2, center_y)
+                (center_x - triangle_size // 2, center_y - triangle_size // 2),
+                (center_x - triangle_size // 2, center_y + triangle_size // 2),
+                (center_x + triangle_size // 2, center_y),
             ]
-            draw.polygon(triangle, fill='white')
-            
+            draw.polygon(triangle, fill="white")
+
         except Exception as video_error:
             print(f"⚠️ Video frame extraction failed: {video_error} - falling back to placeholder")
             # Fall back to placeholder if video processing fails
-            thumbnail = Image.new('RGB', (640, 360), color='#1a1a1a')
+            thumbnail = Image.new("RGB", (640, 360), color="#1a1a1a")
             draw = ImageDraw.Draw(thumbnail)
-            
+
             # Add play button icon
             center_x, center_y = 320, 180
             triangle_size = 40
-            
+
             # Draw play triangle
             triangle = [
-                (center_x - triangle_size//2, center_y - triangle_size//2),
-                (center_x - triangle_size//2, center_y + triangle_size//2),
-                (center_x + triangle_size//2, center_y)
+                (center_x - triangle_size // 2, center_y - triangle_size // 2),
+                (center_x - triangle_size // 2, center_y + triangle_size // 2),
+                (center_x + triangle_size // 2, center_y),
             ]
-            draw.polygon(triangle, fill='white')
-        
+            draw.polygon(triangle, fill="white")
+
         # Save thumbnail to bytes
         thumbnail_buffer = io.BytesIO()
-        thumbnail.save(thumbnail_buffer, format='JPEG', quality=85)
+        thumbnail.save(thumbnail_buffer, format="JPEG", quality=85)
         thumbnail_data = thumbnail_buffer.getvalue()
-        
+
         # Upload thumbnail to R2
         from shared.storage_service import upload_file_to_r2
-        
+
         thumbnail_key = f"video-thumbnails/{user_id}/{video_id}.jpg"
         thumbnail_url = await upload_file_to_r2(
-            thumbnail_data, 
-            thumbnail_key, 
-            content_type="image/jpeg"
+            thumbnail_data, thumbnail_key, content_type="image/jpeg"
         )
-        
+
         print(f"✅ THUMBNAIL: Successfully generated and uploaded to {thumbnail_url}")
         return thumbnail_url
-        
+
     except Exception as e:
         print(f"❌ THUMBNAIL GENERATION ERROR: {str(e)}")
         return None
@@ -186,17 +195,17 @@ async def generate_video(
     db: Database = Depends(get_db),
 ):
     """Generate a new video from text prompt (with optional reference person)"""
-    
+
     try:
         # Map duration to seconds
         duration_seconds = 5 if request.duration == VideoDuration.SHORT else 10
-        
+
         print(f"🎬 VIDEO GENERATION: Starting for user {request.user_id}")
         print(f"   Prompt: {request.prompt[:100]}...")
         print(f"   Duration: {request.duration.value} ({duration_seconds}s)")
         print(f"   Resolution: {request.resolution.value}")
         print(f"   Has reference: {request.reference_person is not None}")
-        
+
         # Generate video using the service
         video_url, generation_metadata = await video_generation_service.generate_video(
             prompt=request.prompt,
@@ -207,29 +216,32 @@ async def generate_video(
             reference_person=request.reference_person,
             camera_fixed=request.camera_fixed,
         )
-        
+
         print(f"✅ VIDEO GENERATED: {video_url}")
-        
+
         # Log video usage for analytics
         try:
             import os
+
             import httpx
-            
+
             # Calculate duration for cost calculation
             duration_seconds = 5 if request.duration == VideoDuration.SHORT else 10
-            
+
             # Apps Service URL - environment-based routing
             environment = os.getenv("ENVIRONMENT", "staging")
             if environment == "staging":
                 apps_service_url = "https://fairydust-apps-staging.up.railway.app"
             else:
                 apps_service_url = "https://fairydust-apps-production.up.railway.app"
-            
+
             # Prepare video usage payload
             usage_payload = {
                 "user_id": str(request.user_id),
                 "app_id": "fairydust-video",
-                "provider": generation_metadata.get("model_used", "unknown").split("/")[0] if "/" in generation_metadata.get("model_used", "") else "replicate",
+                "provider": generation_metadata.get("model_used", "unknown").split("/")[0]
+                if "/" in generation_metadata.get("model_used", "")
+                else "replicate",
                 "model_id": generation_metadata.get("model_used", "unknown"),
                 "videos_generated": 1,
                 "video_duration_seconds": duration_seconds,
@@ -245,52 +257,62 @@ async def generate_video(
                     "resolution": request.resolution.value,
                     "aspect_ratio": request.aspect_ratio.value,
                     "has_reference": request.reference_person is not None,
-                    "generation_type": "text_to_video"
-                }
+                    "generation_type": "text_to_video",
+                },
             }
-            
+
             async with httpx.AsyncClient(timeout=10.0) as client:
                 response = await client.post(
                     f"{apps_service_url}/video/usage",
                     json=usage_payload,
                 )
-                
+
                 if response.status_code == 201:
                     print("✅ VIDEO USAGE LOGGED to analytics")
                 else:
-                    print(f"⚠️ Failed to log video usage - HTTP {response.status_code}: {response.text}")
-                    
+                    print(
+                        f"⚠️ Failed to log video usage - HTTP {response.status_code}: {response.text}"
+                    )
+
         except Exception as e:
             print(f"⚠️ Failed to log video usage: {str(e)}")
-        
+
         # Create video record
         video_id = uuid4()
-        
+
         # Upload to R2 and generate thumbnail
-        final_video_url, thumbnail_url = await _upload_video_to_r2(video_url, request.user_id, video_id)
-        
+        final_video_url, thumbnail_url = await _upload_video_to_r2(
+            video_url, request.user_id, video_id
+        )
+
         # Store in database
         await db.execute(
             """
             INSERT INTO user_videos (
-                id, user_id, url, thumbnail_url, prompt, generation_type, 
+                id, user_id, url, thumbnail_url, prompt, generation_type,
                 duration_seconds, resolution, aspect_ratio, reference_person, metadata, created_at
             ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
             """,
-            video_id, request.user_id, final_video_url, thumbnail_url, request.prompt,
-            VideoGenerationType.TEXT_TO_VIDEO.value, duration_seconds, request.resolution.value,
-            request.aspect_ratio.value, request.reference_person.dict() if request.reference_person else None,
-            json.dumps(generation_metadata), datetime.utcnow()
+            video_id,
+            request.user_id,
+            final_video_url,
+            thumbnail_url,
+            request.prompt,
+            VideoGenerationType.TEXT_TO_VIDEO.value,
+            duration_seconds,
+            request.resolution.value,
+            request.aspect_ratio.value,
+            request.reference_person.dict() if request.reference_person else None,
+            json.dumps(generation_metadata),
+            datetime.utcnow(),
         )
-        
+
         # Fetch the created video
-        video_row = await db.fetch_one(
-            "SELECT * FROM user_videos WHERE id = $1", video_id
-        )
-        
+        video_row = await db.fetch_one("SELECT * FROM user_videos WHERE id = $1", video_id)
+
         if not video_row:
             raise HTTPException(status_code=500, detail="Failed to create video record")
-        
+
         # Convert to UserVideo model
         user_video = UserVideo(
             id=video_row["id"],
@@ -303,23 +325,22 @@ async def generate_video(
             duration_seconds=video_row["duration_seconds"],
             resolution=VideoResolution(video_row["resolution"]),
             aspect_ratio=VideoAspectRatio(video_row["aspect_ratio"]),
-            reference_person=VideoReferencePerson(**video_row["reference_person"]) if video_row["reference_person"] else None,
+            reference_person=VideoReferencePerson(**video_row["reference_person"])
+            if video_row["reference_person"]
+            else None,
             metadata=json.loads(video_row["metadata"]) if video_row["metadata"] else {},
             is_favorited=video_row["is_favorited"],
             created_at=video_row["created_at"],
-            updated_at=video_row["updated_at"]
+            updated_at=video_row["updated_at"],
         )
-        
+
         generation_info = VideoGenerationInfo(
             model_used=generation_metadata.get("model_used", "unknown"),
-            generation_time_ms=generation_metadata.get("generation_time_ms", 0)
+            generation_time_ms=generation_metadata.get("generation_time_ms", 0),
         )
-        
-        return VideoGenerateResponse(
-            video=user_video,
-            generation_info=generation_info
-        )
-        
+
+        return VideoGenerateResponse(video=user_video, generation_info=generation_info)
+
     except HTTPException:
         raise
     except Exception as e:
@@ -334,21 +355,21 @@ async def animate_image(
     db: Database = Depends(get_db),
 ):
     """Animate an existing image into a video"""
-    
+
     try:
         # Map duration to seconds
         duration_seconds = 5 if request.duration == VideoDuration.SHORT else 10
-        
+
         print(f"🎬 VIDEO ANIMATION: Starting for user {request.user_id}")
         print(f"   Image URL: {request.image_url}")
         print(f"   Prompt: {request.prompt[:100]}...")
         print(f"   Duration: {request.duration.value} ({duration_seconds}s)")
         print(f"   Resolution: {request.resolution.value}")
-        
+
         # Get aspect ratio from the image
         # For now, default to 16:9, but ideally we'd analyze the source image
         aspect_ratio = VideoAspectRatio.ASPECT_16_9
-        
+
         # Generate video using the service
         video_url, generation_metadata = await video_generation_service.generate_video(
             prompt=request.prompt,
@@ -359,29 +380,32 @@ async def animate_image(
             source_image_url=request.image_url,
             camera_fixed=request.camera_fixed,
         )
-        
+
         print(f"✅ VIDEO ANIMATED: {video_url}")
-        
+
         # Log video usage for analytics
         try:
             import os
+
             import httpx
-            
+
             # Calculate duration for cost calculation
             duration_seconds = 5 if request.duration == VideoDuration.SHORT else 10
-            
+
             # Apps Service URL - environment-based routing
             environment = os.getenv("ENVIRONMENT", "staging")
             if environment == "staging":
                 apps_service_url = "https://fairydust-apps-staging.up.railway.app"
             else:
                 apps_service_url = "https://fairydust-apps-production.up.railway.app"
-            
+
             # Prepare video usage payload
             usage_payload = {
                 "user_id": str(request.user_id),
                 "app_id": "fairydust-video",
-                "provider": generation_metadata.get("model_used", "unknown").split("/")[0] if "/" in generation_metadata.get("model_used", "") else "replicate",
+                "provider": generation_metadata.get("model_used", "unknown").split("/")[0]
+                if "/" in generation_metadata.get("model_used", "")
+                else "replicate",
                 "model_id": generation_metadata.get("model_used", "unknown"),
                 "videos_generated": 1,
                 "video_duration_seconds": duration_seconds,
@@ -396,30 +420,34 @@ async def animate_image(
                     "duration": request.duration.value,
                     "resolution": request.resolution.value,
                     "source_image": request.image_url,
-                    "generation_type": "image_to_video"
-                }
+                    "generation_type": "image_to_video",
+                },
             }
-            
+
             async with httpx.AsyncClient(timeout=10.0) as client:
                 response = await client.post(
                     f"{apps_service_url}/video/usage",
                     json=usage_payload,
                 )
-                
+
                 if response.status_code == 201:
                     print("✅ VIDEO USAGE LOGGED to analytics")
                 else:
-                    print(f"⚠️ Failed to log video usage - HTTP {response.status_code}: {response.text}")
-                    
+                    print(
+                        f"⚠️ Failed to log video usage - HTTP {response.status_code}: {response.text}"
+                    )
+
         except Exception as e:
             print(f"⚠️ Failed to log video usage: {str(e)}")
-        
+
         # Create video record
         video_id = uuid4()
-        
+
         # Upload to R2 and generate thumbnail
-        final_video_url, thumbnail_url = await _upload_video_to_r2(video_url, request.user_id, video_id)
-        
+        final_video_url, thumbnail_url = await _upload_video_to_r2(
+            video_url, request.user_id, video_id
+        )
+
         # Store in database
         await db.execute(
             """
@@ -428,19 +456,26 @@ async def animate_image(
                 duration_seconds, resolution, aspect_ratio, metadata, created_at
             ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
             """,
-            video_id, request.user_id, final_video_url, thumbnail_url, request.prompt,
-            VideoGenerationType.IMAGE_TO_VIDEO.value, request.image_url, duration_seconds,
-            request.resolution.value, aspect_ratio.value, json.dumps(generation_metadata), datetime.utcnow()
+            video_id,
+            request.user_id,
+            final_video_url,
+            thumbnail_url,
+            request.prompt,
+            VideoGenerationType.IMAGE_TO_VIDEO.value,
+            request.image_url,
+            duration_seconds,
+            request.resolution.value,
+            aspect_ratio.value,
+            json.dumps(generation_metadata),
+            datetime.utcnow(),
         )
-        
+
         # Fetch the created video
-        video_row = await db.fetch_one(
-            "SELECT * FROM user_videos WHERE id = $1", video_id
-        )
-        
+        video_row = await db.fetch_one("SELECT * FROM user_videos WHERE id = $1", video_id)
+
         if not video_row:
             raise HTTPException(status_code=500, detail="Failed to create video record")
-        
+
         # Convert to UserVideo model
         user_video = UserVideo(
             id=video_row["id"],
@@ -453,23 +488,22 @@ async def animate_image(
             duration_seconds=video_row["duration_seconds"],
             resolution=VideoResolution(video_row["resolution"]),
             aspect_ratio=VideoAspectRatio(video_row["aspect_ratio"]),
-            reference_person=VideoReferencePerson(**video_row["reference_person"]) if video_row["reference_person"] else None,
+            reference_person=VideoReferencePerson(**video_row["reference_person"])
+            if video_row["reference_person"]
+            else None,
             metadata=json.loads(video_row["metadata"]) if video_row["metadata"] else {},
             is_favorited=video_row["is_favorited"],
             created_at=video_row["created_at"],
-            updated_at=video_row["updated_at"]
+            updated_at=video_row["updated_at"],
         )
-        
+
         generation_info = VideoGenerationInfo(
             model_used=generation_metadata.get("model_used", "unknown"),
-            generation_time_ms=generation_metadata.get("generation_time_ms", 0)
+            generation_time_ms=generation_metadata.get("generation_time_ms", 0),
         )
-        
-        return VideoAnimateResponse(
-            video=user_video,
-            generation_info=generation_info
-        )
-        
+
+        return VideoAnimateResponse(video=user_video, generation_info=generation_info)
+
     except HTTPException:
         raise
     except Exception as e:
@@ -487,46 +521,46 @@ async def list_videos(
     db: Database = Depends(get_db),
 ):
     """List videos for the current user"""
-    
+
     try:
         # Build query conditions
         conditions = ["user_id = $1"]
         params = [current_user.user_id]
         param_count = 1
-        
+
         if favorites_only:
             param_count += 1
             conditions.append(f"is_favorited = ${param_count}")
             params.append(True)
-        
+
         if generation_type and generation_type != "all":
             param_count += 1
             conditions.append(f"generation_type = ${param_count}")
             params.append(generation_type)
-        
+
         where_clause = " AND ".join(conditions)
-        
+
         # Get total count
         count_query = f"SELECT COUNT(*) as total FROM user_videos WHERE {where_clause}"
         count_result = await db.fetch_one(count_query, *params)
         total = count_result["total"] if count_result else 0
-        
+
         # Get videos with pagination
         param_count += 1
         limit_param = param_count
         param_count += 1
         offset_param = param_count
-        
+
         videos_query = f"""
-            SELECT * FROM user_videos 
+            SELECT * FROM user_videos
             WHERE {where_clause}
-            ORDER BY created_at DESC 
+            ORDER BY created_at DESC
             LIMIT ${limit_param} OFFSET ${offset_param}
         """
         params.extend([limit, offset])
-        
+
         video_rows = await db.fetch_all(videos_query, *params)
-        
+
         # Convert to UserVideo models
         videos = []
         for row in video_rows:
@@ -541,23 +575,22 @@ async def list_videos(
                 duration_seconds=row["duration_seconds"],
                 resolution=VideoResolution(row["resolution"]),
                 aspect_ratio=VideoAspectRatio(row["aspect_ratio"]),
-                reference_person=VideoReferencePerson(**row["reference_person"]) if row["reference_person"] else None,
+                reference_person=VideoReferencePerson(**row["reference_person"])
+                if row["reference_person"]
+                else None,
                 metadata=json.loads(row["metadata"]) if row["metadata"] else {},
                 is_favorited=row["is_favorited"],
                 created_at=row["created_at"],
-                updated_at=row["updated_at"]
+                updated_at=row["updated_at"],
             )
             videos.append(user_video)
-        
+
         pagination = VideoPagination(
-            total=total,
-            limit=limit,
-            offset=offset,
-            has_more=offset + limit < total
+            total=total, limit=limit, offset=offset, has_more=offset + limit < total
         )
-        
+
         return VideoListResponse(videos=videos, pagination=pagination)
-        
+
     except Exception as e:
         print(f"❌ VIDEO LIST ERROR: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Failed to list videos: {str(e)}")
@@ -570,16 +603,17 @@ async def get_video(
     db: Database = Depends(get_db),
 ):
     """Get a specific video by ID"""
-    
+
     try:
         video_row = await db.fetch_one(
             "SELECT * FROM user_videos WHERE id = $1 AND user_id = $2",
-            video_id, current_user.user_id
+            video_id,
+            current_user.user_id,
         )
-        
+
         if not video_row:
             raise HTTPException(status_code=404, detail="Video not found")
-        
+
         user_video = UserVideo(
             id=video_row["id"],
             user_id=video_row["user_id"],
@@ -591,15 +625,17 @@ async def get_video(
             duration_seconds=video_row["duration_seconds"],
             resolution=VideoResolution(video_row["resolution"]),
             aspect_ratio=VideoAspectRatio(video_row["aspect_ratio"]),
-            reference_person=VideoReferencePerson(**video_row["reference_person"]) if video_row["reference_person"] else None,
+            reference_person=VideoReferencePerson(**video_row["reference_person"])
+            if video_row["reference_person"]
+            else None,
             metadata=json.loads(video_row["metadata"]) if video_row["metadata"] else {},
             is_favorited=video_row["is_favorited"],
             created_at=video_row["created_at"],
-            updated_at=video_row["updated_at"]
+            updated_at=video_row["updated_at"],
         )
-        
+
         return VideoDetailResponse(video=user_video)
-        
+
     except HTTPException:
         raise
     except Exception as e:
@@ -615,28 +651,29 @@ async def update_video(
     db: Database = Depends(get_db),
 ):
     """Update video (favorite/unfavorite)"""
-    
+
     try:
         # Check if video exists and belongs to user
         video_row = await db.fetch_one(
             "SELECT * FROM user_videos WHERE id = $1 AND user_id = $2",
-            video_id, current_user.user_id
+            video_id,
+            current_user.user_id,
         )
-        
+
         if not video_row:
             raise HTTPException(status_code=404, detail="Video not found")
-        
+
         # Update video
         await db.execute(
             "UPDATE user_videos SET is_favorited = $1, updated_at = $2 WHERE id = $3",
-            request.is_favorited, datetime.utcnow(), video_id
+            request.is_favorited,
+            datetime.utcnow(),
+            video_id,
         )
-        
+
         # Fetch updated video
-        updated_row = await db.fetch_one(
-            "SELECT * FROM user_videos WHERE id = $1", video_id
-        )
-        
+        updated_row = await db.fetch_one("SELECT * FROM user_videos WHERE id = $1", video_id)
+
         user_video = UserVideo(
             id=updated_row["id"],
             user_id=updated_row["user_id"],
@@ -648,15 +685,17 @@ async def update_video(
             duration_seconds=updated_row["duration_seconds"],
             resolution=VideoResolution(updated_row["resolution"]),
             aspect_ratio=VideoAspectRatio(updated_row["aspect_ratio"]),
-            reference_person=VideoReferencePerson(**updated_row["reference_person"]) if updated_row["reference_person"] else None,
+            reference_person=VideoReferencePerson(**updated_row["reference_person"])
+            if updated_row["reference_person"]
+            else None,
             metadata=json.loads(updated_row["metadata"]) if updated_row["metadata"] else {},
             is_favorited=updated_row["is_favorited"],
             created_at=updated_row["created_at"],
-            updated_at=updated_row["updated_at"]
+            updated_at=updated_row["updated_at"],
         )
-        
+
         return VideoUpdateResponse(video=user_video)
-        
+
     except HTTPException:
         raise
     except Exception as e:
@@ -671,28 +710,27 @@ async def delete_video(
     db: Database = Depends(get_db),
 ):
     """Delete a video"""
-    
+
     try:
         # Check if video exists and belongs to user
         video_row = await db.fetch_one(
             "SELECT * FROM user_videos WHERE id = $1 AND user_id = $2",
-            video_id, current_user.user_id
+            video_id,
+            current_user.user_id,
         )
-        
+
         if not video_row:
             raise HTTPException(status_code=404, detail="Video not found")
-        
+
         # Delete from database
-        await db.execute(
-            "DELETE FROM user_videos WHERE id = $1", video_id
-        )
-        
+        await db.execute("DELETE FROM user_videos WHERE id = $1", video_id)
+
         # TODO: Delete from R2 storage
         # For now, just mark as deleted from storage
         deleted_from_storage = True
-        
+
         return VideoDeleteResponse(deleted_from_storage=deleted_from_storage)
-        
+
     except HTTPException:
         raise
     except Exception as e:

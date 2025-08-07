@@ -60,18 +60,30 @@ async def get_ai_usage_metrics(
 
     # Combine stats (convert Decimal to float for JSON serialization)
     total_stats = {
-        "total_requests": (text_stats["total_requests"] if text_stats else 0) + 
-                         (image_stats["total_images"] if image_stats else 0) + 
-                         (video_stats["total_videos"] if video_stats else 0),
+        "total_requests": (text_stats["total_requests"] if text_stats else 0)
+        + (image_stats["total_images"] if image_stats else 0)
+        + (video_stats["total_videos"] if video_stats else 0),
         "total_tokens": (text_stats["total_tokens"] if text_stats else 0),
         "total_images": (image_stats["total_images"] if image_stats else 0),
         "total_videos": (video_stats["total_videos"] if video_stats else 0),
         "total_cost_usd": (
-            float(text_stats["total_cost_usd"] if text_stats and text_stats["total_cost_usd"] else 0)
-            + float(image_stats["total_cost_usd"] if image_stats and image_stats["total_cost_usd"] else 0)
-            + float(video_stats["total_cost_usd"] if video_stats and video_stats["total_cost_usd"] else 0)
+            float(
+                text_stats["total_cost_usd"] if text_stats and text_stats["total_cost_usd"] else 0
+            )
+            + float(
+                image_stats["total_cost_usd"]
+                if image_stats and image_stats["total_cost_usd"]
+                else 0
+            )
+            + float(
+                video_stats["total_cost_usd"]
+                if video_stats and video_stats["total_cost_usd"]
+                else 0
+            )
         ),
-        "avg_latency_ms": float(text_stats["avg_latency_ms"] if text_stats and text_stats["avg_latency_ms"] else 0),
+        "avg_latency_ms": float(
+            text_stats["avg_latency_ms"] if text_stats and text_stats["avg_latency_ms"] else 0
+        ),
     }
 
     # Get model breakdown for all model types from ai_usage_logs
@@ -217,7 +229,7 @@ async def get_ai_model_usage(
             ORDER BY cost DESC
             LIMIT 20
             """,
-            model_type
+            model_type,
         )
         models.extend([dict(row) for row in type_models])
 
@@ -283,14 +295,18 @@ async def get_ai_action_analytics(
         # Determine if this is a user-facing action or internal operation
         is_user_facing = dust_cost > 0
         is_internal_operation = dust_cost == 0 and action_slug in [
-            'scene_intelligence_analysis', 'character_rendering', 'quality_enhancement',
-            'visual_composition', 'theme_variety_analysis', 'story_summary_generation',
-            'inspiration_generation'
+            "scene_intelligence_analysis",
+            "character_rendering",
+            "quality_enhancement",
+            "visual_composition",
+            "theme_variety_analysis",
+            "story_summary_generation",
+            "inspiration_generation",
         ]
-        
+
         # Calculate cost efficiency (USD cost per DUST charged)
         cost_efficiency = avg_cost_usd / dust_cost if dust_cost > 0 else 0
-        
+
         # Determine action category for display
         if is_user_facing:
             action_category = "User Action"

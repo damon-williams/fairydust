@@ -47,23 +47,27 @@ class ImageGenerationService:
                     "models": [],
                     "standard_model": None,
                     "reference_model": None,
-                    "fallback_models": []
+                    "fallback_models": [],
                 }
 
                 for i, model in enumerate(models):
-                    model_name = f"{model['provider']}/{model['model_id']}" if model['provider'] else model['model_id']
-                    
+                    model_name = (
+                        f"{model['provider']}/{model['model_id']}"
+                        if model["provider"]
+                        else model["model_id"]
+                    )
+
                     # Parse parameters for this model
                     params = parse_jsonb_field(
                         model["parameters"], default={}, field_name=f"image_parameters_{i}"
                     )
-                    
+
                     model_config = {
                         "model": model_name,
                         "provider": model["provider"],
                         "model_id": model["model_id"],
                         "priority": model.get("priority", 999),
-                        "parameters": params
+                        "parameters": params,
                     }
                     config_result["models"].append(model_config)
 
@@ -87,7 +91,7 @@ class ImageGenerationService:
                 print(f"   Primary: {config_result['standard_model']}")
                 print(f"   Reference: {config_result['reference_model']}")
                 print(f"   Fallbacks: {config_result['fallback_models']}")
-                
+
                 return config_result
 
             # Return defaults if no config found
@@ -157,8 +161,10 @@ class ImageGenerationService:
         else:
             # Use configured model for text-only generation with fallback support
             primary_model = image_models.get("standard_model", "black-forest-labs/flux-1.1-pro")
-            fallback_models = image_models.get("fallback_models", ["stability-ai/sdxl", "black-forest-labs/flux-schnell"])
-            
+            fallback_models = image_models.get(
+                "fallback_models", ["stability-ai/sdxl", "black-forest-labs/flux-schnell"]
+            )
+
             # Try primary model first
             try:
                 print(f"🎯 IMAGE_GENERATION: Attempting primary model: {primary_model}")
@@ -167,7 +173,7 @@ class ImageGenerationService:
                 )
             except Exception as e:
                 print(f"❌ IMAGE_GENERATION: Primary model {primary_model} failed: {str(e)}")
-                
+
                 # Try fallback models
                 for fallback_model in fallback_models:
                     try:
@@ -178,17 +184,21 @@ class ImageGenerationService:
                         # Add fallback metadata
                         url, metadata = result
                         metadata["was_fallback"] = True
-                        metadata["fallback_reason"] = f"Primary model {primary_model} failed: {str(e)}"
+                        metadata[
+                            "fallback_reason"
+                        ] = f"Primary model {primary_model} failed: {str(e)}"
                         metadata["primary_model_attempted"] = primary_model
                         return url, metadata
                     except Exception as fallback_error:
-                        print(f"❌ IMAGE_GENERATION: Fallback model {fallback_model} also failed: {str(fallback_error)}")
+                        print(
+                            f"❌ IMAGE_GENERATION: Fallback model {fallback_model} also failed: {str(fallback_error)}"
+                        )
                         continue
-                
+
                 # All models failed
                 raise HTTPException(
-                    status_code=500, 
-                    detail=f"All image generation models failed. Primary: {primary_model}, Fallbacks: {fallback_models}"
+                    status_code=500,
+                    detail=f"All image generation models failed. Primary: {primary_model}, Fallbacks: {fallback_models}",
                 )
 
     async def _generate_standard_replicate(
@@ -205,7 +215,7 @@ class ImageGenerationService:
         is_seedream = "seedream" in model.lower()  # ByteDance SeeDream-3 via Replicate
         is_flux = "flux" in model.lower()  # Black Forest Labs FLUX models
         is_sdxl = "sdxl" in model.lower()  # Stability AI SDXL
-        
+
         print(f"🎭 REPLICATE GENERATION STARTING - Model: {model}")
         print(f"   Original prompt: {prompt}")
         print(f"   Style: {style.value}")
@@ -455,7 +465,7 @@ class ImageGenerationService:
                         approach = "sdxl_text_to_image"
                     else:
                         approach = "replicate_text_to_image"
-                    
+
                     metadata = {
                         "model_used": model,  # Use actual model name instead of hardcoded
                         "api_provider": "replicate",

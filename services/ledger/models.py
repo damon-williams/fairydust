@@ -179,6 +179,24 @@ class RefundRequest(BaseModel):
     admin_id: Optional[UUID] = None
 
 
+class ServiceRefundRequest(BaseModel):
+    """Refund request for service-to-service calls (for failed generations)"""
+
+    user_id: UUID
+    amount: int = Field(..., gt=0, description="Amount to refund in DUST")
+    reason: str = Field(..., min_length=1, max_length=500, description="Reason for refund")
+    metadata: Optional[dict[str, Any]] = None
+    idempotency_key: str = Field(..., min_length=1, max_length=128)
+
+    @validator("idempotency_key")
+    def validate_idempotency_key(cls, v):
+        import re
+
+        if not re.match(r"^[a-zA-Z0-9_\-:]+$", v):
+            raise ValueError("Idempotency key must be alphanumeric with -_: allowed")
+        return v
+
+
 class PurchaseRequest(BaseModel):
     user_id: UUID
     amount: int = Field(..., gt=0, description="Amount of DUST purchased")
