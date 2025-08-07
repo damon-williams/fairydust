@@ -279,8 +279,8 @@ async def generate_image(request: ImageGenerateRequest, db: Database = Depends(g
                     latency_ms=generation_metadata["generation_time_ms"],
                     prompt_text=request.prompt,
                     finish_reason="completed",
-                    was_fallback=False,
-                    fallback_reason=None,
+                    was_fallback=generation_metadata.get("was_fallback", False),
+                    fallback_reason=generation_metadata.get("fallback_reason"),
                     request_metadata={
                         "action": "generate",
                         "style": request.style.value,
@@ -474,8 +474,8 @@ async def regenerate_image(
                     latency_ms=generation_metadata["generation_time_ms"],
                     prompt_text=enhanced_prompt,
                     finish_reason="completed",
-                    was_fallback=False,
-                    fallback_reason=None,
+                    was_fallback=generation_metadata.get("was_fallback", False),
+                    fallback_reason=generation_metadata.get("fallback_reason"),
                     request_metadata={
                         "action": "regenerate",
                         "style": style,
