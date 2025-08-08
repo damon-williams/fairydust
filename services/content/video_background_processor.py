@@ -189,11 +189,11 @@ class VideoBackgroundProcessor:
             result = await db.fetch_one(
                 """
                 INSERT INTO user_videos (
-                    id, user_id, url, thumbnail_url, prompt, duration_seconds, resolution,
-                    aspect_ratio, is_favorited, reference_person, metadata,
-                    created_at, updated_at
+                    id, user_id, url, thumbnail_url, prompt, generation_type, source_image_url,
+                    duration_seconds, resolution, aspect_ratio, is_favorited, reference_person, 
+                    metadata, created_at, updated_at
                 )
-                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, NOW(), NOW())
+                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, NOW(), NOW())
                 RETURNING id
                 """,
                 job_id,  # Use job_id as video_id for consistency
@@ -201,6 +201,8 @@ class VideoBackgroundProcessor:
                 final_video_url,
                 thumbnail_url,
                 input_params["prompt"],
+                generation_type.value,  # generation_type
+                input_params.get("source_image_url"),  # source_image_url (for image-to-video)
                 5 if duration.value == "short" else (10 if duration.value == "medium" else 15),  # Convert to seconds
                 resolution.value,
                 aspect_ratio.value,
