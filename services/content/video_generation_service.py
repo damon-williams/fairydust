@@ -167,7 +167,7 @@ class VideoGenerationService:
                     f"https://api.replicate.com/v1/models/{model}/predictions",
                     headers=headers,
                     json=payload,
-                    timeout=60.0,
+                    timeout=120.0,  # Extended for slower video generation requests
                 )
                 api_request_time = time.time() - api_request_start
                 print(f"⏱️ API_TIMING: Initial request took {api_request_time:.2f}s")
@@ -200,8 +200,8 @@ class VideoGenerationService:
             prediction_id = prediction["id"]
             print(f"✅ REPLICATE PREDICTION STARTED: {prediction_id}")
 
-        # Poll for completion
-        video_url = await self._poll_for_completion(prediction_id, model, max_wait_time=180)
+        # Poll for completion (extended for character reference generations that can take 10+ minutes)
+        video_url = await self._poll_for_completion(prediction_id, model, max_wait_time=600)
 
         metadata = {
             "model_used": model,
@@ -274,7 +274,7 @@ class VideoGenerationService:
                     f"https://api.replicate.com/v1/models/{model}/predictions",
                     headers=headers,
                     json=payload,
-                    timeout=60.0,
+                    timeout=120.0,  # Extended for slower video generation requests
                 )
                 api_request_time = time.time() - api_request_start
                 print(f"⏱️ API_TIMING: Initial request took {api_request_time:.2f}s")
@@ -307,8 +307,8 @@ class VideoGenerationService:
             prediction_id = prediction["id"]
             print(f"✅ REPLICATE PREDICTION STARTED: {prediction_id}")
 
-        # Poll for completion (longer timeout for video generation)
-        video_url = await self._poll_for_completion(prediction_id, model, max_wait_time=300)
+        # Poll for completion (extended for generations that can take 10+ minutes)
+        video_url = await self._poll_for_completion(prediction_id, model, max_wait_time=600)
 
         generation_approach = (
             "seedance_image_to_video" if source_image_url else "seedance_text_to_video"
@@ -329,7 +329,7 @@ class VideoGenerationService:
         return video_url, metadata
 
     async def _poll_for_completion(
-        self, prediction_id: str, model: str, max_wait_time: int = 180
+        self, prediction_id: str, model: str, max_wait_time: int = 600
     ) -> str:
         """Poll Replicate API for video generation completion"""
 
