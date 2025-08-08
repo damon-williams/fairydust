@@ -326,16 +326,24 @@ async def get_video_job_status(
         }
 
         print(f"✅ CLIENT_POLLING: Returning status '{job_status['status']}' for job {job_id}")
-        if job_status.get("progress"):
-            print(f"   Progress: {job_status['progress']*100:.1f}%")
+        
+        # Safe progress logging
+        progress_value = job_status.get("progress")
+        if progress_value and isinstance(progress_value, (int, float)):
+            print(f"   Progress: {progress_value*100:.1f}%")
+        elif progress_value:
+            print(f"   Progress data: {progress_value}")
+            
         if job_status["status"] == "completed":
             print(f"   Job completed! Ready for client to fetch result.")
         elif job_status["status"] == "failed":
             print(f"   Job failed - client will need to handle error")
         elif job_status["status"] in ["queued", "starting", "processing"]:
-            estimated_remaining = job_status.get("generation_info", {}).get("estimated_remaining_seconds")
-            if estimated_remaining:
-                print(f"   Estimated time remaining: {estimated_remaining}s")
+            generation_info = job_status.get("generation_info")
+            if generation_info and isinstance(generation_info, dict):
+                estimated_remaining = generation_info.get("estimated_remaining_seconds")
+                if estimated_remaining:
+                    print(f"   Estimated time remaining: {estimated_remaining}s")
 
         return response_data
 
