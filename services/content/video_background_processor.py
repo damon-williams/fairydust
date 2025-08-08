@@ -239,10 +239,28 @@ class VideoBackgroundProcessor:
 
         except Exception as e:
             print(f"❌ BACKGROUND_PROCESSOR: Job {job_id} failed: {str(e)}")
+            print(f"   Exception type: {type(e).__name__}")
+            print(f"   Exception args: {e.args}")
+            
+            # Log additional context for debugging
+            print(f"   Job details:")
+            print(f"     - Generation type: {generation_type}")
+            print(f"     - User: {user_id}")
+            print(f"     - Has reference person: {reference_person is not None}")
+            if reference_person:
+                print(f"     - Reference person ID: {reference_person.person_id}")
+                print(f"     - Reference photo URL: {reference_person.photo_url}")
+            print(f"     - Prompt: {input_params['prompt'][:100]}...")
+            print(f"     - Duration: {duration.value}")
+            print(f"     - Resolution: {resolution.value}")
 
             # Update job as failed
             error_code = "GENERATION_FAILED"
             error_message = f"Video generation failed: {str(e)}"
+            
+            # If error message is empty, provide more context
+            if not str(e).strip():
+                error_message = f"Video generation failed with {type(e).__name__} (no error message)"
 
             # Categorize common errors
             error_str = str(e).lower()
@@ -255,6 +273,9 @@ class VideoBackgroundProcessor:
             elif "connection" in error_str or "network" in error_str:
                 error_code = "NETWORK_ERROR"
                 error_message = "Network connection error during generation"
+            elif "reference" in error_str or "person" in error_str:
+                error_code = "REFERENCE_ERROR"
+                error_message = f"Reference person processing failed: {str(e)}"
 
             try:
                 db = await get_db()
@@ -264,7 +285,17 @@ class VideoBackgroundProcessor:
                     status=VideoJobStatus.FAILED.value,
                     error_code=error_code,
                     error_message=error_message,
-                    error_details={"details": str(e), "type": type(e).__name__},
+                    error_details={
+                        "details": str(e),
+                        "type": type(e).__name__,
+                        "args": list(e.args) if e.args else [],
+                        "generation_type": generation_type,
+                        "has_reference_person": reference_person is not None,
+                        "reference_person_id": str(reference_person.person_id) if reference_person else None,
+                        "duration": duration.value,
+                        "resolution": resolution.value,
+                        "prompt_length": len(input_params["prompt"])
+                    },
                 )
             except Exception as db_error:
                 print(f"❌ BACKGROUND_PROCESSOR: Failed to update job status: {str(db_error)}")

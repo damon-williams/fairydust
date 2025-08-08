@@ -388,14 +388,27 @@ class VideoGenerationService:
 
                 elif status == "failed":
                     error_msg = result.get("error", "Unknown generation error")
+                    logs = result.get("logs", "")
 
                     print(f"❌ REPLICATE PREDICTION FAILED: {prediction_id}")
                     print(f"   Model: {model}")
                     print(f"   Error Message: {error_msg}")
+                    print(f"   Logs: {logs}")
                     print(f"   Full Result: {result}")
 
+                    # Build detailed error message
+                    detailed_error = error_msg
+                    if not error_msg or error_msg.strip() == "":
+                        detailed_error = "Video generation failed (no error message from service)"
+                        if logs:
+                            detailed_error += f". Logs: {logs[-500:]}"  # Last 500 chars
+
+                    # Add model-specific context for common issues
+                    if model == "minimax/video-01":
+                        detailed_error += ". Note: This was a text-to-video generation with character reference using MiniMax model."
+
                     raise HTTPException(
-                        status_code=500, detail=f"Video generation failed: {error_msg}"
+                        status_code=500, detail=f"Video generation failed: {detailed_error}"
                     )
 
         # Timeout
