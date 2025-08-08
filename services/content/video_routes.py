@@ -234,6 +234,13 @@ async def generate_video(
         )
 
         # Return job information immediately (async processing)
+        print(f"🚀 VIDEO_GENERATION: Created job {job_id} for user {request.user_id}")
+        print(f"   Type: TEXT_TO_VIDEO")
+        print(f"   Prompt: {request.prompt[:50]}...")
+        print(f"   Duration: {request.duration.value}")
+        print(f"   Resolution: {request.resolution.value}")
+        print(f"   Client should poll: GET /videos/jobs/{job_id}/status")
+
         return VideoGenerateResponse(
             job_id=job_id,
             status="queued",
@@ -296,6 +303,8 @@ async def get_video_job_status(
     try:
         from video_job_service import video_job_service
 
+        print(f"🔍 CLIENT_POLLING: User {current_user.user_id} checking status for job {job_id}")
+
         job_status = await video_job_service.get_job_status(
             db=db,
             job_id=job_id,
@@ -303,9 +312,10 @@ async def get_video_job_status(
         )
 
         if not job_status:
+            print(f"❌ CLIENT_POLLING: Job {job_id} not found or access denied for user {current_user.user_id}")
             raise HTTPException(status_code=404, detail="Job not found or access denied")
 
-        return {
+        response_data = {
             "success": True,
             "job_id": job_status["job_id"],
             "status": job_status["status"],
@@ -314,6 +324,20 @@ async def get_video_job_status(
             "created_at": job_status["created_at"],
             "updated_at": job_status["updated_at"],
         }
+
+        print(f"✅ CLIENT_POLLING: Returning status '{job_status['status']}' for job {job_id}")
+        if job_status.get("progress"):
+            print(f"   Progress: {job_status['progress']*100:.1f}%")
+        if job_status["status"] == "completed":
+            print(f"   Job completed! Ready for client to fetch result.")
+        elif job_status["status"] == "failed":
+            print(f"   Job failed - client will need to handle error")
+        elif job_status["status"] in ["queued", "starting", "processing"]:
+            estimated_remaining = job_status.get("generation_info", {}).get("estimated_remaining_seconds")
+            if estimated_remaining:
+                print(f"   Estimated time remaining: {estimated_remaining}s")
+
+        return response_data
 
     except HTTPException:
         raise
@@ -389,6 +413,8 @@ async def get_video_job_result(
     try:
         from video_job_service import video_job_service
 
+        print(f"🎯 CLIENT_RESULT: User {current_user.user_id} fetching result for job {job_id}")
+
         job_result = await video_job_service.get_job_result(
             db=db,
             job_id=job_id,
@@ -396,14 +422,22 @@ async def get_video_job_result(
         )
 
         if not job_result:
+            print(f"❌ CLIENT_RESULT: Job {job_id} not found or access denied for user {current_user.user_id}")
             raise HTTPException(status_code=404, detail="Job not found or access denied")
 
         status = job_result["status"]
+        print(f"📊 CLIENT_RESULT: Job {job_id} status is '{status}'")
 
         if status == "completed" and job_result.get("video"):
             # Return completed video
             video_data = job_result["video"]
             video_metadata = video_data.get("metadata", {})
+            
+            print(f"✅ CLIENT_RESULT: Returning completed video for job {job_id}")
+            print(f"   Video URL: {video_data['url']}")
+            print(f"   Thumbnail: {video_data['thumbnail_url']}")
+            print(f"   Duration: {video_metadata.get('duration_seconds', 5)}s")
+            print(f"   Resolution: {video_metadata.get('resolution', 'hd_1080p')}")
 
             user_video = UserVideo(
                 id=video_data["id"],
@@ -433,15 +467,21 @@ async def get_video_job_result(
             return VideoGenerateResponse(video=user_video, generation_info=generation_info)
 
         elif status == "failed":
+            error_msg = job_result.get("error", "Unknown error")
+            print(f"❌ CLIENT_RESULT: Returning failed status for job {job_id}")
+            print(f"   Error: {error_msg}")
+            
             return {
                 "success": False,
                 "job_id": job_id,
                 "status": status,
-                "error": job_result["error"],
+                "error": error_msg,
             }
 
         else:
             # Still in progress
+            print(f"⏳ CLIENT_RESULT: Job {job_id} still in progress")
+            
             return {
                 "success": True,
                 "job_id": job_id,
@@ -625,6 +665,14 @@ async def animate_image(
         )
 
         # Return job information immediately (async processing)
+        print(f"🚀 VIDEO_ANIMATION: Created job {job_id} for user {request.user_id}")
+        print(f"   Type: IMAGE_TO_VIDEO")
+        print(f"   Image: {request.image_url}")
+        print(f"   Prompt: {request.prompt[:50]}...")
+        print(f"   Duration: {request.duration.value}")
+        print(f"   Resolution: {request.resolution.value}")
+        print(f"   Client should poll: GET /videos/jobs/{job_id}/status")
+
         return VideoAnimateResponse(
             job_id=job_id,
             status="queued",
