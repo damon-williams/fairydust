@@ -235,7 +235,7 @@ async def generate_video(
 
         # Return job information immediately (async processing)
         print(f"🚀 VIDEO_GENERATION: Created job {job_id} for user {request.user_id}")
-        print(f"   Type: TEXT_TO_VIDEO")
+        print("   Type: TEXT_TO_VIDEO")
         print(f"   Prompt: {request.prompt[:50]}...")
         print(f"   Duration: {request.duration.value}")
         print(f"   Resolution: {request.resolution.value}")
@@ -312,7 +312,9 @@ async def get_video_job_status(
         )
 
         if not job_status:
-            print(f"❌ CLIENT_POLLING: Job {job_id} not found or access denied for user {current_user.user_id}")
+            print(
+                f"❌ CLIENT_POLLING: Job {job_id} not found or access denied for user {current_user.user_id}"
+            )
             raise HTTPException(status_code=404, detail="Job not found or access denied")
 
         response_data = {
@@ -326,18 +328,18 @@ async def get_video_job_status(
         }
 
         print(f"✅ CLIENT_POLLING: Returning status '{job_status['status']}' for job {job_id}")
-        
+
         # Safe progress logging
         progress_value = job_status.get("progress")
         if progress_value and isinstance(progress_value, (int, float)):
             print(f"   Progress: {progress_value*100:.1f}%")
         elif progress_value:
             print(f"   Progress data: {progress_value}")
-            
+
         if job_status["status"] == "completed":
-            print(f"   Job completed! Ready for client to fetch result.")
+            print("   Job completed! Ready for client to fetch result.")
         elif job_status["status"] == "failed":
-            print(f"   Job failed - client will need to handle error")
+            print("   Job failed - client will need to handle error")
         elif job_status["status"] in ["queued", "starting", "processing"]:
             generation_info = job_status.get("generation_info")
             if generation_info and isinstance(generation_info, dict):
@@ -430,7 +432,9 @@ async def get_video_job_result(
         )
 
         if not job_result:
-            print(f"❌ CLIENT_RESULT: Job {job_id} not found or access denied for user {current_user.user_id}")
+            print(
+                f"❌ CLIENT_RESULT: Job {job_id} not found or access denied for user {current_user.user_id}"
+            )
             raise HTTPException(status_code=404, detail="Job not found or access denied")
 
         status = job_result["status"]
@@ -440,7 +444,7 @@ async def get_video_job_result(
             # Return completed video
             video_data = job_result["video"]
             video_metadata = video_data.get("metadata", {})
-            
+
             print(f"✅ CLIENT_RESULT: Returning completed video for job {job_id}")
             print(f"   Video URL: {video_data['url']}")
             print(f"   Thumbnail: {video_data['thumbnail_url']}")
@@ -472,13 +476,19 @@ async def get_video_job_result(
                 generation_time_ms=job_result["generation_info"]["total_generation_time_ms"],
             )
 
-            return VideoGenerateResponse(video=user_video, generation_info=generation_info)
+            return VideoGenerateResponse(
+                success=True,
+                job_id=job_id,
+                status="completed",
+                video=user_video,
+                generation_info=generation_info,
+            )
 
         elif status == "failed":
             error_msg = job_result.get("error", "Unknown error")
             print(f"❌ CLIENT_RESULT: Returning failed status for job {job_id}")
             print(f"   Error: {error_msg}")
-            
+
             return {
                 "success": False,
                 "job_id": job_id,
@@ -489,7 +499,7 @@ async def get_video_job_result(
         else:
             # Still in progress
             print(f"⏳ CLIENT_RESULT: Job {job_id} still in progress")
-            
+
             return {
                 "success": True,
                 "job_id": job_id,
@@ -674,7 +684,7 @@ async def animate_image(
 
         # Return job information immediately (async processing)
         print(f"🚀 VIDEO_ANIMATION: Created job {job_id} for user {request.user_id}")
-        print(f"   Type: IMAGE_TO_VIDEO")
+        print("   Type: IMAGE_TO_VIDEO")
         print(f"   Image: {request.image_url}")
         print(f"   Prompt: {request.prompt[:50]}...")
         print(f"   Duration: {request.duration.value}")

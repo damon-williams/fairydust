@@ -190,7 +190,7 @@ class VideoBackgroundProcessor:
                 """
                 INSERT INTO user_videos (
                     id, user_id, url, thumbnail_url, prompt, generation_type, source_image_url,
-                    duration_seconds, resolution, aspect_ratio, is_favorited, reference_person, 
+                    duration_seconds, resolution, aspect_ratio, is_favorited, reference_person,
                     metadata, created_at, updated_at
                 )
                 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, NOW(), NOW())
@@ -203,7 +203,9 @@ class VideoBackgroundProcessor:
                 input_params["prompt"],
                 generation_type,  # Already a string from database
                 input_params.get("source_image_url"),  # source_image_url (for image-to-video)
-                5 if duration.value == "short" else (10 if duration.value == "medium" else 15),  # Convert to seconds
+                5
+                if duration.value == "short"
+                else (10 if duration.value == "medium" else 15),  # Convert to seconds
                 resolution.value,
                 aspect_ratio.value,
                 False,  # is_favorited
