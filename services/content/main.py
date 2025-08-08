@@ -29,6 +29,7 @@ from recipe_routes import router as recipe_router
 from restaurant_routes import router as restaurant_router
 from routes import content_router
 from story_routes import router as story_router
+from video_background_processor import video_background_processor
 from video_routes import video_router
 from wyr_routes import router as wyr_router
 
@@ -42,10 +43,18 @@ async def lifespan(app: FastAPI):
     # Initialize database and Redis
     await init_db()
     await init_redis()
+
+    # Start video background processor
+    import asyncio
+
+    asyncio.create_task(video_background_processor.start())
+
     logger.info("Content service started successfully")
     yield
+
     # Cleanup
     logger.info("Shutting down content service...")
+    await video_background_processor.stop()
     await close_db()
     await close_redis()
 
@@ -192,7 +201,7 @@ if __name__ == "__main__":
 
     # Configure for longer video generation requests
     timeout_seconds = int(os.getenv("REQUEST_TIMEOUT", "600"))  # Default 10 minutes
-    
+
     uvicorn.run(
         "main:app",
         host="0.0.0.0",

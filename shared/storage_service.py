@@ -203,7 +203,7 @@ class StorageService:
         """
         try:
             upload_metadata = metadata or {}
-            
+
             # Upload to R2
             self.client.put_object(
                 Bucket=self.bucket_name,

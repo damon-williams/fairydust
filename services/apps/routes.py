@@ -513,10 +513,11 @@ async def get_app_model_configs(app_id: str, db: Database = Depends(get_db)) -> 
         config_dict = dict(config)
         config_dict["id"] = str(config_dict["id"])
         config_dict["app_id"] = str(config_dict["app_id"])
-        
+
         # Parse JSON parameters back to dict
         if config_dict["parameters"]:
             import json
+
             config_dict["parameters"] = json.loads(config_dict["parameters"])
         else:
             config_dict["parameters"] = {}
@@ -541,7 +542,7 @@ async def create_app_model_config(
     """Create a new model configuration for an app"""
     import json
     import logging
-    
+
     logger = logging.getLogger(__name__)
     logger.info(f"🔍 APPS_DEBUG: Creating model config for app {app_id}")
     logger.info(f"🔍 APPS_DEBUG: Received config_data: {config_data}")
@@ -559,7 +560,7 @@ async def create_app_model_config(
         raise HTTPException(status_code=404, detail="App not found")
 
     # Handle parameters - if it's a string, parse it; if it's already a dict, use it
-    parameters = config_data.get('parameters', {})
+    parameters = config_data.get("parameters", {})
     if isinstance(parameters, str):
         logger.info(f"🔍 APPS_DEBUG: Parameters is string, parsing: {parameters}")
         try:
@@ -567,18 +568,18 @@ async def create_app_model_config(
         except json.JSONDecodeError:
             logger.error(f"🔍 APPS_DEBUG: Failed to parse parameters JSON: {parameters}")
             parameters = {}
-    
+
     logger.info(f"🔍 APPS_DEBUG: Final parameters: {parameters} (type: {type(parameters)})")
 
     # Create the Pydantic model with corrected parameters
     try:
         config = AppModelConfigCreate(
-            app_id=config_data['app_id'],
-            model_type=config_data['model_type'],
-            provider=config_data['provider'],
-            model_id=config_data['model_id'],
+            app_id=config_data["app_id"],
+            model_type=config_data["model_type"],
+            provider=config_data["provider"],
+            model_id=config_data["model_id"],
             parameters=parameters,
-            is_enabled=config_data.get('is_enabled', True)
+            is_enabled=config_data.get("is_enabled", True),
         )
     except Exception as e:
         logger.error(f"🔍 APPS_DEBUG: Failed to create Pydantic model: {e}")
@@ -623,7 +624,7 @@ async def create_app_model_config(
     config_dict = dict(created_config)
     config_dict["id"] = str(config_dict["id"])
     config_dict["app_id"] = str(config_dict["app_id"])
-    
+
     # Parse JSON parameters back to dict
     if config_dict["parameters"]:
         config_dict["parameters"] = json.loads(config_dict["parameters"])
@@ -714,7 +715,7 @@ async def update_app_model_config_by_type(
     config_dict = dict(updated_config)
     config_dict["id"] = str(config_dict["id"])
     config_dict["app_id"] = str(config_dict["app_id"])
-    
+
     # Parse JSON parameters back to dict
     if config_dict["parameters"]:
         config_dict["parameters"] = json.loads(config_dict["parameters"])
@@ -780,13 +781,13 @@ async def get_global_fallbacks(
     for fallback in fallbacks:
         fallback_dict = dict(fallback)
         fallback_dict["id"] = str(fallback_dict["id"])
-        
+
         # Parse JSON parameters back to dict
         if fallback_dict["parameters"]:
             fallback_dict["parameters"] = json.loads(fallback_dict["parameters"])
         else:
             fallback_dict["parameters"] = {}
-            
+
         result.append(GlobalFallbackModel(**fallback_dict))
 
     return result
@@ -821,7 +822,7 @@ async def create_global_fallback(
 
     fallback_dict = dict(created_fallback)
     fallback_dict["id"] = str(fallback_dict["id"])
-    
+
     # Parse JSON parameters back to dict
     if fallback_dict["parameters"]:
         fallback_dict["parameters"] = json.loads(fallback_dict["parameters"])
@@ -992,6 +993,7 @@ async def generate_video(
 ):
     """Generate a video from text prompt (with optional reference person)"""
     import httpx
+
     from shared.llm_pricing import calculate_video_cost
 
     try:
@@ -1009,10 +1011,10 @@ async def generate_video(
 
         # Map duration to seconds for cost calculation
         duration_seconds = 5 if duration == "short" else 10
-        
+
         # Map resolution for cost calculation
         cost_resolution = "1080p" if resolution == "hd_1080p" else "480p"
-        
+
         # Determine model based on reference person
         if reference_person:
             model_id = "minimax/video-01"
@@ -1023,38 +1025,38 @@ async def generate_video(
 
         # Check DUST balance and deduct
         from shared.ledger_client import check_and_deduct_dust
-        
+
         # Get DUST cost from action pricing
         dust_pricing = await db.fetch_one(
             "SELECT dust_cost FROM action_pricing WHERE action_slug = 'video_generate' AND is_active = true"
         )
-        
+
         if not dust_pricing:
             raise HTTPException(status_code=500, detail="Video generation pricing not configured")
-        
+
         dust_cost = dust_pricing["dust_cost"]
-        
+
         # Check and deduct DUST
         balance_result = await check_and_deduct_dust(
             user_id=user_id,
             amount=dust_cost,
             description=f"Video generation: {prompt[:50]}...",
-            metadata={"action": "video_generate", "model": model_id}
+            metadata={"action": "video_generate", "model": model_id},
         )
-        
+
         if not balance_result["success"]:
             raise HTTPException(
                 status_code=400,
                 detail={
                     "error": "Insufficient DUST balance",
                     "current_balance": balance_result.get("current_balance", 0),
-                    "required_amount": dust_cost
-                }
+                    "required_amount": dust_cost,
+                },
             )
 
         # Call content service for actual generation
         content_service_url = os.getenv("CONTENT_SERVICE_URL", "http://localhost:8006")
-        
+
         async with httpx.AsyncClient() as client:
             generation_response = await client.post(
                 f"{content_service_url}/videos/generate",
@@ -1065,28 +1067,33 @@ async def generate_video(
                     "resolution": resolution,
                     "aspect_ratio": aspect_ratio,
                     "reference_person": reference_person,
-                    "camera_fixed": camera_fixed
+                    "camera_fixed": camera_fixed,
                 },
-                headers={"Authorization": f"Bearer {current_user.token}" if hasattr(current_user, 'token') else {}},
-                timeout=300.0  # 5 minute timeout for video generation
+                headers={
+                    "Authorization": f"Bearer {current_user.token}"
+                    if hasattr(current_user, "token")
+                    else {}
+                },
+                timeout=300.0,  # 5 minute timeout for video generation
             )
-            
+
             if generation_response.status_code != 200:
                 # Refund DUST if generation fails
                 from shared.ledger_client import add_dust
+
                 await add_dust(
                     user_id=user_id,
                     amount=dust_cost,
                     description=f"Refund for failed video generation: {prompt[:50]}...",
-                    metadata={"action": "video_generate_refund", "model": model_id}
+                    metadata={"action": "video_generate_refund", "model": model_id},
                 )
-                
+
                 error_detail = generation_response.json() if generation_response.content else {}
                 raise HTTPException(
                     status_code=generation_response.status_code,
-                    detail=error_detail.get("detail", "Video generation failed")
+                    detail=error_detail.get("detail", "Video generation failed"),
                 )
-            
+
             result = generation_response.json()
 
         # Log usage for analytics
@@ -1115,20 +1122,22 @@ async def generate_video(
             "completed",
             False,  # was_fallback
             None,  # fallback_reason
-            json.dumps({
-                "action": "video_generate",
-                "duration": duration,
-                "resolution": resolution,
-                "aspect_ratio": aspect_ratio,
-                "has_reference": reference_person is not None
-            })
+            json.dumps(
+                {
+                    "action": "video_generate",
+                    "duration": duration,
+                    "resolution": resolution,
+                    "aspect_ratio": aspect_ratio,
+                    "has_reference": reference_person is not None,
+                }
+            ),
         )
 
         return {
             "success": True,
             "video": result["video"],
             "generation_info": result["generation_info"],
-            "new_dust_balance": balance_result["new_balance"]
+            "new_dust_balance": balance_result["new_balance"],
         }
 
     except HTTPException:
@@ -1146,6 +1155,7 @@ async def animate_image(
 ):
     """Animate an existing image into a video"""
     import httpx
+
     from shared.llm_pricing import calculate_video_cost
 
     try:
@@ -1162,48 +1172,48 @@ async def animate_image(
 
         # Map duration to seconds for cost calculation
         duration_seconds = 5 if duration == "short" else 10
-        
+
         # Map resolution for cost calculation
         cost_resolution = "1080p" if resolution == "hd_1080p" else "480p"
-        
+
         # Use SeeDance for image-to-video
         model_id = "bytedance/seedance-1-pro"
         cost = calculate_video_cost(model_id, 1, duration_seconds, cost_resolution)
 
         # Check DUST balance and deduct
         from shared.ledger_client import check_and_deduct_dust
-        
+
         # Get DUST cost from action pricing
         dust_pricing = await db.fetch_one(
             "SELECT dust_cost FROM action_pricing WHERE action_slug = 'video_animate' AND is_active = true"
         )
-        
+
         if not dust_pricing:
             raise HTTPException(status_code=500, detail="Video animation pricing not configured")
-        
+
         dust_cost = dust_pricing["dust_cost"]
-        
+
         # Check and deduct DUST
         balance_result = await check_and_deduct_dust(
             user_id=user_id,
             amount=dust_cost,
             description=f"Video animation: {prompt[:50]}...",
-            metadata={"action": "video_animate", "model": model_id}
+            metadata={"action": "video_animate", "model": model_id},
         )
-        
+
         if not balance_result["success"]:
             raise HTTPException(
                 status_code=400,
                 detail={
                     "error": "Insufficient DUST balance",
                     "current_balance": balance_result.get("current_balance", 0),
-                    "required_amount": dust_cost
-                }
+                    "required_amount": dust_cost,
+                },
             )
 
         # Call content service for actual animation
         content_service_url = os.getenv("CONTENT_SERVICE_URL", "http://localhost:8006")
-        
+
         async with httpx.AsyncClient() as client:
             animation_response = await client.post(
                 f"{content_service_url}/videos/animate",
@@ -1213,28 +1223,33 @@ async def animate_image(
                     "prompt": prompt,
                     "duration": duration,
                     "resolution": resolution,
-                    "camera_fixed": camera_fixed
+                    "camera_fixed": camera_fixed,
                 },
-                headers={"Authorization": f"Bearer {current_user.token}" if hasattr(current_user, 'token') else {}},
-                timeout=300.0  # 5 minute timeout for video animation
+                headers={
+                    "Authorization": f"Bearer {current_user.token}"
+                    if hasattr(current_user, "token")
+                    else {}
+                },
+                timeout=300.0,  # 5 minute timeout for video animation
             )
-            
+
             if animation_response.status_code != 200:
                 # Refund DUST if animation fails
                 from shared.ledger_client import add_dust
+
                 await add_dust(
                     user_id=user_id,
                     amount=dust_cost,
                     description=f"Refund for failed video animation: {prompt[:50]}...",
-                    metadata={"action": "video_animate_refund", "model": model_id}
+                    metadata={"action": "video_animate_refund", "model": model_id},
                 )
-                
+
                 error_detail = animation_response.json() if animation_response.content else {}
                 raise HTTPException(
                     status_code=animation_response.status_code,
-                    detail=error_detail.get("detail", "Video animation failed")
+                    detail=error_detail.get("detail", "Video animation failed"),
                 )
-            
+
             result = animation_response.json()
 
         # Log usage for analytics
@@ -1263,19 +1278,21 @@ async def animate_image(
             "completed",
             False,  # was_fallback
             None,  # fallback_reason
-            json.dumps({
-                "action": "video_animate",
-                "source_image": image_url,
-                "duration": duration,
-                "resolution": resolution
-            })
+            json.dumps(
+                {
+                    "action": "video_animate",
+                    "source_image": image_url,
+                    "duration": duration,
+                    "resolution": resolution,
+                }
+            ),
         )
 
         return {
             "success": True,
             "video": result["video"],
             "generation_info": result["generation_info"],
-            "new_dust_balance": balance_result["new_balance"]
+            "new_dust_balance": balance_result["new_balance"],
         }
 
     except HTTPException:

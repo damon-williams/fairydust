@@ -54,7 +54,7 @@ PRICING_CONFIG = {
         # Video models - per video generation
         "bytedance/seedance-1-pro": {
             "480p": {"cost_per_second": 0.03},
-            "1080p": {"cost_per_second": 0.15}
+            "1080p": {"cost_per_second": 0.15},
         },
         "minimax/video-01": {"cost": 0.50},  # Fixed cost per video
     },
@@ -395,20 +395,17 @@ def get_video_model_pricing(model_id: str, resolution: str = "1080p") -> dict:
         return {"cost": 0.10, "type": "fixed"}
 
     model_pricing = pricing_config["video"][model_id]
-    
+
     if model_id == "bytedance/seedance-1-pro":
         if resolution not in model_pricing:
             resolution = "1080p"
         return {
             "cost_per_second": model_pricing[resolution]["cost_per_second"],
             "type": "per_second",
-            "resolution": resolution
+            "resolution": resolution,
         }
     elif model_id == "minimax/video-01":
-        return {
-            "cost": model_pricing["cost"],
-            "type": "fixed"
-        }
+        return {"cost": model_pricing["cost"], "type": "fixed"}
     else:
         return model_pricing
 
@@ -431,20 +428,17 @@ async def get_video_model_pricing_async(model_id: str, resolution: str = "1080p"
         return {"cost": 0.10, "type": "fixed"}
 
     model_pricing = pricing_config["video"][model_id]
-    
+
     if model_id == "bytedance/seedance-1-pro":
         if resolution not in model_pricing:
             resolution = "1080p"
         return {
             "cost_per_second": model_pricing[resolution]["cost_per_second"],
             "type": "per_second",
-            "resolution": resolution
+            "resolution": resolution,
         }
     elif model_id == "minimax/video-01":
-        return {
-            "cost": model_pricing["cost"],
-            "type": "fixed"
-        }
+        return {"cost": model_pricing["cost"], "type": "fixed"}
     else:
         return model_pricing
 
@@ -480,21 +474,21 @@ def calculate_video_cost(
         return round(0.10 * video_count, 6)
 
     model_pricing = pricing_config["video"][model_id]
-    
+
     # Handle SeeDance-1-Pro duration and resolution-based pricing
     if model_id == "bytedance/seedance-1-pro":
         if resolution not in model_pricing:
             logger.warning(f"Unknown resolution '{resolution}' for {model_id}, using 1080p pricing")
             resolution = "1080p"
-        
+
         cost_per_second = model_pricing[resolution]["cost_per_second"]
         total_cost = cost_per_second * duration_seconds * video_count
-    
+
     # Handle MiniMax Video-01 fixed pricing
     elif model_id == "minimax/video-01":
         model_cost = model_pricing["cost"]
         total_cost = model_cost * video_count
-    
+
     # Handle unknown model structure
     else:
         if "cost" in model_pricing:
@@ -502,7 +496,7 @@ def calculate_video_cost(
         else:
             logger.warning(f"Unknown pricing structure for '{model_id}', using default cost")
             return round(0.10 * video_count, 6)
-    
+
     return round(total_cost, 6)
 
 

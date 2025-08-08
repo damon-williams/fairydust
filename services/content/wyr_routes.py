@@ -466,7 +466,7 @@ def _normalize_question_for_duplicate_check(option_a: str, option_b: str) -> str
     # Remove extra whitespace and convert to lowercase
     a_clean = option_a.lower().strip()
     b_clean = option_b.lower().strip()
-    
+
     # Sort options alphabetically to handle reversed questions
     # e.g., "cats vs dogs" and "dogs vs cats" should be the same
     options = sorted([a_clean, b_clean])
@@ -483,16 +483,16 @@ async def _get_user_question_hashes(db: Database, user_id: uuid.UUID, limit: int
     """Get user's recent question hashes to avoid duplicates"""
     try:
         query = """
-            SELECT question_hash 
-            FROM user_question_history 
-            WHERE user_id = $1 
-            ORDER BY created_at DESC 
+            SELECT question_hash
+            FROM user_question_history
+            WHERE user_id = $1
+            ORDER BY created_at DESC
             LIMIT $2
         """
-        
+
         rows = await db.fetch_all(query, user_id, limit)
         return {row["question_hash"] for row in rows}
-        
+
     except Exception as e:
         print(f"⚠️ WYR_HISTORY: Error getting question history: {str(e)}", flush=True)
         # Return empty set if table doesn't exist yet or other error
@@ -500,10 +500,7 @@ async def _get_user_question_hashes(db: Database, user_id: uuid.UUID, limit: int
 
 
 async def _save_question_history(
-    db: Database, 
-    user_id: uuid.UUID, 
-    session_id: uuid.UUID, 
-    questions: list[QuestionObject]
+    db: Database, user_id: uuid.UUID, session_id: uuid.UUID, questions: list[QuestionObject]
 ) -> None:
     """Save questions to user's history for duplicate prevention"""
     try:
@@ -514,49 +511,51 @@ async def _save_question_history(
                 "question_number": question.question_number,
                 "option_a": question.option_a,
                 "option_b": question.option_b,
-                "category": question.category
+                "category": question.category,
             }
-            
+
             await db.execute(
                 """
-                INSERT INTO user_question_history 
-                (user_id, question_hash, question_content, game_session_id) 
+                INSERT INTO user_question_history
+                (user_id, question_hash, question_content, game_session_id)
                 VALUES ($1, $2, $3::jsonb, $4)
                 ON CONFLICT DO NOTHING
                 """,
                 user_id,
                 question_hash,
                 json.dumps(question_content),
-                session_id
+                session_id,
             )
-            
+
         print(f"✅ WYR_HISTORY: Saved {len(questions)} questions to history", flush=True)
-        
+
     except Exception as e:
         print(f"⚠️ WYR_HISTORY: Error saving question history: {str(e)}", flush=True)
         # Don't fail the game creation if history saving fails
 
 
 def _filter_duplicate_questions(
-    questions: list[QuestionObject], 
-    existing_hashes: set[str]
+    questions: list[QuestionObject], existing_hashes: set[str]
 ) -> list[QuestionObject]:
     """Filter out questions that user has seen before"""
     filtered_questions = []
     duplicates_found = 0
-    
+
     for question in questions:
         question_hash = _hash_question(question.option_a, question.option_b)
-        
+
         if question_hash not in existing_hashes:
             filtered_questions.append(question)
         else:
             duplicates_found += 1
-            print(f"🔄 WYR_DUPLICATE: Filtered duplicate question: {question.option_a} vs {question.option_b}", flush=True)
-    
+            print(
+                f"🔄 WYR_DUPLICATE: Filtered duplicate question: {question.option_a} vs {question.option_b}",
+                flush=True,
+            )
+
     if duplicates_found > 0:
         print(f"🔄 WYR_DUPLICATE: Filtered {duplicates_found} duplicate questions", flush=True)
-    
+
     return filtered_questions
 
 
@@ -743,7 +742,9 @@ async def _generate_questions_llm(
         age_context = await _get_user_age_context(db, user_id)
 
         # Build prompt with anti-duplicate instructions if user has history
-        prompt = _build_questions_prompt(game_length, category, custom_request, age_context, len(existing_hashes))
+        prompt = _build_questions_prompt(
+            game_length, category, custom_request, age_context, len(existing_hashes)
+        )
 
         # Get LLM model configuration from database/cache
         model_config = await _get_wyr_llm_model_config()
@@ -783,7 +784,7 @@ async def _generate_questions_llm(
 
         # Parse questions from response
         questions = _parse_questions_response(completion, category)
-        
+
         print(
             f"📝 WYR_LLM: Initially generated {len(questions)} questions",
             flush=True,
@@ -801,13 +802,18 @@ async def _generate_questions_llm(
         if len(questions) < game_length.value and len(existing_hashes) > 0:
             shortage = game_length.value - len(questions)
             print(f"⚠️ WYR_DUPLICATE: Need {shortage} more questions due to duplicates", flush=True)
-            
+
             # Generate additional questions with stronger anti-duplicate prompt
             try:
                 extra_prompt = _build_questions_prompt(
-                    GameLength(shortage), category, custom_request, age_context, len(existing_hashes), extra_creative=True
+                    GameLength(shortage),
+                    category,
+                    custom_request,
+                    age_context,
+                    len(existing_hashes),
+                    extra_creative=True,
                 )
-                
+
                 extra_completion, _ = await llm_client.generate_completion(
                     prompt=extra_prompt,
                     app_config=app_config,
@@ -816,14 +822,17 @@ async def _generate_questions_llm(
                     action=f"would-you-rather-{game_length.value}-extra",
                     request_metadata=request_metadata,
                 )
-                
+
                 extra_questions = _parse_questions_response(extra_completion, category)
                 extra_questions = _filter_duplicate_questions(extra_questions, existing_hashes)
-                
+
                 # Add the extras to our main list
                 questions.extend(extra_questions[:shortage])
-                print(f"✅ WYR_DUPLICATE: Added {len(extra_questions[:shortage])} extra questions", flush=True)
-                
+                print(
+                    f"✅ WYR_DUPLICATE: Added {len(extra_questions[:shortage])} extra questions",
+                    flush=True,
+                )
+
             except Exception as e:
                 print(f"⚠️ WYR_DUPLICATE: Failed to generate extra questions: {str(e)}", flush=True)
 
@@ -910,12 +919,12 @@ AGE APPROPRIATENESS: Content must be suitable for {age_context}"""
         creativity_level = "MAXIMUM" if extra_creative else "HIGH"
         base_prompt += f"""
 
-UNIQUENESS REQUIREMENT: This user has played {previous_question_count} previous questions. 
+UNIQUENESS REQUIREMENT: This user has played {previous_question_count} previous questions.
 Use {creativity_level} creativity to ensure all questions are completely different from typical "would you rather" questions.
 
 AVOID COMMON QUESTIONS: Stay away from obvious classics like:
 - Flying vs invisibility
-- Past vs future travel  
+- Past vs future travel
 - Mind reading vs telepathy
 - Unlimited money vs unlimited time
 - Famous vs rich
@@ -923,12 +932,12 @@ AVOID COMMON QUESTIONS: Stay away from obvious classics like:
 
 CREATIVITY STRATEGIES:
 - Combine unexpected concepts and scenarios
-- Create abstract or philosophical dilemmas  
+- Create abstract or philosophical dilemmas
 - Use specific situational contexts
 - Mix emotions, senses, and unusual abilities
 - Think of scenarios that make people pause and really think
 
-{f"EXTRA CREATIVE MODE: Push beyond normal boundaries with highly unusual, thought-provoking scenarios that most people have never considered." if extra_creative else ""}"""
+{"EXTRA CREATIVE MODE: Push beyond normal boundaries with highly unusual, thought-provoking scenarios that most people have never considered." if extra_creative else ""}"""
 
     # Add specific child-friendly guidance for family-friendly category or young audiences
     if category == GameCategory.FAMILY_FRIENDLY or "children" in age_context.lower():

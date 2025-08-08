@@ -7,7 +7,15 @@ echo "🚀 Building fairydust"
 echo "=================================="
 
 git add .
-git commit -m "new build"
+
+# Check if a commit message was provided as an argument
+if [ -n "$1" ]; then
+    echo "📝 Using custom commit message: $1"
+    git commit -m "$1"
+else
+    echo "📝 Using default commit message"
+    git commit -m "new build"
+fi
 
 echo ""
 echo "🚀 Changes committed successfully!"

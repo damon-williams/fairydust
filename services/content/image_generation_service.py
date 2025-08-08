@@ -28,37 +28,89 @@ class ImageGenerationService:
             # Get the Story app ID (which has image generation capabilities)
             STORY_APP_ID = "fairydust-story"
 
-            # Fetch from database using new normalized structure
+            # Fetch ALL enabled image models from database, ordered by priority
             db = await get_db()
-            config = await db.fetch_one(
+            models = await db.fetch_all(
                 """
-                SELECT parameters FROM app_model_configs
+                SELECT provider, model_id, parameters, priority
+                FROM app_model_configs
                 WHERE app_id = (SELECT id FROM apps WHERE slug = $1)
                 AND model_type = 'image'
                 AND is_enabled = true
+                ORDER BY COALESCE(priority, 999), created_at ASC
                 """,
                 STORY_APP_ID,
             )
 
-            if config and config["parameters"]:
-                # Parse the JSONB parameters field
-                params = parse_jsonb_field(
-                    config["parameters"], default={}, field_name="image_parameters"
-                )
-                return params
+            if models:
+                config_result = {
+                    "models": [],
+                    "standard_model": None,
+                    "reference_model": None,
+                    "fallback_models": [],
+                }
+
+                for i, model in enumerate(models):
+                    model_name = (
+                        f"{model['provider']}/{model['model_id']}"
+                        if model["provider"]
+                        else model["model_id"]
+                    )
+
+                    # Parse parameters for this model
+                    params = parse_jsonb_field(
+                        model["parameters"], default={}, field_name=f"image_parameters_{i}"
+                    )
+
+                    model_config = {
+                        "model": model_name,
+                        "provider": model["provider"],
+                        "model_id": model["model_id"],
+                        "priority": model.get("priority", 999),
+                        "parameters": params,
+                    }
+                    config_result["models"].append(model_config)
+
+                    # Determine model roles based on configuration or naming patterns
+                    model_lower = model_name.lower()
+                    if not config_result["standard_model"]:
+                        # First model is standard/primary
+                        config_result["standard_model"] = model_name
+                    elif "gen4" in model_lower or "runway" in model_lower:
+                        # Gen4 models are for reference people
+                        config_result["reference_model"] = model_name
+                    else:
+                        # Additional models are fallbacks
+                        config_result["fallback_models"].append(model_name)
+
+                # Set reference model default if not found
+                if not config_result["reference_model"]:
+                    config_result["reference_model"] = config_result["standard_model"]
+
+                print(f"✅ IMAGE_CONFIG: Loaded {len(models)} models from database")
+                print(f"   Primary: {config_result['standard_model']}")
+                print(f"   Reference: {config_result['reference_model']}")
+                print(f"   Fallbacks: {config_result['fallback_models']}")
+
+                return config_result
 
             # Return defaults if no config found
+            print("⚠️ IMAGE_CONFIG: No image models found in database, using defaults")
             return {
+                "models": [],
                 "standard_model": "black-forest-labs/flux-1.1-pro",
                 "reference_model": "runwayml/gen4-image",
+                "fallback_models": ["stability-ai/sdxl", "black-forest-labs/flux-schnell"],
             }
 
         except Exception as e:
             print(f"⚠️ IMAGE_MODEL_CONFIG: Error loading config: {e}")
             # Return defaults on error
             return {
+                "models": [],
                 "standard_model": "black-forest-labs/flux-1.1-pro",
                 "reference_model": "runwayml/gen4-image",
+                "fallback_models": ["stability-ai/sdxl", "black-forest-labs/flux-schnell"],
             }
 
     async def generate_image(
@@ -107,11 +159,47 @@ class ImageGenerationService:
                 model, prompt, style, image_size, reference_people
             )
         else:
-            # Use configured model for text-only generation
-            model = image_models.get("standard_model", "black-forest-labs/flux-1.1-pro")
-            return await self._generate_standard_replicate(
-                model, prompt, style, image_size, reference_people
+            # Use configured model for text-only generation with fallback support
+            primary_model = image_models.get("standard_model", "black-forest-labs/flux-1.1-pro")
+            fallback_models = image_models.get(
+                "fallback_models", ["stability-ai/sdxl", "black-forest-labs/flux-schnell"]
             )
+
+            # Try primary model first
+            try:
+                print(f"🎯 IMAGE_GENERATION: Attempting primary model: {primary_model}")
+                return await self._generate_standard_replicate(
+                    primary_model, prompt, style, image_size, reference_people
+                )
+            except Exception as e:
+                print(f"❌ IMAGE_GENERATION: Primary model {primary_model} failed: {str(e)}")
+
+                # Try fallback models
+                for fallback_model in fallback_models:
+                    try:
+                        print(f"🔄 IMAGE_GENERATION: Attempting fallback model: {fallback_model}")
+                        result = await self._generate_standard_replicate(
+                            fallback_model, prompt, style, image_size, reference_people
+                        )
+                        # Add fallback metadata
+                        url, metadata = result
+                        metadata["was_fallback"] = True
+                        metadata[
+                            "fallback_reason"
+                        ] = f"Primary model {primary_model} failed: {str(e)}"
+                        metadata["primary_model_attempted"] = primary_model
+                        return url, metadata
+                    except Exception as fallback_error:
+                        print(
+                            f"❌ IMAGE_GENERATION: Fallback model {fallback_model} also failed: {str(fallback_error)}"
+                        )
+                        continue
+
+                # All models failed
+                raise HTTPException(
+                    status_code=500,
+                    detail=f"All image generation models failed. Primary: {primary_model}, Fallbacks: {fallback_models}",
+                )
 
     async def _generate_standard_replicate(
         self,
@@ -126,7 +214,8 @@ class ImageGenerationService:
         # Detect model type for specific handling
         is_seedream = "seedream" in model.lower()  # ByteDance SeeDream-3 via Replicate
         is_flux = "flux" in model.lower()  # Black Forest Labs FLUX models
-        
+        is_sdxl = "sdxl" in model.lower()  # Stability AI SDXL
+
         print(f"🎭 REPLICATE GENERATION STARTING - Model: {model}")
         print(f"   Original prompt: {prompt}")
         print(f"   Style: {style.value}")
@@ -142,6 +231,16 @@ class ImageGenerationService:
                 ImageStyle.ABSTRACT: "abstract art, creative interpretation, modern artistic style",
                 ImageStyle.VINTAGE: "vintage style, retro aesthetic, classic photography, nostalgic",
                 ImageStyle.MODERN: "modern style, contemporary design, clean and minimalist",
+            }
+        elif is_sdxl:
+            # SDXL style optimization (more concise prompts work better)
+            style_prompts = {
+                ImageStyle.REALISTIC: "photorealistic, detailed, professional photo",
+                ImageStyle.ARTISTIC: "artistic painting, fine art style",
+                ImageStyle.CARTOON: "cartoon style, animated, colorful",
+                ImageStyle.ABSTRACT: "abstract art, modern composition",
+                ImageStyle.VINTAGE: "vintage photo, retro style, nostalgic",
+                ImageStyle.MODERN: "modern digital art, contemporary",
             }
         else:
             # FLUX and other models style optimization
@@ -176,6 +275,13 @@ class ImageGenerationService:
                 ImageSize.LARGE: {"width": 1024, "height": 1440, "aspect_ratio": "3:4"},
                 ImageSize.SQUARE: {"width": 1024, "height": 1024, "aspect_ratio": "1:1"},
             }
+        elif is_sdxl:
+            # SDXL optimal dimensions
+            size_map = {
+                ImageSize.STANDARD: {"width": 1024, "height": 1024},
+                ImageSize.LARGE: {"width": 1024, "height": 1536},  # 2:3 aspect ratio
+                ImageSize.SQUARE: {"width": 1024, "height": 1024},
+            }
         else:
             # FLUX and other models (FLUX max dimensions: 1440x1440)
             size_map = {
@@ -201,6 +307,21 @@ class ImageGenerationService:
             if dimensions.get("aspect_ratio") == "custom":
                 payload["input"]["width"] = dimensions["width"]
                 payload["input"]["height"] = dimensions["height"]
+        elif is_sdxl:
+            # SDXL specific parameters
+            payload = {
+                "input": {
+                    "prompt": enhanced_prompt,
+                    "width": dimensions["width"],
+                    "height": dimensions["height"],
+                    "num_outputs": 1,
+                    "scheduler": "DPMSolverMultistep",  # Fast and high quality
+                    "num_inference_steps": 25,  # Good balance of speed/quality
+                    "guidance_scale": 7.5,  # Standard guidance for SDXL
+                    "apply_watermark": False,
+                    "negative_prompt": "ugly, blurry, low quality, distorted, disfigured, deformed, glitch, noise, grainy, low resolution",
+                }
+            }
         else:
             # FLUX and other models - original parameter structure
             payload = {
@@ -340,9 +461,11 @@ class ImageGenerationService:
                         approach = "seedream_text_to_image"
                     elif is_flux:
                         approach = "flux_text_to_image"
+                    elif is_sdxl:
+                        approach = "sdxl_text_to_image"
                     else:
                         approach = "replicate_text_to_image"
-                    
+
                     metadata = {
                         "model_used": model,  # Use actual model name instead of hardcoded
                         "api_provider": "replicate",

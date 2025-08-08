@@ -1162,14 +1162,26 @@ class VideoGenerationInfo(BaseModel):
 
 class VideoGenerateResponse(BaseModel):
     success: bool = True
-    video: UserVideo
-    generation_info: VideoGenerationInfo
+    # Async job response fields
+    job_id: Optional[UUID] = None
+    status: Optional[str] = None
+    estimated_completion_seconds: Optional[int] = None
+    message: Optional[str] = None
+    # Completed job response fields (when video is ready)
+    video: Optional[UserVideo] = None
+    generation_info: Optional[VideoGenerationInfo] = None
 
 
 class VideoAnimateResponse(BaseModel):
     success: bool = True
-    video: UserVideo
-    generation_info: VideoGenerationInfo
+    # Async job response fields
+    job_id: Optional[UUID] = None
+    status: Optional[str] = None
+    estimated_completion_seconds: Optional[int] = None
+    message: Optional[str] = None
+    # Completed job response fields (when video is ready)
+    video: Optional[UserVideo] = None
+    generation_info: Optional[VideoGenerationInfo] = None
 
 
 class VideoListRequest(BaseModel):
@@ -1219,6 +1231,84 @@ class VideoErrorResponse(BaseModel):
     current_balance: Optional[int] = None
     required_amount: Optional[int] = None
     video_id: Optional[UUID] = None
+
+
+# Video Generation Job Models (Async Processing)
+class VideoJobStatus(str, Enum):
+    QUEUED = "queued"
+    STARTING = "starting"
+    PROCESSING = "processing"
+    COMPLETED = "completed"
+    FAILED = "failed"
+    CANCELLED = "cancelled"
+
+
+class VideoJobProgress(BaseModel):
+    phase: str  # "queued", "starting", "processing", "uploading", "completed"
+    estimated_percent: int = Field(..., ge=0, le=100)
+    elapsed_seconds: int
+    estimated_remaining_seconds: Optional[int] = None
+
+
+class VideoJobGenerationInfo(BaseModel):
+    generation_type: str  # "text_to_video" | "image_to_video"
+    model_used: Optional[str] = None
+    replicate_prediction_id: Optional[str] = None
+
+
+class VideoJobError(BaseModel):
+    code: str
+    message: str
+    details: Optional[str] = None
+
+
+# Request/Response Models
+class VideoJobStartResponse(BaseModel):
+    success: bool = True
+    job_id: UUID
+    status: VideoJobStatus
+    estimated_completion_seconds: int
+    created_at: datetime
+    generation_type: str
+
+
+class VideoJobStatusResponse(BaseModel):
+    success: bool = True
+    job_id: UUID
+    status: VideoJobStatus
+    progress: VideoJobProgress
+    generation_info: VideoJobGenerationInfo
+    created_at: datetime
+    updated_at: datetime
+
+
+class VideoJobResultResponse(BaseModel):
+    success: bool = True
+    job_id: UUID
+    status: VideoJobStatus
+    video: UserVideo
+    generation_info: VideoGenerationInfo
+
+
+class VideoJobResultInProgress(BaseModel):
+    success: bool = True
+    job_id: UUID
+    status: VideoJobStatus
+    message: str = "Video generation in progress"
+
+
+class VideoJobResultFailed(BaseModel):
+    success: bool = False
+    job_id: UUID
+    status: VideoJobStatus
+    error: VideoJobError
+
+
+class VideoJobCancelResponse(BaseModel):
+    success: bool = True
+    job_id: UUID
+    status: VideoJobStatus
+    message: str = "Job cancelled successfully"
 
 
 # Error Response Model

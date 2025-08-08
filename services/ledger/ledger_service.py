@@ -797,3 +797,105 @@ class LedgerService:
 
         finally:
             await self._release_balance_lock(user_id)
+
+    async def process_refund(
+        self,
+        user_id: UUID,
+        amount: int,
+        reason: str,
+        metadata: Optional[dict] = None,
+        idempotency_key: str = None,
+    ) -> TransactionResponse:
+        """Process a refund for failed generation or other service failures"""
+
+        # Check idempotency if key provided
+        if idempotency_key:
+            existing_tx_id = await self._check_idempotency(idempotency_key)
+            if existing_tx_id:
+                # Return existing transaction
+                tx = await self.db.fetch_one(
+                    "SELECT * FROM dust_transactions WHERE id = $1", existing_tx_id
+                )
+                if tx:
+                    tx_data = self._parse_transaction_data(tx)
+                    return TransactionResponse(
+                        transaction=Transaction(**tx_data),
+                        new_balance=await self.get_balance(user_id, use_cache=False),
+                        previous_balance=await self.get_balance(user_id, use_cache=False) - amount,
+                    )
+
+        # Acquire lock
+        lock_acquired = await self._acquire_balance_lock(user_id)
+        if not lock_acquired:
+            raise HTTPException(status_code=409, detail="Balance operation in progress")
+
+        try:
+            async with self.db.transaction() as conn:
+                # Get current balance
+                user = await conn.fetchrow(
+                    "SELECT id, dust_balance FROM users WHERE id = $1", user_id
+                )
+
+                if not user:
+                    raise HTTPException(status_code=404, detail="User not found")
+
+                current_balance = user["dust_balance"]
+                new_balance = current_balance + amount
+
+                # Update balance
+                await conn.execute(
+                    "UPDATE users SET dust_balance = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2",
+                    new_balance,
+                    user_id,
+                )
+
+                # Create refund transaction record
+                transaction_id = uuid4()
+                transaction = await conn.fetchrow(
+                    """
+                    INSERT INTO dust_transactions (
+                        id, user_id, amount, type, status, description, metadata, idempotency_key
+                    ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+                    RETURNING *
+                    """,
+                    transaction_id,
+                    user_id,
+                    amount,
+                    TransactionType.REFUND.value,
+                    TransactionStatus.COMPLETED.value,
+                    reason,
+                    json.dumps(metadata) if metadata else None,
+                    idempotency_key,
+                )
+
+                # Store idempotency key if provided
+                if idempotency_key:
+                    await self._store_idempotency(idempotency_key, transaction_id)
+
+                # Invalidate cache
+                await self.balance_cache.delete(str(user_id))
+
+                # Notify balance update
+                await self.redis.publish(
+                    f"balance_update:{user_id}",
+                    json.dumps(
+                        {
+                            "user_id": str(user_id),
+                            "old_balance": current_balance,
+                            "new_balance": new_balance,
+                            "transaction_id": str(transaction_id),
+                            "type": "refund",
+                        }
+                    ),
+                )
+
+                # Parse transaction data and return
+                transaction_data = self._parse_transaction_data(transaction)
+                return TransactionResponse(
+                    transaction=Transaction(**transaction_data),
+                    new_balance=new_balance,
+                    previous_balance=current_balance,
+                )
+
+        finally:
+            await self._release_balance_lock(user_id)

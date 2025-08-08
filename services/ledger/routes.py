@@ -21,6 +21,7 @@ from models import (
     PurchaseRequest,
     ReferralRewardGrantRequest,
     RefundRequest,
+    ServiceRefundRequest,
     TransactionList,
     TransactionResponse,
     TransactionType,
@@ -181,6 +182,26 @@ async def consume_dust(
     )
 
     return transaction
+
+
+@transaction_router.post("/refund", response_model=TransactionResponse)
+async def process_refund(
+    request: ServiceRefundRequest,
+    current_user: TokenData = Depends(get_current_user),
+    ledger: LedgerService = Depends(get_ledger_service),
+):
+    """Process a refund for failed generation or other service failures"""
+
+    # Only service-to-service calls or admin can process refunds
+    # For video generation failures, this would be called by content service
+
+    return await ledger.process_refund(
+        user_id=request.user_id,
+        amount=request.amount,
+        reason=request.reason,
+        metadata=request.metadata,
+        idempotency_key=request.idempotency_key,
+    )
 
 
 @transaction_router.post("/purchase", response_model=TransactionResponse)

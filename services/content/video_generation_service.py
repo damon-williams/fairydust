@@ -7,7 +7,13 @@ import time
 
 import httpx
 from fastapi import HTTPException
-from models import VideoGenerationType, VideoDuration, VideoResolution, VideoAspectRatio, VideoReferencePerson
+from models import (
+    VideoAspectRatio,
+    VideoDuration,
+    VideoGenerationType,
+    VideoReferencePerson,
+    VideoResolution,
+)
 
 
 class VideoGenerationService:
@@ -120,7 +126,7 @@ class VideoGenerationService:
         camera_fixed: bool,
     ) -> tuple[str, dict]:
         """Generate video using MiniMax Video-01 (text-to-video with reference person)"""
-        
+
         print(f"🎭 MINIMAX GENERATION STARTING - Model: {model}")
         print(f"   Original prompt: {prompt}")
         print(f"   Duration: {duration.value}")
@@ -161,7 +167,7 @@ class VideoGenerationService:
                     f"https://api.replicate.com/v1/models/{model}/predictions",
                     headers=headers,
                     json=payload,
-                    timeout=60.0,
+                    timeout=120.0,  # Extended for slower video generation requests
                 )
                 api_request_time = time.time() - api_request_start
                 print(f"⏱️ API_TIMING: Initial request took {api_request_time:.2f}s")
@@ -194,9 +200,9 @@ class VideoGenerationService:
             prediction_id = prediction["id"]
             print(f"✅ REPLICATE PREDICTION STARTED: {prediction_id}")
 
-        # Poll for completion
-        video_url = await self._poll_for_completion(prediction_id, model, max_wait_time=180)
-        
+        # Poll for completion (extended for character reference generations that can take 10+ minutes)
+        video_url = await self._poll_for_completion(prediction_id, model, max_wait_time=600)
+
         metadata = {
             "model_used": model,
             "api_provider": "replicate",
@@ -219,7 +225,7 @@ class VideoGenerationService:
         camera_fixed: bool,
     ) -> tuple[str, dict]:
         """Generate video using ByteDance SeeDance-1-Pro (text-to-video or image-to-video)"""
-        
+
         print(f"🎭 SEEDANCE GENERATION STARTING - Model: {model}")
         print(f"   Original prompt: {prompt}")
         print(f"   Duration: {duration.value}")
@@ -229,7 +235,7 @@ class VideoGenerationService:
 
         # Map duration to seconds
         duration_seconds = 5 if duration == VideoDuration.SHORT else 10
-        
+
         # Map resolution to SeeDance format
         seedance_resolution = "480p" if resolution == VideoResolution.SD_480P else "1080p"
 
@@ -268,7 +274,7 @@ class VideoGenerationService:
                     f"https://api.replicate.com/v1/models/{model}/predictions",
                     headers=headers,
                     json=payload,
-                    timeout=60.0,
+                    timeout=120.0,  # Extended for slower video generation requests
                 )
                 api_request_time = time.time() - api_request_start
                 print(f"⏱️ API_TIMING: Initial request took {api_request_time:.2f}s")
@@ -301,11 +307,13 @@ class VideoGenerationService:
             prediction_id = prediction["id"]
             print(f"✅ REPLICATE PREDICTION STARTED: {prediction_id}")
 
-        # Poll for completion (longer timeout for video generation)
-        video_url = await self._poll_for_completion(prediction_id, model, max_wait_time=300)
-        
-        generation_approach = "seedance_image_to_video" if source_image_url else "seedance_text_to_video"
-        
+        # Poll for completion (extended for generations that can take 10+ minutes)
+        video_url = await self._poll_for_completion(prediction_id, model, max_wait_time=600)
+
+        generation_approach = (
+            "seedance_image_to_video" if source_image_url else "seedance_text_to_video"
+        )
+
         metadata = {
             "model_used": model,
             "api_provider": "replicate",
@@ -320,13 +328,15 @@ class VideoGenerationService:
 
         return video_url, metadata
 
-    async def _poll_for_completion(self, prediction_id: str, model: str, max_wait_time: int = 180) -> str:
+    async def _poll_for_completion(
+        self, prediction_id: str, model: str, max_wait_time: int = 600
+    ) -> str:
         """Poll Replicate API for video generation completion"""
-        
+
         headers = {
             "Authorization": f"Token {self.replicate_api_token}",
         }
-        
+
         elapsed_time = 0
         poll_start_time = time.time()
         poll_count = 0
@@ -378,14 +388,27 @@ class VideoGenerationService:
 
                 elif status == "failed":
                     error_msg = result.get("error", "Unknown generation error")
+                    logs = result.get("logs", "")
 
                     print(f"❌ REPLICATE PREDICTION FAILED: {prediction_id}")
                     print(f"   Model: {model}")
                     print(f"   Error Message: {error_msg}")
+                    print(f"   Logs: {logs}")
                     print(f"   Full Result: {result}")
 
+                    # Build detailed error message
+                    detailed_error = error_msg
+                    if not error_msg or error_msg.strip() == "":
+                        detailed_error = "Video generation failed (no error message from service)"
+                        if logs:
+                            detailed_error += f". Logs: {logs[-500:]}"  # Last 500 chars
+
+                    # Add model-specific context for common issues
+                    if model == "minimax/video-01":
+                        detailed_error += ". Note: This was a text-to-video generation with character reference using MiniMax model."
+
                     raise HTTPException(
-                        status_code=500, detail=f"Video generation failed: {error_msg}"
+                        status_code=500, detail=f"Video generation failed: {detailed_error}"
                     )
 
         # Timeout

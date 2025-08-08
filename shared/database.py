@@ -618,7 +618,7 @@ async def create_tables():
         );
 
         CREATE INDEX IF NOT EXISTS idx_global_fallback_models_type ON global_fallback_models(model_type);
-        
+
         -- Migrate existing global_fallback_models table to simplified structure
         -- Drop old columns that are no longer needed
         ALTER TABLE global_fallback_models DROP COLUMN IF EXISTS primary_provider;
@@ -627,11 +627,11 @@ async def create_tables():
         ALTER TABLE global_fallback_models DROP COLUMN IF EXISTS fallback_model_id;
         ALTER TABLE global_fallback_models DROP COLUMN IF EXISTS trigger_condition;
         ALTER TABLE global_fallback_models DROP COLUMN IF EXISTS priority;
-        
+
         -- Add new simplified columns
         ALTER TABLE global_fallback_models ADD COLUMN IF NOT EXISTS provider VARCHAR(50);
         ALTER TABLE global_fallback_models ADD COLUMN IF NOT EXISTS model_id VARCHAR(200);
-        
+
         -- Update any NULL values in new columns (shouldn't happen with new structure, but just in case)
         UPDATE global_fallback_models SET provider = 'anthropic' WHERE provider IS NULL AND model_type = 'text';
         UPDATE global_fallback_models SET model_id = 'claude-3-5-haiku-20241022' WHERE model_id IS NULL AND model_type = 'text';
@@ -639,7 +639,7 @@ async def create_tables():
         UPDATE global_fallback_models SET model_id = 'black-forest-labs/flux-schnell' WHERE model_id IS NULL AND model_type = 'image';
         UPDATE global_fallback_models SET provider = 'runwayml' WHERE provider IS NULL AND model_type = 'video';
         UPDATE global_fallback_models SET model_id = 'runwayml/gen4-video' WHERE model_id IS NULL AND model_type = 'video';
-        
+
         -- Make the columns NOT NULL after setting defaults
         ALTER TABLE global_fallback_models ALTER COLUMN provider SET NOT NULL;
         ALTER TABLE global_fallback_models ALTER COLUMN model_id SET NOT NULL;
@@ -1668,7 +1668,7 @@ async def create_tables():
         -- Composite indexes for analytics queries
         CREATE INDEX IF NOT EXISTS idx_ai_usage_logs_analytics ON ai_usage_logs(model_type, provider, created_at);
         CREATE INDEX IF NOT EXISTS idx_ai_usage_logs_app_analytics ON ai_usage_logs(app_id, model_type, created_at);
-        
+
         -- Add missing prompt_text column for existing deployments
         ALTER TABLE ai_usage_logs ADD COLUMN IF NOT EXISTS prompt_text TEXT;
     """
@@ -1727,6 +1727,77 @@ async def create_tables():
             request_metadata,
             created_at
         FROM ai_usage_logs;
+    """
+    )
+
+    # Video Generation Jobs table for async video processing
+    await db.execute_schema(
+        """
+        CREATE TABLE IF NOT EXISTS video_generation_jobs (
+            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            status VARCHAR(20) NOT NULL DEFAULT 'queued',
+            generation_type VARCHAR(20) NOT NULL, -- 'text_to_video' | 'image_to_video'
+
+            -- Input parameters (stored as JSONB for flexibility)
+            input_parameters JSONB NOT NULL,
+
+            -- Progress tracking
+            replicate_prediction_id VARCHAR(100),
+            replicate_status VARCHAR(20), -- 'starting' | 'processing' | 'succeeded' | 'failed'
+            estimated_completion_seconds INT DEFAULT 180,
+
+            -- Results
+            video_id UUID, -- FK to user_videos table when completed
+            video_url TEXT,
+            thumbnail_url TEXT,
+            generation_metadata JSONB,
+
+            -- Error handling
+            error_code VARCHAR(50),
+            error_message TEXT,
+            error_details JSONB,
+
+            -- Timestamps
+            created_at TIMESTAMP DEFAULT NOW(),
+            updated_at TIMESTAMP DEFAULT NOW(),
+            completed_at TIMESTAMP,
+
+            -- Constraints
+            CONSTRAINT valid_status CHECK (status IN ('queued', 'starting', 'processing', 'completed', 'failed', 'cancelled')),
+            CONSTRAINT valid_generation_type CHECK (generation_type IN ('text_to_video', 'image_to_video'))
+        );
+
+        -- Indexes for efficient queries
+        CREATE INDEX IF NOT EXISTS idx_video_jobs_user_id ON video_generation_jobs(user_id);
+        CREATE INDEX IF NOT EXISTS idx_video_jobs_status ON video_generation_jobs(status);
+        CREATE INDEX IF NOT EXISTS idx_video_jobs_created_at ON video_generation_jobs(created_at DESC);
+        CREATE INDEX IF NOT EXISTS idx_video_jobs_replicate_id ON video_generation_jobs(replicate_prediction_id);
+        CREATE INDEX IF NOT EXISTS idx_video_jobs_user_status ON video_generation_jobs(user_id, status);
+
+        -- Function to automatically update updated_at timestamp (only create if not exists)
+        DO $$
+        BEGIN
+            IF NOT EXISTS (SELECT 1 FROM pg_proc WHERE proname = 'update_updated_at_column') THEN
+                CREATE FUNCTION update_updated_at_column()
+                RETURNS TRIGGER AS $trigger$
+                BEGIN
+                    NEW.updated_at = NOW();
+                    RETURN NEW;
+                END;
+                $trigger$ language 'plpgsql';
+            END IF;
+        END $$;
+
+        -- Trigger to auto-update updated_at (only create if not exists)
+        DO $$
+        BEGIN
+            IF NOT EXISTS (SELECT 1 FROM pg_trigger WHERE tgname = 'update_video_jobs_updated_at') THEN
+                CREATE TRIGGER update_video_jobs_updated_at
+                    BEFORE UPDATE ON video_generation_jobs
+                    FOR EACH ROW EXECUTE PROCEDURE update_updated_at_column();
+            END IF;
+        END $$;
     """
     )
 
