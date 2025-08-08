@@ -180,7 +180,7 @@ class VideoBackgroundProcessor:
                 "duration": duration.value,
                 "resolution": resolution.value,
                 "aspect_ratio": aspect_ratio.value,
-                "generation_type": generation_type,
+                "generation_type": generation_type,  # Already a string from database
                 "model_used": generation_metadata.get("model_used"),
                 "generation_time_ms": generation_metadata.get("generation_time_ms"),
                 "replicate_prediction_id": generation_metadata.get("prediction_id"),
@@ -201,7 +201,7 @@ class VideoBackgroundProcessor:
                 final_video_url,
                 thumbnail_url,
                 input_params["prompt"],
-                generation_type.value,  # generation_type
+                generation_type,  # Already a string from database
                 input_params.get("source_image_url"),  # source_image_url (for image-to-video)
                 5 if duration.value == "short" else (10 if duration.value == "medium" else 15),  # Convert to seconds
                 resolution.value,
