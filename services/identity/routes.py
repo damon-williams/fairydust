@@ -425,6 +425,20 @@ async def verify_otp(
     access_token = await auth_service.create_access_token(token_data)
     refresh_token = await auth_service.create_refresh_token(token_data)
 
+    # Log comprehensive login response for daily login bonus debugging
+    print(f"🚀 LOGIN_RESPONSE (OTP): User {user['fairyname']} ({user['id']}) login details:")
+    print(f"   - is_new_user: {is_new_user}")
+    print(f"   - is_onboarding_completed: {user.get('is_onboarding_completed', False)}")
+    print(f"   - last_login_date: {user.get('last_login_date')}")
+    print(f"   - current_dust_balance: {user.get('dust_balance', 0)}")
+    print(f"   - is_bonus_eligible (calculated): {is_bonus_eligible}")
+    print(f"   - daily_bonus_eligible (final): {daily_bonus_value}")
+    print(f"   - daily_bonus_amount: {daily_bonus_amount}")
+    print(f"   - initial_dust_amount: {initial_dust_amount}")
+    print(f"   - is_first_login_today: {is_bonus_eligible}")
+    print(f"   - auth_provider: {user.get('auth_provider', 'unknown')}")
+    print(f"   - created_at: {user.get('created_at')}")
+
     return AuthResponse(
         user=User(**user_dict),
         token=Token(access_token=access_token, refresh_token=refresh_token, expires_in=3600),
@@ -625,6 +639,23 @@ async def oauth_login(
 
     access_token = await auth_service.create_access_token(token_data)
     refresh_token = await auth_service.create_refresh_token(token_data)
+
+    # Log comprehensive login response for daily login bonus debugging
+    print(f"🚀 LOGIN_RESPONSE (OAuth-{provider.upper()}): User {user['fairyname']} ({user['id']}) login details:")
+    print(f"   - is_new_user: {is_new_user}")
+    print(f"   - is_onboarding_completed: {user.get('is_onboarding_completed', False)}")
+    print(f"   - last_login_date: {user.get('last_login_date')}")
+    print(f"   - current_dust_balance: {user.get('dust_balance', 0)}")
+    print(f"   - is_bonus_eligible (calculated): {is_bonus_eligible}")
+    print(f"   - daily_bonus_eligible (final): {daily_bonus_value}")
+    print(f"   - daily_bonus_amount: {daily_bonus_amount}")
+    print(f"   - initial_dust_amount: {initial_dust_amount}")
+    print(f"   - is_first_login_today: {is_bonus_eligible}")
+    print(f"   - auth_provider: {user.get('auth_provider', 'unknown')}")
+    print(f"   - created_at: {user.get('created_at')}")
+    print(f"   - provider_user_id: {user_info['provider_id']}")
+    print(f"   - extracted_name: {user_info.get('name')}")
+    print(f"   - extracted_email: {user_info.get('email')}")
 
     # Extract name and DOB for frontend pre-population
     extracted_name = user_info.get("name") if user_info else None
@@ -1272,16 +1303,11 @@ async def get_people_in_my_life(
             type_filter,
         )
     else:
-        print(f"🐾 PEOPLE_API: Getting all people and pets for user {user_id}")
         people = await db.fetch_all(
             "SELECT * FROM people_in_my_life WHERE user_id = $1 ORDER BY created_at ASC", user_id
         )
 
     result = [PersonInMyLife(**person) for person in people]
-    print(
-        f"🐾 PEOPLE_API: Returning {len(result)} entries ({len([p for p in result if p.entry_type.value == 'person'])} people, {len([p for p in result if p.entry_type.value == 'pet'])} pets)"
-    )
-
     return result
 
 
