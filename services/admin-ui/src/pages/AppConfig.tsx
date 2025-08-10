@@ -57,10 +57,12 @@ interface AppModelConfig {
     };
   };
   
-  // Video Configuration (future)
+  // Video Configuration
   video_config?: {
     standard_model: string;
     parameters: {
+      text_to_video_model?: string;
+      image_to_video_model?: string;
       duration: number;
       fps: number;
       resolution: string;
@@ -167,11 +169,13 @@ export function AppConfig() {
           } : undefined,
           
           video_config: videoConfig ? {
-            standard_model: videoConfig.parameters?.standard_model || 'runwayml/gen4-video',
+            standard_model: videoConfig.parameters?.text_to_video_model || videoConfig.parameters?.standard_model || 'minimax/video-01',
             parameters: {
-              duration: 5,
-              fps: 24,
-              resolution: '1080p'
+              text_to_video_model: videoConfig.parameters?.text_to_video_model || videoConfig.parameters?.standard_model || 'minimax/video-01',
+              image_to_video_model: videoConfig.parameters?.image_to_video_model || 'bytedance/seedance-1-pro',
+              duration: videoConfig.parameters?.duration || 5,
+              fps: videoConfig.parameters?.fps || 24,
+              resolution: videoConfig.parameters?.resolution || '1080p'
             }
           } : undefined,
         });
@@ -276,10 +280,11 @@ export function AppConfig() {
       // Save video model configuration (when enabled)
       if (config.video_models_enabled && config.video_config) {
         const videoPayload = {
-          provider: 'runwayml',
+          provider: 'replicate',
           model_id: config.video_config.standard_model,
           parameters: {
-            standard_model: config.video_config.standard_model,
+            text_to_video_model: config.video_config.parameters?.text_to_video_model || config.video_config.standard_model,
+            image_to_video_model: config.video_config.parameters?.image_to_video_model || 'bytedance/seedance-1-pro',
             duration: config.video_config.parameters.duration,
             fps: config.video_config.parameters.fps,
             resolution: config.video_config.parameters.resolution,
@@ -352,8 +357,10 @@ export function AppConfig() {
           newConfig.video_models_enabled = enabled;
           if (enabled && !newConfig.video_config) {
             newConfig.video_config = {
-              standard_model: 'runwayml/gen4-video',
+              standard_model: 'minimax/video-01',
               parameters: {
+                text_to_video_model: 'minimax/video-01',
+                image_to_video_model: 'bytedance/seedance-1-pro',
                 duration: 5,
                 fps: 24,
                 resolution: '1080p'
@@ -678,25 +685,124 @@ export function AppConfig() {
         </Card>
 
         {/* Video Models */}
-        <Card className={`${config.video_models_enabled ? 'ring-2 ring-green-200' : ''} opacity-60`}>
+        <Card className={config.video_models_enabled ? 'ring-2 ring-green-200' : ''}>
           <CardHeader>
             <div className="flex items-center justify-between">
               <CardTitle className="flex items-center gap-2">
                 <Video className="h-5 w-5 text-green-600" />
                 Video Models
-                <Badge variant="secondary" className="text-xs">Coming Soon</Badge>
               </CardTitle>
               <Switch
                 checked={config.video_models_enabled}
                 onCheckedChange={(checked) => handleToggleModelType('video', checked)}
-                disabled={true}
               />
             </div>
           </CardHeader>
-          <CardContent>
-            <p className="text-sm text-slate-500">
-              Video generation models will be available soon. Configure video AI models for this app.
-            </p>
+          <CardContent className="space-y-4">
+            {config.video_models_enabled && config.video_config ? (
+              <>
+                <div className="space-y-2">
+                  <Label>Text-to-Video Model</Label>
+                  <Select 
+                    value={config.video_config.standard_model}
+                    onValueChange={(value) => setConfig(prev => ({
+                      ...prev,
+                      video_config: prev.video_config ? {
+                        ...prev.video_config,
+                        standard_model: value
+                      } : undefined
+                    }))}
+                  >
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="minimax/video-01">MiniMax Video-01 ($0.100 per video)</SelectItem>
+                      <SelectItem value="bytedance/seedance-1-pro">ByteDance SeeDance-1-Pro ($0.080 per video)</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div className="space-y-2">
+                  <Label>Image-to-Video Model</Label>
+                  <Select 
+                    value={config.video_config.parameters?.image_to_video_model || 'bytedance/seedance-1-pro'}
+                    onValueChange={(value) => setConfig(prev => ({
+                      ...prev,
+                      video_config: prev.video_config ? {
+                        ...prev.video_config,
+                        parameters: {
+                          ...prev.video_config.parameters,
+                          image_to_video_model: value
+                        }
+                      } : undefined
+                    }))}
+                  >
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="bytedance/seedance-1-pro">ByteDance SeeDance-1-Pro ($0.080 per video)</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div className="grid grid-cols-2 gap-2">
+                  <div className="space-y-2">
+                    <Label>Default Duration</Label>
+                    <Select 
+                      value={config.video_config.parameters.duration.toString()}
+                      onValueChange={(value) => setConfig(prev => ({
+                        ...prev,
+                        video_config: prev.video_config ? {
+                          ...prev.video_config,
+                          parameters: {
+                            ...prev.video_config.parameters,
+                            duration: parseInt(value)
+                          }
+                        } : undefined
+                      }))}
+                    >
+                      <SelectTrigger>
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="5">5 seconds</SelectItem>
+                        <SelectItem value="10">10 seconds</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Resolution</Label>
+                    <Select 
+                      value={config.video_config.parameters.resolution}
+                      onValueChange={(value) => setConfig(prev => ({
+                        ...prev,
+                        video_config: prev.video_config ? {
+                          ...prev.video_config,
+                          parameters: {
+                            ...prev.video_config.parameters,
+                            resolution: value
+                          }
+                        } : undefined
+                      }))}
+                    >
+                      <SelectTrigger>
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="720p">720p HD</SelectItem>
+                        <SelectItem value="1080p">1080p Full HD</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
+              </>
+            ) : (
+              <p className="text-sm text-slate-500">
+                Enable video models to configure AI video generation for this app.
+              </p>
+            )}
           </CardContent>
         </Card>
 

@@ -42,9 +42,11 @@ export function RecentDustActivity({ recentActivity }: RecentDustActivityProps) 
       case 'activity': return 'bg-green-100 text-green-800';
       case 'restaurant': return 'bg-purple-100 text-purple-800';
       case 'image': return 'bg-pink-100 text-pink-800';
+      case 'video': return 'bg-red-100 text-red-800';
       case 'inspiration': return 'bg-yellow-100 text-yellow-800';
       case 'fortune': return 'bg-indigo-100 text-indigo-800';
       case 'wyr': return 'bg-teal-100 text-teal-800';
+      case 'grant': return 'bg-emerald-100 text-emerald-800';
       default: return 'bg-gray-100 text-gray-800';
     }
   };
@@ -54,6 +56,11 @@ export function RecentDustActivity({ recentActivity }: RecentDustActivityProps) 
       return activity.activity_type;
     }
     
+    // Handle grants vs consumption
+    if (activity.type === 'grant' || activity.amount > 0) {
+      return 'grant';
+    }
+    
     // Determine activity type from description for dashboard endpoint
     const description = activity.description.toLowerCase();
     if (description.includes('recipe')) return 'recipe';
@@ -61,6 +68,7 @@ export function RecentDustActivity({ recentActivity }: RecentDustActivityProps) 
     if (description.includes('activity') || description.includes('search')) return 'activity';
     if (description.includes('restaurant')) return 'restaurant';
     if (description.includes('image')) return 'image';
+    if (description.includes('video')) return 'video';
     if (description.includes('inspiration') || description.includes('inspire')) return 'inspiration';
     if (description.includes('fortune')) return 'fortune';
     if (description.includes('would you rather') || description.includes('wyr')) return 'wyr';
@@ -115,7 +123,12 @@ export function RecentDustActivity({ recentActivity }: RecentDustActivityProps) 
                   </div>
                 </div>
                 <div className="text-right">
-                  <p className="text-sm font-semibold text-red-600">
+                  <p className={`text-sm font-semibold ${
+                    (activity.type === 'grant' || activity.amount > 0) 
+                      ? 'text-green-600' 
+                      : 'text-red-600'
+                  }`}>
+                    {(activity.type === 'grant' || activity.amount > 0) ? '+' : ''}
                     {Math.abs(activity.amount || 0)} DUST
                   </p>
                   <p className="text-xs text-slate-500 mt-1">
