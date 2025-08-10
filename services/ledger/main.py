@@ -1,4 +1,5 @@
 # services/ledger/main.py
+import logging
 import os
 from contextlib import asynccontextmanager
 
@@ -9,6 +10,9 @@ from fastapi.middleware.cors import CORSMiddleware
 
 # Load environment variables
 load_dotenv()
+
+# Configure logging to reduce noise from balance checks
+logging.getLogger("uvicorn.access").setLevel(logging.WARNING)
 
 # Import our routes and dependencies
 from background import start_background_tasks, stop_background_tasks
@@ -68,4 +72,5 @@ if __name__ == "__main__":
         host="0.0.0.0",
         port=port,
         reload=os.getenv("ENVIRONMENT", "development") == "development",
+        access_log=False,  # Disable access logging to reduce noise
     )
