@@ -1348,7 +1348,7 @@ def _scrub_completed_session(session: WyrGameSession) -> WyrGameSession:
                     id=question.id,
                     question_number=question.question_number,
                     option_a=question.option_a,  # Show chosen text
-                    option_b="",  # Hide unchosen option
+                    option_b="[Hidden]",  # Hide unchosen option with placeholder
                     category=question.category,
                 )
             elif chosen_option == "b":
@@ -1356,7 +1356,7 @@ def _scrub_completed_session(session: WyrGameSession) -> WyrGameSession:
                 scrubbed_question = QuestionObject(
                     id=question.id,
                     question_number=question.question_number,
-                    option_a="",  # Hide unchosen option
+                    option_a="[Hidden]",  # Hide unchosen option with placeholder
                     option_b=question.option_b,  # Show chosen text
                     category=question.category,
                 )
@@ -1365,8 +1365,8 @@ def _scrub_completed_session(session: WyrGameSession) -> WyrGameSession:
                 scrubbed_question = QuestionObject(
                     id=question.id,
                     question_number=question.question_number,
-                    option_a="",
-                    option_b="",
+                    option_a="[Not answered]",
+                    option_b="[Not answered]",
                     category=question.category,
                 )
 
