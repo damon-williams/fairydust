@@ -75,7 +75,7 @@ async def update_last_login_for_bonus(db, user_id: str, current_time: datetime) 
         db,
         """
         UPDATE users
-        SET last_login_date = $1, updated_at = CURRENT_TIMESTAMP
+        SET last_login_date = $1, total_logins = total_logins + 1, updated_at = CURRENT_TIMESTAMP
         WHERE id = $2
         """,
         current_time,

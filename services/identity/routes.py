@@ -339,7 +339,7 @@ async def verify_otp(
     user = await db.fetch_one(
         f"""SELECT id, fairyname, email, phone, is_admin,
                   first_name, birth_date, is_onboarding_completed, dust_balance, auth_provider,
-                  last_login_date,
+                  last_login_date, total_logins,
                   created_at, updated_at
            FROM users WHERE {identifier_type} = $1""",
         otp_verify.identifier,
@@ -747,7 +747,7 @@ async def get_current_user_profile(
     user = await db.fetch_one(
         """SELECT id, fairyname, email, phone, is_admin,
                   first_name, birth_date, is_onboarding_completed, dust_balance, auth_provider,
-                  last_login_date, avatar_url, avatar_uploaded_at, avatar_size_bytes,
+                  last_login_date, total_logins, avatar_url, avatar_uploaded_at, avatar_size_bytes,
                   created_at, updated_at
            FROM users WHERE id = $1""",
         current_user.user_id,

@@ -86,6 +86,7 @@ class User(BaseModel):
     birth_date: Optional[date] = None
     is_onboarding_completed: bool = False
     last_login_date: Optional[datetime] = None
+    total_logins: int = 0
     auth_provider: Optional[str] = None
     avatar_url: Optional[str] = None
     avatar_uploaded_at: Optional[datetime] = None
