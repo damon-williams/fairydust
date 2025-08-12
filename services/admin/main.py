@@ -47,7 +47,7 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(
     title="fairydust Admin Portal",
-    version="2.17.0",
+    version="2.17.1",
     description="Admin portal for fairydust platform with system configuration management",
     lifespan=lifespan,
 )

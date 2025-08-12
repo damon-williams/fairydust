@@ -54,7 +54,7 @@ export function RecentActivity({ recentUsers }: RecentActivityProps) {
                     )}
                   </div>
                   <p className="text-xs text-slate-500 mt-1">
-                    {formatDistanceToNow(new Date(user.created_at), { addSuffix: true })}
+                    {formatDistanceToNow(new Date(user.last_activity_at || user.created_at), { addSuffix: true })}
                   </p>
                 </div>
               </div>
