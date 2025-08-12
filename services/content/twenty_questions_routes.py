@@ -4,11 +4,7 @@ import random
 from uuid import UUID, uuid4
 
 from fastapi import APIRouter, Depends, HTTPException, status
-
-from shared.database import Database, get_db
-from shared.llm_client import llm_client
-
-from .models import (
+from models import (
     TwentyQuestionsAnswer,
     TwentyQuestionsAnswerRequest,
     TwentyQuestionsAnswerResponse,
@@ -24,6 +20,9 @@ from .models import (
     TwentyQuestionsStatus,
     TwentyQuestionsStatusResponse,
 )
+
+from shared.database import Database, get_db
+from shared.llm_client import llm_client
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
