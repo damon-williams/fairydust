@@ -641,7 +641,9 @@ async def oauth_login(
     refresh_token = await auth_service.create_refresh_token(token_data)
 
     # Log comprehensive login response for daily login bonus debugging
-    print(f"🚀 LOGIN_RESPONSE (OAuth-{provider.upper()}): User {user['fairyname']} ({user['id']}) login details:")
+    print(
+        f"🚀 LOGIN_RESPONSE (OAuth-{provider.upper()}): User {user['fairyname']} ({user['id']}) login details:"
+    )
     print(f"   - is_new_user: {is_new_user}")
     print(f"   - is_onboarding_completed: {user.get('is_onboarding_completed', False)}")
     print(f"   - last_login_date: {user.get('last_login_date')}")

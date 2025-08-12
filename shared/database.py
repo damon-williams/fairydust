@@ -1802,4 +1802,75 @@ async def create_tables():
     """
     )
 
+    # 20 Questions Game Tables
+    await db.execute_schema(
+        """
+        CREATE TABLE IF NOT EXISTS twenty_questions_games (
+            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            category VARCHAR(50) NOT NULL,
+            target_person_id UUID REFERENCES people_in_my_life(id) ON DELETE CASCADE,
+            target_person_name VARCHAR(100) NOT NULL,
+            status VARCHAR(20) NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'won', 'lost')),
+            questions_asked INTEGER DEFAULT 0,
+            questions_remaining INTEGER DEFAULT 20,
+            final_guess TEXT,
+            answer_revealed TEXT,
+            is_correct BOOLEAN,
+            created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_twenty_questions_games_user_id ON twenty_questions_games(user_id);
+        CREATE INDEX IF NOT EXISTS idx_twenty_questions_games_status ON twenty_questions_games(user_id, status);
+        CREATE INDEX IF NOT EXISTS idx_twenty_questions_games_created_at ON twenty_questions_games(created_at DESC);
+        CREATE INDEX IF NOT EXISTS idx_twenty_questions_games_target_person ON twenty_questions_games(target_person_id);
+    """
+    )
+
+    await db.execute_schema(
+        """
+        CREATE TABLE IF NOT EXISTS twenty_questions_history (
+            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            game_id UUID NOT NULL REFERENCES twenty_questions_games(id) ON DELETE CASCADE,
+            question_number INTEGER NOT NULL,
+            question_text TEXT NOT NULL,
+            answer TEXT NOT NULL CHECK (answer IN ('yes', 'no', 'sometimes', 'unknown')),
+            is_guess BOOLEAN DEFAULT FALSE,
+            created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_twenty_questions_history_game_id ON twenty_questions_history(game_id, question_number);
+        CREATE INDEX IF NOT EXISTS idx_twenty_questions_history_created_at ON twenty_questions_history(created_at DESC);
+    """
+    )
+
+    # Insert 20 Questions app if it doesn't exist
+    try:
+        await db.execute_schema(
+            """
+            INSERT INTO apps (
+                id, builder_id, name, slug, description, icon_url,
+                status, category, is_active, created_at, updated_at
+            )
+            SELECT
+                gen_random_uuid(),
+                (SELECT id FROM users WHERE is_builder = true LIMIT 1),
+                '20 Questions',
+                'fairydust-20-questions',
+                'Collaborative guessing game where AI thinks of someone in your life and you ask questions to figure out who',
+                NULL,
+                'approved',
+                'games',
+                true,
+                CURRENT_TIMESTAMP,
+                CURRENT_TIMESTAMP
+            WHERE NOT EXISTS (
+                SELECT 1 FROM apps WHERE slug = 'fairydust-20-questions'
+            );
+        """
+        )
+    except Exception as e:
+        logger.warning(f"20 Questions app creation failed (may already exist): {e}")
+
     logger.info("Database schema creation/update completed successfully")

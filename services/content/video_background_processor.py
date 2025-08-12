@@ -241,9 +241,9 @@ class VideoBackgroundProcessor:
             print(f"❌ BACKGROUND_PROCESSOR: Job {job_id} failed: {str(e)}")
             print(f"   Exception type: {type(e).__name__}")
             print(f"   Exception args: {e.args}")
-            
+
             # Log additional context for debugging
-            print(f"   Job details:")
+            print("   Job details:")
             print(f"     - Generation type: {generation_type}")
             print(f"     - User: {user_id}")
             print(f"     - Has reference person: {reference_person is not None}")
@@ -257,10 +257,12 @@ class VideoBackgroundProcessor:
             # Update job as failed
             error_code = "GENERATION_FAILED"
             error_message = f"Video generation failed: {str(e)}"
-            
+
             # If error message is empty, provide more context
             if not str(e).strip():
-                error_message = f"Video generation failed with {type(e).__name__} (no error message)"
+                error_message = (
+                    f"Video generation failed with {type(e).__name__} (no error message)"
+                )
 
             # Categorize common errors
             error_str = str(e).lower()
@@ -291,10 +293,12 @@ class VideoBackgroundProcessor:
                         "args": list(e.args) if e.args else [],
                         "generation_type": generation_type,
                         "has_reference_person": reference_person is not None,
-                        "reference_person_id": str(reference_person.person_id) if reference_person else None,
+                        "reference_person_id": str(reference_person.person_id)
+                        if reference_person
+                        else None,
                         "duration": duration.value,
                         "resolution": resolution.value,
-                        "prompt_length": len(input_params["prompt"])
+                        "prompt_length": len(input_params["prompt"]),
                     },
                 )
             except Exception as db_error:

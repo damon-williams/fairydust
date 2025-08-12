@@ -29,6 +29,7 @@ from recipe_routes import router as recipe_router
 from restaurant_routes import router as restaurant_router
 from routes import content_router
 from story_routes import router as story_router
+from twenty_questions_routes import router as twenty_questions_router
 from video_background_processor import video_background_processor
 from video_routes import video_router
 from wyr_routes import router as wyr_router
@@ -87,6 +88,7 @@ endpoint_limits = {
     "/apps/fortune-teller/generate": 50 * 1024,  # 50KB for fortune generation requests
     "/users/*/characters": 10 * 1024,  # 10KB for character management requests
     "/apps/would-you-rather/*": 20 * 1024,  # 20KB for would-you-rather requests
+    "/twenty-questions/*": 20 * 1024,  # 20KB for 20 questions game requests
     "/images/generate": 100 * 1024,  # 100KB for image generation requests
     "/images/*/regenerate": 100 * 1024,  # 100KB for image regeneration requests
 }
@@ -179,6 +181,7 @@ app.include_router(recipe_router, tags=["recipes-new"])
 app.include_router(fortune_router, tags=["fortune-teller"])
 app.include_router(character_router, tags=["characters"])
 app.include_router(wyr_router, tags=["would-you-rather"])
+app.include_router(twenty_questions_router, prefix="/twenty-questions", tags=["twenty-questions"])
 app.include_router(image_router, tags=["images"])
 app.include_router(video_router, prefix="/videos", tags=["videos"])
 

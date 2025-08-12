@@ -1311,6 +1311,114 @@ class VideoJobCancelResponse(BaseModel):
     message: str = "Job cancelled successfully"
 
 
+# 20 Questions Game Models
+class TwentyQuestionsCategory(str, Enum):
+    PEOPLE_I_KNOW = "people_i_know"
+
+
+class TwentyQuestionsStatus(str, Enum):
+    ACTIVE = "active"
+    WON = "won"
+    LOST = "lost"
+
+
+class TwentyQuestionsAnswer(str, Enum):
+    YES = "yes"
+    NO = "no"
+    SOMETIMES = "sometimes"
+    UNKNOWN = "unknown"
+
+
+class TwentyQuestionsStartRequest(BaseModel):
+    user_id: UUID
+    category: TwentyQuestionsCategory = TwentyQuestionsCategory.PEOPLE_I_KNOW
+
+
+class TwentyQuestionsQuestionRequest(BaseModel):
+    user_id: UUID
+    question: str = Field(..., min_length=1, max_length=200)
+
+
+class TwentyQuestionsAnswerRequest(BaseModel):
+    user_id: UUID
+    answer: TwentyQuestionsAnswer
+
+
+class TwentyQuestionsGuessRequest(BaseModel):
+    user_id: UUID
+    guess: str = Field(..., min_length=1, max_length=100)
+
+
+class TwentyQuestionsGameState(BaseModel):
+    game_id: UUID
+    user_id: UUID
+    category: str
+    target_person_name: str
+    status: TwentyQuestionsStatus
+    questions_asked: int
+    questions_remaining: int
+    final_guess: Optional[str] = None
+    answer_revealed: Optional[str] = None
+    is_correct: Optional[bool] = None
+    created_at: datetime
+    updated_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+class TwentyQuestionsHistoryEntry(BaseModel):
+    question_number: int
+    question_text: str
+    answer: TwentyQuestionsAnswer
+    is_guess: bool
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+class TwentyQuestionsStartResponse(BaseModel):
+    success: bool = True
+    game: TwentyQuestionsGameState
+    message: str = "Game started! Think of someone in your life and I'll try to guess who it is."
+
+
+class TwentyQuestionsQuestionResponse(BaseModel):
+    success: bool = True
+    game: TwentyQuestionsGameState
+    ai_question: str
+    question_number: int
+
+
+class TwentyQuestionsAnswerResponse(BaseModel):
+    success: bool = True
+    game: TwentyQuestionsGameState
+    next_question: Optional[str] = None
+    question_number: Optional[int] = None
+
+
+class TwentyQuestionsGuessResponse(BaseModel):
+    success: bool = True
+    game: TwentyQuestionsGameState
+    is_correct: bool
+    answer_revealed: str
+    message: str
+
+
+class TwentyQuestionsStatusResponse(BaseModel):
+    success: bool = True
+    game: TwentyQuestionsGameState
+    history: list[TwentyQuestionsHistoryEntry]
+
+
+class TwentyQuestionsErrorResponse(BaseModel):
+    success: bool = False
+    error: str
+    error_code: Optional[str] = None
+    game_id: Optional[UUID] = None
+
+
 # Error Response Model
 class ErrorResponse(BaseModel):
     error: dict

@@ -142,7 +142,7 @@ async def get_recent_users(
            WHERE u.is_active = true
            GROUP BY u.id, u.fairyname, u.email, u.phone, u.is_builder, u.is_admin, u.is_active,
                     u.dust_balance, u.auth_provider, u.total_logins, u.created_at, u.updated_at
-           ORDER BY last_activity_at DESC NULLS LAST, u.created_at DESC 
+           ORDER BY last_activity_at DESC NULLS LAST, u.created_at DESC
            LIMIT 10"""
     )
 
