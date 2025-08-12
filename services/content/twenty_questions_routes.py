@@ -7,7 +7,6 @@ from fastapi import APIRouter, Depends, HTTPException, status
 
 from shared.database import Database, get_db
 from shared.llm_client import llm_client
-from shared.rate_limiting import rate_limit_decorator
 
 from .models import (
     TwentyQuestionsAnswer,
@@ -28,6 +27,9 @@ from .models import (
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
+
+# Constants
+TWENTY_QUESTIONS_RATE_LIMIT = 10  # Max 10 games per hour per user
 
 
 async def get_user_people(db: Database, user_id: UUID) -> list[dict]:
@@ -305,14 +307,47 @@ async def get_app_id(db: Database) -> UUID:
     return app["id"]
 
 
+async def check_rate_limit(db: Database, user_id: UUID) -> bool:
+    """Check if user has exceeded rate limit for game creation"""
+    try:
+        # Count games started in the last hour
+        query = """
+            SELECT COUNT(*) as game_count
+            FROM twenty_questions_games
+            WHERE user_id = $1
+            AND created_at > NOW() - INTERVAL '1 hour'
+        """
+
+        result = await db.fetch_one(query, user_id)
+        game_count = result["game_count"] if result else 0
+
+        if game_count >= TWENTY_QUESTIONS_RATE_LIMIT:
+            logger.warning(
+                f"User {user_id} exceeded rate limit: {game_count}/{TWENTY_QUESTIONS_RATE_LIMIT}"
+            )
+            return True
+
+        return False
+
+    except Exception as e:
+        logger.error(f"Error checking rate limit: {e}")
+        return False  # Allow on error
+
+
 @router.post("/start", response_model=TwentyQuestionsStartResponse)
-@rate_limit_decorator(max_requests=10, window_seconds=3600)  # 10 games per hour
 async def start_game(
     request: TwentyQuestionsStartRequest,
     db: Database = Depends(get_db),
 ):
     """Start a new 20 Questions game."""
     try:
+        # Check rate limit
+        rate_limit_exceeded = await check_rate_limit(db, request.user_id)
+        if rate_limit_exceeded:
+            return TwentyQuestionsErrorResponse(
+                error=f"Rate limit exceeded. Maximum {TWENTY_QUESTIONS_RATE_LIMIT} games per hour.",
+                error_code="RATE_LIMIT_EXCEEDED",
+            )
         # Check if user has an active game
         existing_game = await db.fetch_one(
             """
