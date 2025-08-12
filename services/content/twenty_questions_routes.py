@@ -6,7 +6,7 @@ from uuid import UUID, uuid4
 from fastapi import APIRouter, Depends, HTTPException, status
 
 from shared.database import Database, get_db
-from shared.llm_utils import call_llm_with_fallback
+from shared.llm_client import llm_client
 from shared.rate_limiting import rate_limit_decorator
 
 from .models import (
@@ -56,6 +56,80 @@ async def select_target_person(people: list[dict]) -> dict:
         }
 
     return random.choice(people)
+
+
+async def get_llm_model_config() -> dict:
+    """Get LLM configuration for 20 Questions app using normalized structure"""
+    from shared.app_config_cache import get_app_config_cache
+    from shared.json_utils import parse_jsonb_field
+
+    app_slug = "fairydust-20-questions"
+
+    # First, get the app UUID from the slug
+    from shared.database import get_db
+
+    db = await get_db()
+    app_result = await db.fetch_one("SELECT id FROM apps WHERE slug = $1", app_slug)
+
+    if not app_result:
+        logger.warning(f"App with slug '{app_slug}' not found in database")
+        # Return default config if app not found
+        return {
+            "primary_provider": "anthropic",
+            "primary_model_id": "claude-3-5-haiku-20241022",
+            "primary_parameters": {"temperature": 0.8, "max_tokens": 150, "top_p": 0.9},
+        }
+
+    app_id = str(app_result["id"])
+
+    try:
+        # Try to get from cache first
+        cache = await get_app_config_cache()
+        cached_config = await cache.get_model_config(app_id)
+
+        if cached_config:
+            return cached_config
+
+        # Fetch from database - normalized structure
+        config_result = await db.fetch_one(
+            """
+            SELECT provider, model_id, parameters, is_enabled
+            FROM app_model_configs
+            WHERE app_id = $1 AND model_type = 'text' AND is_enabled = true
+            """,
+            app_result["id"],
+        )
+
+        if config_result:
+            parameters = parse_jsonb_field(
+                config_result, "parameters", expected_type=dict, default={}
+            )
+
+            model_config = {
+                "primary_provider": config_result["provider"],
+                "primary_model_id": config_result["model_id"],
+                "primary_parameters": parameters,
+            }
+        else:
+            # Use default configuration
+            model_config = {
+                "primary_provider": "anthropic",
+                "primary_model_id": "claude-3-5-haiku-20241022",
+                "primary_parameters": {"temperature": 0.8, "max_tokens": 150, "top_p": 0.9},
+            }
+
+        # Cache the result
+        await cache.set_model_config(app_id, model_config)
+        return model_config
+
+    except Exception as e:
+        logger.error(f"Error fetching LLM config for {app_slug}: {e}")
+        # Return default on error
+        return {
+            "primary_provider": "anthropic",
+            "primary_model_id": "claude-3-5-haiku-20241022",
+            "primary_parameters": {"temperature": 0.8, "max_tokens": 150, "top_p": 0.9},
+        }
 
 
 async def generate_ai_question(
@@ -119,18 +193,27 @@ Keep the question under 100 characters and make it natural.
 Question:"""
 
     try:
-        # Call LLM to generate question
-        response = await call_llm_with_fallback(
+        # Get LLM model configuration
+        model_config = await get_llm_model_config()
+
+        # Get app ID
+        app_id = await get_app_id(db)
+
+        # Use centralized LLM client
+        completion, metadata = await llm_client.generate_completion(
             prompt=prompt,
-            app_slug="fairydust-20-questions",
+            app_config=model_config,
             user_id=user_id,
-            app_id=await get_app_id(db),
-            model_type="text",
-            max_tokens=100,
-            temperature=0.8,
+            app_id=str(app_id),
+            action="twenty_questions_generation",
+            request_metadata={
+                "game_id": str(game_id),
+                "question_number": question_number,
+                "target_person_name": target_person.get("name", "Unknown"),
+            },
         )
 
-        question = response["content"].strip()
+        question = completion.strip()
         if question.endswith("?"):
             return question
         else:
