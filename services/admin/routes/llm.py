@@ -157,15 +157,13 @@ async def get_app_configs(
             a.id as app_id,
             a.name as app_name,
             a.slug as app_slug,
-            c.primary_provider,
-            c.primary_model_id,
-            c.primary_parameters,
-            c.fallback_models,
-            c.cost_limits,
-            c.feature_flags,
+            c.provider as primary_provider,
+            c.model_id as primary_model_id,
+            c.parameters as primary_parameters,
+            c.is_enabled,
             c.updated_at
         FROM apps a
-        LEFT JOIN app_model_configs c ON a.id = c.app_id
+        LEFT JOIN app_model_configs c ON a.id = c.app_id AND c.model_type = 'text'
         ORDER BY a.name
         """
     )
@@ -182,19 +180,24 @@ async def get_app_configs(
             "updated_at": config["updated_at"].isoformat() if config["updated_at"] else None,
         }
 
-        # Parse JSONB fields safely
-        for field in ["primary_parameters", "fallback_models", "cost_limits", "feature_flags"]:
-            value = config[field]
-            if value is not None:
-                if isinstance(value, str):
-                    try:
-                        formatted_config[field] = json.loads(value)
-                    except json.JSONDecodeError:
-                        formatted_config[field] = None
-                else:
-                    formatted_config[field] = value
+        # Parse primary_parameters JSONB field safely
+        value = config["primary_parameters"]
+        if value is not None:
+            if isinstance(value, str):
+                try:
+                    formatted_config["primary_parameters"] = json.loads(value)
+                except json.JSONDecodeError:
+                    formatted_config["primary_parameters"] = {}
             else:
-                formatted_config[field] = None
+                formatted_config["primary_parameters"] = value
+        else:
+            formatted_config["primary_parameters"] = {}
+
+        # Add default empty values for legacy fields that frontend might expect
+        formatted_config["fallback_models"] = []
+        formatted_config["cost_limits"] = {}
+        formatted_config["feature_flags"] = {}
+        formatted_config["is_enabled"] = config.get("is_enabled", True)
 
         formatted_configs.append(formatted_config)
 
@@ -222,34 +225,30 @@ async def update_app_config(
 
     # Validate and process config data
     try:
-        primary_parameters = json.dumps(config_data.get("primary_parameters", {}))
-        fallback_models = json.dumps(config_data.get("fallback_models", []))
-        cost_limits = json.dumps(config_data.get("cost_limits", {}))
-        feature_flags = json.dumps(config_data.get("feature_flags", {}))
+        primary_provider = config_data.get("primary_provider")
+        primary_model_id = config_data.get("primary_model_id")
+        primary_parameters = config_data.get("primary_parameters", {})
 
-        # Update configuration
+        if not primary_provider or not primary_model_id:
+            raise ValueError("primary_provider and primary_model_id are required")
+
+        # Update text model configuration in normalized structure
         await db.execute(
             """
             INSERT INTO app_model_configs (
-                app_id, primary_provider, primary_model_id, primary_parameters,
-                fallback_models, cost_limits, feature_flags, updated_at
-            ) VALUES ($1, $2, $3, $4::jsonb, $5::jsonb, $6::jsonb, $7::jsonb, CURRENT_TIMESTAMP)
-            ON CONFLICT (app_id) DO UPDATE SET
-                primary_provider = EXCLUDED.primary_provider,
-                primary_model_id = EXCLUDED.primary_model_id,
-                primary_parameters = EXCLUDED.primary_parameters,
-                fallback_models = EXCLUDED.fallback_models,
-                cost_limits = EXCLUDED.cost_limits,
-                feature_flags = EXCLUDED.feature_flags,
+                app_id, model_type, provider, model_id, parameters, is_enabled, updated_at
+            ) VALUES ($1, 'text', $2, $3, $4::jsonb, true, CURRENT_TIMESTAMP)
+            ON CONFLICT (app_id, model_type) DO UPDATE SET
+                provider = EXCLUDED.provider,
+                model_id = EXCLUDED.model_id,
+                parameters = EXCLUDED.parameters,
+                is_enabled = EXCLUDED.is_enabled,
                 updated_at = CURRENT_TIMESTAMP
             """,
             app["id"],
-            config_data.get("primary_provider"),
-            config_data.get("primary_model_id"),
-            primary_parameters,
-            fallback_models,
-            cost_limits,
-            feature_flags,
+            primary_provider,
+            primary_model_id,
+            json.dumps(primary_parameters),
         )
 
         # Invalidate cache

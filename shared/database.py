@@ -1857,22 +1857,22 @@ async def create_tables():
 
         -- Add asked_by column if it doesn't exist
         ALTER TABLE twenty_questions_history ADD COLUMN IF NOT EXISTS asked_by VARCHAR(10) DEFAULT 'user';
-        
+
         -- Update answer constraint to include 'pending' for AI questions
-        DO $$ 
+        DO $$
         BEGIN
             ALTER TABLE twenty_questions_history DROP CONSTRAINT IF EXISTS twenty_questions_history_answer_check;
-            ALTER TABLE twenty_questions_history ADD CONSTRAINT twenty_questions_history_answer_check 
+            ALTER TABLE twenty_questions_history ADD CONSTRAINT twenty_questions_history_answer_check
                 CHECK (answer IN ('yes', 'no', 'sometimes', 'unknown', 'correct', 'incorrect', 'pending'));
         EXCEPTION
             WHEN others THEN null;
         END $$;
-        
+
         -- Update asked_by constraint to allow both 'user' and 'ai'
-        DO $$ 
+        DO $$
         BEGIN
             ALTER TABLE twenty_questions_history DROP CONSTRAINT IF EXISTS twenty_questions_history_asked_by_check;
-            ALTER TABLE twenty_questions_history ADD CONSTRAINT twenty_questions_history_asked_by_check 
+            ALTER TABLE twenty_questions_history ADD CONSTRAINT twenty_questions_history_asked_by_check
                 CHECK (asked_by IN ('user', 'ai'));
         EXCEPTION
             WHEN others THEN null;
