@@ -262,6 +262,118 @@ Question:"""
         return fallback_questions[min(question_number - 1, len(fallback_questions) - 1)]
 
 
+async def generate_ai_final_guess(
+    db: Database,
+    game_id: UUID,
+    user_id: UUID,
+    target_person: dict,
+    history: list[dict],
+    category: str,
+) -> str:
+    """Generate AI's final guess based on all Q&A history."""
+    
+    # Build context from game history
+    history_context = ""
+    if history:
+        history_items = []
+        for entry in history:
+            if not entry.get("is_guess", False) and entry.get("answer") != "pending":
+                asked_by = entry.get("asked_by", "user")
+                if asked_by == "ai":
+                    history_items.append(
+                        f"Q{entry['question_number']}: {entry['question_text']} - Answer: {entry['answer']}"
+                    )
+        if history_items:
+            history_context = "Based on these questions and answers:\n" + "\n".join(history_items)
+
+    # Build category-specific prompt for final guess
+    if category == "people_i_know":
+        # Get user's people for context
+        people = await get_user_people(db, user_id)
+        people_names = [p["name"] for p in people if p.get("name")]
+        context = (
+            f"Choose from these people the user knows: {', '.join(people_names[:15])}"
+            if people_names
+            else "Think of someone the user knows personally."
+        )
+
+        prompt = f"""You are playing 20 Questions. Based on all the questions and answers, make your final guess about who I'm thinking of.
+
+{context}
+
+{history_context}
+
+Based on the answers to my questions, who do you think I'm thinking of? Respond with just the name, nothing else."""
+
+    else:
+        # Generic category final guess
+        prompt = f"""You are playing 20 Questions. Based on all the questions and answers, make your final guess about what I'm thinking of from the "{category}" category.
+
+{history_context}
+
+Based on the answers to my questions, what do you think I'm thinking of? Respond with just your guess, nothing else."""
+
+    try:
+        # Get LLM model configuration
+        model_config = await get_llm_model_config()
+
+        # Get app ID
+        app_id = await get_app_id(db)
+
+        # Use centralized LLM client
+        completion, metadata = await llm_client.generate_completion(
+            prompt=prompt,
+            app_config=model_config,
+            user_id=user_id,
+            app_id=str(app_id),
+            action="twenty_questions_final_guess",
+            request_metadata={
+                "game_id": str(game_id),
+                "category": category,
+                "target_person_name": target_person.get("name", "Unknown"),
+                "history_length": len(history),
+            },
+        )
+
+        return completion.strip()
+
+    except Exception as e:
+        logger.error(f"Failed to generate AI final guess: {e}")
+        # Fallback guess
+        if category == "people_i_know" and target_person.get("name"):
+            return target_person["name"]  # This would make the AI win, but it's a fallback
+        else:
+            return "Unknown"
+
+
+def check_guess_accuracy(guess: str, correct_answer: str) -> bool:
+    """Check if the guess matches the correct answer (case-insensitive partial match)."""
+    if not guess or not correct_answer:
+        return False
+    
+    guess_lower = guess.lower().strip()
+    answer_lower = correct_answer.lower().strip()
+    
+    # Exact match
+    if guess_lower == answer_lower:
+        return True
+    
+    # Partial matches (one contains the other)
+    if guess_lower in answer_lower or answer_lower in guess_lower:
+        return True
+    
+    # Check individual words for name variations
+    guess_words = set(guess_lower.split())
+    answer_words = set(answer_lower.split())
+    
+    # If they share significant words, consider it correct
+    shared_words = guess_words.intersection(answer_words)
+    if len(shared_words) > 0 and len(shared_words) / max(len(guess_words), len(answer_words)) > 0.5:
+        return True
+    
+    return False
+
+
 async def determine_ai_answer(
     target_person: dict, question: str, category: str = "general"
 ) -> TwentyQuestionsAnswer:
@@ -710,8 +822,10 @@ async def answer_ai_question(
         new_questions_asked = game_data["questions_asked"] + 1
         new_questions_remaining = game_data["questions_remaining"] - 1
 
-        # Generate next AI question if game continues
+        # Generate next AI question or make final guess
         next_ai_question = None
+        ai_final_guess = None
+        
         if new_questions_remaining > 0:
             # Get target person info
             target_person = {"name": game_data["target_person_name"]}
@@ -756,19 +870,95 @@ async def answer_ai_question(
                 False,
                 "ai",
             )
+        else:
+            # No questions remaining - AI makes final guess
+            target_person = {"name": game_data["target_person_name"]}
+            if game_data["target_person_id"]:
+                person_data = await db.fetch_one(
+                    """
+                    SELECT name, relationship, entry_type, species, personality_description
+                    FROM people_in_my_life
+                    WHERE id = $1
+                    """,
+                    game_data["target_person_id"],
+                )
+                if person_data:
+                    target_person.update(person_data)
 
-        # Update game with new state and next AI question
-        await db.execute(
-            """
-            UPDATE twenty_questions_games
-            SET questions_asked = $1, questions_remaining = $2, current_ai_question = $3, updated_at = CURRENT_TIMESTAMP
-            WHERE id = $4
-            """,
-            new_questions_asked,
-            new_questions_remaining,
-            next_ai_question,
-            game_id,
-        )
+            # Get full history for AI's final guess
+            history = await db.fetch_all(
+                """
+                SELECT question_number, question_text, answer, is_guess, asked_by, created_at
+                FROM twenty_questions_history
+                WHERE game_id = $1
+                ORDER BY question_number
+                """,
+                game_id,
+            )
+
+            ai_final_guess = await generate_ai_final_guess(
+                db, game_id, request.user_id, target_person, history, game_data["category"]
+            )
+            
+            # Check if AI's guess is correct
+            is_ai_correct = check_guess_accuracy(ai_final_guess, game_data["target_person_name"])
+            
+            # Update game with AI's final guess and result
+            new_status = TwentyQuestionsStatus.LOST if is_ai_correct else TwentyQuestionsStatus.WON
+            
+            await db.execute(
+                """
+                UPDATE twenty_questions_games
+                SET status = $1, final_guess = $2, answer_revealed = $3, is_correct = $4, updated_at = CURRENT_TIMESTAMP
+                WHERE id = $5
+                """,
+                new_status.value,
+                ai_final_guess,
+                game_data["target_person_name"],
+                is_ai_correct,
+                game_id,
+            )
+            
+            # Add AI's final guess to history
+            await db.execute(
+                """
+                INSERT INTO twenty_questions_history (
+                    game_id, question_number, question_text, answer, is_guess, asked_by
+                ) VALUES ($1, $2, $3, $4, $5, $6)
+                """,
+                game_id,
+                new_questions_asked + 1,
+                f"My final guess: {ai_final_guess}",
+                "correct" if is_ai_correct else "incorrect",
+                True,
+                "ai",
+            )
+
+        # Update game with new state and next AI question (only if not final guess)
+        if next_ai_question:
+            await db.execute(
+                """
+                UPDATE twenty_questions_games
+                SET questions_asked = $1, questions_remaining = $2, current_ai_question = $3, updated_at = CURRENT_TIMESTAMP
+                WHERE id = $4
+                """,
+                new_questions_asked,
+                new_questions_remaining,
+                next_ai_question,
+                game_id,
+            )
+        else:
+            # Final guess scenario - just update basic counters
+            await db.execute(
+                """
+                UPDATE twenty_questions_games
+                SET questions_asked = $1, questions_remaining = $2, current_ai_question = NULL, updated_at = CURRENT_TIMESTAMP
+                WHERE id = $3
+                """,
+                new_questions_asked,
+                new_questions_remaining,
+                game_id,
+            )
 
         # Get updated game
         updated_game_data = await db.fetch_one(
@@ -784,11 +974,27 @@ async def answer_ai_question(
 
         game = TwentyQuestionsGameState(**updated_game_data)
 
-        return TwentyQuestionsAnswerResponse(
-            game=game,
-            next_question=next_ai_question,
-            question_number=new_questions_asked + 1 if next_ai_question else None,
-        )
+        # Build response with AI final guess information if applicable
+        if ai_final_guess:
+            is_ai_correct = check_guess_accuracy(ai_final_guess, game_data["target_person_name"])
+            if is_ai_correct:
+                message = f"🤖 I guessed '{ai_final_guess}' and I was correct! I win this round! 🏆"
+            else:
+                message = f"🤖 I guessed '{ai_final_guess}' but I was wrong. You win! The correct answer was '{game_data['target_person_name']}'. 🎉"
+                
+            return TwentyQuestionsAnswerResponse(
+                game=game,
+                ai_final_guess=ai_final_guess,
+                is_ai_correct=is_ai_correct,
+                answer_revealed=game_data["target_person_name"],
+                message=message,
+            )
+        else:
+            return TwentyQuestionsAnswerResponse(
+                game=game,
+                next_question=next_ai_question,
+                question_number=new_questions_asked + 1 if next_ai_question else None,
+            )
 
     except Exception as e:
         logger.error(f"Error processing answer in game {game_id}: {e}")

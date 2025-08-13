@@ -1399,6 +1399,10 @@ class TwentyQuestionsAnswerResponse(BaseModel):
     game: TwentyQuestionsGameState
     next_question: Optional[str] = None
     question_number: Optional[int] = None
+    ai_final_guess: Optional[str] = None
+    is_ai_correct: Optional[bool] = None
+    answer_revealed: Optional[str] = None
+    message: Optional[str] = None
 
 
 class TwentyQuestionsGuessResponse(BaseModel):
