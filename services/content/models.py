@@ -1346,7 +1346,7 @@ class TwentyQuestionsGuessRequest(BaseModel):
 
 
 class TwentyQuestionsGameState(BaseModel):
-    game_id: UUID
+    game_id: UUID = Field(alias="id")  # Map database 'id' to 'game_id'
     user_id: UUID
     category: str
     target_person_name: str
@@ -1362,6 +1362,7 @@ class TwentyQuestionsGameState(BaseModel):
 
     class Config:
         from_attributes = True
+        populate_by_name = True  # Allow both 'id' and 'game_id'
 
 
 class TwentyQuestionsHistoryEntry(BaseModel):
