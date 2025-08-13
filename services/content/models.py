@@ -1324,6 +1324,9 @@ class TwentyQuestionsAnswer(str, Enum):
     NO = "no"
     SOMETIMES = "sometimes"
     UNKNOWN = "unknown"
+    PENDING = "pending"
+    CORRECT = "correct"
+    INCORRECT = "incorrect"
 
 
 class TwentyQuestionsStartRequest(BaseModel):
