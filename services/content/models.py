@@ -1357,6 +1357,7 @@ class TwentyQuestionsGameState(BaseModel):
     status: TwentyQuestionsStatus
     questions_asked: int
     questions_remaining: int
+    current_ai_question: Optional[str] = None
     final_guess: Optional[str] = None
     answer_revealed: Optional[str] = None
     is_correct: Optional[bool] = None
@@ -1372,6 +1373,7 @@ class TwentyQuestionsHistoryEntry(BaseModel):
     question_text: str
     answer: TwentyQuestionsAnswer
     is_guess: bool
+    asked_by: str = "user"  # 'user' or 'ai'
     created_at: datetime
 
     class Config:

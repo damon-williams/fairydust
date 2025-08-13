@@ -148,14 +148,20 @@ async def generate_ai_question(
     if history:
         history_items = []
         for entry in history:
-            if not entry.get("is_guess", False):
-                history_items.append(
-                    f"Q{entry['question_number']}: {entry['question_text']} - {entry['answer']}"
-                )
+            if not entry.get("is_guess", False) and entry.get("answer") != "pending":
+                asked_by = entry.get("asked_by", "user")
+                if asked_by == "ai":
+                    history_items.append(
+                        f"AI Q{entry['question_number']}: {entry['question_text']} - User answered: {entry['answer']}"
+                    )
+                else:
+                    history_items.append(
+                        f"User Q{entry['question_number']}: {entry['question_text']} - AI answered: {entry['answer']}"
+                    )
         if history_items:
             history_context = "\n\nPrevious questions and answers:\n" + "\n".join(
-                history_items[-5:]
-            )  # Last 5 questions
+                history_items[-8:]
+            )  # Last 8 Q&A pairs for better context
 
     # Get user's people for context
     people = await get_user_people(db, user_id)
@@ -395,12 +401,43 @@ async def start_game(
             20,
         )
 
-        # Fetch created game
+        # Generate AI's first question immediately
+        first_ai_question = await generate_ai_question(
+            db, game_id, request.user_id, target_person, [], 1
+        )
+
+        # Update game with the first AI question
+        await db.execute(
+            """
+            UPDATE twenty_questions_games
+            SET current_ai_question = $1, updated_at = CURRENT_TIMESTAMP
+            WHERE id = $2
+            """,
+            first_ai_question,
+            game_id,
+        )
+
+        # Add AI's first question to history
+        await db.execute(
+            """
+            INSERT INTO twenty_questions_history (
+                game_id, question_number, question_text, answer, is_guess, asked_by
+            ) VALUES ($1, $2, $3, $4, $5, $6)
+            """,
+            game_id,
+            1,
+            first_ai_question,
+            "pending",  # No answer yet
+            False,
+            "ai",
+        )
+
+        # Fetch created game with AI question
         game_data = await db.fetch_one(
             """
             SELECT id, user_id, category, target_person_id, target_person_name,
-                   status, questions_asked, questions_remaining, final_guess,
-                   answer_revealed, is_correct, created_at, updated_at
+                   status, questions_asked, questions_remaining, current_ai_question,
+                   final_guess, answer_revealed, is_correct, created_at, updated_at
             FROM twenty_questions_games
             WHERE id = $1
             """,
@@ -411,7 +448,7 @@ async def start_game(
 
         return TwentyQuestionsStartResponse(
             game=game,
-            message="Game started! I'm thinking of someone in your life. Ask yes/no questions to figure out who it is!",
+            message=f"Game started! I'm thinking of someone in your life. Here's my first question: {first_ai_question}",
         )
 
     except Exception as e:
@@ -434,8 +471,8 @@ async def ask_question(
         game_data = await db.fetch_one(
             """
             SELECT id, user_id, category, target_person_id, target_person_name,
-                   status, questions_asked, questions_remaining, final_guess,
-                   answer_revealed, is_correct, created_at, updated_at
+                   status, questions_asked, questions_remaining, current_ai_question,
+                   final_guess, answer_revealed, is_correct, created_at, updated_at
             FROM twenty_questions_games
             WHERE id = $1 AND user_id = $2
             """,
@@ -514,8 +551,8 @@ async def ask_question(
         updated_game_data = await db.fetch_one(
             """
             SELECT id, user_id, category, target_person_id, target_person_name,
-                   status, questions_asked, questions_remaining, final_guess,
-                   answer_revealed, is_correct, created_at, updated_at
+                   status, questions_asked, questions_remaining, current_ai_question,
+                   final_guess, answer_revealed, is_correct, created_at, updated_at
             FROM twenty_questions_games
             WHERE id = $1
             """,
@@ -530,7 +567,7 @@ async def ask_question(
             # Get history for context
             history = await db.fetch_all(
                 """
-                SELECT question_number, question_text, answer, is_guess, created_at
+                SELECT question_number, question_text, answer, is_guess, asked_by, created_at
                 FROM twenty_questions_history
                 WHERE game_id = $1
                 ORDER BY question_number
@@ -569,8 +606,8 @@ async def answer_ai_question(
         game_data = await db.fetch_one(
             """
             SELECT id, user_id, category, target_person_id, target_person_name,
-                   status, questions_asked, questions_remaining, final_guess,
-                   answer_revealed, is_correct, created_at, updated_at
+                   status, questions_asked, questions_remaining, current_ai_question,
+                   final_guess, answer_revealed, is_correct, created_at, updated_at
             FROM twenty_questions_games
             WHERE id = $1 AND user_id = $2
             """,
@@ -599,71 +636,32 @@ async def answer_ai_question(
                 game_id=game_id,
             )
 
-        # Get the last AI question from history
-        last_ai_question = await db.fetch_one(
-            """
-            SELECT question_text, question_number
-            FROM twenty_questions_history
-            WHERE game_id = $1 AND is_guess = false
-            ORDER BY question_number DESC
-            LIMIT 1
-            """,
-            game_id,
-        )
-
-        if not last_ai_question:
+        # Get the current AI question that needs to be answered
+        current_ai_question = game_data.get("current_ai_question")
+        if not current_ai_question:
             return TwentyQuestionsErrorResponse(
-                error="No AI question found to answer",
+                error="No AI question to answer",
                 error_code="NO_AI_QUESTION",
                 game_id=game_id,
             )
 
-        # Update game state
+        # Update the pending AI question in history with the user's answer
+        await db.execute(
+            """
+            UPDATE twenty_questions_history
+            SET answer = $1
+            WHERE game_id = $2 AND asked_by = 'ai' AND answer = 'pending'
+            """,
+            request.answer.value,
+            game_id,
+        )
+
+        # Update game state - questions asked/remaining
         new_questions_asked = game_data["questions_asked"] + 1
         new_questions_remaining = game_data["questions_remaining"] - 1
 
-        await db.execute(
-            """
-            UPDATE twenty_questions_games
-            SET questions_asked = $1, questions_remaining = $2, updated_at = CURRENT_TIMESTAMP
-            WHERE id = $3
-            """,
-            new_questions_asked,
-            new_questions_remaining,
-            game_id,
-        )
-
-        # Add answer to history
-        await db.execute(
-            """
-            INSERT INTO twenty_questions_history (
-                game_id, question_number, question_text, answer, is_guess
-            ) VALUES ($1, $2, $3, $4, $5)
-            """,
-            game_id,
-            new_questions_asked,
-            last_ai_question["question_text"],
-            request.answer.value,
-            False,
-        )
-
-        # Get updated game
-        updated_game_data = await db.fetch_one(
-            """
-            SELECT id, user_id, category, target_person_id, target_person_name,
-                   status, questions_asked, questions_remaining, final_guess,
-                   answer_revealed, is_correct, created_at, updated_at
-            FROM twenty_questions_games
-            WHERE id = $1
-            """,
-            game_id,
-        )
-
-        game = TwentyQuestionsGameState(**updated_game_data)
-
         # Generate next AI question if game continues
-        next_question = None
-        question_number = None
+        next_ai_question = None
         if new_questions_remaining > 0:
             # Get target person info
             target_person = {"name": game_data["target_person_name"]}
@@ -679,10 +677,10 @@ async def answer_ai_question(
                 if person_data:
                     target_person.update(person_data)
 
-            # Get history for context
+            # Get full history for context (including the answer we just recorded)
             history = await db.fetch_all(
                 """
-                SELECT question_number, question_text, answer, is_guess, created_at
+                SELECT question_number, question_text, answer, is_guess, asked_by, created_at
                 FROM twenty_questions_history
                 WHERE game_id = $1
                 ORDER BY question_number
@@ -690,15 +688,56 @@ async def answer_ai_question(
                 game_id,
             )
 
-            next_question = await generate_ai_question(
+            next_ai_question = await generate_ai_question(
                 db, game_id, request.user_id, target_person, history, new_questions_asked + 1
             )
-            question_number = new_questions_asked + 1
+
+            # Add the next AI question to history and update game state
+            await db.execute(
+                """
+                INSERT INTO twenty_questions_history (
+                    game_id, question_number, question_text, answer, is_guess, asked_by
+                ) VALUES ($1, $2, $3, $4, $5, $6)
+                """,
+                game_id,
+                new_questions_asked + 1,
+                next_ai_question,
+                "pending",
+                False,
+                "ai",
+            )
+
+        # Update game with new state and next AI question
+        await db.execute(
+            """
+            UPDATE twenty_questions_games
+            SET questions_asked = $1, questions_remaining = $2, current_ai_question = $3, updated_at = CURRENT_TIMESTAMP
+            WHERE id = $4
+            """,
+            new_questions_asked,
+            new_questions_remaining,
+            next_ai_question,
+            game_id,
+        )
+
+        # Get updated game
+        updated_game_data = await db.fetch_one(
+            """
+            SELECT id, user_id, category, target_person_id, target_person_name,
+                   status, questions_asked, questions_remaining, current_ai_question,
+                   final_guess, answer_revealed, is_correct, created_at, updated_at
+            FROM twenty_questions_games
+            WHERE id = $1
+            """,
+            game_id,
+        )
+
+        game = TwentyQuestionsGameState(**updated_game_data)
 
         return TwentyQuestionsAnswerResponse(
             game=game,
-            next_question=next_question,
-            question_number=question_number,
+            next_question=next_ai_question,
+            question_number=new_questions_asked + 1 if next_ai_question else None,
         )
 
     except Exception as e:
@@ -722,8 +761,8 @@ async def make_guess(
         game_data = await db.fetch_one(
             """
             SELECT id, user_id, category, target_person_id, target_person_name,
-                   status, questions_asked, questions_remaining, final_guess,
-                   answer_revealed, is_correct, created_at, updated_at
+                   status, questions_asked, questions_remaining, current_ai_question,
+                   final_guess, answer_revealed, is_correct, created_at, updated_at
             FROM twenty_questions_games
             WHERE id = $1 AND user_id = $2
             """,
@@ -789,8 +828,8 @@ async def make_guess(
         updated_game_data = await db.fetch_one(
             """
             SELECT id, user_id, category, target_person_id, target_person_name,
-                   status, questions_asked, questions_remaining, final_guess,
-                   answer_revealed, is_correct, created_at, updated_at
+                   status, questions_asked, questions_remaining, current_ai_question,
+                   final_guess, answer_revealed, is_correct, created_at, updated_at
             FROM twenty_questions_games
             WHERE id = $1
             """,
@@ -833,8 +872,8 @@ async def get_game_status(
         game_data = await db.fetch_one(
             """
             SELECT id, user_id, category, target_person_id, target_person_name,
-                   status, questions_asked, questions_remaining, final_guess,
-                   answer_revealed, is_correct, created_at, updated_at
+                   status, questions_asked, questions_remaining, current_ai_question,
+                   final_guess, answer_revealed, is_correct, created_at, updated_at
             FROM twenty_questions_games
             WHERE id = $1 AND user_id = $2
             """,
@@ -852,7 +891,7 @@ async def get_game_status(
         # Get history
         history_data = await db.fetch_all(
             """
-            SELECT question_number, question_text, answer, is_guess, created_at
+            SELECT question_number, question_text, answer, is_guess, asked_by, created_at
             FROM twenty_questions_history
             WHERE game_id = $1
             ORDER BY question_number

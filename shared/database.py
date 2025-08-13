@@ -1814,12 +1814,16 @@ async def create_tables():
             status VARCHAR(20) NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'won', 'lost')),
             questions_asked INTEGER DEFAULT 0,
             questions_remaining INTEGER DEFAULT 20,
+            current_ai_question TEXT,
             final_guess TEXT,
             answer_revealed TEXT,
             is_correct BOOLEAN,
             created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
             updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
         );
+
+        -- Add current_ai_question column if it doesn't exist
+        ALTER TABLE twenty_questions_games ADD COLUMN IF NOT EXISTS current_ai_question TEXT;
 
         CREATE INDEX IF NOT EXISTS idx_twenty_questions_games_user_id ON twenty_questions_games(user_id);
         CREATE INDEX IF NOT EXISTS idx_twenty_questions_games_status ON twenty_questions_games(user_id, status);
@@ -1835,10 +1839,14 @@ async def create_tables():
             game_id UUID NOT NULL REFERENCES twenty_questions_games(id) ON DELETE CASCADE,
             question_number INTEGER NOT NULL,
             question_text TEXT NOT NULL,
-            answer TEXT NOT NULL CHECK (answer IN ('yes', 'no', 'sometimes', 'unknown')),
+            answer TEXT NOT NULL CHECK (answer IN ('yes', 'no', 'sometimes', 'unknown', 'correct', 'incorrect', 'pending')),
             is_guess BOOLEAN DEFAULT FALSE,
+            asked_by VARCHAR(10) NOT NULL DEFAULT 'user' CHECK (asked_by IN ('user', 'ai')),
             created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
         );
+
+        -- Add asked_by column if it doesn't exist  
+        ALTER TABLE twenty_questions_history ADD COLUMN IF NOT EXISTS asked_by VARCHAR(10) DEFAULT 'user' CHECK (asked_by IN ('user', 'ai'));
 
         CREATE INDEX IF NOT EXISTS idx_twenty_questions_history_game_id ON twenty_questions_history(game_id, question_number);
         CREATE INDEX IF NOT EXISTS idx_twenty_questions_history_created_at ON twenty_questions_history(created_at DESC);
