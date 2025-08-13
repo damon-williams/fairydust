@@ -393,7 +393,7 @@ async def start_game(
             """,
             game_id,
             request.user_id,
-            request.category.value,
+            request.category,
             target_person.get("id"),
             target_person["name"],
             TwentyQuestionsStatus.ACTIVE.value,

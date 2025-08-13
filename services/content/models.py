@@ -1312,10 +1312,6 @@ class VideoJobCancelResponse(BaseModel):
 
 
 # 20 Questions Game Models
-class TwentyQuestionsCategory(str, Enum):
-    PEOPLE_I_KNOW = "people_i_know"
-
-
 class TwentyQuestionsStatus(str, Enum):
     ACTIVE = "active"
     WON = "won"
@@ -1331,7 +1327,7 @@ class TwentyQuestionsAnswer(str, Enum):
 
 class TwentyQuestionsStartRequest(BaseModel):
     user_id: UUID
-    category: TwentyQuestionsCategory = TwentyQuestionsCategory.PEOPLE_I_KNOW
+    category: str = Field(default="people_i_know", min_length=1, max_length=50)
 
 
 class TwentyQuestionsQuestionRequest(BaseModel):
