@@ -3,6 +3,7 @@ import logging
 import random
 from uuid import UUID, uuid4
 
+from typing import Union
 from fastapi import APIRouter, Depends, HTTPException, status
 from models import (
     TwentyQuestionsAnswer,
@@ -339,7 +340,7 @@ async def check_rate_limit(db: Database, user_id: UUID) -> bool:
         return False  # Allow on error
 
 
-@router.post("/start", response_model=TwentyQuestionsStartResponse)
+@router.post("/start", response_model=Union[TwentyQuestionsStartResponse, TwentyQuestionsErrorResponse])
 async def start_game(
     request: TwentyQuestionsStartRequest,
     db: Database = Depends(get_db),
@@ -459,7 +460,7 @@ async def start_game(
         )
 
 
-@router.post("/{game_id}/question", response_model=TwentyQuestionsQuestionResponse)
+@router.post("/{game_id}/question", response_model=Union[TwentyQuestionsQuestionResponse, TwentyQuestionsErrorResponse])
 async def ask_question(
     game_id: UUID,
     request: TwentyQuestionsQuestionRequest,
@@ -594,7 +595,7 @@ async def ask_question(
         )
 
 
-@router.post("/{game_id}/answer", response_model=TwentyQuestionsAnswerResponse)
+@router.post("/{game_id}/answer", response_model=Union[TwentyQuestionsAnswerResponse, TwentyQuestionsErrorResponse])
 async def answer_ai_question(
     game_id: UUID,
     request: TwentyQuestionsAnswerRequest,
@@ -749,7 +750,7 @@ async def answer_ai_question(
         )
 
 
-@router.post("/{game_id}/guess", response_model=TwentyQuestionsGuessResponse)
+@router.post("/{game_id}/guess", response_model=Union[TwentyQuestionsGuessResponse, TwentyQuestionsErrorResponse])
 async def make_guess(
     game_id: UUID,
     request: TwentyQuestionsGuessRequest,
@@ -860,7 +861,7 @@ async def make_guess(
         )
 
 
-@router.get("/{game_id}/status", response_model=TwentyQuestionsStatusResponse)
+@router.get("/{game_id}/status", response_model=Union[TwentyQuestionsStatusResponse, TwentyQuestionsErrorResponse])
 async def get_game_status(
     game_id: UUID,
     user_id: UUID,
