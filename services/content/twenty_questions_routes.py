@@ -100,6 +100,7 @@ async def get_llm_model_config() -> dict:
     from shared.json_utils import parse_jsonb_field
 
     app_slug = "fairydust-20-questions"
+    logger.info(f"🔍 20Q_CONFIG: Starting LLM config lookup for app: {app_slug}")
 
     # First, get the app UUID from the slug
     from shared.database import get_db
@@ -108,15 +109,18 @@ async def get_llm_model_config() -> dict:
     app_result = await db.fetch_one("SELECT id FROM apps WHERE slug = $1", app_slug)
 
     if not app_result:
-        logger.warning(f"App with slug '{app_slug}' not found in database")
+        logger.warning(f"❌ 20Q_CONFIG: App with slug '{app_slug}' not found in database")
         # Return default config if app not found
-        return {
+        default_config = {
             "primary_provider": "anthropic",
             "primary_model_id": "claude-3-5-haiku-20241022",
             "primary_parameters": {"temperature": 0.8, "max_tokens": 150, "top_p": 0.9},
         }
+        logger.info(f"🔄 20Q_CONFIG: Using default config: {default_config}")
+        return default_config
 
     app_id = str(app_result["id"])
+    logger.info(f"✅ 20Q_CONFIG: Found app {app_slug} with UUID: {app_id}")
 
     try:
         # Try to get from cache first
@@ -124,7 +128,10 @@ async def get_llm_model_config() -> dict:
         cached_config = await cache.get_model_config(app_id)
 
         if cached_config:
+            logger.info(f"💾 20Q_CONFIG: Using cached config: {cached_config}")
             return cached_config
+        else:
+            logger.info("🔍 20Q_CONFIG: No cached config found, checking database")
 
         # Fetch from database - normalized structure
         config_result = await db.fetch_one(
@@ -136,6 +143,8 @@ async def get_llm_model_config() -> dict:
             app_result["id"],
         )
 
+        logger.info(f"📊 20Q_CONFIG: Database query result: {config_result}")
+
         if config_result:
             parameters = parse_jsonb_field(
                 config_result, "parameters", expected_type=dict, default={}
@@ -146,6 +155,7 @@ async def get_llm_model_config() -> dict:
                 "primary_model_id": config_result["model_id"],
                 "primary_parameters": parameters,
             }
+            logger.info(f"✅ 20Q_CONFIG: Using database config: {model_config}")
         else:
             # Use default configuration
             model_config = {
@@ -153,19 +163,23 @@ async def get_llm_model_config() -> dict:
                 "primary_model_id": "claude-3-5-haiku-20241022",
                 "primary_parameters": {"temperature": 0.8, "max_tokens": 150, "top_p": 0.9},
             }
+            logger.info(f"🔄 20Q_CONFIG: No database config found, using default: {model_config}")
 
         # Cache the result
         await cache.set_model_config(app_id, model_config)
+        logger.info(f"💾 20Q_CONFIG: Cached config for future use")
         return model_config
 
     except Exception as e:
-        logger.error(f"Error fetching LLM config for {app_slug}: {e}")
+        logger.error(f"❌ 20Q_CONFIG: Error fetching LLM config for {app_slug}: {e}")
         # Return default on error
-        return {
+        default_config = {
             "primary_provider": "anthropic",
             "primary_model_id": "claude-3-5-haiku-20241022",
             "primary_parameters": {"temperature": 0.8, "max_tokens": 150, "top_p": 0.9},
         }
+        logger.info(f"🔄 20Q_CONFIG: Using default config due to error: {default_config}")
+        return default_config
 
 
 async def generate_ai_question(
