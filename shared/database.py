@@ -1809,8 +1809,10 @@ async def create_tables():
             id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
             user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
             category VARCHAR(50) NOT NULL,
+            mode VARCHAR(20) NOT NULL DEFAULT 'user_thinks' CHECK (mode IN ('user_thinks', 'fairydust_thinks')),
             target_person_id UUID REFERENCES people_in_my_life(id) ON DELETE CASCADE,
             target_person_name VARCHAR(100) NOT NULL,
+            secret_answer VARCHAR(100), -- For fairydust_thinks mode
             status VARCHAR(20) NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'won', 'lost', 'abandoned')),
             questions_asked INTEGER DEFAULT 0,
             questions_remaining INTEGER DEFAULT 20,
@@ -1822,8 +1824,10 @@ async def create_tables():
             updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
         );
 
-        -- Add current_ai_question column if it doesn't exist
+        -- Add new columns if they don't exist
         ALTER TABLE twenty_questions_games ADD COLUMN IF NOT EXISTS current_ai_question TEXT;
+        ALTER TABLE twenty_questions_games ADD COLUMN IF NOT EXISTS mode VARCHAR(20) DEFAULT 'user_thinks' CHECK (mode IN ('user_thinks', 'fairydust_thinks'));
+        ALTER TABLE twenty_questions_games ADD COLUMN IF NOT EXISTS secret_answer VARCHAR(100);
 
         -- Update status constraint to include 'abandoned'
         DO $$
@@ -1852,8 +1856,12 @@ async def create_tables():
             answer TEXT NOT NULL CHECK (answer IN ('yes', 'no', 'sometimes', 'unknown', 'correct', 'incorrect', 'pending')),
             is_guess BOOLEAN DEFAULT FALSE,
             asked_by VARCHAR(10) NOT NULL DEFAULT 'user' CHECK (asked_by IN ('user', 'ai')),
+            mode VARCHAR(20), -- Track which mode this question was asked in
             created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
         );
+
+        -- Add mode column to history if it doesn't exist
+        ALTER TABLE twenty_questions_history ADD COLUMN IF NOT EXISTS mode VARCHAR(20);
 
         -- Add asked_by column if it doesn't exist
         ALTER TABLE twenty_questions_history ADD COLUMN IF NOT EXISTS asked_by VARCHAR(10) DEFAULT 'user';

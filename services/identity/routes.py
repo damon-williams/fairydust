@@ -465,7 +465,7 @@ async def oauth_login(
     # Handle native Apple Sign-In (mobile apps) - prioritize this for Apple
     if provider == "apple" and callback.id_token:
         # Native flow - ID token provided directly (prioritize over code for Apple)
-        print("📱 APPLE: Native Sign-In flow detected (ID token provided)")
+        print("📱 APPLE: Native Sign-In flow detected")
         access_token = None  # Not used in native flow
         id_token = callback.id_token
         apple_user_data = callback.user
@@ -640,37 +640,14 @@ async def oauth_login(
     access_token = await auth_service.create_access_token(token_data)
     refresh_token = await auth_service.create_refresh_token(token_data)
 
-    # Log comprehensive login response for daily login bonus debugging
-    print(
-        f"🚀 LOGIN_RESPONSE (OAuth-{provider.upper()}): User {user['fairyname']} ({user['id']}) login details:"
-    )
-    print(f"   - is_new_user: {is_new_user}")
-    print(f"   - is_onboarding_completed: {user.get('is_onboarding_completed', False)}")
-    print(f"   - last_login_date: {user.get('last_login_date')}")
-    print(f"   - current_dust_balance: {user.get('dust_balance', 0)}")
-    print(f"   - is_bonus_eligible (calculated): {is_bonus_eligible}")
-    print(f"   - daily_bonus_eligible (final): {daily_bonus_value}")
-    print(f"   - daily_bonus_amount: {daily_bonus_amount}")
-    print(f"   - initial_dust_amount: {initial_dust_amount}")
-    print(f"   - is_first_login_today: {is_bonus_eligible}")
-    print(f"   - auth_provider: {user.get('auth_provider', 'unknown')}")
-    print(f"   - created_at: {user.get('created_at')}")
-    print(f"   - provider_user_id: {user_info['provider_id']}")
-    print(f"   - extracted_name: {user_info.get('name')}")
-    print(f"   - extracted_email: {user_info.get('email')}")
-
     # Extract name and DOB for frontend pre-population
     extracted_name = user_info.get("name") if user_info else None
     extracted_first_name = user_info.get("first_name") if user_info else None
     extracted_last_name = user_info.get("last_name") if user_info else None
     extracted_birthdate = user_info.get("birthdate") if user_info else None
 
-    print("📤 OAUTH RESPONSE: Returning to client:")
-    print(f"   - extracted_name: {extracted_name}")
-    print(f"   - extracted_first_name: {extracted_first_name}")
-    print(f"   - extracted_last_name: {extracted_last_name}")
-    print(f"   - extracted_birthdate: {extracted_birthdate}")
-    print(f"   - is_new_user: {is_new_user}")
+    # Consolidated login response log
+    print(f"✅ {provider.upper()} LOGIN: {user['fairyname']} | new_user: {is_new_user} | bonus_eligible: {daily_bonus_value} | balance: {user.get('dust_balance', 0)} DUST")
 
     response_data = AuthResponse(
         user=User(**user_dict),

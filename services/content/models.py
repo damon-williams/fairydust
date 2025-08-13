@@ -1319,6 +1319,11 @@ class TwentyQuestionsStatus(str, Enum):
     ABANDONED = "abandoned"
 
 
+class TwentyQuestionsMode(str, Enum):
+    USER_THINKS = "user_thinks"  # AI asks questions, user answers
+    FAIRYDUST_THINKS = "fairydust_thinks"  # User asks questions, AI answers
+
+
 class TwentyQuestionsAnswer(str, Enum):
     YES = "yes"
     NO = "no"
@@ -1331,7 +1336,8 @@ class TwentyQuestionsAnswer(str, Enum):
 
 class TwentyQuestionsStartRequest(BaseModel):
     user_id: UUID
-    category: str = Field(default="people_i_know", min_length=1, max_length=50)
+    category: str = Field(default="general", min_length=1, max_length=50)
+    mode: TwentyQuestionsMode = Field(default=TwentyQuestionsMode.USER_THINKS)
 
 
 class TwentyQuestionsQuestionRequest(BaseModel):
@@ -1353,11 +1359,13 @@ class TwentyQuestionsGameState(BaseModel):
     game_id: UUID = Field(alias="id")  # Map database 'id' to 'game_id'
     user_id: UUID
     category: str
-    target_person_name: str
+    mode: TwentyQuestionsMode
+    target_person_name: Optional[str] = None  # Hidden until game ends in fairydust_thinks mode
+    secret_answer: Optional[str] = None  # Hidden until game ends in fairydust_thinks mode
     status: TwentyQuestionsStatus
     questions_asked: int
     questions_remaining: int
-    current_ai_question: Optional[str] = None
+    current_ai_question: Optional[str] = None  # Only used in user_thinks mode
     final_guess: Optional[str] = None
     answer_revealed: Optional[str] = None
     is_correct: Optional[bool] = None
@@ -1375,6 +1383,7 @@ class TwentyQuestionsHistoryEntry(BaseModel):
     answer: TwentyQuestionsAnswer
     is_guess: bool
     asked_by: str = "user"  # 'user' or 'ai'
+    mode: Optional[TwentyQuestionsMode] = None  # Track which mode this question was asked in
     created_at: datetime
 
     class Config:
@@ -1390,7 +1399,8 @@ class TwentyQuestionsStartResponse(BaseModel):
 class TwentyQuestionsQuestionResponse(BaseModel):
     success: bool = True
     game: TwentyQuestionsGameState
-    ai_question: str
+    ai_question: Optional[str] = None  # For user_thinks mode
+    ai_answer: Optional[TwentyQuestionsAnswer] = None  # For fairydust_thinks mode
     question_number: int
 
 

@@ -14,6 +14,7 @@ from models import (
     TwentyQuestionsGuessRequest,
     TwentyQuestionsGuessResponse,
     TwentyQuestionsHistoryEntry,
+    TwentyQuestionsMode,
     TwentyQuestionsQuestionRequest,
     TwentyQuestionsQuestionResponse,
     TwentyQuestionsStartRequest,
@@ -32,32 +33,65 @@ logger = logging.getLogger(__name__)
 TWENTY_QUESTIONS_RATE_LIMIT = 10  # Max 10 games per hour per user
 
 
-async def get_user_people(db: Database, user_id: UUID) -> list[dict]:
-    """Get all people (and pets) associated with a user."""
-    people = await db.fetch_all(
-        """
-        SELECT id, name, relationship, birth_date, entry_type, species, personality_description
-        FROM people_in_my_life
-        WHERE user_id = $1 AND name IS NOT NULL AND name != ''
-        ORDER BY name
-        """,
-        user_id,
-    )
-    return people
 
 
-async def select_target_person(people: list[dict]) -> dict:
-    """Select a random person from the user's people list."""
-    if not people:
-        # Fallback to generic person if no people in database
-        return {
-            "id": None,
-            "name": "Someone you know",
-            "relationship": "unknown",
-            "entry_type": "person",
+async def generate_secret_answer(category: str, user_id: UUID) -> str:
+    """Generate a secret answer for fairydust_thinks mode."""
+    try:
+        # Get LLM model configuration
+        model_config = await get_llm_model_config()
+
+        # Build prompt for secret answer generation
+        prompt = f"""You are playing 20 Questions. Generate a specific, concrete answer from the category "{category}" that would make for a fun and fair guessing game.
+
+The answer should be:
+- Specific and well-known
+- Not too obscure or too obvious
+- Something that can be guessed through yes/no questions
+- One to three words maximum
+
+Category: {category}
+
+Examples by category:
+- animals: "elephant", "golden retriever", "hummingbird"
+- movies: "The Lion King", "Titanic", "Star Wars"
+- objects: "bicycle", "coffee mug", "smartphone"
+- food: "pizza", "chocolate cake", "apple"
+
+Generate one answer from the "{category}" category. Respond with just the answer, nothing else."""
+
+        # Get app ID
+        from shared.database import get_db
+        db = await get_db()
+        app_id = await get_app_id(db)
+
+        # Use centralized LLM client
+        completion, metadata = await llm_client.generate_completion(
+            prompt=prompt,
+            app_config=model_config,
+            user_id=user_id,
+            app_id=str(app_id),
+            action="twenty_questions_secret_generation",
+            request_metadata={
+                "category": category,
+            },
+        )
+
+        return completion.strip()
+
+    except Exception as e:
+        logger.error(f"Failed to generate secret answer: {e}")
+        # Fallback answers by category
+        fallback_answers = {
+            "animals": ["elephant", "dolphin", "butterfly"],
+            "movies": ["Titanic", "Star Wars", "The Lion King"],
+            "food": ["pizza", "chocolate", "apple"],
+            "objects": ["bicycle", "smartphone", "book"],
+            "general": ["tree", "ocean", "mountain"],
         }
-
-    return random.choice(people)
+        
+        category_answers = fallback_answers.get(category.lower(), fallback_answers["general"])
+        return random.choice(category_answers)
 
 
 async def get_llm_model_config() -> dict:
@@ -170,44 +204,8 @@ async def generate_ai_question(
     )
     category = game_data["category"] if game_data else "general"
 
-    # Build category-specific context and prompt
-    if category == "people_i_know":
-        # Original people-focused logic
-        people = await get_user_people(db, user_id)
-        people_names = [p["name"] for p in people if p.get("name")]
-        context = (
-            f"The user knows these people: {', '.join(people_names[:10])}"
-            if people_names
-            else "No people information available."
-        )
-
-        prompt = f"""You are playing 20 Questions. I'm thinking of someone the user knows personally, and you need to ask a yes/no question to narrow down who it might be.
-
-{context}
-
-Target info (DO NOT reveal this):
-- Name: {target_person.get('name', 'Unknown')}
-- Relationship: {target_person.get('relationship', 'Unknown')}
-- Type: {target_person.get('entry_type', 'person')}
-{f"- Species: {target_person.get('species')}" if target_person.get('species') else ""}
-
-This is question #{question_number} out of 20.{history_context}
-
-Ask a strategic yes/no question to help identify who I'm thinking of. Focus on:
-- Relationship to the user (family, friend, etc.)
-- Age group or generation
-- Gender
-- How they know this person
-- Whether it's a person or pet
-- Physical characteristics
-- Personality traits
-
-Keep the question under 100 characters and make it natural.
-
-Question:"""
-    else:
-        # Generic category logic - let AI choose from the category
-        prompt = f"""You are playing 20 Questions. I'm thinking of something from the category "{category}", and you need to ask a strategic yes/no question to narrow down what it might be.
+    # Build category-specific prompt
+    prompt = f"""You are playing 20 Questions. I'm thinking of something from the category "{category}", and you need to ask a strategic yes/no question to narrow down what it might be.
 
 This is question #{question_number} out of 20.{history_context}
 
@@ -246,18 +244,18 @@ Question:"""
 
     except Exception as e:
         logger.error(f"Failed to generate AI question: {e}")
-        # Fallback questions based on question number
+        # Fallback questions based on question number (generic)
         fallback_questions = [
-            "Is this person a family member?",
-            "Is this person older than you?",
-            "Do you see this person regularly?",
-            "Is this person male?",
-            "Do you work with this person?",
-            "Is this person married?",
-            "Does this person have children?",
-            "Do you share hobbies with this person?",
-            "Is this person from your hometown?",
-            "Is this person taller than average?",
+            "Is it something living?",
+            "Is it something you can touch?",
+            "Is it bigger than a breadbox?",
+            "Is it something found indoors?",
+            "Is it man-made?",
+            "Is it something you use every day?",
+            "Is it electronic?",
+            "Is it expensive?",
+            "Is it colorful?",
+            "Is it something that moves?",
         ]
         return fallback_questions[min(question_number - 1, len(fallback_questions) - 1)]
 
@@ -286,28 +284,8 @@ async def generate_ai_final_guess(
         if history_items:
             history_context = "Based on these questions and answers:\n" + "\n".join(history_items)
 
-    # Build category-specific prompt for final guess
-    if category == "people_i_know":
-        # Get user's people for context
-        people = await get_user_people(db, user_id)
-        people_names = [p["name"] for p in people if p.get("name")]
-        context = (
-            f"Choose from these people the user knows: {', '.join(people_names[:15])}"
-            if people_names
-            else "Think of someone the user knows personally."
-        )
-
-        prompt = f"""You are playing 20 Questions. Based on all the questions and answers, make your final guess about who I'm thinking of.
-
-{context}
-
-{history_context}
-
-Based on the answers to my questions, who do you think I'm thinking of? Respond with just the name, nothing else."""
-
-    else:
-        # Generic category final guess
-        prompt = f"""You are playing 20 Questions. Based on all the questions and answers, make your final guess about what I'm thinking of from the "{category}" category.
+    # Build prompt for final guess
+    prompt = f"""You are playing 20 Questions. Based on all the questions and answers, make your final guess about what I'm thinking of from the "{category}" category.
 
 {history_context}
 
@@ -340,10 +318,7 @@ Based on the answers to my questions, what do you think I'm thinking of? Respond
     except Exception as e:
         logger.error(f"Failed to generate AI final guess: {e}")
         # Fallback guess
-        if category == "people_i_know" and target_person.get("name"):
-            return target_person["name"]  # This would make the AI win, but it's a fallback
-        else:
-            return "Unknown"
+        return "Unknown"
 
 
 def check_guess_accuracy(guess: str, correct_answer: str) -> bool:
@@ -374,68 +349,95 @@ def check_guess_accuracy(guess: str, correct_answer: str) -> bool:
     return False
 
 
+async def generate_ai_answer_to_user_question(
+    db: Database,
+    game_id: UUID,
+    user_id: UUID,
+    secret_answer: str,
+    question: str,
+    category: str,
+    history: list[dict],
+) -> TwentyQuestionsAnswer:
+    """Generate AI's answer to user's question in fairydust_thinks mode."""
+    
+    # Build context from previous Q&A
+    history_context = ""
+    if history:
+        history_items = []
+        for entry in history:
+            if not entry.get("is_guess", False):
+                history_items.append(
+                    f"Q: {entry['question_text']} - A: {entry['answer']}"
+                )
+        if history_items:
+            history_context = "\n\nPrevious Q&A:\n" + "\n".join(history_items[-5:])
+    
+    prompt = f"""You are playing 20 Questions. I'm thinking of "{secret_answer}" from the category "{category}".
+
+A user just asked: "{question}"
+
+Based on my secret answer "{secret_answer}", how should I respond to this question?
+
+{history_context}
+
+Answer with exactly one of these responses:
+- "yes" if the answer is clearly yes
+- "no" if the answer is clearly no  
+- "sometimes" if it depends or is partially true
+- "unknown" if the information is not clear or not applicable
+
+Consider the secret answer "{secret_answer}" and respond appropriately to the question "{question}".
+
+Response:"""
+
+    try:
+        # Get LLM model configuration
+        model_config = await get_llm_model_config()
+
+        # Get app ID
+        app_id = await get_app_id(db)
+
+        # Use centralized LLM client
+        completion, metadata = await llm_client.generate_completion(
+            prompt=prompt,
+            app_config=model_config,
+            user_id=user_id,
+            app_id=str(app_id),
+            action="twenty_questions_answer_generation",
+            request_metadata={
+                "game_id": str(game_id),
+                "secret_answer": secret_answer,
+                "user_question": question,
+                "category": category,
+            },
+        )
+
+        # Parse the response and return appropriate enum
+        response = completion.strip().lower()
+        if response in ["yes", "y"]:
+            return TwentyQuestionsAnswer.YES
+        elif response in ["no", "n"]:
+            return TwentyQuestionsAnswer.NO
+        elif response in ["sometimes", "maybe", "partially"]:
+            return TwentyQuestionsAnswer.SOMETIMES
+        else:
+            return TwentyQuestionsAnswer.UNKNOWN
+
+    except Exception as e:
+        logger.error(f"Failed to generate AI answer: {e}")
+        # Fallback to SOMETIMES for playability
+        return TwentyQuestionsAnswer.SOMETIMES
+
+
 async def determine_ai_answer(
     target_person: dict, question: str, category: str = "general"
 ) -> TwentyQuestionsAnswer:
     """Determine how the AI should answer based on the target and question."""
-
-    # For people_i_know category, use the original logic
-    if category == "people_i_know":
-        question_lower = question.lower()
-        person_data = {
-            "name": target_person.get("name", "").lower(),
-            "relationship": target_person.get("relationship", "").lower(),
-            "entry_type": target_person.get("entry_type", "person").lower(),
-            "species": target_person.get("species", "").lower(),
-        }
-
-        # Family relationship patterns
-        if "family" in question_lower or "relative" in question_lower:
-            family_terms = [
-                "parent",
-                "mother",
-                "father",
-                "mom",
-                "dad",
-                "sister",
-                "brother",
-                "sibling",
-                "aunt",
-                "uncle",
-                "cousin",
-                "grandparent",
-                "grandmother",
-                "grandfather",
-                "child",
-                "son",
-                "daughter",
-            ]
-            if any(term in person_data["relationship"] for term in family_terms):
-                return TwentyQuestionsAnswer.YES
-            else:
-                return TwentyQuestionsAnswer.NO
-
-        # Pet vs person
-        if "pet" in question_lower or "animal" in question_lower:
-            if person_data["entry_type"] == "pet":
-                return TwentyQuestionsAnswer.YES
-            else:
-                return TwentyQuestionsAnswer.NO
-
-        if "person" in question_lower and "pet" not in question_lower:
-            if person_data["entry_type"] == "person":
-                return TwentyQuestionsAnswer.YES
-            else:
-                return TwentyQuestionsAnswer.NO
-
-        # Default to unknown for complex questions
-        return TwentyQuestionsAnswer.UNKNOWN
-
-    else:
-        # For other categories, the AI conceptually chooses and answers
-        # This should eventually use LLM to determine answers based on the category
-        # For now, return SOMETIMES to make the game playable
-        return TwentyQuestionsAnswer.SOMETIMES
+    
+    # For all categories, the AI conceptually chooses and answers
+    # This should eventually use LLM to determine answers based on the category
+    # For now, return SOMETIMES to make the game playable
+    return TwentyQuestionsAnswer.SOMETIMES
 
 
 async def get_app_id(db: Database) -> UUID:
@@ -517,79 +519,81 @@ async def start_game(
                 f"Auto-abandoned existing game {existing_game['id']} for user {request.user_id}"
             )
 
-        # Select target based on category
-        if request.category == "people_i_know":
-            # Only for this specific category, use user's people database
-            people = await get_user_people(db, request.user_id)
-            if not people:
-                return TwentyQuestionsErrorResponse(
-                    error="You need to add some people to your profile first to play this category.",
-                    error_code="NO_PEOPLE_FOUND",
-                )
-            target_person = await select_target_person(people)
+        # Handle different game modes
+        if request.mode == TwentyQuestionsMode.FAIRYDUST_THINKS:
+            # Fairydust thinks mode - generate secret answer
+            secret_answer = await generate_secret_answer(request.category, request.user_id)
+            target_name = "Secret Answer"  # Will be revealed only at game end
+            current_ai_question = None  # No AI question in this mode
+            start_message = f"Game started! I'm thinking of something from {request.category}. Ask me yes/no questions to figure out what it is!"
         else:
-            # For all other categories, let the AI choose conceptually
-            target_person = {
-                "id": None,
-                "name": f"Something from {request.category}",
-                "relationship": None,
-                "entry_type": "concept",
-            }
+            # User thinks mode - AI will ask questions
+            secret_answer = None
+            target_name = f"Something from {request.category}"
+            start_message = f"Game started! I'm thinking of something. Here's my first question:"
 
         # Create new game
         game_id = uuid4()
         await db.execute(
             """
             INSERT INTO twenty_questions_games (
-                id, user_id, category, target_person_id, target_person_name,
+                id, user_id, category, mode, target_person_id, target_person_name, secret_answer,
                 status, questions_asked, questions_remaining
-            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
             """,
             game_id,
             request.user_id,
             request.category,
-            target_person.get("id"),
-            target_person["name"],
+            request.mode.value,
+            None,  # No target person ID
+            target_name,
+            secret_answer,
             TwentyQuestionsStatus.ACTIVE.value,
             0,
             20,
         )
 
-        # Generate AI's first question immediately
-        first_ai_question = await generate_ai_question(
-            db, game_id, request.user_id, target_person, [], 1
-        )
+        # Generate AI's first question only for user_thinks mode
+        first_ai_question = None
+        if request.mode == TwentyQuestionsMode.USER_THINKS:
+            target_person = {"name": target_name}
+            first_ai_question = await generate_ai_question(
+                db, game_id, request.user_id, target_person, [], 1
+            )
 
-        # Update game with the first AI question
-        await db.execute(
-            """
-            UPDATE twenty_questions_games
-            SET current_ai_question = $1, updated_at = CURRENT_TIMESTAMP
-            WHERE id = $2
-            """,
-            first_ai_question,
-            game_id,
-        )
+            # Update game with the first AI question
+            await db.execute(
+                """
+                UPDATE twenty_questions_games
+                SET current_ai_question = $1, updated_at = CURRENT_TIMESTAMP
+                WHERE id = $2
+                """,
+                first_ai_question,
+                game_id,
+            )
 
-        # Add AI's first question to history
-        await db.execute(
-            """
-            INSERT INTO twenty_questions_history (
-                game_id, question_number, question_text, answer, is_guess, asked_by
-            ) VALUES ($1, $2, $3, $4, $5, $6)
-            """,
-            game_id,
-            1,
-            first_ai_question,
-            "pending",  # No answer yet
-            False,
-            "ai",
-        )
+            # Add AI's first question to history
+            await db.execute(
+                """
+                INSERT INTO twenty_questions_history (
+                    game_id, question_number, question_text, answer, is_guess, asked_by, mode
+                ) VALUES ($1, $2, $3, $4, $5, $6, $7)
+                """,
+                game_id,
+                1,
+                first_ai_question,
+                "pending",  # No answer yet
+                False,
+                "ai",
+                request.mode.value,
+            )
 
-        # Fetch created game with AI question
+            start_message = f"{start_message} {first_ai_question}"
+
+        # Fetch created game
         game_data = await db.fetch_one(
             """
-            SELECT id, user_id, category, target_person_id, target_person_name,
+            SELECT id, user_id, category, mode, target_person_id, target_person_name, secret_answer,
                    status, questions_asked, questions_remaining, current_ai_question,
                    final_guess, answer_revealed, is_correct, created_at, updated_at
             FROM twenty_questions_games
@@ -598,11 +602,17 @@ async def start_game(
             game_id,
         )
 
-        game = TwentyQuestionsGameState(**game_data)
+        # Create game state - hide secret answer from response
+        game_data_dict = dict(game_data)
+        if request.mode == TwentyQuestionsMode.FAIRYDUST_THINKS:
+            game_data_dict["secret_answer"] = None  # Hide secret answer
+            game_data_dict["target_person_name"] = None  # Hide target name
+
+        game = TwentyQuestionsGameState(**game_data_dict)
 
         return TwentyQuestionsStartResponse(
             game=game,
-            message=f"Game started! I'm thinking of someone in your life. Here's my first question: {first_ai_question}",
+            message=start_message,
         )
 
     except Exception as e:
@@ -622,12 +632,12 @@ async def ask_question(
     request: TwentyQuestionsQuestionRequest,
     db: Database = Depends(get_db),
 ):
-    """User asks a question to the AI."""
+    """Handle user questions - works differently for each mode."""
     try:
         # Get game
         game_data = await db.fetch_one(
             """
-            SELECT id, user_id, category, target_person_id, target_person_name,
+            SELECT id, user_id, category, mode, target_person_id, target_person_name, secret_answer,
                    status, questions_asked, questions_remaining, current_ai_question,
                    final_guess, answer_revealed, is_correct, created_at, updated_at
             FROM twenty_questions_games
@@ -658,75 +668,23 @@ async def ask_question(
                 game_id=game_id,
             )
 
-        # Get target person info
-        target_person = {"name": game_data["target_person_name"]}
-        if game_data["target_person_id"]:
-            person_data = await db.fetch_one(
-                """
-                SELECT name, relationship, entry_type, species, personality_description
-                FROM people_in_my_life
-                WHERE id = $1
-                """,
-                game_data["target_person_id"],
+        game_mode = game_data["mode"]
+
+        if game_mode == TwentyQuestionsMode.USER_THINKS.value:
+            # User thinks mode - This endpoint shouldn't be used, user should use /answer
+            return TwentyQuestionsErrorResponse(
+                error="In user_thinks mode, use /answer endpoint to respond to AI questions",
+                error_code="WRONG_ENDPOINT_FOR_MODE",
+                game_id=game_id,
             )
-            if person_data:
-                target_person.update(person_data)
 
-        # Determine AI's answer
-        ai_answer = await determine_ai_answer(
-            target_person, request.question, game_data["category"]
-        )
-
-        # Update game state
-        new_questions_asked = game_data["questions_asked"] + 1
-        new_questions_remaining = game_data["questions_remaining"] - 1
-
-        await db.execute(
-            """
-            UPDATE twenty_questions_games
-            SET questions_asked = $1, questions_remaining = $2, updated_at = CURRENT_TIMESTAMP
-            WHERE id = $3
-            """,
-            new_questions_asked,
-            new_questions_remaining,
-            game_id,
-        )
-
-        # Add to history
-        await db.execute(
-            """
-            INSERT INTO twenty_questions_history (
-                game_id, question_number, question_text, answer, is_guess
-            ) VALUES ($1, $2, $3, $4, $5)
-            """,
-            game_id,
-            new_questions_asked,
-            request.question,
-            ai_answer.value,
-            False,
-        )
-
-        # Get updated game
-        updated_game_data = await db.fetch_one(
-            """
-            SELECT id, user_id, category, target_person_id, target_person_name,
-                   status, questions_asked, questions_remaining, current_ai_question,
-                   final_guess, answer_revealed, is_correct, created_at, updated_at
-            FROM twenty_questions_games
-            WHERE id = $1
-            """,
-            game_id,
-        )
-
-        game = TwentyQuestionsGameState(**updated_game_data)
-
-        # Generate AI's next question if game continues
-        ai_question = None
-        if new_questions_remaining > 0:
-            # Get history for context
+        elif game_mode == TwentyQuestionsMode.FAIRYDUST_THINKS.value:
+            # Fairydust thinks mode - User is asking the AI a question
+            
+            # Get game history for context
             history = await db.fetch_all(
                 """
-                SELECT question_number, question_text, answer, is_guess, asked_by, created_at
+                SELECT question_number, question_text, answer, is_guess, asked_by, mode, created_at
                 FROM twenty_questions_history
                 WHERE game_id = $1
                 ORDER BY question_number
@@ -734,15 +692,74 @@ async def ask_question(
                 game_id,
             )
 
-            ai_question = await generate_ai_question(
-                db, game_id, request.user_id, target_person, history, new_questions_asked + 1
+            # Generate AI's answer to user's question
+            ai_answer = await generate_ai_answer_to_user_question(
+                db, game_id, request.user_id, game_data["secret_answer"], 
+                request.question, game_data["category"], history
             )
 
-        return TwentyQuestionsQuestionResponse(
-            game=game,
-            ai_question=ai_question or f"I answered '{ai_answer.value}' to your question.",
-            question_number=new_questions_asked + 1,
-        )
+            # Update game state
+            new_questions_asked = game_data["questions_asked"] + 1
+            new_questions_remaining = game_data["questions_remaining"] - 1
+
+            await db.execute(
+                """
+                UPDATE twenty_questions_games
+                SET questions_asked = $1, questions_remaining = $2, updated_at = CURRENT_TIMESTAMP
+                WHERE id = $3
+                """,
+                new_questions_asked,
+                new_questions_remaining,
+                game_id,
+            )
+
+            # Add to history
+            await db.execute(
+                """
+                INSERT INTO twenty_questions_history (
+                    game_id, question_number, question_text, answer, is_guess, asked_by, mode
+                ) VALUES ($1, $2, $3, $4, $5, $6, $7)
+                """,
+                game_id,
+                new_questions_asked,
+                request.question,
+                ai_answer.value,
+                False,
+                "user",
+                game_mode,
+            )
+
+            # Get updated game state
+            updated_game_data = await db.fetch_one(
+                """
+                SELECT id, user_id, category, mode, target_person_id, target_person_name, secret_answer,
+                       status, questions_asked, questions_remaining, current_ai_question,
+                       final_guess, answer_revealed, is_correct, created_at, updated_at
+                FROM twenty_questions_games
+                WHERE id = $1
+                """,
+                game_id,
+            )
+
+            # Hide secret answer from response
+            game_data_dict = dict(updated_game_data)
+            game_data_dict["secret_answer"] = None
+            game_data_dict["target_person_name"] = None
+
+            game = TwentyQuestionsGameState(**game_data_dict)
+
+            return TwentyQuestionsQuestionResponse(
+                game=game,
+                ai_answer=ai_answer,
+                question_number=new_questions_asked,
+            )
+
+        else:
+            return TwentyQuestionsErrorResponse(
+                error="Unknown game mode",
+                error_code="UNKNOWN_MODE",
+                game_id=game_id,
+            )
 
     except Exception as e:
         logger.error(f"Error processing question in game {game_id}: {e}")
@@ -762,12 +779,12 @@ async def answer_ai_question(
     request: TwentyQuestionsAnswerRequest,
     db: Database = Depends(get_db),
 ):
-    """User answers the AI's question."""
+    """User answers the AI's question (only works in user_thinks mode)."""
     try:
         # Get game
         game_data = await db.fetch_one(
             """
-            SELECT id, user_id, category, target_person_id, target_person_name,
+            SELECT id, user_id, category, mode, target_person_id, target_person_name, secret_answer,
                    status, questions_asked, questions_remaining, current_ai_question,
                    final_guess, answer_revealed, is_correct, created_at, updated_at
             FROM twenty_questions_games
@@ -795,6 +812,14 @@ async def answer_ai_question(
             return TwentyQuestionsErrorResponse(
                 error="No questions remaining",
                 error_code="NO_QUESTIONS_REMAINING",
+                game_id=game_id,
+            )
+
+        # Check if this endpoint is being used in the correct mode
+        if game_data["mode"] != TwentyQuestionsMode.USER_THINKS.value:
+            return TwentyQuestionsErrorResponse(
+                error="In fairydust_thinks mode, use /question endpoint to ask questions",
+                error_code="WRONG_ENDPOINT_FOR_MODE",
                 game_id=game_id,
             )
 
@@ -827,24 +852,13 @@ async def answer_ai_question(
         ai_final_guess = None
         
         if new_questions_remaining > 0:
-            # Get target person info
+            # Get target info
             target_person = {"name": game_data["target_person_name"]}
-            if game_data["target_person_id"]:
-                person_data = await db.fetch_one(
-                    """
-                    SELECT name, relationship, entry_type, species, personality_description
-                    FROM people_in_my_life
-                    WHERE id = $1
-                    """,
-                    game_data["target_person_id"],
-                )
-                if person_data:
-                    target_person.update(person_data)
 
             # Get full history for context (including the answer we just recorded)
             history = await db.fetch_all(
                 """
-                SELECT question_number, question_text, answer, is_guess, asked_by, created_at
+                SELECT question_number, question_text, answer, is_guess, asked_by, mode, created_at
                 FROM twenty_questions_history
                 WHERE game_id = $1
                 ORDER BY question_number
@@ -860,8 +874,8 @@ async def answer_ai_question(
             await db.execute(
                 """
                 INSERT INTO twenty_questions_history (
-                    game_id, question_number, question_text, answer, is_guess, asked_by
-                ) VALUES ($1, $2, $3, $4, $5, $6)
+                    game_id, question_number, question_text, answer, is_guess, asked_by, mode
+                ) VALUES ($1, $2, $3, $4, $5, $6, $7)
                 """,
                 game_id,
                 new_questions_asked + 1,
@@ -869,26 +883,16 @@ async def answer_ai_question(
                 "pending",
                 False,
                 "ai",
+                game_data["mode"],
             )
         else:
             # No questions remaining - AI makes final guess
             target_person = {"name": game_data["target_person_name"]}
-            if game_data["target_person_id"]:
-                person_data = await db.fetch_one(
-                    """
-                    SELECT name, relationship, entry_type, species, personality_description
-                    FROM people_in_my_life
-                    WHERE id = $1
-                    """,
-                    game_data["target_person_id"],
-                )
-                if person_data:
-                    target_person.update(person_data)
 
             # Get full history for AI's final guess
             history = await db.fetch_all(
                 """
-                SELECT question_number, question_text, answer, is_guess, asked_by, created_at
+                SELECT question_number, question_text, answer, is_guess, asked_by, mode, created_at
                 FROM twenty_questions_history
                 WHERE game_id = $1
                 ORDER BY question_number
@@ -923,8 +927,8 @@ async def answer_ai_question(
             await db.execute(
                 """
                 INSERT INTO twenty_questions_history (
-                    game_id, question_number, question_text, answer, is_guess, asked_by
-                ) VALUES ($1, $2, $3, $4, $5, $6)
+                    game_id, question_number, question_text, answer, is_guess, asked_by, mode
+                ) VALUES ($1, $2, $3, $4, $5, $6, $7)
                 """,
                 game_id,
                 new_questions_asked + 1,
@@ -932,6 +936,7 @@ async def answer_ai_question(
                 "correct" if is_ai_correct else "incorrect",
                 True,
                 "ai",
+                game_data["mode"],
             )
 
         # Update game with new state and next AI question (only if not final guess)
@@ -963,7 +968,7 @@ async def answer_ai_question(
         # Get updated game
         updated_game_data = await db.fetch_one(
             """
-            SELECT id, user_id, category, target_person_id, target_person_name,
+            SELECT id, user_id, category, mode, target_person_id, target_person_name, secret_answer,
                    status, questions_asked, questions_remaining, current_ai_question,
                    final_guess, answer_revealed, is_correct, created_at, updated_at
             FROM twenty_questions_games
@@ -972,7 +977,12 @@ async def answer_ai_question(
             game_id,
         )
 
-        game = TwentyQuestionsGameState(**updated_game_data)
+        # Hide secret fields for frontend
+        game_data_dict = dict(updated_game_data)
+        if game_data_dict["mode"] == TwentyQuestionsMode.FAIRYDUST_THINKS.value:
+            game_data_dict["secret_answer"] = None
+
+        game = TwentyQuestionsGameState(**game_data_dict)
 
         # Build response with AI final guess information if applicable
         if ai_final_guess:
@@ -1014,12 +1024,12 @@ async def make_guess(
     request: TwentyQuestionsGuessRequest,
     db: Database = Depends(get_db),
 ):
-    """User makes a final guess."""
+    """User makes a final guess (works for both modes)."""
     try:
         # Get game
         game_data = await db.fetch_one(
             """
-            SELECT id, user_id, category, target_person_id, target_person_name,
+            SELECT id, user_id, category, mode, target_person_id, target_person_name, secret_answer,
                    status, questions_asked, questions_remaining, current_ai_question,
                    final_guess, answer_revealed, is_correct, created_at, updated_at
             FROM twenty_questions_games
@@ -1043,14 +1053,18 @@ async def make_guess(
                 game_id=game_id,
             )
 
-        # Check if guess is correct (case-insensitive partial match)
-        target_name = game_data["target_person_name"].lower()
-        guess_name = request.guess.lower()
+        # Check if guess is correct based on game mode
+        if game_data["mode"] == TwentyQuestionsMode.FAIRYDUST_THINKS.value:
+            # In fairydust_thinks mode, compare against secret_answer
+            target_name = game_data["secret_answer"]
+            answer_revealed = game_data["secret_answer"]
+        else:
+            # In user_thinks mode, compare against target_person_name
+            target_name = game_data["target_person_name"]
+            answer_revealed = game_data["target_person_name"]
 
         # Simple matching - could be made more sophisticated
-        is_correct = (
-            guess_name in target_name or target_name in guess_name or guess_name == target_name
-        )
+        is_correct = check_guess_accuracy(request.guess, target_name)
 
         # Determine game outcome
         new_status = TwentyQuestionsStatus.WON if is_correct else TwentyQuestionsStatus.LOST
@@ -1064,7 +1078,7 @@ async def make_guess(
             """,
             new_status.value,
             request.guess,
-            game_data["target_person_name"],
+            answer_revealed,
             is_correct,
             game_id,
         )
@@ -1073,20 +1087,22 @@ async def make_guess(
         await db.execute(
             """
             INSERT INTO twenty_questions_history (
-                game_id, question_number, question_text, answer, is_guess
-            ) VALUES ($1, $2, $3, $4, $5)
+                game_id, question_number, question_text, answer, is_guess, asked_by, mode
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7)
             """,
             game_id,
             game_data["questions_asked"] + 1,
             f"Final guess: {request.guess}",
             "correct" if is_correct else "incorrect",
             True,
+            "user",
+            game_data["mode"],
         )
 
         # Get updated game
         updated_game_data = await db.fetch_one(
             """
-            SELECT id, user_id, category, target_person_id, target_person_name,
+            SELECT id, user_id, category, mode, target_person_id, target_person_name, secret_answer,
                    status, questions_asked, questions_remaining, current_ai_question,
                    final_guess, answer_revealed, is_correct, created_at, updated_at
             FROM twenty_questions_games
@@ -1095,18 +1111,23 @@ async def make_guess(
             game_id,
         )
 
-        game = TwentyQuestionsGameState(**updated_game_data)
+        # Hide secret fields for frontend
+        game_data_dict = dict(updated_game_data)
+        if game_data_dict["mode"] == TwentyQuestionsMode.FAIRYDUST_THINKS.value:
+            game_data_dict["secret_answer"] = None
+
+        game = TwentyQuestionsGameState(**game_data_dict)
 
         # Generate response message
         if is_correct:
-            message = f"🎉 Correct! I was thinking of {game_data['target_person_name']}. Great job!"
+            message = f"🎉 Correct! I was thinking of {answer_revealed}. Great job!"
         else:
-            message = f"❌ Sorry, that's not correct. I was thinking of {game_data['target_person_name']}. Better luck next time!"
+            message = f"❌ Sorry, that's not correct. I was thinking of {answer_revealed}. Better luck next time!"
 
         return TwentyQuestionsGuessResponse(
             game=game,
             is_correct=is_correct,
-            answer_revealed=game_data["target_person_name"],
+            answer_revealed=answer_revealed,
             message=message,
         )
 
@@ -1133,7 +1154,7 @@ async def get_game_status(
         # Get game
         game_data = await db.fetch_one(
             """
-            SELECT id, user_id, category, target_person_id, target_person_name,
+            SELECT id, user_id, category, mode, target_person_id, target_person_name, secret_answer,
                    status, questions_asked, questions_remaining, current_ai_question,
                    final_guess, answer_revealed, is_correct, created_at, updated_at
             FROM twenty_questions_games
@@ -1153,7 +1174,7 @@ async def get_game_status(
         # Get history
         history_data = await db.fetch_all(
             """
-            SELECT question_number, question_text, answer, is_guess, asked_by, created_at
+            SELECT question_number, question_text, answer, is_guess, asked_by, mode, created_at
             FROM twenty_questions_history
             WHERE game_id = $1
             ORDER BY question_number
@@ -1161,7 +1182,15 @@ async def get_game_status(
             game_id,
         )
 
-        game = TwentyQuestionsGameState(**game_data)
+        # Hide secret fields for frontend
+        game_data_dict = dict(game_data)
+        if game_data_dict["mode"] == TwentyQuestionsMode.FAIRYDUST_THINKS.value:
+            game_data_dict["secret_answer"] = None
+            # Only reveal target name if game is over
+            if game_data_dict["status"] not in ["won", "lost"]:
+                game_data_dict["target_person_name"] = None
+
+        game = TwentyQuestionsGameState(**game_data_dict)
         history = [TwentyQuestionsHistoryEntry(**entry) for entry in history_data]
 
         return TwentyQuestionsStatusResponse(
