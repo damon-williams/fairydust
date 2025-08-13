@@ -164,21 +164,28 @@ async def generate_ai_question(
                 history_items[-8:]
             )  # Last 8 Q&A pairs for better context
 
-    # Get user's people for context
-    people = await get_user_people(db, user_id)
-    people_names = [p["name"] for p in people if p.get("name")]
-    people_context = (
-        f"The user knows these people: {', '.join(people_names[:10])}"
-        if people_names
-        else "No people information available."
+    # Get game info to determine category
+    game_data = await db.fetch_one(
+        "SELECT category FROM twenty_questions_games WHERE id = $1", game_id
     )
+    category = game_data["category"] if game_data else "general"
 
-    # Generate question prompt
-    prompt = f"""You are playing 20 Questions. The user is thinking of someone in their life, and you need to ask a yes/no question to narrow down who it might be.
+    # Build category-specific context and prompt
+    if category == "people_i_know":
+        # Original people-focused logic
+        people = await get_user_people(db, user_id)
+        people_names = [p["name"] for p in people if p.get("name")]
+        context = (
+            f"The user knows these people: {', '.join(people_names[:10])}"
+            if people_names
+            else "No people information available."
+        )
+        
+        prompt = f"""You are playing 20 Questions. I'm thinking of someone the user knows personally, and you need to ask a yes/no question to narrow down who it might be.
 
-{people_context}
+{context}
 
-Target person info (DO NOT reveal this):
+Target info (DO NOT reveal this):
 - Name: {target_person.get('name', 'Unknown')}
 - Relationship: {target_person.get('relationship', 'Unknown')}
 - Type: {target_person.get('entry_type', 'person')}
@@ -186,7 +193,7 @@ Target person info (DO NOT reveal this):
 
 This is question #{question_number} out of 20.{history_context}
 
-Ask a strategic yes/no question to help identify who the person is thinking of. Make it conversational and engaging. Focus on:
+Ask a strategic yes/no question to help identify who I'm thinking of. Focus on:
 - Relationship to the user (family, friend, etc.)
 - Age group or generation
 - Gender
@@ -194,7 +201,17 @@ Ask a strategic yes/no question to help identify who the person is thinking of. 
 - Whether it's a person or pet
 - Physical characteristics
 - Personality traits
-- Shared activities or memories
+
+Keep the question under 100 characters and make it natural.
+
+Question:"""
+    else:
+        # Generic category logic - let AI choose from the category
+        prompt = f"""You are playing 20 Questions. I'm thinking of something from the category "{category}", and you need to ask a strategic yes/no question to narrow down what it might be.
+
+This is question #{question_number} out of 20.{history_context}
+
+Ask a strategic yes/no question to help identify what I'm thinking of from the "{category}" category. Make it conversational and engaging. Focus on relevant characteristics for this category.
 
 Keep the question under 100 characters and make it natural.
 
@@ -245,61 +262,52 @@ Question:"""
         return fallback_questions[min(question_number - 1, len(fallback_questions) - 1)]
 
 
-async def determine_ai_answer(target_person: dict, question: str) -> TwentyQuestionsAnswer:
-    """Determine how the AI should answer based on the target person and question."""
+async def determine_ai_answer(target_person: dict, question: str, category: str = "general") -> TwentyQuestionsAnswer:
+    """Determine how the AI should answer based on the target and question."""
 
-    # This is a simplified heuristic-based approach
-    # In a more sophisticated implementation, this could use LLM to analyze the question
+    # For people_i_know category, use the original logic
+    if category == "people_i_know":
+        question_lower = question.lower()
+        person_data = {
+            "name": target_person.get("name", "").lower(),
+            "relationship": target_person.get("relationship", "").lower(),
+            "entry_type": target_person.get("entry_type", "person").lower(),
+            "species": target_person.get("species", "").lower(),
+        }
 
-    question_lower = question.lower()
-    person_data = {
-        "name": target_person.get("name", "").lower(),
-        "relationship": target_person.get("relationship", "").lower(),
-        "entry_type": target_person.get("entry_type", "person").lower(),
-        "species": target_person.get("species", "").lower(),
-    }
+        # Family relationship patterns
+        if "family" in question_lower or "relative" in question_lower:
+            family_terms = [
+                "parent", "mother", "father", "mom", "dad", "sister", "brother", 
+                "sibling", "aunt", "uncle", "cousin", "grandparent", "grandmother", 
+                "grandfather", "child", "son", "daughter",
+            ]
+            if any(term in person_data["relationship"] for term in family_terms):
+                return TwentyQuestionsAnswer.YES
+            else:
+                return TwentyQuestionsAnswer.NO
 
-    # Family relationship patterns
-    if "family" in question_lower or "relative" in question_lower:
-        family_terms = [
-            "parent",
-            "mother",
-            "father",
-            "mom",
-            "dad",
-            "sister",
-            "brother",
-            "sibling",
-            "aunt",
-            "uncle",
-            "cousin",
-            "grandparent",
-            "grandmother",
-            "grandfather",
-            "child",
-            "son",
-            "daughter",
-        ]
-        if any(term in person_data["relationship"] for term in family_terms):
-            return TwentyQuestionsAnswer.YES
-        else:
-            return TwentyQuestionsAnswer.NO
+        # Pet vs person
+        if "pet" in question_lower or "animal" in question_lower:
+            if person_data["entry_type"] == "pet":
+                return TwentyQuestionsAnswer.YES
+            else:
+                return TwentyQuestionsAnswer.NO
 
-    # Pet vs person
-    if "pet" in question_lower or "animal" in question_lower:
-        if person_data["entry_type"] == "pet":
-            return TwentyQuestionsAnswer.YES
-        else:
-            return TwentyQuestionsAnswer.NO
+        if "person" in question_lower and "pet" not in question_lower:
+            if person_data["entry_type"] == "person":
+                return TwentyQuestionsAnswer.YES
+            else:
+                return TwentyQuestionsAnswer.NO
 
-    if "person" in question_lower and "pet" not in question_lower:
-        if person_data["entry_type"] == "person":
-            return TwentyQuestionsAnswer.YES
-        else:
-            return TwentyQuestionsAnswer.NO
-
-    # Default to unknown for complex questions that need more context
-    return TwentyQuestionsAnswer.UNKNOWN
+        # Default to unknown for complex questions
+        return TwentyQuestionsAnswer.UNKNOWN
+    
+    else:
+        # For other categories, the AI conceptually chooses and answers
+        # This should eventually use LLM to determine answers based on the category
+        # For now, return SOMETIMES to make the game playable
+        return TwentyQuestionsAnswer.SOMETIMES
 
 
 async def get_app_id(db: Database) -> UUID:
@@ -372,16 +380,24 @@ async def start_game(
                 game_id=existing_game["id"],
             )
 
-        # Get user's people
-        people = await get_user_people(db, request.user_id)
-        if not people:
-            return TwentyQuestionsErrorResponse(
-                error="You need to add some people to your profile first to play this game.",
-                error_code="NO_PEOPLE_FOUND",
-            )
-
-        # Select target person
-        target_person = await select_target_person(people)
+        # Select target based on category
+        if request.category == "people_i_know":
+            # Only for this specific category, use user's people database
+            people = await get_user_people(db, request.user_id)
+            if not people:
+                return TwentyQuestionsErrorResponse(
+                    error="You need to add some people to your profile first to play this category.",
+                    error_code="NO_PEOPLE_FOUND",
+                )
+            target_person = await select_target_person(people)
+        else:
+            # For all other categories, let the AI choose conceptually
+            target_person = {
+                "id": None,
+                "name": f"Something from {request.category}",
+                "relationship": None,
+                "entry_type": "concept",
+            }
 
         # Create new game
         game_id = uuid4()
@@ -517,7 +533,7 @@ async def ask_question(
                 target_person.update(person_data)
 
         # Determine AI's answer
-        ai_answer = await determine_ai_answer(target_person, request.question)
+        ai_answer = await determine_ai_answer(target_person, request.question, game_data["category"])
 
         # Update game state
         new_questions_asked = game_data["questions_asked"] + 1
