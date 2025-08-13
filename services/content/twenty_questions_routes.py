@@ -147,7 +147,7 @@ async def get_llm_model_config() -> dict:
 
         if config_result:
             parameters = parse_jsonb_field(
-                config_result, "parameters", expected_type=dict, default={}
+                config_result["parameters"], default={}, field_name="parameters"
             )
 
             model_config = {
