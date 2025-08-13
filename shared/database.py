@@ -1856,7 +1856,17 @@ async def create_tables():
         );
 
         -- Add asked_by column if it doesn't exist
-        ALTER TABLE twenty_questions_history ADD COLUMN IF NOT EXISTS asked_by VARCHAR(10) DEFAULT 'user' CHECK (asked_by IN ('user', 'ai'));
+        ALTER TABLE twenty_questions_history ADD COLUMN IF NOT EXISTS asked_by VARCHAR(10) DEFAULT 'user';
+        
+        -- Update asked_by constraint to allow both 'user' and 'ai'
+        DO $$ 
+        BEGIN
+            ALTER TABLE twenty_questions_history DROP CONSTRAINT IF EXISTS twenty_questions_history_asked_by_check;
+            ALTER TABLE twenty_questions_history ADD CONSTRAINT twenty_questions_history_asked_by_check 
+                CHECK (asked_by IN ('user', 'ai'));
+        EXCEPTION
+            WHEN others THEN null;
+        END $$;
 
         CREATE INDEX IF NOT EXISTS idx_twenty_questions_history_game_id ON twenty_questions_history(game_id, question_number);
         CREATE INDEX IF NOT EXISTS idx_twenty_questions_history_created_at ON twenty_questions_history(created_at DESC);
