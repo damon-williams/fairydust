@@ -1,9 +1,9 @@
 # services/content/twenty_questions_routes.py
 import logging
 import random
+from typing import Union
 from uuid import UUID, uuid4
 
-from typing import Union
 from fastapi import APIRouter, Depends, HTTPException, status
 from models import (
     TwentyQuestionsAnswer,
@@ -180,7 +180,7 @@ async def generate_ai_question(
             if people_names
             else "No people information available."
         )
-        
+
         prompt = f"""You are playing 20 Questions. I'm thinking of someone the user knows personally, and you need to ask a yes/no question to narrow down who it might be.
 
 {context}
@@ -262,7 +262,9 @@ Question:"""
         return fallback_questions[min(question_number - 1, len(fallback_questions) - 1)]
 
 
-async def determine_ai_answer(target_person: dict, question: str, category: str = "general") -> TwentyQuestionsAnswer:
+async def determine_ai_answer(
+    target_person: dict, question: str, category: str = "general"
+) -> TwentyQuestionsAnswer:
     """Determine how the AI should answer based on the target and question."""
 
     # For people_i_know category, use the original logic
@@ -278,9 +280,23 @@ async def determine_ai_answer(target_person: dict, question: str, category: str 
         # Family relationship patterns
         if "family" in question_lower or "relative" in question_lower:
             family_terms = [
-                "parent", "mother", "father", "mom", "dad", "sister", "brother", 
-                "sibling", "aunt", "uncle", "cousin", "grandparent", "grandmother", 
-                "grandfather", "child", "son", "daughter",
+                "parent",
+                "mother",
+                "father",
+                "mom",
+                "dad",
+                "sister",
+                "brother",
+                "sibling",
+                "aunt",
+                "uncle",
+                "cousin",
+                "grandparent",
+                "grandmother",
+                "grandfather",
+                "child",
+                "son",
+                "daughter",
             ]
             if any(term in person_data["relationship"] for term in family_terms):
                 return TwentyQuestionsAnswer.YES
@@ -302,7 +318,7 @@ async def determine_ai_answer(target_person: dict, question: str, category: str 
 
         # Default to unknown for complex questions
         return TwentyQuestionsAnswer.UNKNOWN
-    
+
     else:
         # For other categories, the AI conceptually chooses and answers
         # This should eventually use LLM to determine answers based on the category
@@ -348,7 +364,9 @@ async def check_rate_limit(db: Database, user_id: UUID) -> bool:
         return False  # Allow on error
 
 
-@router.post("/start", response_model=Union[TwentyQuestionsStartResponse, TwentyQuestionsErrorResponse])
+@router.post(
+    "/start", response_model=Union[TwentyQuestionsStartResponse, TwentyQuestionsErrorResponse]
+)
 async def start_game(
     request: TwentyQuestionsStartRequest,
     db: Database = Depends(get_db),
@@ -362,7 +380,7 @@ async def start_game(
                 error=f"Rate limit exceeded. Maximum {TWENTY_QUESTIONS_RATE_LIMIT} games per hour.",
                 error_code="RATE_LIMIT_EXCEEDED",
             )
-        # Check if user has an active game
+        # Auto-abandon any existing active games
         existing_game = await db.fetch_one(
             """
             SELECT id FROM twenty_questions_games
@@ -374,10 +392,17 @@ async def start_game(
         )
 
         if existing_game:
-            return TwentyQuestionsErrorResponse(
-                error="You already have an active game. Complete it first or check your game status.",
-                error_code="GAME_ALREADY_ACTIVE",
-                game_id=existing_game["id"],
+            # Mark the old game as abandoned
+            await db.execute(
+                """
+                UPDATE twenty_questions_games
+                SET status = 'abandoned', updated_at = CURRENT_TIMESTAMP
+                WHERE id = $1
+                """,
+                existing_game["id"],
+            )
+            logger.info(
+                f"Auto-abandoned existing game {existing_game['id']} for user {request.user_id}"
             )
 
         # Select target based on category
@@ -476,7 +501,10 @@ async def start_game(
         )
 
 
-@router.post("/{game_id}/question", response_model=Union[TwentyQuestionsQuestionResponse, TwentyQuestionsErrorResponse])
+@router.post(
+    "/{game_id}/question",
+    response_model=Union[TwentyQuestionsQuestionResponse, TwentyQuestionsErrorResponse],
+)
 async def ask_question(
     game_id: UUID,
     request: TwentyQuestionsQuestionRequest,
@@ -533,7 +561,9 @@ async def ask_question(
                 target_person.update(person_data)
 
         # Determine AI's answer
-        ai_answer = await determine_ai_answer(target_person, request.question, game_data["category"])
+        ai_answer = await determine_ai_answer(
+            target_person, request.question, game_data["category"]
+        )
 
         # Update game state
         new_questions_asked = game_data["questions_asked"] + 1
@@ -611,7 +641,10 @@ async def ask_question(
         )
 
 
-@router.post("/{game_id}/answer", response_model=Union[TwentyQuestionsAnswerResponse, TwentyQuestionsErrorResponse])
+@router.post(
+    "/{game_id}/answer",
+    response_model=Union[TwentyQuestionsAnswerResponse, TwentyQuestionsErrorResponse],
+)
 async def answer_ai_question(
     game_id: UUID,
     request: TwentyQuestionsAnswerRequest,
@@ -766,7 +799,10 @@ async def answer_ai_question(
         )
 
 
-@router.post("/{game_id}/guess", response_model=Union[TwentyQuestionsGuessResponse, TwentyQuestionsErrorResponse])
+@router.post(
+    "/{game_id}/guess",
+    response_model=Union[TwentyQuestionsGuessResponse, TwentyQuestionsErrorResponse],
+)
 async def make_guess(
     game_id: UUID,
     request: TwentyQuestionsGuessRequest,
@@ -877,7 +913,10 @@ async def make_guess(
         )
 
 
-@router.get("/{game_id}/status", response_model=Union[TwentyQuestionsStatusResponse, TwentyQuestionsErrorResponse])
+@router.get(
+    "/{game_id}/status",
+    response_model=Union[TwentyQuestionsStatusResponse, TwentyQuestionsErrorResponse],
+)
 async def get_game_status(
     game_id: UUID,
     user_id: UUID,

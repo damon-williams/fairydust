@@ -1316,6 +1316,7 @@ class TwentyQuestionsStatus(str, Enum):
     ACTIVE = "active"
     WON = "won"
     LOST = "lost"
+    ABANDONED = "abandoned"
 
 
 class TwentyQuestionsAnswer(str, Enum):
