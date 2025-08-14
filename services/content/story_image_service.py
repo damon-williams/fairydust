@@ -60,7 +60,7 @@ class StoryImageService:
 
             # Generate scene description and prompt
             scene_description = self._extract_visual_elements(scene_context, characters)
-            image_id = f"img_{generate_uuid7().hex[:8]}"
+            image_id = f"img_{i+1:02d}_{generate_uuid7().hex[:6]}"
 
             scenes.append(
                 {

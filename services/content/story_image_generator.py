@@ -225,6 +225,7 @@ class StoryImageGenerator:
             INSERT INTO story_images (
                 story_id, user_id, image_id, prompt, scene_description, status
             ) VALUES ($1, $2, $3, $4, $5, $6)
+            ON CONFLICT (story_id, image_id) DO NOTHING
             """,
             story_id,
             user_id,

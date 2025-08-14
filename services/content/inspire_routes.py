@@ -88,7 +88,7 @@ async def generate_inspiration(
         # Get user balance for logging purposes only (payment handled by app)
         user_balance = await _get_user_balance(request.user_id, auth_token)
         print(
-            f"💰 INSPIRE DEBUG: User balance: {user_balance} DUST (payment handled by app)",
+            f"💰 INSPIRE DEBUG: User balance: {user_balance} DUST",
             flush=True,
         )
 
@@ -156,9 +156,6 @@ async def generate_inspiration(
             flush=True,
         )
 
-        # LLM usage logging is now handled by the centralized client
-        print("📊 INSPIRE DEBUG: LLM usage logged by centralized client", flush=True)
-
         # Save inspiration to database
         inspiration_id = await _save_inspiration(
             db=db,
@@ -175,8 +172,6 @@ async def generate_inspiration(
         await _mark_onboarding_completed(db, request.user_id)
 
         # DUST payment is handled by the app before calling this endpoint
-        # Content service only handles content generation, not payment
-        print("💰 INSPIRE DEBUG: Content generation complete - payment handled by app", flush=True)
         new_balance = user_balance  # Balance unchanged by content service
 
         # Build response
@@ -439,11 +434,6 @@ async def _get_user_balance(user_id: UUID, auth_token: str) -> int:
         print(f"❌ INSPIRE_BALANCE: Exception getting balance: {str(e)}", flush=True)
         return 0
 
-
-# App ID lookup no longer needed - payment handled by app layer
-
-
-# DUST consumption is now handled by the app, not the content service
 
 
 async def _check_rate_limit(db: Database, user_id: UUID) -> bool:
