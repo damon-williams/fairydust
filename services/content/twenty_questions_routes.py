@@ -2,7 +2,8 @@
 import logging
 import random
 from typing import Union
-from uuid import UUID, uuid4
+from uuid import UUID
+from shared.uuid_utils import generate_uuid7
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from models import (
@@ -598,7 +599,7 @@ async def start_game(
             start_message = f"Game started! I'm thinking of something. Here's my first question:"
 
         # Create new game
-        game_id = uuid4()
+        game_id = generate_uuid7()
         await db.execute(
             """
             INSERT INTO twenty_questions_games (

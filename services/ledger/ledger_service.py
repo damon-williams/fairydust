@@ -1,7 +1,8 @@
 # services/ledger/ledger_service.py
 import json
 from typing import Optional
-from uuid import UUID, uuid4
+from uuid import UUID
+from shared.uuid_utils import generate_uuid7
 
 import redis.asyncio as redis
 from fastapi import HTTPException
@@ -61,7 +62,7 @@ class LedgerService:
     async def _acquire_balance_lock(self, user_id: UUID, timeout: int = 2) -> bool:
         """Acquire a distributed lock for balance operations"""
         lock_key = f"{self.lock_prefix}:{user_id}"
-        lock_value = str(uuid4())
+        lock_value = str(generate_uuid7())
 
         # Try to acquire lock with timeout
         acquired = await self.redis.set(
@@ -168,7 +169,7 @@ class LedgerService:
                 )
 
                 # Create transaction record
-                transaction_id = uuid4()
+                transaction_id = generate_uuid7()
                 transaction = await conn.fetchrow(
                     """
                     INSERT INTO dust_transactions (
@@ -254,7 +255,7 @@ class LedgerService:
                 )
 
                 # Create transaction record
-                transaction_id = uuid4()
+                transaction_id = generate_uuid7()
                 transaction = await conn.fetchrow(
                     """
                     INSERT INTO dust_transactions (
@@ -371,7 +372,7 @@ class LedgerService:
             )
 
             # Create transaction ID
-            transaction_id = uuid4()
+            transaction_id = generate_uuid7()
             print(f"🍎 APPLE_PURCHASE: Generated transaction_id: {transaction_id}")
 
             # Insert transaction with Apple receipt fields
@@ -639,7 +640,7 @@ class LedgerService:
                 )
 
                 # Create transaction record
-                transaction_id = uuid4()
+                transaction_id = generate_uuid7()
                 transaction = await conn.fetchrow(
                     """
                     INSERT INTO dust_transactions (
@@ -737,7 +738,7 @@ class LedgerService:
                 )
 
                 # Create transaction record
-                transaction_id = uuid4()
+                transaction_id = generate_uuid7()
                 transaction = await conn.fetchrow(
                     """
                     INSERT INTO dust_transactions (
@@ -850,7 +851,7 @@ class LedgerService:
                 )
 
                 # Create refund transaction record
-                transaction_id = uuid4()
+                transaction_id = generate_uuid7()
                 transaction = await conn.fetchrow(
                     """
                     INSERT INTO dust_transactions (

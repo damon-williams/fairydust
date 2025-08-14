@@ -1,7 +1,7 @@
 # services/apps/service_routes.py
 from datetime import datetime
 from typing import Optional
-from uuid import uuid4
+from shared.uuid_utils import generate_uuid7
 
 from fastapi import APIRouter, Depends, Header, HTTPException, status
 from models import App, AppCategory, AppStatus
@@ -113,7 +113,7 @@ async def register_app_via_service(
 
             return f"{adj}{noun}{suffix}"
 
-        builder_id = uuid4()
+        builder_id = generate_uuid7()
         fairyname = generate_fairyname()
 
         await db.execute(
@@ -143,7 +143,7 @@ async def register_app_via_service(
         await db.execute("UPDATE users SET is_builder = true WHERE id = $1", builder_id)
 
     # Create the app
-    app_id = uuid4()
+    app_id = generate_uuid7()
 
     # Build registration metadata
     import json

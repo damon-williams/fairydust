@@ -1,7 +1,7 @@
 # services/content/wyr_routes.py
 import hashlib
 import json
-import uuid
+from shared.uuid_utils import generate_uuid7
 from datetime import datetime
 from typing import Optional
 
@@ -1072,7 +1072,7 @@ def _parse_questions_response(content: str, category: GameCategory) -> list[Ques
                 continue  # Skip incomplete questions
 
             question = QuestionObject(
-                id=uuid.uuid4(),
+                id=generate_uuid7(),
                 question_number=q_data.get("question_number", i + 1),
                 option_a=option_a,
                 option_b=option_b,
@@ -1098,7 +1098,7 @@ async def _save_game_session(
 ) -> uuid.UUID:
     """Save new game session to database"""
     try:
-        session_id = uuid.uuid4()
+        session_id = generate_uuid7()
 
         insert_query = """
             INSERT INTO wyr_game_sessions (

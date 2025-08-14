@@ -3,10 +3,10 @@ import asyncio
 import json
 import os
 import re
-import uuid
 from datetime import datetime
 from typing import Optional
 from uuid import UUID
+from shared.uuid_utils import generate_uuid7
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 
@@ -1748,7 +1748,7 @@ async def _save_story(
 ) -> uuid.UUID:
     """Save story to database with AI-generated summary"""
     try:
-        story_id = uuid.uuid4()
+        story_id = generate_uuid7()
 
         # Generate story summary for theme tracking
         story_summary = await _generate_story_summary(

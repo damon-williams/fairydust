@@ -1,6 +1,6 @@
 # services/content/fortune_routes.py
 import json
-import uuid
+from shared.uuid_utils import generate_uuid7
 from datetime import datetime
 from typing import Optional
 
@@ -627,7 +627,7 @@ async def _save_fortune_reading(
 ) -> uuid.UUID:
     """Save fortune reading to database"""
     try:
-        reading_id = uuid.uuid4()
+        reading_id = generate_uuid7()
 
         metadata = {
             "model_used": model_used,

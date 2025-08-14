@@ -1,7 +1,7 @@
 # services/content/inspire_routes.py
 # Service URL configuration based on environment
 import os
-import uuid
+from shared.uuid_utils import generate_uuid7
 from datetime import datetime
 from typing import Optional
 
@@ -53,9 +53,9 @@ async def generate_inspiration(
     """
     Generate a new inspiration using LLM and automatically save it to user's collection.
     """
-    import uuid
+    from shared.uuid_utils import generate_uuid7
 
-    request_id = str(uuid.uuid4())[:8]
+    request_id = str(generate_uuid7())[:8]
     print(
         f"🚀 INSPIRE DEBUG: === NEW REQUEST START [{request_id}] === User: {request.user_id}, Category: {request.category}",
         flush=True,
@@ -764,7 +764,7 @@ async def _generate_inspiration_llm_with_user(
         completion, metadata = await llm_client.generate_completion(
             prompt=full_prompt,
             app_config=model_config,
-            user_id=user_id or uuid.uuid4(),
+            user_id=user_id or generate_uuid7(),
             app_id="fairydust-inspire",
             action="inspiration_generation",
             request_metadata=request_metadata,

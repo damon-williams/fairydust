@@ -153,7 +153,7 @@ async def delete_user_json(
     """Delete user via JSON API with audit logging"""
     import json
     from datetime import datetime
-    from uuid import uuid4
+    from shared.uuid_utils import generate_uuid7
 
     # Verify user exists
     user_data = await db.fetch_one(
@@ -208,7 +208,7 @@ async def delete_user_json(
                 data_summary[stat_name] = 0
 
         # Create deletion log entry
-        deletion_id = str(uuid4())
+        deletion_id = str(generate_uuid7())
         await db.execute(
             """INSERT INTO account_deletion_logs
                (id, user_id, fairyname, email, deletion_reason, deletion_feedback,

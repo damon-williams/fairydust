@@ -3,7 +3,7 @@ import secrets
 import string
 from datetime import datetime
 from typing import Optional
-from uuid import uuid4
+from shared.uuid_utils import generate_uuid7
 
 from auth import AuthService, TokenData, get_current_user
 from fastapi import (
@@ -351,7 +351,7 @@ async def verify_otp(
         # Create new user
         is_new_user = True
 
-        user_id = uuid4()
+        user_id = generate_uuid7()
         fairyname = generate_fairyname()
 
         # Check fairyname uniqueness with limited retries to prevent infinite loops
@@ -552,7 +552,7 @@ async def oauth_login(
             # Create new user
             is_new_user = True
 
-            user_id = uuid4()
+            user_id = generate_uuid7()
             fairyname = generate_fairyname()
 
             # Check fairyname uniqueness with limited retries to prevent infinite loops
@@ -1038,7 +1038,7 @@ async def delete_account(
                 data_summary[stat_name] = 0
 
         # Create deletion log entry
-        deletion_id = str(uuid4())
+        deletion_id = str(generate_uuid7())
         await db.execute(
             """INSERT INTO account_deletion_logs
                (id, user_id, fairyname, email, deletion_reason, deletion_feedback,

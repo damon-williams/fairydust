@@ -2,7 +2,7 @@
 
 import json
 import os
-from uuid import uuid4
+from shared.uuid_utils import generate_uuid7
 
 import httpx
 from fastapi import APIRouter, Depends, HTTPException
@@ -186,7 +186,7 @@ async def generate_image(request: ImageGenerateRequest, db: Database = Depends(g
         )
 
         # Store image in R2
-        image_id = str(uuid4())
+        image_id = str(generate_uuid7())
         stored_url, file_size, dimensions = await image_storage_service.store_generated_image(
             image_url, str(request.user_id), image_id
         )
@@ -388,7 +388,7 @@ async def regenerate_image(
         )
 
         # Store new image
-        new_image_id = str(uuid4())
+        new_image_id = str(generate_uuid7())
         stored_url, file_size, dimensions = await image_storage_service.store_generated_image(
             image_url, str(request.user_id), new_image_id
         )

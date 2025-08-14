@@ -1,7 +1,8 @@
 import os
 import sys
 from typing import Optional
-from uuid import UUID, uuid4
+from uuid import UUID
+from shared.uuid_utils import generate_uuid7
 
 import httpx
 from fastapi import APIRouter, Depends, Form, Request
@@ -591,7 +592,7 @@ async def submit_new_app(
         counter += 1
 
     # Create new app (immediately active)
-    app_id = uuid4()
+    app_id = generate_uuid7()
     await db.execute(
         """
         INSERT INTO apps (id, builder_id, name, slug, description, category, website_url, demo_url, icon_url, status, is_active)
