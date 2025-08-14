@@ -209,8 +209,8 @@ async def generate_ai_question(
                     )
         if history_items:
             history_context = "\n\nPrevious questions and answers:\n" + "\n".join(
-                history_items[-8:]
-            )  # Last 8 Q&A pairs for better context
+                history_items
+            )  # Include ALL Q&A pairs for full game context
 
     # Get game info to determine category
     game_data = await db.fetch_one(
@@ -384,7 +384,7 @@ async def generate_ai_answer_to_user_question(
                     f"Q: {entry['question_text']} - A: {entry['answer']}"
                 )
         if history_items:
-            history_context = "\n\nPrevious Q&A:\n" + "\n".join(history_items[-5:])
+            history_context = "\n\nPrevious Q&A:\n" + "\n".join(history_items)
     
     prompt = f"""You are playing 20 Questions. I'm thinking of "{secret_answer}" from the category "{category}".
 
