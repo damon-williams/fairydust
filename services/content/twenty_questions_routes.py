@@ -36,10 +36,35 @@ TWENTY_QUESTIONS_RATE_LIMIT = 10  # Max 10 games per hour per user
 
 
 async def generate_secret_answer(category: str, user_id: UUID) -> str:
-    """Generate a secret answer for fairydust_thinks mode."""
+    """Generate a secret answer for fairydust_thinks mode, avoiding previous answers."""
     try:
+        # Get database connection
+        from shared.database import get_db
+        db = await get_db()
+
+        # Get user's previous secret answers from this category to avoid duplicates
+        previous_answers = await db.fetch_all(
+            """
+            SELECT secret_answer 
+            FROM twenty_questions_games 
+            WHERE user_id = $1 AND category = $2 AND secret_answer IS NOT NULL
+            ORDER BY created_at DESC
+            LIMIT 20
+            """,
+            user_id,
+            category,
+        )
+        
+        previous_list = [row["secret_answer"] for row in previous_answers if row["secret_answer"]]
+        logger.info(f"🔍 SECRET_GEN: Found {len(previous_list)} previous answers for {category}: {previous_list}")
+
         # Get LLM model configuration
         model_config = await get_llm_model_config()
+
+        # Build anti-duplication context
+        avoid_text = ""
+        if previous_list:
+            avoid_text = f"\n\nIMPORTANT: Avoid these answers that have been used before:\n{', '.join(previous_list)}\n\nGenerate something completely different."
 
         # Build prompt for secret answer generation
         prompt = f"""You are playing 20 Questions. Generate a specific, concrete answer from the category "{category}" that would make for a fun and fair guessing game.
@@ -56,42 +81,68 @@ Examples by category:
 - animals: "elephant", "golden retriever", "hummingbird"
 - movies: "The Lion King", "Titanic", "Star Wars"
 - objects: "bicycle", "coffee mug", "smartphone"
-- food: "pizza", "chocolate cake", "apple"
+- food: "pizza", "chocolate cake", "apple"{avoid_text}
 
 Generate one answer from the "{category}" category. Respond with just the answer, nothing else."""
 
         # Get app ID
-        from shared.database import get_db
-        db = await get_db()
         app_id = await get_app_id(db)
 
-        # Use centralized LLM client
-        completion, metadata = await llm_client.generate_completion(
-            prompt=prompt,
-            app_config=model_config,
-            user_id=user_id,
-            app_id=str(app_id),
-            action="twenty_questions_secret_generation",
-            request_metadata={
-                "category": category,
-            },
-        )
+        # Try multiple times to avoid duplicates
+        max_attempts = 3
+        for attempt in range(max_attempts):
+            logger.info(f"🎲 SECRET_GEN: Attempt {attempt + 1}/{max_attempts} for category {category}")
+            
+            # Use centralized LLM client
+            completion, metadata = await llm_client.generate_completion(
+                prompt=prompt,
+                app_config=model_config,
+                user_id=user_id,
+                app_id=str(app_id),
+                action="twenty_questions_secret_generation",
+                request_metadata={
+                    "category": category,
+                    "attempt": attempt + 1,
+                    "previous_answers": previous_list,
+                },
+            )
 
-        return completion.strip()
+            new_answer = completion.strip()
+            
+            # Check if this answer was used before (case-insensitive)
+            if not any(new_answer.lower() == prev.lower() for prev in previous_list):
+                logger.info(f"✅ SECRET_GEN: Generated unique answer: {new_answer}")
+                return new_answer
+            else:
+                logger.warning(f"⚠️ SECRET_GEN: Generated duplicate answer '{new_answer}', retrying...")
 
-    except Exception as e:
-        logger.error(f"Failed to generate secret answer: {e}")
-        # Fallback answers by category
-        fallback_answers = {
-            "animals": ["elephant", "dolphin", "butterfly"],
-            "movies": ["Titanic", "Star Wars", "The Lion King"],
-            "food": ["pizza", "chocolate", "apple"],
-            "objects": ["bicycle", "smartphone", "book"],
-            "general": ["tree", "ocean", "mountain"],
-        }
+        # If all attempts failed, use fallback with uniqueness check
+        logger.warning(f"❌ SECRET_GEN: All LLM attempts generated duplicates, using fallback")
         
-        category_answers = fallback_answers.get(category.lower(), fallback_answers["general"])
-        return random.choice(category_answers)
+    except Exception as e:
+        logger.error(f"❌ SECRET_GEN: Failed to generate secret answer: {e}")
+
+    # Fallback answers by category with uniqueness check
+    fallback_answers = {
+        "animals": ["elephant", "dolphin", "butterfly", "penguin", "giraffe", "kangaroo", "octopus", "flamingo", "zebra", "panda"],
+        "movies": ["Titanic", "Star Wars", "The Lion King", "Avatar", "Frozen", "Jurassic Park", "The Matrix", "Finding Nemo", "Shrek", "Toy Story"],
+        "food": ["pizza", "chocolate", "apple", "banana", "hamburger", "sushi", "ice cream", "pasta", "sandwich", "cookies"],
+        "objects": ["bicycle", "smartphone", "book", "umbrella", "guitar", "camera", "lamp", "mirror", "clock", "pillow"],
+        "general": ["tree", "ocean", "mountain", "rainbow", "sunset", "cloud", "river", "flower", "bridge", "castle"],
+    }
+    
+    category_answers = fallback_answers.get(category.lower(), fallback_answers["general"])
+    
+    # Try to find a unique fallback answer
+    for answer in category_answers:
+        if not previous_list or not any(answer.lower() == prev.lower() for prev in previous_list):
+            logger.info(f"🔄 SECRET_GEN: Using unique fallback answer: {answer}")
+            return answer
+    
+    # If even fallbacks are all used, just return the first one (very unlikely)
+    fallback_answer = category_answers[0]
+    logger.warning(f"⚠️ SECRET_GEN: All fallbacks used, returning: {fallback_answer}")
+    return fallback_answer
 
 
 async def get_llm_model_config() -> dict:
