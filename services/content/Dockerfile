@@ -21,7 +21,7 @@ RUN echo "📦 Installed packages:" && pip list | grep -E "(uuid7|googlemaps|lan
 # Verify critical package installations
 RUN python -c "import googlemaps; print('✅ googlemaps package installed successfully')" || echo "❌ googlemaps package failed to install"
 RUN python -c "import langsmith; print('✅ langsmith package installed successfully')" || echo "❌ langsmith package failed to install"  
-RUN python -c "import uuid7; print('✅ uuid7 package installed successfully')" || echo "❌ uuid7 package failed to install"
+RUN python -c "from uuid_extensions import uuid7; print('✅ uuid7 package installed successfully')" || echo "❌ uuid7 package failed to install"
 
 # Copy shared modules
 COPY shared/ shared/

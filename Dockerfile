@@ -27,7 +27,7 @@ RUN pip install --no-cache-dir uuid7==0.1.0 --force-reinstall
 RUN echo "📦 After reinstall:" && pip list | grep uuid7
 
 # Verify uuid7 package installation
-RUN python -c "import uuid7; print('✅ uuid7 package installed successfully')" || echo "❌ uuid7 package failed to install"
+RUN python -c "from uuid_extensions import uuid7; print('✅ uuid7 package installed successfully')" || echo "❌ uuid7 package failed to install"
 
 # Copy all service code
 COPY services ./services

@@ -15,7 +15,7 @@ from uuid import UUID
 from typing import Union
 
 try:
-    import uuid7
+    from uuid_extensions import uuid7
     UUIDV7_AVAILABLE = True
 except ImportError:
     UUIDV7_AVAILABLE = False
