@@ -1,5 +1,6 @@
 # services/content/fortune_routes.py
 import json
+from uuid import UUID
 from shared.uuid_utils import generate_uuid7
 from datetime import datetime
 from typing import Optional
@@ -204,7 +205,7 @@ async def generate_fortune_reading(
 # Helper functions
 
 
-async def _check_rate_limit(db: Database, user_id: uuid.UUID) -> bool:
+async def _check_rate_limit(db: Database, user_id: UUID) -> bool:
     """Check if user has exceeded rate limit for fortune generation"""
     try:
         # Count generations in the last hour
@@ -615,8 +616,8 @@ async def _generate_fortune_llm(
 
 async def _save_fortune_reading(
     db: Database,
-    user_id: uuid.UUID,
-    target_person_id: Optional[uuid.UUID],
+    user_id: UUID,
+    target_person_id: Optional[UUID],
     target_person_name: str,
     reading_type: ReadingType,
     question: Optional[str],
@@ -624,7 +625,7 @@ async def _save_fortune_reading(
     model_used: str,
     tokens_used: dict,
     cost: float,
-) -> uuid.UUID:
+) -> UUID:
     """Save fortune reading to database"""
     try:
         reading_id = generate_uuid7()
@@ -666,7 +667,7 @@ async def _save_fortune_reading(
 
 @router.get("/users/{user_id}/fortune-readings")
 async def get_user_fortune_readings(
-    user_id: uuid.UUID,
+    user_id: UUID,
     current_user: TokenData = Depends(get_current_user),
     db: Database = Depends(get_db),
     limit: int = Query(20, ge=1, le=50, description="Number of results to return"),
@@ -752,8 +753,8 @@ async def get_user_fortune_readings(
 
 @router.patch("/users/{user_id}/people/{person_id}/fortune-profile")
 async def update_person_fortune_profile(
-    user_id: uuid.UUID,
-    person_id: uuid.UUID,
+    user_id: UUID,
+    person_id: UUID,
     request: FortuneProfileRequest,
     current_user: TokenData = Depends(get_current_user),
     db: Database = Depends(get_db),
@@ -840,8 +841,8 @@ async def update_person_fortune_profile(
     "/users/{user_id}/fortune-readings/{reading_id}/favorite",
 )
 async def toggle_fortune_reading_favorite(
-    user_id: uuid.UUID,
-    reading_id: uuid.UUID,
+    user_id: UUID,
+    reading_id: UUID,
     request: FortuneFavoriteRequest,
     current_user: TokenData = Depends(get_current_user),
     db: Database = Depends(get_db),
@@ -901,8 +902,8 @@ async def toggle_fortune_reading_favorite(
     "/users/{user_id}/fortune-readings/{reading_id}",
 )
 async def delete_fortune_reading(
-    user_id: uuid.UUID,
-    reading_id: uuid.UUID,
+    user_id: UUID,
+    reading_id: UUID,
     current_user: TokenData = Depends(get_current_user),
     db: Database = Depends(get_db),
 ):

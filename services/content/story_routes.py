@@ -257,7 +257,7 @@ async def generate_story(
 
 @router.get("/users/{user_id}/stories")
 async def get_user_stories(
-    user_id: uuid.UUID,
+    user_id: UUID,
     current_user: TokenData = Depends(get_current_user),
     db: Database = Depends(get_db),
     limit: int = Query(50, ge=1, le=100, description="Number of results to return"),
@@ -395,8 +395,8 @@ async def get_user_stories(
 
 @router.post("/users/{user_id}/stories/{story_id}/favorite")
 async def toggle_story_favorite(
-    user_id: uuid.UUID,
-    story_id: uuid.UUID,
+    user_id: UUID,
+    story_id: UUID,
     request: StoryFavoriteRequest,
     current_user: TokenData = Depends(get_current_user),
     db: Database = Depends(get_db),
@@ -451,8 +451,8 @@ async def toggle_story_favorite(
 
 @router.delete("/users/{user_id}/stories/{story_id}")
 async def delete_story(
-    user_id: uuid.UUID,
-    story_id: uuid.UUID,
+    user_id: UUID,
+    story_id: UUID,
     current_user: TokenData = Depends(get_current_user),
     db: Database = Depends(get_db),
 ):
@@ -597,7 +597,7 @@ async def _get_app_id(db: Database) -> str:
     return str(result["id"])
 
 
-async def _check_rate_limit(db: Database, user_id: uuid.UUID) -> bool:
+async def _check_rate_limit(db: Database, user_id: UUID) -> bool:
     """Check if user has exceeded rate limit for story generation"""
     try:
         # Count generations in the last hour
@@ -630,7 +630,7 @@ async def _check_rate_limit(db: Database, user_id: uuid.UUID) -> bool:
         return False
 
 
-async def _get_user_context(db: Database, user_id: uuid.UUID) -> str:
+async def _get_user_context(db: Database, user_id: UUID) -> str:
     """Get user context for personalization (interests only, NOT people)"""
     try:
         # Get user profile data (interests only)
@@ -750,7 +750,7 @@ async def _get_llm_model_config() -> dict:
 
 
 @traceable(run_type="llm", name="theme-variety-analysis")
-async def _get_recent_themes_guidance(db: Database, user_id: uuid.UUID) -> str:
+async def _get_recent_themes_guidance(db: Database, user_id: UUID) -> str:
     """Get AI-powered guidance to avoid repeating recent story themes using story summaries"""
     try:
         # Get last 4 stories from this user with their summaries
@@ -1672,7 +1672,7 @@ async def _generate_story_llm(
 
 @traceable(run_type="llm", name="story-summary-generation")
 async def _generate_story_summary(
-    title: str, content: str, characters: list, target_audience: TargetAudience, user_id: uuid.UUID
+    title: str, content: str, characters: list, target_audience: TargetAudience, user_id: UUID
 ) -> str:
     """Generate a concise summary of the story for theme tracking"""
     try:
@@ -1733,19 +1733,19 @@ Provide only the summary, no additional commentary:"""
 
 async def _save_story(
     db: Database,
-    user_id: uuid.UUID,
+    user_id: UUID,
     title: str,
     content: str,
     story_length: StoryLength,
     target_audience: TargetAudience,
     word_count: int,
     characters: list,
-    session_id: Optional[uuid.UUID],
+    session_id: Optional[UUID],
     model_used: str,
     tokens_used: dict,
     cost: float,
     custom_prompt: Optional[str],
-) -> uuid.UUID:
+) -> UUID:
     """Save story to database with AI-generated summary"""
     try:
         story_id = generate_uuid7()
@@ -1796,7 +1796,7 @@ async def _save_story(
 
 
 async def _update_story_with_images(
-    db: Database, story_id: uuid.UUID, final_content: str, image_ids: list[str], has_images: bool
+    db: Database, story_id: UUID, final_content: str, image_ids: list[str], has_images: bool
 ):
     """Update story with image markers and metadata"""
     try:

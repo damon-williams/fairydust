@@ -1,7 +1,8 @@
 # services/content/activity_routes.py
 import json
 import os
-import uuid
+from uuid import UUID
+from shared.uuid_utils import generate_uuid7
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from models import (
@@ -114,7 +115,7 @@ async def search_activities(
         activities = []
         for activity_data in final_activities:
             activity = Activity(
-                id=f"act_{uuid.uuid4()}",
+                id=f"act_{generate_uuid7()}",
                 tripadvisor_id=activity_data["tripadvisor_id"],
                 name=activity_data["name"],
                 type=ActivityType(activity_data["type"]),
@@ -154,7 +155,7 @@ async def search_activities(
         raise HTTPException(status_code=500, detail="Internal server error during activity search")
 
 
-async def _get_user_balance(user_id: uuid.UUID, auth_token: str) -> int:
+async def _get_user_balance(user_id: UUID, auth_token: str) -> int:
     """Get user's current DUST balance via Ledger Service"""
     print(f"🔍 ACTIVITY_BALANCE: Checking DUST balance for user {user_id}", flush=True)
     try:
@@ -194,7 +195,7 @@ async def _get_app_id(db: Database) -> str:
 
 
 async def _get_people_info(
-    db: Database, user_id: uuid.UUID, selected_people: list[str]
+    db: Database, user_id: UUID, selected_people: list[str]
 ) -> list[dict]:
     """Get information about selected people and pets from Identity Service for AI context"""
     if not selected_people:
@@ -206,7 +207,7 @@ async def _get_people_info(
         person_uuids = []
         for person_id in selected_people:
             try:
-                person_uuids.append(uuid.UUID(person_id))
+                person_uuids.append(UUID(person_id))
             except ValueError:
                 print(f"⚠️ ACTIVITY_PEOPLE: Invalid person ID format: {person_id}", flush=True)
                 continue
@@ -290,7 +291,7 @@ async def _get_people_info(
 
 
 async def _generate_ai_contexts(
-    activities_data: list[dict], people_info: list[dict], user_id: uuid.UUID, auth_token: str
+    activities_data: list[dict], people_info: list[dict], user_id: UUID, auth_token: str
 ) -> list[dict]:
     """Generate personalized AI context for each activity"""
     print(f"🤖 ACTIVITY_AI: Generating contexts for {len(activities_data)} activities", flush=True)
@@ -389,7 +390,7 @@ async def _get_llm_model_config() -> dict:
 
 
 async def _generate_batch_contexts(
-    activities: list[dict], group_context: str, user_id: uuid.UUID, auth_token: str
+    activities: list[dict], group_context: str, user_id: UUID, auth_token: str
 ) -> list[dict]:
     """Generate AI contexts for a batch of activities using centralized LLM client"""
     try:

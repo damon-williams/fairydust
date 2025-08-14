@@ -15,9 +15,9 @@ for dramatically improved prompt quality and story-image alignment.
 import json
 import logging
 import re
-import uuid
 from typing import Optional
 from uuid import UUID
+from shared.uuid_utils import generate_uuid7
 
 from langsmith import traceable
 from models import StoryCharacter, TargetAudience
@@ -240,7 +240,7 @@ Complete all sections - do not stop early."""
             content, metadata = await llm_client.generate_completion(
                 prompt=scene_prompt,
                 app_config=app_config,
-                user_id=user_id or uuid.uuid4(),  # Use actual user_id or fallback
+                user_id=user_id or generate_uuid7(),  # Use actual user_id or fallback
                 app_id="fairydust-story",
                 action="scene_intelligence_analysis",
                 request_metadata={"purpose": "scene_intelligence_analysis"},
@@ -362,7 +362,7 @@ Keep descriptions vivid but concise (2-3 sentences each)."""
             content, metadata = await llm_client.generate_completion(
                 prompt=character_prompt,
                 app_config=app_config,
-                user_id=user_id or uuid.uuid4(),  # Use actual user_id or fallback
+                user_id=user_id or generate_uuid7(),  # Use actual user_id or fallback
                 app_id="fairydust-story",
                 action="character_rendering",
                 request_metadata={"purpose": "character_rendering"},
@@ -442,7 +442,7 @@ Your prompt:"""
             content, metadata = await llm_client.generate_completion(
                 prompt=composition_prompt,
                 app_config=app_config,
-                user_id=user_id or uuid.uuid4(),  # Use actual user_id or fallback
+                user_id=user_id or generate_uuid7(),  # Use actual user_id or fallback
                 app_id="fairydust-story",
                 action="visual_composition",
                 request_metadata={"purpose": "visual_composition"},
@@ -514,7 +514,7 @@ Return ONLY the enhanced prompt text, nothing else:"""
             content, metadata = await llm_client.generate_completion(
                 prompt=quality_prompt,
                 app_config=app_config,
-                user_id=user_id or uuid.uuid4(),  # Use actual user_id or fallback
+                user_id=user_id or generate_uuid7(),  # Use actual user_id or fallback
                 app_id="fairydust-story",
                 action="quality_enhancement",
                 request_metadata={"purpose": "quality_enhancement"},

@@ -1,7 +1,7 @@
 """Story image extraction and scene identification service"""
 
 import re
-import uuid
+from shared.uuid_utils import generate_uuid7
 from typing import Optional
 
 from models import (
@@ -60,7 +60,7 @@ class StoryImageService:
 
             # Generate scene description and prompt
             scene_description = self._extract_visual_elements(scene_context, characters)
-            image_id = f"img_{uuid.uuid4().hex[:8]}"
+            image_id = f"img_{generate_uuid7().hex[:8]}"
 
             scenes.append(
                 {
@@ -721,7 +721,7 @@ class StoryImageService:
                 reference_people.append(
                     ImageReferencePerson(
                         person_id=character.person_id
-                        or uuid.uuid4(),  # Use actual person_id if available
+                        or generate_uuid7(),  # Use actual person_id if available
                         photo_url=character.photo_url,
                         description=f"{character.name} ({character.relationship})",
                     )
