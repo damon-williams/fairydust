@@ -9,6 +9,11 @@ COPY services/apps/requirements.txt ./apps-requirements.txt
 COPY services/identity/requirements.txt ./identity-requirements.txt  
 COPY services/ledger/requirements.txt ./ledger-requirements.txt
 COPY services/content/requirements.txt ./content-requirements.txt
+
+# Force cache bust for pip install by upgrading pip first
+RUN pip install --upgrade pip
+
+# Install all dependencies with no cache
 RUN pip install --no-cache-dir -r apps-requirements.txt -r identity-requirements.txt -r ledger-requirements.txt -r content-requirements.txt
 
 # Verify uuid7 package installation

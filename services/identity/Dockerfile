@@ -4,6 +4,9 @@ WORKDIR /app
 
 # Copy requirements first for better caching
 COPY services/identity/requirements.txt .
+
+# Force cache bust for pip install
+RUN pip install --upgrade pip
 RUN pip install --no-cache-dir -r requirements.txt
 
 # Verify uuid7 package installation
