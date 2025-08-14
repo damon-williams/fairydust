@@ -21,7 +21,8 @@ except ImportError:
     UUIDV7_AVAILABLE = False
     import warnings
     warnings.warn(
-        "uuid7 package not available. Install with: pip install uuid7==0.1.0",
+        "uuid7 package not available. Install with: pip install uuid7==0.1.0 "
+        "(imports as: from uuid_extensions import uuid7)",
         ImportWarning
     )
 
@@ -51,10 +52,11 @@ def generate_uuid7() -> UUID:
     if not UUIDV7_AVAILABLE:
         raise RuntimeError(
             "uuid7 package is required for UUIDv7 generation. "
-            "Install with: pip install uuid7==0.1.0"
+            "Install with: pip install uuid7==0.1.0 "
+            "(imports as: from uuid_extensions import uuid7)"
         )
     
-    return uuid7.uuid7()
+    return uuid7()
 
 
 def generate_uuid4() -> UUID:
