@@ -17,11 +17,11 @@ async def get_activity_json(
     admin_user: dict = Depends(get_current_admin_user),
     db: Database = Depends(get_db),
 ):
-    """Get DUST consumption activity as JSON for React app"""
+    """Get DUST activity (both consumption and grants) as JSON for React app"""
     offset = (page - 1) * limit
 
-    # Build query conditions
-    where_conditions = ["dt.amount < 0"]  # Only show consumption
+    # Build query conditions - now include all activity types
+    where_conditions = []  # Remove consumption-only filter
     params = []
 
     if user_search:
@@ -33,7 +33,10 @@ async def get_activity_json(
 
     if activity_type and activity_type != "all":
         # Map activity types to transaction descriptions
-        if activity_type == "recipe":
+        if activity_type == "grant":
+            where_conditions.append("dt.type = $%d" % (len(params) + 1))
+            params.append("grant")
+        elif activity_type == "recipe":
             where_conditions.append("dt.description ILIKE $%d" % (len(params) + 1))
             params.append("%recipe%")
         elif activity_type == "story":
@@ -48,6 +51,9 @@ async def get_activity_json(
         elif activity_type == "image":
             where_conditions.append("dt.description ILIKE $%d" % (len(params) + 1))
             params.append("%image%")
+        elif activity_type == "video":
+            where_conditions.append("dt.description ILIKE $%d" % (len(params) + 1))
+            params.append("%video%")
         elif activity_type == "inspiration":
             where_conditions.append(
                 "(dt.description ILIKE $%d OR dt.description ILIKE $%d)"
@@ -66,7 +72,7 @@ async def get_activity_json(
             params.append("%would you rather%")
             params.append("%wyr%")
 
-    where_clause = " WHERE " + " AND ".join(where_conditions)
+    where_clause = " WHERE " + " AND ".join(where_conditions) if where_conditions else ""
 
     # Get total count
     count_query = f"""
@@ -103,35 +109,43 @@ async def get_activity_json(
     # Format activities for JSON response
     formatted_activities = []
     for activity in activities:
-        # Determine activity type from description
-        description = activity["description"].lower()
-        if "recipe" in description:
-            activity_type = "recipe"
-            icon = "🍳"
-        elif "story" in description:
-            activity_type = "story"
-            icon = "📖"
-        elif "activity" in description or "search" in description:
-            activity_type = "activity"
-            icon = "🎯"
-        elif "restaurant" in description:
-            activity_type = "restaurant"
-            icon = "🍽️"
-        elif "image" in description:
-            activity_type = "image"
-            icon = "🎨"
-        elif "inspiration" in description or "inspire" in description:
-            activity_type = "inspiration"
-            icon = "✨"
-        elif "fortune" in description:
-            activity_type = "fortune"
-            icon = "🔮"
-        elif "would you rather" in description or "wyr" in description:
-            activity_type = "wyr"
-            icon = "🤔"
+        # Check if this is a grant first
+        if activity["type"] == "grant" or activity["amount"] > 0:
+            activity_type = "grant"
+            icon = "💰"
         else:
-            activity_type = "other"
-            icon = "💫"
+            # Determine activity type from description for consumption
+            description = activity["description"].lower()
+            if "recipe" in description:
+                activity_type = "recipe"
+                icon = "🍳"
+            elif "story" in description:
+                activity_type = "story"
+                icon = "📖"
+            elif "activity" in description or "search" in description:
+                activity_type = "activity"
+                icon = "🎯"
+            elif "restaurant" in description:
+                activity_type = "restaurant"
+                icon = "🍽️"
+            elif "image" in description:
+                activity_type = "image"
+                icon = "🎨"
+            elif "video" in description:
+                activity_type = "video"
+                icon = "🎬"
+            elif "inspiration" in description or "inspire" in description:
+                activity_type = "inspiration"
+                icon = "✨"
+            elif "fortune" in description:
+                activity_type = "fortune"
+                icon = "🔮"
+            elif "would you rather" in description or "wyr" in description:
+                activity_type = "wyr"
+                icon = "🤔"
+            else:
+                activity_type = "other"
+                icon = "💫"
 
         formatted_activities.append(
             {

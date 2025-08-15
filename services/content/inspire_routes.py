@@ -1,7 +1,8 @@
 # services/content/inspire_routes.py
 # Service URL configuration based on environment
 import os
-import uuid
+from uuid import UUID
+from shared.uuid_utils import generate_uuid7
 from datetime import datetime
 from typing import Optional
 
@@ -53,9 +54,9 @@ async def generate_inspiration(
     """
     Generate a new inspiration using LLM and automatically save it to user's collection.
     """
-    import uuid
+    from shared.uuid_utils import generate_uuid7
 
-    request_id = str(uuid.uuid4())[:8]
+    request_id = str(generate_uuid7())[:8]
     print(
         f"🚀 INSPIRE DEBUG: === NEW REQUEST START [{request_id}] === User: {request.user_id}, Category: {request.category}",
         flush=True,
@@ -87,7 +88,7 @@ async def generate_inspiration(
         # Get user balance for logging purposes only (payment handled by app)
         user_balance = await _get_user_balance(request.user_id, auth_token)
         print(
-            f"💰 INSPIRE DEBUG: User balance: {user_balance} DUST (payment handled by app)",
+            f"💰 INSPIRE DEBUG: User balance: {user_balance} DUST",
             flush=True,
         )
 
@@ -155,9 +156,6 @@ async def generate_inspiration(
             flush=True,
         )
 
-        # LLM usage logging is now handled by the centralized client
-        print("📊 INSPIRE DEBUG: LLM usage logged by centralized client", flush=True)
-
         # Save inspiration to database
         inspiration_id = await _save_inspiration(
             db=db,
@@ -174,8 +172,6 @@ async def generate_inspiration(
         await _mark_onboarding_completed(db, request.user_id)
 
         # DUST payment is handled by the app before calling this endpoint
-        # Content service only handles content generation, not payment
-        print("💰 INSPIRE DEBUG: Content generation complete - payment handled by app", flush=True)
         new_balance = user_balance  # Balance unchanged by content service
 
         # Build response
@@ -209,7 +205,7 @@ async def generate_inspiration(
 
 @router.get("/users/{user_id}/inspirations", response_model=InspirationsListResponse)
 async def get_user_inspirations(
-    user_id: uuid.UUID,
+    user_id: UUID,
     current_user: TokenData = Depends(get_current_user),
     db: Database = Depends(get_db),
     limit: int = Query(50, ge=1, le=100, description="Number of results to return"),
@@ -311,8 +307,8 @@ async def get_user_inspirations(
     response_model=InspirationFavoriteResponse,
 )
 async def toggle_inspiration_favorite(
-    user_id: uuid.UUID,
-    inspiration_id: uuid.UUID,
+    user_id: UUID,
+    inspiration_id: UUID,
     request: InspirationFavoriteRequest,
     current_user: TokenData = Depends(get_current_user),
     db: Database = Depends(get_db),
@@ -371,8 +367,8 @@ async def toggle_inspiration_favorite(
     response_model=InspirationDeleteResponse,
 )
 async def delete_inspiration(
-    user_id: uuid.UUID,
-    inspiration_id: uuid.UUID,
+    user_id: UUID,
+    inspiration_id: UUID,
     current_user: TokenData = Depends(get_current_user),
     db: Database = Depends(get_db),
 ):
@@ -415,7 +411,7 @@ async def delete_inspiration(
 
 
 # Helper functions
-async def _get_user_balance(user_id: uuid.UUID, auth_token: str) -> int:
+async def _get_user_balance(user_id: UUID, auth_token: str) -> int:
     """Get user's current DUST balance via Ledger Service"""
     print(f"🔍 INSPIRE_BALANCE: Checking DUST balance for user {user_id}", flush=True)
     try:
@@ -439,13 +435,8 @@ async def _get_user_balance(user_id: uuid.UUID, auth_token: str) -> int:
         return 0
 
 
-# App ID lookup no longer needed - payment handled by app layer
 
-
-# DUST consumption is now handled by the app, not the content service
-
-
-async def _check_rate_limit(db: Database, user_id: uuid.UUID) -> bool:
+async def _check_rate_limit(db: Database, user_id: UUID) -> bool:
     """Check if user has exceeded rate limit for inspiration generation"""
     try:
         # Count generations in the last hour
@@ -480,7 +471,7 @@ async def _check_rate_limit(db: Database, user_id: uuid.UUID) -> bool:
 
 
 async def _get_recent_inspirations(
-    db: Database, user_id: uuid.UUID, category: InspirationCategory
+    db: Database, user_id: UUID, category: InspirationCategory
 ) -> list[str]:
     """Get user's recent inspirations to avoid duplicates"""
     try:
@@ -543,7 +534,7 @@ def _is_duplicate_content(new_content: str, previous_content: list[str]) -> bool
     return False
 
 
-async def _get_user_context(db: Database, user_id: uuid.UUID) -> str:
+async def _get_user_context(db: Database, user_id: UUID) -> str:
     """Get user context for personalization"""
     try:
         # Get people and pets in my life
@@ -719,7 +710,7 @@ async def _generate_inspiration_llm_with_user(
     used_suggestions: list[str],
     user_context: str,
     recent_inspirations: list[str] = None,
-    user_id: uuid.UUID = None,
+    user_id: UUID = None,
 ) -> tuple[Optional[str], str, dict, float]:
     """Generate inspiration using centralized LLM client with user ID for logging"""
     try:
@@ -764,7 +755,7 @@ async def _generate_inspiration_llm_with_user(
         completion, metadata = await llm_client.generate_completion(
             prompt=full_prompt,
             app_config=model_config,
-            user_id=user_id or uuid.uuid4(),
+            user_id=user_id or generate_uuid7(),
             app_id="fairydust-inspire",
             action="inspiration_generation",
             request_metadata=request_metadata,
@@ -805,14 +796,14 @@ async def _generate_inspiration_llm_with_user(
 
 async def _save_inspiration(
     db: Database,
-    user_id: uuid.UUID,
+    user_id: UUID,
     content: str,
     category: InspirationCategory,
-    session_id: Optional[uuid.UUID],
+    session_id: Optional[UUID],
     model_used: str,
     tokens_used: dict,
     cost: float,
-) -> uuid.UUID:
+) -> UUID:
     """Save inspiration to database"""
     try:
         insert_query = """
@@ -844,7 +835,7 @@ async def _save_inspiration(
         raise HTTPException(status_code=500, detail="Failed to save inspiration")
 
 
-async def _mark_onboarding_completed(db: Database, user_id: uuid.UUID) -> None:
+async def _mark_onboarding_completed(db: Database, user_id: UUID) -> None:
     """Mark user's onboarding as completed if not already completed"""
     try:
         # Update only if onboarding is not already completed

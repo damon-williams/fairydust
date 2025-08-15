@@ -207,7 +207,7 @@ async def update_daily_streak_for_grant(
             db,
             """
             UPDATE users
-            SET streak_days = $1, last_login_date = $2, updated_at = CURRENT_TIMESTAMP
+            SET streak_days = $1, last_login_date = $2, total_logins = total_logins + 1, updated_at = CURRENT_TIMESTAMP
             WHERE id = $3
         """,
             new_streak,
@@ -262,7 +262,7 @@ async def update_daily_streak_for_grant(
         db,
         """
         UPDATE users
-        SET streak_days = $1, last_login_date = $2, updated_at = CURRENT_TIMESTAMP
+        SET streak_days = $1, last_login_date = $2, total_logins = total_logins + 1, updated_at = CURRENT_TIMESTAMP
         WHERE id = $3
     """,
         new_streak,

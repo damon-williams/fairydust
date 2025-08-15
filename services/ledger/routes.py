@@ -626,8 +626,13 @@ async def resolve_app_id(app_id_or_slug: str, db: Database, cache: redis.Redis) 
     try:
         cached_id = await cache.get(cache_key)
         if cached_id:
-            print(f"🔍 SLUG_CACHE: Hit for {app_id_or_slug} -> {cached_id.decode()}", flush=True)
-            return UUID(cached_id.decode())
+            # Handle both bytes and string return types from Redis
+            if isinstance(cached_id, bytes):
+                cached_uuid_str = cached_id.decode()
+            else:
+                cached_uuid_str = cached_id
+            print(f"🔍 SLUG_CACHE: Hit for {app_id_or_slug} -> {cached_uuid_str}", flush=True)
+            return UUID(cached_uuid_str)
     except Exception as e:
         print(f"⚠️ SLUG_CACHE: Cache error: {e}", flush=True)
 

@@ -3,7 +3,8 @@
 import os
 import random
 from datetime import datetime, timedelta
-from uuid import UUID, uuid4
+from uuid import UUID
+from shared.uuid_utils import generate_uuid7
 
 import httpx
 
@@ -852,7 +853,7 @@ async def generate_restaurants(
     people_data = await get_people_data(request.user_id, request.selected_people)
 
     # Create or get session
-    session_id = request.session_id or uuid4()
+    session_id = request.session_id or generate_uuid7()
     session_expires = datetime.utcnow() + timedelta(hours=24)
 
     # Store session in database
@@ -1143,7 +1144,7 @@ async def search_restaurants_with_text(
         print(f"🔍 RESTAURANT_TEXT_SEARCH: Got {len(people_data)} people for personalization")
 
         # Create or get session
-        session_id = request.session_id or uuid4()
+        session_id = request.session_id or generate_uuid7()
         session_expires = datetime.utcnow() + timedelta(hours=24)
 
         # Store session in database

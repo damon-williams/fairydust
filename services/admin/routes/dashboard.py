@@ -132,13 +132,18 @@ async def get_recent_users(
     admin_user: dict = Depends(get_current_admin_user),
     db: Database = Depends(get_db),
 ):
-    """Get recent users for React app"""
+    """Get recent users by app usage (not account creation) for React app"""
     recent_users = await db.fetch_all(
-        """SELECT id, fairyname, email, phone, is_builder, is_admin, is_active,
-                  dust_balance, auth_provider,
-                  created_at, updated_at
-           FROM users WHERE is_active = true
-           ORDER BY created_at DESC LIMIT 10"""
+        """SELECT DISTINCT u.id, u.fairyname, u.email, u.phone, u.is_builder, u.is_admin, u.is_active,
+                  u.dust_balance, u.auth_provider, u.total_logins, u.created_at, u.updated_at,
+                  MAX(dt.created_at) as last_activity_at
+           FROM users u
+           LEFT JOIN dust_transactions dt ON u.id = dt.user_id AND dt.type = 'consume'
+           WHERE u.is_active = true
+           GROUP BY u.id, u.fairyname, u.email, u.phone, u.is_builder, u.is_admin, u.is_active,
+                    u.dust_balance, u.auth_provider, u.total_logins, u.created_at, u.updated_at
+           ORDER BY last_activity_at DESC NULLS LAST, u.created_at DESC
+           LIMIT 10"""
     )
 
     return [dict(user) for user in recent_users]
@@ -170,7 +175,7 @@ async def get_recent_activity(
     admin_user: dict = Depends(get_current_admin_user),
     db: Database = Depends(get_db),
 ):
-    """Get recent DUST consumption activity for React app"""
+    """Get recent DUST activity (both consumption and grants) for React app"""
     recent_activity = await db.fetch_all(
         """
         SELECT
@@ -184,7 +189,6 @@ async def get_recent_activity(
             u.id as user_id
         FROM dust_transactions dt
         JOIN users u ON dt.user_id = u.id
-        WHERE dt.amount < 0  -- Only show consumption (negative amounts)
         ORDER BY dt.created_at DESC
         LIMIT 10
         """

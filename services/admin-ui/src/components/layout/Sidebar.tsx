@@ -124,7 +124,7 @@ export function Sidebar({ className }: SidebarProps) {
             {/* Version Info */}
             <div className="text-center pt-2 border-t border-slate-700">
               <p className="text-xs text-slate-500">
-                Admin Portal v2.16.0
+                Admin Portal v2.18.0
               </p>
             </div>
           </div>

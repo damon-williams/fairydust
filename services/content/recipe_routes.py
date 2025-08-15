@@ -2,10 +2,10 @@
 import json
 import os
 import re
-import uuid
 from datetime import datetime
 from typing import Optional
 from uuid import UUID
+from shared.uuid_utils import generate_uuid7
 
 import httpx
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
@@ -374,7 +374,7 @@ async def adjust_recipe(
 
 @router.get("/users/{user_id}/recipes")
 async def get_user_recipes(
-    user_id: uuid.UUID,
+    user_id: UUID,
     current_user: TokenData = Depends(get_current_user),
     db: Database = Depends(get_db),
     limit: int = Query(50, ge=1, le=100, description="Number of results to return"),
@@ -497,8 +497,8 @@ async def get_user_recipes(
     "/users/{user_id}/recipes/{recipe_id}/favorite",
 )
 async def toggle_recipe_favorite(
-    user_id: uuid.UUID,
-    recipe_id: uuid.UUID,
+    user_id: UUID,
+    recipe_id: UUID,
     request: RecipeFavoriteRequest,
     current_user: TokenData = Depends(get_current_user),
     db: Database = Depends(get_db),
@@ -564,8 +564,8 @@ async def toggle_recipe_favorite(
     "/users/{user_id}/recipes/{recipe_id}",
 )
 async def delete_recipe(
-    user_id: uuid.UUID,
-    recipe_id: uuid.UUID,
+    user_id: UUID,
+    recipe_id: UUID,
     current_user: TokenData = Depends(get_current_user),
     db: Database = Depends(get_db),
 ):
@@ -607,7 +607,7 @@ async def delete_recipe(
 
 @router.get("/users/{user_id}/recipe-preferences")
 async def get_user_recipe_preferences(
-    user_id: uuid.UUID,
+    user_id: UUID,
     current_user: TokenData = Depends(get_current_user),
     db: Database = Depends(get_db),
 ):
@@ -679,7 +679,7 @@ async def get_user_recipe_preferences(
 
 @router.put("/users/{user_id}/recipe-preferences")
 async def update_user_recipe_preferences(
-    user_id: uuid.UUID,
+    user_id: UUID,
     request: RecipePreferencesUpdateRequest,
     current_user: TokenData = Depends(get_current_user),
     db: Database = Depends(get_db),
@@ -776,7 +776,7 @@ async def update_user_recipe_preferences(
 
 
 # Helper functions
-async def _get_user_balance(user_id: uuid.UUID, auth_token: str) -> int:
+async def _get_user_balance(user_id: UUID, auth_token: str) -> int:
     """Get user's current DUST balance via Ledger Service"""
     print(f"🔍 RECIPE_BALANCE: Checking DUST balance for user {user_id}", flush=True)
     try:
@@ -811,7 +811,7 @@ async def _get_app_id(db: Database) -> str:
     return str(result["id"])
 
 
-async def _check_rate_limit(db: Database, user_id: uuid.UUID) -> bool:
+async def _check_rate_limit(db: Database, user_id: UUID) -> bool:
     """Check if user has exceeded rate limit for recipe generation"""
     try:
         # Count generations in the last hour
@@ -847,7 +847,7 @@ async def _check_rate_limit(db: Database, user_id: uuid.UUID) -> bool:
 
 
 async def _validate_selected_people(
-    db: Database, user_id: uuid.UUID, person_ids: list[uuid.UUID]
+    db: Database, user_id: UUID, person_ids: list[UUID]
 ) -> bool:
     """Validate that all person_ids exist in user's 'People in My Life'"""
     if not person_ids:
@@ -871,7 +871,7 @@ async def _validate_selected_people(
 
 
 async def _get_user_context(
-    db: Database, user_id: uuid.UUID, selected_people: list[uuid.UUID]
+    db: Database, user_id: UUID, selected_people: list[UUID]
 ) -> str:
     """Get user context for personalization"""
     try:
@@ -966,7 +966,7 @@ async def _get_user_context(
 
 
 async def _get_dietary_preferences(
-    db: Database, user_id: uuid.UUID, selected_people: list[uuid.UUID]
+    db: Database, user_id: UUID, selected_people: list[UUID]
 ) -> list[str]:
     """Get merged dietary preferences for user and selected people"""
     try:
@@ -1385,19 +1385,19 @@ def _parse_recipe_response(
 
 async def _save_recipe(
     db: Database,
-    user_id: uuid.UUID,
+    user_id: UUID,
     title: str,
     content: str,
     complexity: RecipeComplexity,
     servings: int,
     prep_time_minutes: Optional[int],
     cook_time_minutes: Optional[int],
-    session_id: Optional[uuid.UUID],
+    session_id: Optional[UUID],
     model_used: str,
     tokens_used: dict,
     cost: float,
     metadata: dict,
-) -> uuid.UUID:
+) -> UUID:
     """Save recipe to database"""
     try:
         insert_query = """

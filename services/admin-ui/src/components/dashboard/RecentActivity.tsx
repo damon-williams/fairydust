@@ -52,9 +52,12 @@ export function RecentActivity({ recentUsers }: RecentActivityProps) {
                         Admin
                       </Badge>
                     )}
+                    <Badge variant="outline" className="text-xs">
+                      {user.total_logins} logins
+                    </Badge>
                   </div>
                   <p className="text-xs text-slate-500 mt-1">
-                    {formatDistanceToNow(new Date(user.created_at), { addSuffix: true })}
+                    {formatDistanceToNow(new Date(user.last_activity_at || user.created_at), { addSuffix: true })}
                   </p>
                 </div>
               </div>

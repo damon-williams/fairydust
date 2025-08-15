@@ -1311,6 +1311,131 @@ class VideoJobCancelResponse(BaseModel):
     message: str = "Job cancelled successfully"
 
 
+# 20 Questions Game Models
+class TwentyQuestionsStatus(str, Enum):
+    ACTIVE = "active"
+    WON = "won"
+    LOST = "lost"
+    ABANDONED = "abandoned"
+
+
+class TwentyQuestionsMode(str, Enum):
+    USER_THINKS = "user_thinks"  # AI asks questions, user answers
+    FAIRYDUST_THINKS = "fairydust_thinks"  # User asks questions, AI answers
+
+
+class TwentyQuestionsAnswer(str, Enum):
+    YES = "yes"
+    NO = "no"
+    SOMETIMES = "sometimes"
+    UNKNOWN = "unknown"
+    PENDING = "pending"
+    CORRECT = "correct"
+    INCORRECT = "incorrect"
+
+
+class TwentyQuestionsStartRequest(BaseModel):
+    user_id: UUID
+    category: str = Field(default="general", min_length=1, max_length=50)
+    mode: TwentyQuestionsMode = Field(default=TwentyQuestionsMode.USER_THINKS)
+
+
+class TwentyQuestionsQuestionRequest(BaseModel):
+    user_id: UUID
+    question: str = Field(..., min_length=1, max_length=200)
+
+
+class TwentyQuestionsAnswerRequest(BaseModel):
+    user_id: UUID
+    answer: TwentyQuestionsAnswer
+
+
+class TwentyQuestionsGuessRequest(BaseModel):
+    user_id: UUID
+    guess: str = Field(..., min_length=1, max_length=100)
+
+
+class TwentyQuestionsGameState(BaseModel):
+    game_id: UUID = Field(alias="id")  # Map database 'id' to 'game_id'
+    user_id: UUID
+    category: str
+    mode: TwentyQuestionsMode
+    target_person_name: Optional[str] = None  # Hidden until game ends in fairydust_thinks mode
+    secret_answer: Optional[str] = None  # Hidden until game ends in fairydust_thinks mode
+    status: TwentyQuestionsStatus
+    questions_asked: int
+    questions_remaining: int
+    current_ai_question: Optional[str] = None  # Only used in user_thinks mode
+    final_guess: Optional[str] = None
+    answer_revealed: Optional[str] = None
+    is_correct: Optional[bool] = None
+    created_at: datetime
+    updated_at: datetime
+
+    class Config:
+        from_attributes = True
+        populate_by_name = True  # Allow both 'id' and 'game_id'
+
+
+class TwentyQuestionsHistoryEntry(BaseModel):
+    question_number: int
+    question_text: str
+    answer: TwentyQuestionsAnswer
+    is_guess: bool
+    asked_by: str = "user"  # 'user' or 'ai'
+    mode: Optional[TwentyQuestionsMode] = None  # Track which mode this question was asked in
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+class TwentyQuestionsStartResponse(BaseModel):
+    success: bool = True
+    game: TwentyQuestionsGameState
+    message: str = "Game started! Think of someone in your life and I'll try to guess who it is."
+
+
+class TwentyQuestionsQuestionResponse(BaseModel):
+    success: bool = True
+    game: TwentyQuestionsGameState
+    ai_question: Optional[str] = None  # For user_thinks mode
+    ai_answer: Optional[TwentyQuestionsAnswer] = None  # For fairydust_thinks mode
+    question_number: int
+
+
+class TwentyQuestionsAnswerResponse(BaseModel):
+    success: bool = True
+    game: TwentyQuestionsGameState
+    next_question: Optional[str] = None
+    question_number: Optional[int] = None
+    ai_final_guess: Optional[str] = None
+    is_ai_correct: Optional[bool] = None
+    answer_revealed: Optional[str] = None
+    message: Optional[str] = None
+
+
+class TwentyQuestionsGuessResponse(BaseModel):
+    success: bool = True
+    game: TwentyQuestionsGameState
+    is_correct: bool
+    answer_revealed: str
+    message: str
+
+
+class TwentyQuestionsStatusResponse(BaseModel):
+    success: bool = True
+    game: TwentyQuestionsGameState
+    history: list[TwentyQuestionsHistoryEntry]
+
+
+class TwentyQuestionsErrorResponse(BaseModel):
+    success: bool = False
+    error: str
+    error_code: Optional[str] = None
+    game_id: Optional[UUID] = None
+
+
 # Error Response Model
 class ErrorResponse(BaseModel):
     error: dict

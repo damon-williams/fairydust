@@ -83,11 +83,13 @@ export function Activity() {
 
   const getActivityTypeColor = (type: string) => {
     switch (type) {
+      case 'grant': return 'bg-emerald-100 text-emerald-800';
       case 'recipe': return 'bg-orange-100 text-orange-800';
       case 'story': return 'bg-blue-100 text-blue-800';
       case 'activity': return 'bg-green-100 text-green-800';
       case 'restaurant': return 'bg-purple-100 text-purple-800';
       case 'image': return 'bg-pink-100 text-pink-800';
+      case 'video': return 'bg-red-100 text-red-800';
       case 'inspiration': return 'bg-yellow-100 text-yellow-800';
       case 'fortune': return 'bg-indigo-100 text-indigo-800';
       case 'wyr': return 'bg-teal-100 text-teal-800';
@@ -101,7 +103,7 @@ export function Activity() {
       <div className="flex justify-between items-center">
         <div>
           <h1 className="text-3xl font-bold text-slate-900">Activity Feed</h1>
-          <p className="text-slate-500">DUST consumption across all users</p>
+          <p className="text-slate-500">DUST activity across all users (consumption and grants)</p>
         </div>
         <div className="flex space-x-2">
           <Button variant="outline" onClick={() => loadActivities(currentPage, searchTerm || undefined, activityType)}>
@@ -137,11 +139,13 @@ export function Activity() {
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">All Activity</SelectItem>
+                <SelectItem value="grant">💰 DUST Grants</SelectItem>
                 <SelectItem value="recipe">🍳 Recipes</SelectItem>
                 <SelectItem value="story">📖 Stories</SelectItem>
                 <SelectItem value="activity">🎯 Activities</SelectItem>
                 <SelectItem value="restaurant">🍽️ Restaurants</SelectItem>
                 <SelectItem value="image">🎨 Images</SelectItem>
+                <SelectItem value="video">🎬 Videos</SelectItem>
                 <SelectItem value="inspiration">✨ Inspiration</SelectItem>
                 <SelectItem value="fortune">🔮 Fortune Teller</SelectItem>
                 <SelectItem value="wyr">🤔 Would You Rather</SelectItem>
@@ -203,7 +207,12 @@ export function Activity() {
                     </div>
                   </div>
                   <div className="text-right">
-                    <p className="text-sm font-semibold text-red-600">
+                    <p className={`text-sm font-semibold ${
+                      activity.activity_type === 'grant' 
+                        ? 'text-green-600' 
+                        : 'text-red-600'
+                    }`}>
+                      {activity.activity_type === 'grant' && activity.amount > 0 ? '+' : ''}
                       {activity.amount} DUST
                     </p>
                     <p className="text-xs text-slate-500">

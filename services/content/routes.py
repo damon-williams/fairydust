@@ -1,7 +1,8 @@
 # services/content/routes.py
 from datetime import datetime
 from typing import Optional
-from uuid import UUID, uuid4
+from uuid import UUID
+from shared.uuid_utils import generate_uuid7
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from models import (
@@ -143,7 +144,7 @@ async def save_recipe(
         else:
             title = first_line[:100] + "..." if len(first_line) > 100 else first_line
 
-    recipe_id = uuid4()
+    recipe_id = generate_uuid7()
 
     # Convert metadata to JSON
     metadata_json = safe_json_dumps(recipe_data.metadata.dict() if recipe_data.metadata else {})
@@ -348,7 +349,7 @@ async def sync_recipes(
         # For simplicity, we'll just insert new recipes for now
         # Real conflict resolution would be more complex
 
-        recipe_id = uuid4()
+        recipe_id = generate_uuid7()
         metadata_json = safe_json_dumps(local_recipe.metadata or {})
 
         try:

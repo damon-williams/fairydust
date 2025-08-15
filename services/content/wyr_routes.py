@@ -1,7 +1,8 @@
 # services/content/wyr_routes.py
 import hashlib
 import json
-import uuid
+from uuid import UUID
+from shared.uuid_utils import generate_uuid7
 from datetime import datetime
 from typing import Optional
 
@@ -149,7 +150,7 @@ async def start_new_game_session(
     "/apps/would-you-rather/sessions/{session_id}/progress", response_model=WyrGameSessionResponse
 )
 async def save_answer_progress(
-    session_id: uuid.UUID = Path(..., description="Session ID"),
+    session_id: UUID = Path(..., description="Session ID"),
     request: WyrGameSessionProgress = ...,
     current_user: TokenData = Depends(get_current_user),
     db: Database = Depends(get_db),
@@ -212,7 +213,7 @@ async def save_answer_progress(
             request.current_question,
             json.dumps(existing_answers),
             session_id,
-            uuid.UUID(current_user.user_id),
+            UUID(current_user.user_id),
         )
 
         if not updated_session:
@@ -233,7 +234,7 @@ async def save_answer_progress(
     "/apps/would-you-rather/sessions/{session_id}/complete", response_model=WyrGameCompleteResponse
 )
 async def complete_game_session(
-    session_id: uuid.UUID = Path(..., description="Session ID"),
+    session_id: UUID = Path(..., description="Session ID"),
     request: WyrGameSessionComplete = ...,
     current_user: TokenData = Depends(get_current_user),
     db: Database = Depends(get_db),
@@ -263,7 +264,7 @@ async def complete_game_session(
             questions=safe_json_parse(session_data["questions"], default=[], expected_type=list),
             answers=request.final_answers,
             category=session_data["category"],
-            user_id=uuid.UUID(current_user.user_id),
+            user_id=UUID(current_user.user_id),
             db=db,
         )
 
@@ -286,7 +287,7 @@ async def complete_game_session(
             summary,
             json.dumps([answer.model_dump(mode="json") for answer in request.final_answers]),
             session_id,
-            uuid.UUID(current_user.user_id),
+            UUID(current_user.user_id),
         )
 
         if not completed_session:
@@ -307,7 +308,7 @@ async def complete_game_session(
 
 @router.get("/users/{user_id}/would-you-rather/sessions", response_model=WyrGameSessionsResponse)
 async def get_user_sessions(
-    user_id: uuid.UUID = Path(..., description="User ID"),
+    user_id: UUID = Path(..., description="User ID"),
     limit: int = Query(50, ge=1, le=100, description="Number of results to return"),
     offset: int = Query(0, ge=0, description="Pagination offset"),
     status: str = Query("all", description="Filter by status: all|in_progress|completed"),
@@ -399,7 +400,7 @@ async def get_user_sessions(
 
 @router.get("/apps/would-you-rather/sessions/{session_id}", response_model=WyrGameSessionResponse)
 async def get_single_session(
-    session_id: uuid.UUID = Path(..., description="Session ID"),
+    session_id: UUID = Path(..., description="Session ID"),
     current_user: TokenData = Depends(get_current_user),
     db: Database = Depends(get_db),
 ):
@@ -426,7 +427,7 @@ async def get_single_session(
 
 @router.delete("/apps/would-you-rather/sessions/{session_id}", response_model=WyrGameDeleteResponse)
 async def delete_session(
-    session_id: uuid.UUID = Path(..., description="Session ID"),
+    session_id: UUID = Path(..., description="Session ID"),
     current_user: TokenData = Depends(get_current_user),
     db: Database = Depends(get_db),
 ):
@@ -445,7 +446,7 @@ async def delete_session(
             WHERE id = $1 AND user_id = $2
         """
 
-        result = await db.execute(delete_query, session_id, uuid.UUID(current_user.user_id))
+        result = await db.execute(delete_query, session_id, UUID(current_user.user_id))
 
         if "DELETE 0" in result:
             raise HTTPException(status_code=500, detail="Failed to delete session")
@@ -479,7 +480,7 @@ def _hash_question(option_a: str, option_b: str) -> str:
     return hashlib.md5(normalized.encode()).hexdigest()
 
 
-async def _get_user_question_hashes(db: Database, user_id: uuid.UUID, limit: int = 200) -> set[str]:
+async def _get_user_question_hashes(db: Database, user_id: UUID, limit: int = 200) -> set[str]:
     """Get user's recent question hashes to avoid duplicates"""
     try:
         query = """
@@ -500,7 +501,7 @@ async def _get_user_question_hashes(db: Database, user_id: uuid.UUID, limit: int
 
 
 async def _save_question_history(
-    db: Database, user_id: uuid.UUID, session_id: uuid.UUID, questions: list[QuestionObject]
+    db: Database, user_id: UUID, session_id: UUID, questions: list[QuestionObject]
 ) -> None:
     """Save questions to user's history for duplicate prevention"""
     try:
@@ -559,7 +560,7 @@ def _filter_duplicate_questions(
     return filtered_questions
 
 
-async def _check_rate_limit(db: Database, user_id: uuid.UUID) -> bool:
+async def _check_rate_limit(db: Database, user_id: UUID) -> bool:
     """Check if user has exceeded rate limit for game creation"""
     try:
         query = """
@@ -590,7 +591,7 @@ async def _check_rate_limit(db: Database, user_id: uuid.UUID) -> bool:
         return False
 
 
-async def _get_user_age_context(db: Database, user_id: uuid.UUID) -> str:
+async def _get_user_age_context(db: Database, user_id: UUID) -> str:
     """Get user age context for content filtering"""
     try:
         # Get user birth date
@@ -728,7 +729,7 @@ async def _generate_questions_llm(
     game_length: GameLength,
     category: GameCategory,
     custom_request: Optional[str],
-    user_id: uuid.UUID,
+    user_id: UUID,
     db: Database,
 ) -> tuple[list[QuestionObject], dict]:
     """Generate questions using centralized LLM client with duplicate prevention"""
@@ -1072,7 +1073,7 @@ def _parse_questions_response(content: str, category: GameCategory) -> list[Ques
                 continue  # Skip incomplete questions
 
             question = QuestionObject(
-                id=uuid.uuid4(),
+                id=generate_uuid7(),
                 question_number=q_data.get("question_number", i + 1),
                 option_a=option_a,
                 option_b=option_b,
@@ -1090,15 +1091,15 @@ def _parse_questions_response(content: str, category: GameCategory) -> list[Ques
 
 async def _save_game_session(
     db: Database,
-    user_id: uuid.UUID,
+    user_id: UUID,
     game_length: GameLength,
     category: GameCategory,
     custom_request: Optional[str],
     questions: list[QuestionObject],
-) -> uuid.UUID:
+) -> UUID:
     """Save new game session to database"""
     try:
-        session_id = uuid.uuid4()
+        session_id = generate_uuid7()
 
         insert_query = """
             INSERT INTO wyr_game_sessions (
@@ -1130,7 +1131,7 @@ async def _save_game_session(
         raise
 
 
-async def _get_session(db: Database, session_id: uuid.UUID, user_id: str) -> Optional[dict]:
+async def _get_session(db: Database, session_id: UUID, user_id: str) -> Optional[dict]:
     """Get session by ID and verify ownership"""
     try:
         query = """
@@ -1140,7 +1141,7 @@ async def _get_session(db: Database, session_id: uuid.UUID, user_id: str) -> Opt
             WHERE id = $1 AND user_id = $2
         """
 
-        result = await db.fetch_one(query, session_id, uuid.UUID(user_id))
+        result = await db.fetch_one(query, session_id, UUID(user_id))
         return dict(result) if result else None
 
     except Exception as e:
@@ -1156,7 +1157,7 @@ async def _build_session_response(session_data: dict) -> WyrGameSession:
 
         questions = [
             QuestionObject(
-                id=uuid.UUID(q["id"]),
+                id=UUID(q["id"]),
                 question_number=q["question_number"],
                 option_a=q["option_a"],
                 option_b=q["option_b"],
@@ -1167,7 +1168,7 @@ async def _build_session_response(session_data: dict) -> WyrGameSession:
 
         answers = [
             AnswerObject(
-                question_id=uuid.UUID(a["question_id"]),
+                question_id=UUID(a["question_id"]),
                 chosen_option=a.get("chosen_option"),
                 answered_at=datetime.fromisoformat(a["answered_at"])
                 if a.get("answered_at")
@@ -1200,7 +1201,7 @@ async def _generate_personality_analysis(
     questions: list[dict],
     answers: list[AnswerObject],
     category: str,
-    user_id: uuid.UUID,
+    user_id: UUID,
     db: Database,
 ) -> tuple[str, dict]:
     """Generate personality analysis using centralized LLM client"""
@@ -1348,7 +1349,7 @@ def _scrub_completed_session(session: WyrGameSession) -> WyrGameSession:
                     id=question.id,
                     question_number=question.question_number,
                     option_a=question.option_a,  # Show chosen text
-                    option_b="",  # Hide unchosen option
+                    option_b="[Hidden]",  # Hide unchosen option with placeholder
                     category=question.category,
                 )
             elif chosen_option == "b":
@@ -1356,7 +1357,7 @@ def _scrub_completed_session(session: WyrGameSession) -> WyrGameSession:
                 scrubbed_question = QuestionObject(
                     id=question.id,
                     question_number=question.question_number,
-                    option_a="",  # Hide unchosen option
+                    option_a="[Hidden]",  # Hide unchosen option with placeholder
                     option_b=question.option_b,  # Show chosen text
                     category=question.category,
                 )
@@ -1365,8 +1366,8 @@ def _scrub_completed_session(session: WyrGameSession) -> WyrGameSession:
                 scrubbed_question = QuestionObject(
                     id=question.id,
                     question_number=question.question_number,
-                    option_a="",
-                    option_b="",
+                    option_a="[Not answered]",
+                    option_b="[Not answered]",
                     category=question.category,
                 )
 

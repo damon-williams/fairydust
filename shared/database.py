@@ -5,6 +5,7 @@ from contextlib import asynccontextmanager
 from typing import Any, Optional
 
 import asyncpg
+from .uuid_utils import generate_uuid7
 
 DATABASE_URL = os.getenv("DATABASE_URL")
 
@@ -214,6 +215,7 @@ async def create_tables():
         ALTER TABLE users ADD COLUMN IF NOT EXISTS city VARCHAR(100);
         ALTER TABLE users ADD COLUMN IF NOT EXISTS country VARCHAR(100) DEFAULT 'US';
         ALTER TABLE users ADD COLUMN IF NOT EXISTS last_login_date TIMESTAMP WITH TIME ZONE;
+        ALTER TABLE users ADD COLUMN IF NOT EXISTS total_logins INTEGER DEFAULT 0;
         ALTER TABLE users ADD COLUMN IF NOT EXISTS is_onboarding_completed BOOLEAN DEFAULT FALSE;
         ALTER TABLE users ADD COLUMN IF NOT EXISTS avatar_uploaded_at TIMESTAMP WITH TIME ZONE;
         ALTER TABLE users ADD COLUMN IF NOT EXISTS avatar_size_bytes INTEGER;
@@ -247,7 +249,7 @@ async def create_tables():
     await db.execute_schema(
         """
         CREATE TABLE IF NOT EXISTS dust_transactions (
-            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            id UUID PRIMARY KEY,
             user_id UUID REFERENCES users(id) ON DELETE CASCADE,
             amount INTEGER NOT NULL,
             type VARCHAR(50) NOT NULL,
@@ -291,7 +293,7 @@ async def create_tables():
     await db.execute_schema(
         """
         CREATE TABLE IF NOT EXISTS apps (
-            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            id UUID PRIMARY KEY,
             builder_id UUID REFERENCES users(id) ON DELETE CASCADE,
             name VARCHAR(255) NOT NULL,
             slug VARCHAR(255) UNIQUE NOT NULL,
@@ -344,7 +346,7 @@ async def create_tables():
     await db.execute_schema(
         """
         CREATE TABLE IF NOT EXISTS user_profile_data (
-            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            id UUID PRIMARY KEY,
             user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
             category VARCHAR(50) NOT NULL,
             field_name VARCHAR(100) NOT NULL,
@@ -369,7 +371,7 @@ async def create_tables():
     await db.execute_schema(
         """
         CREATE TABLE IF NOT EXISTS people_in_my_life (
-            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            id UUID PRIMARY KEY,
             user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
             name VARCHAR(100) NOT NULL,
             birth_date DATE,
@@ -438,7 +440,7 @@ async def create_tables():
     await db.execute_schema(
         """
         CREATE TABLE IF NOT EXISTS person_profile_data (
-            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            id UUID PRIMARY KEY,
             person_id UUID NOT NULL REFERENCES people_in_my_life(id) ON DELETE CASCADE,
             user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
             category VARCHAR(50) NOT NULL,
@@ -512,7 +514,7 @@ async def create_tables():
         await db.execute_schema(
             """
             CREATE TABLE app_model_configs (
-                id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+                id UUID PRIMARY KEY,
                 app_id UUID NOT NULL REFERENCES apps(id) ON DELETE CASCADE,
                 model_type VARCHAR(20) NOT NULL CHECK (model_type IN ('text', 'image', 'video')),
                 provider VARCHAR(50) NOT NULL,
@@ -585,7 +587,7 @@ async def create_tables():
         await db.execute_schema(
             """
             CREATE TABLE IF NOT EXISTS app_model_configs (
-                id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+                id UUID PRIMARY KEY,
                 app_id UUID NOT NULL REFERENCES apps(id) ON DELETE CASCADE,
                 model_type VARCHAR(20) NOT NULL CHECK (model_type IN ('text', 'image', 'video')),
                 provider VARCHAR(50) NOT NULL,
@@ -606,7 +608,7 @@ async def create_tables():
     await db.execute_schema(
         """
         CREATE TABLE IF NOT EXISTS global_fallback_models (
-            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            id UUID PRIMARY KEY,
             model_type VARCHAR(20) NOT NULL CHECK (model_type IN ('text', 'image', 'video')),
             provider VARCHAR(50) NOT NULL,
             model_id VARCHAR(200) NOT NULL,
@@ -649,7 +651,7 @@ async def create_tables():
     await db.execute_schema(
         """
         CREATE TABLE IF NOT EXISTS llm_usage_logs (
-            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            id UUID PRIMARY KEY,
             user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
             app_id UUID NOT NULL REFERENCES apps(id) ON DELETE CASCADE,
 
@@ -689,7 +691,7 @@ async def create_tables():
     await db.execute_schema(
         """
         CREATE TABLE IF NOT EXISTS llm_cost_tracking (
-            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            id UUID PRIMARY KEY,
             user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
             app_id UUID REFERENCES apps(id) ON DELETE CASCADE,
 
@@ -793,7 +795,7 @@ async def create_tables():
     await db.execute_schema(
         """
         CREATE TABLE IF NOT EXISTS user_recipes (
-            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            id UUID PRIMARY KEY,
             user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
             app_id VARCHAR(255) NOT NULL,
             title VARCHAR(500),
@@ -817,7 +819,7 @@ async def create_tables():
     await db.execute_schema(
         """
         CREATE TABLE IF NOT EXISTS user_stories (
-            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            id UUID PRIMARY KEY,
             user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
             title VARCHAR(255) NOT NULL,
             content TEXT NOT NULL,
@@ -871,7 +873,7 @@ async def create_tables():
     await db.execute_schema(
         """
         CREATE TABLE IF NOT EXISTS story_generation_logs (
-            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            id UUID PRIMARY KEY,
             user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
             story_id UUID REFERENCES user_stories(id) ON DELETE SET NULL,
             generation_prompt TEXT NOT NULL,
@@ -893,7 +895,7 @@ async def create_tables():
     await db.execute_schema(
         """
         CREATE TABLE IF NOT EXISTS story_images (
-            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            id UUID PRIMARY KEY,
             story_id UUID NOT NULL REFERENCES user_stories(id) ON DELETE CASCADE,
             user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
             image_id VARCHAR(50) NOT NULL,
@@ -919,7 +921,7 @@ async def create_tables():
         await db.execute_schema(
             """
             CREATE TABLE IF NOT EXISTS restaurant_sessions (
-                id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+                id UUID PRIMARY KEY,
                 user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
                 session_data JSONB DEFAULT '{}',
                 excluded_restaurants TEXT[] DEFAULT '{}',
@@ -1035,7 +1037,7 @@ async def create_tables():
     await db.execute_schema(
         """
         CREATE TABLE IF NOT EXISTS user_inspirations (
-            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            id UUID PRIMARY KEY,
             user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
             content TEXT NOT NULL,
             category VARCHAR(50) NOT NULL,
@@ -1089,7 +1091,7 @@ async def create_tables():
     await db.execute_schema(
         """
         CREATE TABLE IF NOT EXISTS fortune_readings (
-            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            id UUID PRIMARY KEY,
             user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
             target_person_id UUID REFERENCES people_in_my_life(id) ON DELETE CASCADE,
             target_person_name VARCHAR(100) NOT NULL,
@@ -1210,7 +1212,7 @@ async def create_tables():
     await db.execute_schema(
         """
         CREATE TABLE IF NOT EXISTS app_grants (
-            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            id UUID PRIMARY KEY,
             user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
             app_id UUID NOT NULL REFERENCES apps(id) ON DELETE CASCADE,
             grant_type VARCHAR(20) NOT NULL CHECK (grant_type IN ('initial', 'streak')),
@@ -1257,7 +1259,7 @@ async def create_tables():
     await db.execute_schema(
         """
         CREATE TABLE IF NOT EXISTS custom_characters (
-            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            id UUID PRIMARY KEY,
             user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
             name VARCHAR(50) NOT NULL,
             description TEXT NOT NULL,
@@ -1279,7 +1281,7 @@ async def create_tables():
     await db.execute_schema(
         """
         CREATE TABLE IF NOT EXISTS wyr_game_sessions (
-            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            id UUID PRIMARY KEY,
             user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
             game_length INTEGER NOT NULL CHECK (game_length IN (5, 10, 20)),
             category VARCHAR(50) NOT NULL,
@@ -1305,7 +1307,7 @@ async def create_tables():
     await db.execute_schema(
         """
         CREATE TABLE IF NOT EXISTS referral_codes (
-            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            id UUID PRIMARY KEY,
             user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
             referral_code VARCHAR(10) UNIQUE NOT NULL,
             created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
@@ -1322,7 +1324,7 @@ async def create_tables():
     await db.execute_schema(
         """
         CREATE TABLE IF NOT EXISTS referral_redemptions (
-            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            id UUID PRIMARY KEY,
             referral_code VARCHAR(10) NOT NULL,
             referrer_user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
             referee_user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
@@ -1343,7 +1345,7 @@ async def create_tables():
     await db.execute_schema(
         """
         CREATE TABLE IF NOT EXISTS promotional_referral_codes (
-            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            id UUID PRIMARY KEY,
             code VARCHAR(20) UNIQUE NOT NULL,
             description TEXT NOT NULL,
             dust_bonus INTEGER NOT NULL,
@@ -1365,7 +1367,7 @@ async def create_tables():
     await db.execute_schema(
         """
         CREATE TABLE IF NOT EXISTS promotional_referral_redemptions (
-            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            id UUID PRIMARY KEY,
             promotional_code VARCHAR(20) NOT NULL,
             user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
             dust_bonus INTEGER NOT NULL,
@@ -1455,7 +1457,7 @@ async def create_tables():
     await db.execute_schema(
         """
         CREATE TABLE IF NOT EXISTS account_deletion_logs (
-            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            id UUID PRIMARY KEY,
             user_id UUID NOT NULL,
             fairyname VARCHAR(255),
             email VARCHAR(255),
@@ -1486,7 +1488,7 @@ async def create_tables():
     await db.execute_schema(
         """
         CREATE TABLE IF NOT EXISTS user_images (
-            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            id UUID PRIMARY KEY,
             user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
             url TEXT NOT NULL,
             prompt TEXT NOT NULL,
@@ -1511,7 +1513,7 @@ async def create_tables():
     await db.execute_schema(
         """
         CREATE TABLE IF NOT EXISTS user_videos (
-            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            id UUID PRIMARY KEY,
             user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
             url TEXT NOT NULL,
             thumbnail_url TEXT,
@@ -1568,7 +1570,7 @@ async def create_tables():
     await db.execute_schema(
         """
         CREATE TABLE IF NOT EXISTS terms_documents (
-            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            id UUID PRIMARY KEY,
             document_type VARCHAR(50) NOT NULL CHECK (document_type IN ('terms_of_service', 'privacy_policy')),
             version VARCHAR(20) NOT NULL,
             title VARCHAR(200) NOT NULL,
@@ -1591,7 +1593,7 @@ async def create_tables():
     await db.execute_schema(
         """
         CREATE TABLE IF NOT EXISTS user_terms_acceptance (
-            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            id UUID PRIMARY KEY,
             user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
             document_id UUID NOT NULL REFERENCES terms_documents(id) ON DELETE CASCADE,
             document_type VARCHAR(50) NOT NULL,
@@ -1613,7 +1615,7 @@ async def create_tables():
     await db.execute_schema(
         """
         CREATE TABLE IF NOT EXISTS ai_usage_logs (
-            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            id UUID PRIMARY KEY,
             user_id UUID NOT NULL,
             app_id UUID NOT NULL,
 
@@ -1734,7 +1736,7 @@ async def create_tables():
     await db.execute_schema(
         """
         CREATE TABLE IF NOT EXISTS video_generation_jobs (
-            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            id UUID PRIMARY KEY,
             user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
             status VARCHAR(20) NOT NULL DEFAULT 'queued',
             generation_type VARCHAR(20) NOT NULL, -- 'text_to_video' | 'image_to_video'
@@ -1800,5 +1802,122 @@ async def create_tables():
         END $$;
     """
     )
+
+    # 20 Questions Game Tables
+    await db.execute_schema(
+        """
+        CREATE TABLE IF NOT EXISTS twenty_questions_games (
+            id UUID PRIMARY KEY,
+            user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            category VARCHAR(50) NOT NULL,
+            mode VARCHAR(20) NOT NULL DEFAULT 'user_thinks' CHECK (mode IN ('user_thinks', 'fairydust_thinks')),
+            target_person_id UUID REFERENCES people_in_my_life(id) ON DELETE CASCADE,
+            target_person_name VARCHAR(100) NOT NULL,
+            secret_answer VARCHAR(100), -- For fairydust_thinks mode
+            status VARCHAR(20) NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'won', 'lost', 'abandoned')),
+            questions_asked INTEGER DEFAULT 0,
+            questions_remaining INTEGER DEFAULT 20,
+            current_ai_question TEXT,
+            final_guess TEXT,
+            answer_revealed TEXT,
+            is_correct BOOLEAN,
+            created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+        );
+
+        -- Add new columns if they don't exist
+        ALTER TABLE twenty_questions_games ADD COLUMN IF NOT EXISTS current_ai_question TEXT;
+        ALTER TABLE twenty_questions_games ADD COLUMN IF NOT EXISTS mode VARCHAR(20) DEFAULT 'user_thinks' CHECK (mode IN ('user_thinks', 'fairydust_thinks'));
+        ALTER TABLE twenty_questions_games ADD COLUMN IF NOT EXISTS secret_answer VARCHAR(100);
+
+        -- Update status constraint to include 'abandoned'
+        DO $$
+        BEGIN
+            ALTER TABLE twenty_questions_games DROP CONSTRAINT IF EXISTS twenty_questions_games_status_check;
+            ALTER TABLE twenty_questions_games ADD CONSTRAINT twenty_questions_games_status_check
+                CHECK (status IN ('active', 'won', 'lost', 'abandoned'));
+        EXCEPTION
+            WHEN others THEN null;
+        END $$;
+
+        CREATE INDEX IF NOT EXISTS idx_twenty_questions_games_user_id ON twenty_questions_games(user_id);
+        CREATE INDEX IF NOT EXISTS idx_twenty_questions_games_status ON twenty_questions_games(user_id, status);
+        CREATE INDEX IF NOT EXISTS idx_twenty_questions_games_created_at ON twenty_questions_games(created_at DESC);
+        CREATE INDEX IF NOT EXISTS idx_twenty_questions_games_target_person ON twenty_questions_games(target_person_id);
+    """
+    )
+
+    await db.execute_schema(
+        """
+        CREATE TABLE IF NOT EXISTS twenty_questions_history (
+            id UUID PRIMARY KEY,
+            game_id UUID NOT NULL REFERENCES twenty_questions_games(id) ON DELETE CASCADE,
+            question_number INTEGER NOT NULL,
+            question_text TEXT NOT NULL,
+            answer TEXT NOT NULL CHECK (answer IN ('yes', 'no', 'sometimes', 'unknown', 'correct', 'incorrect', 'pending')),
+            is_guess BOOLEAN DEFAULT FALSE,
+            asked_by VARCHAR(10) NOT NULL DEFAULT 'user' CHECK (asked_by IN ('user', 'ai')),
+            mode VARCHAR(20), -- Track which mode this question was asked in
+            created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+        );
+
+        -- Add mode column to history if it doesn't exist
+        ALTER TABLE twenty_questions_history ADD COLUMN IF NOT EXISTS mode VARCHAR(20);
+
+        -- Add asked_by column if it doesn't exist
+        ALTER TABLE twenty_questions_history ADD COLUMN IF NOT EXISTS asked_by VARCHAR(10) DEFAULT 'user';
+
+        -- Update answer constraint to include 'pending' for AI questions
+        DO $$
+        BEGIN
+            ALTER TABLE twenty_questions_history DROP CONSTRAINT IF EXISTS twenty_questions_history_answer_check;
+            ALTER TABLE twenty_questions_history ADD CONSTRAINT twenty_questions_history_answer_check
+                CHECK (answer IN ('yes', 'no', 'sometimes', 'unknown', 'correct', 'incorrect', 'pending'));
+        EXCEPTION
+            WHEN others THEN null;
+        END $$;
+
+        -- Update asked_by constraint to allow both 'user' and 'ai'
+        DO $$
+        BEGIN
+            ALTER TABLE twenty_questions_history DROP CONSTRAINT IF EXISTS twenty_questions_history_asked_by_check;
+            ALTER TABLE twenty_questions_history ADD CONSTRAINT twenty_questions_history_asked_by_check
+                CHECK (asked_by IN ('user', 'ai'));
+        EXCEPTION
+            WHEN others THEN null;
+        END $$;
+
+        CREATE INDEX IF NOT EXISTS idx_twenty_questions_history_game_id ON twenty_questions_history(game_id, question_number);
+        CREATE INDEX IF NOT EXISTS idx_twenty_questions_history_created_at ON twenty_questions_history(created_at DESC);
+    """
+    )
+
+    # Insert 20 Questions app if it doesn't exist
+    try:
+        await db.execute_schema(
+            """
+            INSERT INTO apps (
+                id, builder_id, name, slug, description, icon_url,
+                status, category, is_active, created_at, updated_at
+            )
+            SELECT
+                gen_random_uuid(),
+                (SELECT id FROM users WHERE is_builder = true LIMIT 1),
+                '20 Questions',
+                'fairydust-20-questions',
+                'Collaborative guessing game where AI thinks of someone in your life and you ask questions to figure out who',
+                NULL,
+                'approved',
+                'games',
+                true,
+                CURRENT_TIMESTAMP,
+                CURRENT_TIMESTAMP
+            WHERE NOT EXISTS (
+                SELECT 1 FROM apps WHERE slug = 'fairydust-20-questions'
+            );
+        """
+        )
+    except Exception as e:
+        logger.warning(f"20 Questions app creation failed (may already exist): {e}")
 
     logger.info("Database schema creation/update completed successfully")

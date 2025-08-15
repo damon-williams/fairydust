@@ -3,7 +3,8 @@ import json
 import os
 from datetime import datetime
 from typing import Optional
-from uuid import UUID, uuid4
+from uuid import UUID
+from shared.uuid_utils import generate_uuid7
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
@@ -58,7 +59,7 @@ async def create_app(
     db: Database = Depends(get_db),
 ):
     """Create a new app (builders only)"""
-    app_id = uuid4()
+    app_id = generate_uuid7()
 
     # Insert app into database
     await db.execute(
@@ -185,7 +186,7 @@ async def get_app_model_config(app_id: str, db: Database = Depends(get_db)):
 
         logger.info(f"🔍 LEGACY: Returning default config for app {app_id}")
         return AppModelConfig(
-            id=uuid4(),
+            id=generate_uuid7(),
             app_id=app_id,
             primary_provider=LLMProvider.ANTHROPIC,
             primary_model_id="claude-3-5-sonnet-20241022",
@@ -227,7 +228,7 @@ async def update_app_model_config(
 
     logger.info(f"🔍 LEGACY: Returning default config after 'update' for app {app_id}")
     return AppModelConfig(
-        id=uuid4(),
+        id=generate_uuid7(),
         app_id=app_id,
         primary_provider=config_update.primary_provider or LLMProvider.ANTHROPIC,
         primary_model_id=config_update.primary_model_id or "claude-3-5-sonnet-20241022",
@@ -284,7 +285,7 @@ async def log_llm_usage(usage: LLMUsageLogCreate, db: Database = Depends(get_db)
         raise HTTPException(status_code=400, detail=f"Cost calculation failed: {str(e)}")
 
     # Insert usage log into unified ai_usage_logs table
-    usage_id = uuid4()
+    usage_id = generate_uuid7()
     await db.execute(
         """
         INSERT INTO ai_usage_logs (
@@ -602,7 +603,7 @@ async def create_app_model_config(
         )
 
     # Create new config
-    config_id = uuid4()
+    config_id = generate_uuid7()
     await db.execute(
         """
         INSERT INTO app_model_configs (
@@ -800,7 +801,7 @@ async def create_global_fallback(
     db: Database = Depends(get_db),
 ) -> GlobalFallbackModel:
     """Create a new global fallback model configuration"""
-    fallback_id = uuid4()
+    fallback_id = generate_uuid7()
 
     await db.execute(
         """
@@ -874,7 +875,7 @@ async def log_image_usage(usage: ImageUsageLogCreate, db: Database = Depends(get
         raise HTTPException(status_code=400, detail=f"Cost calculation failed: {str(e)}")
 
     # Insert usage log into ai_usage_logs table
-    usage_id = uuid4()
+    usage_id = generate_uuid7()
     await db.execute(
         """
         INSERT INTO ai_usage_logs (
@@ -948,7 +949,7 @@ async def log_video_usage(usage: VideoUsageLogCreate, db: Database = Depends(get
         raise HTTPException(status_code=400, detail=f"Cost calculation failed: {str(e)}")
 
     # Insert usage log into ai_usage_logs table
-    usage_id = uuid4()
+    usage_id = generate_uuid7()
     await db.execute(
         """
         INSERT INTO ai_usage_logs (
@@ -1108,7 +1109,7 @@ async def generate_video(
                 $1, $2, $3, 'video', $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, NOW()
             )
             """,
-            uuid4(),
+            generate_uuid7(),
             user_id,
             None,  # No specific app for direct generation
             model_id.split("/")[0],  # provider
@@ -1264,7 +1265,7 @@ async def animate_image(
                 $1, $2, $3, 'video', $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, NOW()
             )
             """,
-            uuid4(),
+            generate_uuid7(),
             user_id,
             None,  # No specific app for direct generation
             model_id.split("/")[0],  # provider
@@ -1519,7 +1520,7 @@ async def create_app_api(
             raise HTTPException(status_code=400, detail="App slug already exists")
 
         # Create the app
-        app_id = uuid4()
+        app_id = generate_uuid7()
 
         await db.execute(
             """

@@ -198,7 +198,6 @@ class AuthService:
                 normalized["provider_id"] = decoded_token.get("sub")
                 normalized["email"] = decoded_token.get("email")
 
-
                 # Apple provides name only in the first authorization request
                 # Check user_data first, then fallback to token
 

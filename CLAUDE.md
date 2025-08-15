@@ -148,6 +148,61 @@ ledger_url = f"https://fairydust-ledger-{base_url_suffix}.up.railway.app"
 - **Admin Portal changes not visible**: Must rebuild React app and commit static files
 - **JSON parsing errors**: Use `parse_jsonb_field()` for JSONB columns
 
+## Docker & Python Library Management
+
+### Docker Build System
+fairydust uses **dual Dockerfile approach**:
+- **Main Dockerfile** (`/Dockerfile`): Installs all service dependencies for multi-service deployment
+- **Individual service Dockerfiles** (`services/*/Dockerfile`): Service-specific builds with Railway
+
+### Critical Python Library Debugging Steps
+
+When adding new Python packages to `requirements.txt`, common issues arise:
+
+#### 1. **Docker Layer Caching Issues**
+```dockerfile
+# ALWAYS add cache-busting when adding new dependencies
+RUN pip install --upgrade pip
+RUN pip install --no-cache-dir -r requirements.txt
+```
+
+#### 2. **Package Import Path Debugging** 
+Many packages install with different import paths than their package names:
+
+```dockerfile
+# Debug package installation and import paths
+RUN echo "📦 Installed packages:" && pip list | grep <package-name>
+RUN echo "🔍 Package files:" && find /usr/local/lib/python*/site-packages -name "*<package>*"
+RUN python -c "import <package>; print('✅ Success')" || echo "❌ Import failed"
+```
+
+#### 3. **Common Import Path Gotchas**
+- `uuid7` package → `from uuid_extensions import uuid7` (not `import uuid7`)
+- Some packages have nested module structures different from package name
+- Check actual file locations in site-packages to determine correct import
+
+#### 4. **Verification Pattern**
+```dockerfile
+# Standard verification for new packages
+RUN python -c "import <actual_import_path>; print('✅ <package> installed successfully')" || echo "❌ <package> failed to install"
+```
+
+#### 5. **Railway Build Debugging**
+- Railway may use main Dockerfile OR individual service Dockerfiles
+- Check `services/*/railway.json` for `dockerfilePath` configuration
+- Build logs show which Dockerfile is actually being used
+- Add debugging steps to both Dockerfiles when troubleshooting
+
+#### Example Debug Session
+```dockerfile
+# Complete debugging template for new packages
+RUN echo "🐍 Python version:" && python --version
+RUN echo "📦 Target package:" && pip list | grep <package> || echo "Package not found"
+RUN echo "📂 Python path:" && python -c "import sys; print('\n'.join(sys.path))"
+RUN echo "🔍 Package files:" && find /usr/local/lib/python*/site-packages -name "*<package>*" 2>/dev/null || echo "No files found"
+RUN python -c "from <correct_import_path> import <module>; print('✅ Import successful')" || echo "❌ Import failed"
+```
+
 ### Best Practices
 - Always run `./scripts/format.sh` before committing
 - Use centralized utilities in `/shared/`
