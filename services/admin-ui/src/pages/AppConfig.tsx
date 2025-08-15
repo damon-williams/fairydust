@@ -646,6 +646,7 @@ export function AppConfig() {
                     </SelectTrigger>
                     <SelectContent>
                       <SelectItem value="runwayml/gen4-image">Runway Gen-4</SelectItem>
+                      <SelectItem value="runwayml/gen4-image-turbo">Runway Gen-4 Turbo</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>

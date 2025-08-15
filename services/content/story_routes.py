@@ -2002,7 +2002,7 @@ async def retry_failed_story_image(
         
         # Verify the story belongs to the user
         story = await db.fetch_one(
-            "SELECT user_id, characters, target_audience FROM user_stories WHERE id = $1", 
+            "SELECT user_id, characters_involved, target_audience FROM user_stories WHERE id = $1", 
             story_id
         )
 
@@ -2052,9 +2052,9 @@ async def retry_failed_story_image(
 
         # Parse characters from story
         characters = []
-        if story["characters"]:
+        if story["characters_involved"]:
             try:
-                characters_data = json.loads(story["characters"]) if isinstance(story["characters"], str) else story["characters"]
+                characters_data = json.loads(story["characters_involved"]) if isinstance(story["characters_involved"], str) else story["characters_involved"]
                 characters = [StoryCharacter(**char) for char in characters_data]
             except Exception as e:
                 print(f"⚠️ IMAGE_RETRY: Failed to parse characters: {e}", flush=True)

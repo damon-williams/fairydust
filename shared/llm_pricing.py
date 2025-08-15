@@ -52,6 +52,7 @@ PRICING_CONFIG = {
         "black-forest-labs/flux-schnell": {"cost": 0.003},  # $3.00 per 1000 images
         "bytedance/seedream-3": {"cost": 0.008},  # Estimated cost per image
         "runwayml/gen4-image": {"cost": 0.05},
+        "runwayml/gen4-image-turbo": {"cost": 0.03},
     },
     "video": {
         # Video models - per video generation
