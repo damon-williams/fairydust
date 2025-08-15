@@ -118,10 +118,7 @@ class LLMClient:
                     request_metadata=request_metadata,
                 )
 
-                if is_fallback:
-                    print(f"✅ LLM_CLIENT: Fallback success with {provider}/{model_id}")
-                else:
-                    print(f"✅ LLM_CLIENT: Primary success with {provider}/{model_id}")
+                # Success logging now handled by usage logger with more detail
 
                 # Return completion and metadata
                 return completion, {

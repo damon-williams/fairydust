@@ -89,10 +89,7 @@ async def log_llm_usage(
         if auth_token:
             headers["Authorization"] = auth_token
 
-        print(
-            f"📊 LLM_USAGE: Logging usage for {app_id} - {model_id} ({total_tokens} tokens, ${cost_usd:.6f})",
-            flush=True,
-        )
+        # Detailed usage logging only shown on successful completion (reduces noise)
 
         async with httpx.AsyncClient(timeout=10.0) as client:
             response = await client.post(
@@ -102,7 +99,8 @@ async def log_llm_usage(
             )
 
             if response.status_code == 201:
-                print(f"✅ LLM_USAGE: Successfully logged usage for {app_id}", flush=True)
+                fallback_text = " (fallback)" if was_fallback else ""
+                print(f"✅ LLM_USAGE: Successfully logged usage for {app_id} with {provider}/{model_id}{fallback_text}", flush=True)
                 return True
             else:
                 print(
