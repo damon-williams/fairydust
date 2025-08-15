@@ -642,9 +642,10 @@ async def start_game(
             await db.execute(
                 """
                 INSERT INTO twenty_questions_history (
-                    game_id, question_number, question_text, answer, is_guess, asked_by, mode
-                ) VALUES ($1, $2, $3, $4, $5, $6, $7)
+                    id, game_id, question_number, question_text, answer, is_guess, asked_by, mode
+                ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
                 """,
+                generate_uuid7(),
                 game_id,
                 1,
                 first_ai_question,
@@ -783,9 +784,10 @@ async def ask_question(
             await db.execute(
                 """
                 INSERT INTO twenty_questions_history (
-                    game_id, question_number, question_text, answer, is_guess, asked_by, mode
-                ) VALUES ($1, $2, $3, $4, $5, $6, $7)
+                    id, game_id, question_number, question_text, answer, is_guess, asked_by, mode
+                ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
                 """,
+                generate_uuid7(),
                 game_id,
                 new_questions_asked,
                 request.question,
@@ -940,9 +942,10 @@ async def answer_ai_question(
             await db.execute(
                 """
                 INSERT INTO twenty_questions_history (
-                    game_id, question_number, question_text, answer, is_guess, asked_by, mode
-                ) VALUES ($1, $2, $3, $4, $5, $6, $7)
+                    id, game_id, question_number, question_text, answer, is_guess, asked_by, mode
+                ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
                 """,
+                generate_uuid7(),
                 game_id,
                 new_questions_asked + 1,
                 next_ai_question,
@@ -993,9 +996,10 @@ async def answer_ai_question(
             await db.execute(
                 """
                 INSERT INTO twenty_questions_history (
-                    game_id, question_number, question_text, answer, is_guess, asked_by, mode
-                ) VALUES ($1, $2, $3, $4, $5, $6, $7)
+                    id, game_id, question_number, question_text, answer, is_guess, asked_by, mode
+                ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
                 """,
+                generate_uuid7(),
                 game_id,
                 new_questions_asked + 1,
                 f"My final guess: {ai_final_guess}",
@@ -1153,9 +1157,10 @@ async def make_guess(
         await db.execute(
             """
             INSERT INTO twenty_questions_history (
-                game_id, question_number, question_text, answer, is_guess, asked_by, mode
-            ) VALUES ($1, $2, $3, $4, $5, $6, $7)
+                id, game_id, question_number, question_text, answer, is_guess, asked_by, mode
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
             """,
+            generate_uuid7(),
             game_id,
             game_data["questions_asked"] + 1,
             f"Final guess: {request.guess}",
