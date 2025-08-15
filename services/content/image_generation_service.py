@@ -90,6 +90,7 @@ class ImageGenerationService:
         style: ImageStyle,
         image_size: ImageSize,
         reference_people: list[ImageReferencePerson],
+        image_id: str = None,
     ) -> tuple[str, dict]:
         """
         Generate an AI image using FLUX for all generations
@@ -130,11 +131,11 @@ class ImageGenerationService:
             # Check if it's a gen4-turbo model (supports both with and without reference people)
             if "gen4-image-turbo" in model:
                 return await self._generate_with_gen4_turbo(
-                    model, prompt, style, image_size, reference_people
+                    model, prompt, style, image_size, reference_people, image_id
                 )
             else:
                 return await self._generate_with_gen4_image(
-                    model, prompt, style, image_size, reference_people
+                    model, prompt, style, image_size, reference_people, image_id
                 )
         else:
             # Use configured model for text-only generation with fallback support
@@ -150,11 +151,11 @@ class ImageGenerationService:
                 # Check if primary model is gen4-turbo (can handle text-only generation)
                 if "gen4-image-turbo" in primary_model:
                     return await self._generate_with_gen4_turbo(
-                        primary_model, prompt, style, image_size, reference_people
+                        primary_model, prompt, style, image_size, reference_people, image_id
                     )
                 else:
                     return await self._generate_standard_replicate(
-                        primary_model, prompt, style, image_size, reference_people
+                        primary_model, prompt, style, image_size, reference_people, image_id
                     )
             except Exception as e:
                 print(f"❌ IMAGE_GENERATION: Primary model {primary_model} failed: {str(e)}")
@@ -167,11 +168,11 @@ class ImageGenerationService:
                         # Check if fallback model is gen4-turbo
                         if "gen4-image-turbo" in fallback_model:
                             result = await self._generate_with_gen4_turbo(
-                                fallback_model, prompt, style, image_size, reference_people
+                                fallback_model, prompt, style, image_size, reference_people, image_id
                             )
                         else:
                             result = await self._generate_standard_replicate(
-                                fallback_model, prompt, style, image_size, reference_people
+                                fallback_model, prompt, style, image_size, reference_people, image_id
                             )
                         # Add fallback metadata
                         url, metadata = result
@@ -200,6 +201,7 @@ class ImageGenerationService:
         style: ImageStyle,
         image_size: ImageSize,
         reference_people: list[ImageReferencePerson],
+        image_id: str = None,
     ) -> tuple[str, dict]:
         """Generate image using standard Replicate models (text-only)"""
 
@@ -517,6 +519,7 @@ class ImageGenerationService:
         style: ImageStyle,
         image_size: ImageSize,
         reference_people: list[ImageReferencePerson],
+        image_id: str = None,
     ) -> tuple[str, dict]:
         """Generate image using Runway Gen-4 Image with multiple face references (up to 3)"""
 
@@ -681,7 +684,7 @@ class ImageGenerationService:
                 status = result["status"]
 
                 print(
-                    f"⏱️ POLLING_TIMING: Gen-4 Poll #{poll_count} after {elapsed_time}s - Status: {status} (poll took {poll_request_time:.3f}s)"
+                    f"⏱️ POLLING_TIMING: Gen-4 Poll #{poll_count} after {elapsed_time}s - Status: {status} (poll took {poll_request_time:.3f}s) - Image: {image_id or 'unknown'}"
                 )
 
                 if status == "succeeded":

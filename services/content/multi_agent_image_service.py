@@ -325,7 +325,15 @@ STORY_SIGNIFICANCE: Important narrative moment"""
                 "traits": char.traits[:5] if char.traits else [],
                 "has_photo": bool(char.photo_url),
             }
+            # Debug logging for photo URL issues
+            if char.photo_url:
+                logger.info(f"👤 CHARACTER_AGENT: {char.name} has photo_url: {char.photo_url[:50]}... (has_photo: True)")
+            else:
+                logger.info(f"👤 CHARACTER_AGENT: {char.name} has NO photo_url (has_photo: False)")
             character_data.append(char_info)
+
+        # Debug: Log the complete character data being sent to the agent
+        logger.info(f"👤 CHARACTER_AGENT: Full character data: {json.dumps(character_data, indent=2)}")
 
         character_prompt = f"""Based on this scene analysis, create detailed visual descriptions for the characters present:
 
