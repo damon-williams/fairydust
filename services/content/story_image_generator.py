@@ -106,10 +106,8 @@ class StoryImageGenerator:
                     # result is False (handled failure)
                     failed_count += 1
 
-            # Get retry statistics from database
+            # Get comprehensive retry statistics from database
             retry_stats = await self._get_retry_statistics(db, story_id)
-            retry_success_count = retry_stats.get("retry_successes", 0)
-            first_attempt_success_count = completed_count - retry_success_count
 
             # Update story completion status
             images_complete = completed_count == len(scenes)
@@ -125,11 +123,20 @@ class StoryImageGenerator:
             )
             logger.info(f"   Failed: {failed_count} images")
             logger.info("📊 RETRY_STATISTICS:")
-            logger.info(f"   First attempt successes: {first_attempt_success_count}")
-            logger.info(f"   Retry successes: {retry_success_count}")
-            logger.info(
-                f"   Retry success rate: {retry_success_count/max(1, retry_success_count + failed_count)*100:.1f}% of retry attempts"
-            )
+            logger.info(f"   First attempt successes: {retry_stats.get('first_attempt_successes', 0)}")
+            logger.info(f"   First attempt failures: {retry_stats.get('first_attempt_failures', 0)}")
+            logger.info(f"   Total retry attempts: {retry_stats.get('total_retry_attempts', 0)}")
+            logger.info(f"   Retry successes: {retry_stats.get('retry_successes', 0)}")
+            logger.info(f"   Retry failures: {retry_stats.get('retry_failures', 0)}")
+            
+            # Calculate retry success rate if there were any retries
+            total_retries = retry_stats.get('total_retry_attempts', 0)
+            retry_successes = retry_stats.get('retry_successes', 0)
+            if total_retries > 0:
+                retry_success_rate = (retry_successes / total_retries) * 100
+                logger.info(f"   Retry success rate: {retry_success_rate:.1f}% ({retry_successes}/{total_retries} retry attempts)")
+            else:
+                logger.info("   Retry success rate: N/A (no retries attempted)")
             logger.info("⏱️ TIMING_METRICS:")
             logger.info(f"   Total elapsed time: {total_time:.2f}s")
             logger.info(f"   Pure generation time: {generation_duration:.2f}s")
@@ -487,38 +494,69 @@ class StoryImageGenerator:
             logger.error(f"Failed to update story completion status: {e}")
 
     async def _get_retry_statistics(self, db: Database, story_id: str) -> dict:
-        """Get retry statistics for images in this story"""
+        """Get comprehensive retry statistics for images in this story"""
         try:
-            # Query generation metadata from successful images to count retries
+            # Query generation metadata from ALL images (completed AND failed) to count retries
             query = """
-                SELECT generation_metadata
+                SELECT generation_metadata, status
                 FROM story_images
-                WHERE story_id = $1 AND status = 'completed'
+                WHERE story_id = $1 AND status IN ('completed', 'failed')
             """
             rows = await db.fetch_all(query, story_id)
 
             retry_successes = 0
-            total_attempts = 0
+            retry_failures = 0
+            total_retry_attempts = 0
+            first_attempt_successes = 0
+            first_attempt_failures = 0
 
             for row in rows:
                 try:
                     metadata = (
                         json.loads(row["generation_metadata"]) if row["generation_metadata"] else {}
                     )
-                    if metadata.get("retry_success", False):
-                        retry_successes += 1
-                    total_attempts += metadata.get("total_attempts", 1)
+                    
+                    total_attempts = metadata.get("total_attempts", 1)
+                    retry_success = metadata.get("retry_success", False)
+                    
+                    if total_attempts > 1:
+                        # This image had retries
+                        total_retry_attempts += (total_attempts - 1)  # Don't count first attempt
+                        if row["status"] == "completed" and retry_success:
+                            retry_successes += 1
+                        elif row["status"] == "failed":
+                            retry_failures += 1
+                    else:
+                        # First attempt only
+                        if row["status"] == "completed":
+                            first_attempt_successes += 1
+                        elif row["status"] == "failed":
+                            first_attempt_failures += 1
+                            
                 except (json.JSONDecodeError, TypeError):
+                    # Default to first attempt failure if we can't parse metadata
+                    if row["status"] == "failed":
+                        first_attempt_failures += 1
+                    elif row["status"] == "completed":
+                        first_attempt_successes += 1
                     continue
 
             return {
                 "retry_successes": retry_successes,
-                "total_attempts": total_attempts,
-                "first_attempt_successes": len(rows) - retry_successes,
+                "retry_failures": retry_failures,
+                "total_retry_attempts": total_retry_attempts,
+                "first_attempt_successes": first_attempt_successes,
+                "first_attempt_failures": first_attempt_failures,
             }
         except Exception as e:
             logger.error(f"Failed to get retry statistics: {e}")
-            return {"retry_successes": 0, "total_attempts": 0, "first_attempt_successes": 0}
+            return {
+                "retry_successes": 0, 
+                "retry_failures": 0, 
+                "total_retry_attempts": 0,
+                "first_attempt_successes": 0,
+                "first_attempt_failures": 0
+            }
 
     async def _generate_image_with_retry(
         self,
