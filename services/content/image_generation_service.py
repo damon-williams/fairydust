@@ -28,16 +28,16 @@ class ImageGenerationService:
             # Get the Story app ID (which has image generation capabilities)
             STORY_APP_ID = "fairydust-story"
 
-            # Fetch ALL enabled image models from database, ordered by priority
+            # Fetch ALL enabled image models from database
             db = await get_db()
             models = await db.fetch_all(
                 """
-                SELECT provider, model_id, parameters, priority
+                SELECT provider, model_id, parameters
                 FROM app_model_configs
                 WHERE app_id = (SELECT id FROM apps WHERE slug = $1)
                 AND model_type = 'image'
                 AND is_enabled = true
-                ORDER BY COALESCE(priority, 999), created_at ASC
+                ORDER BY created_at ASC
                 """,
                 STORY_APP_ID,
             )
@@ -66,7 +66,6 @@ class ImageGenerationService:
                         "model": model_name,
                         "provider": model["provider"],
                         "model_id": model["model_id"],
-                        "priority": model.get("priority", 999),
                         "parameters": params,
                     }
                     config_result["models"].append(model_config)
