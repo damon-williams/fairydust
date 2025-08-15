@@ -1987,3 +1987,118 @@ async def get_story_images_batch_status(
     except Exception as e:
         print(f"❌ STORY_IMAGE_BATCH: Error getting batch image status: {str(e)}", flush=True)
         raise HTTPException(status_code=500, detail="Failed to get batch image status")
+
+
+@router.post("/stories/{story_id}/images/{image_id}/retry")
+async def retry_failed_story_image(
+    story_id: str,
+    image_id: str,
+    current_user: TokenData = Depends(get_current_user),
+    db: Database = Depends(get_db),
+):
+    """Retry generation for a specific failed story image"""
+    try:
+        print(f"🔄 IMAGE_RETRY: User {current_user.user_id} requesting retry for image {image_id} in story {story_id}", flush=True)
+        
+        # Verify the story belongs to the user
+        story = await db.fetch_one(
+            "SELECT user_id, characters, target_audience FROM user_stories WHERE id = $1", 
+            story_id
+        )
+
+        if not story:
+            raise HTTPException(status_code=404, detail="Story not found")
+
+        if current_user.user_id != str(story["user_id"]) and not current_user.is_admin:
+            raise HTTPException(status_code=403, detail="Access denied")
+
+        # Check if the specific image exists and is failed
+        image = await db.fetch_one(
+            """
+            SELECT status, prompt, scene_description, generation_metadata
+            FROM story_images
+            WHERE story_id = $1 AND image_id = $2
+            """,
+            story_id,
+            image_id,
+        )
+
+        if not image:
+            raise HTTPException(status_code=404, detail="Image not found")
+
+        if image["status"] != "failed":
+            raise HTTPException(
+                status_code=400, 
+                detail=f"Image is not in failed status. Current status: {image['status']}"
+            )
+
+        print(f"✅ IMAGE_RETRY: Image {image_id} found with failed status, proceeding with retry", flush=True)
+
+        # Reset the image status to pending and clear previous error metadata
+        await db.execute(
+            """
+            UPDATE story_images 
+            SET status = 'pending', 
+                url = NULL, 
+                generation_metadata = NULL,
+                updated_at = CURRENT_TIMESTAMP
+            WHERE story_id = $1 AND image_id = $2
+            """,
+            story_id,
+            image_id,
+        )
+
+        print(f"🔄 IMAGE_RETRY: Reset image {image_id} to pending status", flush=True)
+
+        # Parse characters from story
+        characters = []
+        if story["characters"]:
+            try:
+                characters_data = json.loads(story["characters"]) if isinstance(story["characters"], str) else story["characters"]
+                characters = [StoryCharacter(**char) for char in characters_data]
+            except Exception as e:
+                print(f"⚠️ IMAGE_RETRY: Failed to parse characters: {e}", flush=True)
+
+        # Parse target audience
+        try:
+            target_audience = TargetAudience(story["target_audience"])
+        except Exception:
+            target_audience = TargetAudience.EARLY_ELEMENTARY  # Default fallback
+
+        # Create scene data for the single image retry
+        scene = {
+            "image_id": image_id,
+            "scene_description": image["scene_description"] or "Story scene",
+            "characters_mentioned": [char for char in characters if char.name.lower() in (image["scene_description"] or "").lower()],
+        }
+
+        print(f"🚀 IMAGE_RETRY: Starting background regeneration for image {image_id}", flush=True)
+
+        # Start background regeneration for just this one image
+        asyncio.create_task(
+            story_image_generator._generate_single_image_with_error_handling(
+                db=db,
+                story_id=story_id,
+                user_id=UUID(current_user.user_id),
+                scene=scene,
+                characters=characters,
+                target_audience=target_audience,
+                full_story_content=None,  # Not needed for retry
+                story_theme=None,
+                story_genre=None,
+                story_context=None,
+            )
+        )
+
+        return {
+            "success": True,
+            "message": f"Image {image_id} retry started",
+            "image_id": image_id,
+            "status": "pending"
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"❌ IMAGE_RETRY: Error retrying image {image_id}: {str(e)}", flush=True)
+        raise HTTPException(status_code=500, detail="Failed to retry image generation")
