@@ -209,8 +209,28 @@ class StoryImageGenerator:
         except Exception as e:
             total_time = time.time() - start_time
             logger.error(f"❌ INDIVIDUAL_TIMING: Image {image_id} FAILED after {total_time:.2f}s")
-            logger.error(f"❌ Failed to generate image {image_id} for story {story_id}: {e}")
-            logger.error(f"   Exception traceback: {traceback.format_exc()}")
+            
+            # Check if this is a known Replicate error that we handle gracefully
+            error_msg = str(e).lower()
+            is_known_replicate_error = (
+                "replicate internal.bad_output" in error_msg 
+                or "replicate_bad_output" in getattr(e, "retry_type", "")
+                or "nsfw" in getattr(e, "retry_type", "")
+                or "transient" in getattr(e, "retry_type", "")
+            )
+            
+            if is_known_replicate_error:
+                # Clean logging for known errors - no stack trace needed
+                logger.error(f"❌ Known service error for image {image_id}: {str(e)}")
+                if hasattr(e, "retry_type"):
+                    logger.error(f"   Error category: {e.retry_type}")
+                if hasattr(e, "prompt_used"):
+                    logger.error(f"   Prompt that failed: {e.prompt_used[:200]}...")
+            else:
+                # Unknown errors get full details including stack trace
+                logger.error(f"❌ Unexpected error for image {image_id}: {str(e)}")
+                logger.error(f"   Exception type: {type(e).__name__}")
+                logger.error(f"   Exception traceback: {traceback.format_exc()}")
 
             # Mark image as failed
             try:
@@ -681,10 +701,35 @@ class StoryImageGenerator:
                         error_with_retry_info.retry_type = "nsfw"
                         raise error_with_retry_info
 
-                # Check for transient Replicate errors (these can be retried without changing prompt)
+                # Check for specific Replicate INTERNAL.BAD_OUTPUT errors (special handling)
+                elif "internal.bad_output" in error_msg:
+                    # Special logging for INTERNAL.BAD_OUTPUT errors with prompt details
+                    logger.warning(f"🔧 REPLICATE_BAD_OUTPUT: Image {image_id} attempt {attempt + 1} failed with Replicate internal error")
+                    logger.warning(f"   Error code: INTERNAL.BAD_OUTPUT (Replicate model failure)")
+                    logger.warning(f"   Original prompt: {original_prompt}")
+                    logger.warning(f"   Current prompt: {prompt_to_use}")
+                    logger.warning(f"   Prompt length: {len(prompt_to_use)} characters")
+                    logger.warning(f"   Reference people: {len(reference_people)} images")
+                    
+                    if attempt < max_retries - 1:
+                        backoff_delay = 2**attempt  # Exponential backoff: 1s, 2s, 4s
+                        logger.info(f"🔄 REPLICATE_RETRY: Will retry image {image_id} in {backoff_delay}s (attempt {attempt + 2}/{max_retries})")
+                        await asyncio.sleep(backoff_delay)
+                        continue
+                    else:
+                        logger.error(f"❌ REPLICATE_FINAL_FAILURE: Image {image_id} failed all {max_retries} attempts with INTERNAL.BAD_OUTPUT")
+                        logger.error(f"   This suggests a persistent issue with the prompt or Replicate service")
+                        logger.error(f"   Final prompt attempted: {prompt_to_use}")
+                        final_error = f"Replicate INTERNAL.BAD_OUTPUT error after {max_retries} attempts"
+                        error_with_retry_info = Exception(final_error)
+                        error_with_retry_info.retry_count = attempt
+                        error_with_retry_info.retry_type = "replicate_bad_output"
+                        error_with_retry_info.prompt_used = prompt_to_use
+                        raise error_with_retry_info
+                
+                # Check for other transient Replicate errors (general handling)
                 elif (
-                    "internal.bad_output" in error_msg
-                    or "unexpected error occurred" in error_msg
+                    "unexpected error occurred" in error_msg
                     or "timeout" in error_msg
                     or "service unavailable" in error_msg
                     or "temporarily unavailable" in error_msg
