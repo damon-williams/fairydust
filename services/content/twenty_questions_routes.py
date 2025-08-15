@@ -271,11 +271,11 @@ async def generate_ai_question(
     category = game_data["category"] if game_data else "general"
 
     # Build category-specific prompt
-    prompt = f"""You are playing 20 Questions. I'm thinking of something from the category "{category}", and you need to ask a strategic yes/no question to narrow down what it might be.
+    prompt = f"""You are playing 20 Questions. I'm thinking of someone or something from the category "{category}", and you need to ask a strategic yes/no question to narrow down what it might be.
 
 This is question #{question_number} out of 20.{history_context}
 
-Ask a strategic yes/no question to help identify what I'm thinking of from the "{category}" category. Make it conversational and engaging. Focus on relevant characteristics for this category.
+Ask a strategic yes/no question to help identify what I'm thinking of from the "{category}" category. This could be a person, place, object, or concept. Make it conversational and engaging. Focus on relevant characteristics for this category.
 
 Keep the question under 100 characters and make it natural.
 
@@ -355,7 +355,7 @@ async def generate_ai_final_guess(
 
 {history_context}
 
-Based on the answers to my questions, what do you think I'm thinking of? Respond with just your guess, nothing else."""
+Based on the answers to my questions, what do you think I'm thinking of? This could be a person, place, object, or concept from the "{category}" category. Respond with just your guess, nothing else."""
 
     try:
         # Get LLM model configuration
