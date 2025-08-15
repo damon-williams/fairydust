@@ -20,7 +20,7 @@ class ImageGenerationService:
             raise ValueError("Missing REPLICATE_API_TOKEN environment variable")
 
     async def _get_image_model_config(self) -> dict:
-        """Get image model configuration from app config (normalized structure)"""
+        """Get image model configuration from app config (reads from parameters JSON)"""
         try:
             from shared.database import get_db
             from shared.json_utils import parse_jsonb_field
@@ -28,66 +28,40 @@ class ImageGenerationService:
             # Get the Story app ID (which has image generation capabilities)
             STORY_APP_ID = "fairydust-story"
 
-            # Fetch ALL enabled image models from database
+            # Fetch the single image model configuration record
             db = await get_db()
-            models = await db.fetch_all(
+            model_record = await db.fetch_one(
                 """
                 SELECT provider, model_id, parameters
                 FROM app_model_configs
                 WHERE app_id = (SELECT id FROM apps WHERE slug = $1)
                 AND model_type = 'image'
                 AND is_enabled = true
-                ORDER BY created_at ASC
                 """,
                 STORY_APP_ID,
             )
 
-            if models:
+            if model_record:
+                # Parse parameters to get standard_model and reference_model
+                params = parse_jsonb_field(
+                    model_record["parameters"], default={}, field_name="image_parameters"
+                )
+
+                # Extract models from parameters (admin portal stores them here)
+                standard_model = params.get("standard_model", model_record["model_id"])
+                reference_model = params.get("reference_model", "runwayml/gen4-image")
+                
+                # Build fallback list from global fallbacks if available
+                fallback_models = ["stability-ai/sdxl", "black-forest-labs/flux-schnell"]
+                
                 config_result = {
-                    "models": [],
-                    "standard_model": None,
-                    "reference_model": None,
-                    "fallback_models": [],
+                    "standard_model": standard_model,
+                    "reference_model": reference_model,
+                    "fallback_models": fallback_models,
                 }
 
-                for i, model in enumerate(models):
-                    model_name = (
-                        f"{model['provider']}/{model['model_id']}"
-                        if model["provider"]
-                        else model["model_id"]
-                    )
-
-                    # Parse parameters for this model
-                    params = parse_jsonb_field(
-                        model["parameters"], default={}, field_name=f"image_parameters_{i}"
-                    )
-
-                    model_config = {
-                        "model": model_name,
-                        "provider": model["provider"],
-                        "model_id": model["model_id"],
-                        "parameters": params,
-                    }
-                    config_result["models"].append(model_config)
-
-                    # Determine model roles based on configuration or naming patterns
-                    model_lower = model_name.lower()
-                    if not config_result["standard_model"]:
-                        # First model is standard/primary
-                        config_result["standard_model"] = model_name
-                    elif "gen4" in model_lower or "runway" in model_lower:
-                        # Gen4 models are for reference people
-                        config_result["reference_model"] = model_name
-                    else:
-                        # Additional models are fallbacks
-                        config_result["fallback_models"].append(model_name)
-
-                # Set reference model default if not found
-                if not config_result["reference_model"]:
-                    config_result["reference_model"] = config_result["standard_model"]
-
-                print(f"✅ IMAGE_CONFIG: Loaded {len(models)} models from database")
-                print(f"   Primary: {config_result['standard_model']}")
+                print(f"✅ IMAGE_CONFIG: Loaded image config from database")
+                print(f"   Standard: {config_result['standard_model']}")
                 print(f"   Reference: {config_result['reference_model']}")
                 print(f"   Fallbacks: {config_result['fallback_models']}")
 
@@ -96,7 +70,6 @@ class ImageGenerationService:
             # Return defaults if no config found
             print("⚠️ IMAGE_CONFIG: No image models found in database, using defaults")
             return {
-                "models": [],
                 "standard_model": "black-forest-labs/flux-1.1-pro",
                 "reference_model": "runwayml/gen4-image",
                 "fallback_models": ["stability-ai/sdxl", "black-forest-labs/flux-schnell"],
@@ -106,7 +79,6 @@ class ImageGenerationService:
             print(f"⚠️ IMAGE_MODEL_CONFIG: Error loading config: {e}")
             # Return defaults on error
             return {
-                "models": [],
                 "standard_model": "black-forest-labs/flux-1.1-pro",
                 "reference_model": "runwayml/gen4-image",
                 "fallback_models": ["stability-ai/sdxl", "black-forest-labs/flux-schnell"],

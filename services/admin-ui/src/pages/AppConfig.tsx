@@ -259,7 +259,7 @@ export function AppConfig() {
       if (config.image_models_enabled && config.image_config) {
         const imagePayload = {
           provider: 'replicate',
-          model_id: config.image_config.standard_model,
+          model_id: 'image-config',  // Generic identifier since we store actual models in parameters
           parameters: {
             standard_model: config.image_config.standard_model,
             reference_model: config.image_config.reference_model,
@@ -622,9 +622,9 @@ export function AppConfig() {
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="black-forest-labs/flux-1.1-pro">FLUX 1.1 Pro ($0.040)</SelectItem>
-                      <SelectItem value="black-forest-labs/flux-schnell">FLUX Schnell ($0.003)</SelectItem>
-                      <SelectItem value="bytedance/seedream-3">ByteDance SeeDream-3 ($0.008)</SelectItem>
+                      <SelectItem value="black-forest-labs/flux-1.1-pro">FLUX 1.1 Pro</SelectItem>
+                      <SelectItem value="black-forest-labs/flux-schnell">FLUX Schnell</SelectItem>
+                      <SelectItem value="bytedance/seedream-3">ByteDance SeeDream-3</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
@@ -645,7 +645,7 @@ export function AppConfig() {
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="runwayml/gen4-image">Runway Gen-4 ($0.050)</SelectItem>
+                      <SelectItem value="runwayml/gen4-image">Runway Gen-4</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
@@ -720,8 +720,8 @@ export function AppConfig() {
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="minimax/video-01">MiniMax Video-01 ($0.100 per video)</SelectItem>
-                      <SelectItem value="bytedance/seedance-1-pro">ByteDance SeeDance-1-Pro ($0.080 per video)</SelectItem>
+                      <SelectItem value="minimax/video-01">MiniMax Video-01</SelectItem>
+                      <SelectItem value="bytedance/seedance-1-pro">ByteDance SeeDance-1-Pro</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
@@ -745,7 +745,7 @@ export function AppConfig() {
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="bytedance/seedance-1-pro">ByteDance SeeDance-1-Pro ($0.080 per video)</SelectItem>
+                      <SelectItem value="bytedance/seedance-1-pro">ByteDance SeeDance-1-Pro</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
