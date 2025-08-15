@@ -264,18 +264,12 @@ async def generate_ai_question(
                 history_items
             )  # Include ALL Q&A pairs for full game context
 
-    # Get game info to determine category
-    game_data = await db.fetch_one(
-        "SELECT category FROM twenty_questions_games WHERE id = $1", game_id
-    )
-    category = game_data["category"] if game_data else "general"
-
-    # Build category-specific prompt
-    prompt = f"""You are playing 20 Questions. I'm thinking of someone or something from the category "{category}", and you need to ask a strategic yes/no question to narrow down what it might be.
+    # Build prompt without category references
+    prompt = f"""You are playing 20 Questions. I'm thinking of someone or something, and you need to ask a strategic yes/no question to narrow down what it might be.
 
 This is question #{question_number} out of 20.{history_context}
 
-Ask a strategic yes/no question to help identify what I'm thinking of from the "{category}" category. This could be a person, place, object, or concept. Make it conversational and engaging. Focus on relevant characteristics for this category.
+Ask a strategic yes/no question to help identify what I'm thinking of. This could be a person, place, object, or concept. Make it conversational and engaging.
 
 Keep the question under 100 characters and make it natural.
 
@@ -332,7 +326,6 @@ async def generate_ai_final_guess(
     user_id: UUID,
     target_person: dict,
     history: list[dict],
-    category: str,
 ) -> str:
     """Generate AI's final guess based on all Q&A history."""
     
@@ -351,11 +344,11 @@ async def generate_ai_final_guess(
             history_context = "Based on these questions and answers:\n" + "\n".join(history_items)
 
     # Build prompt for final guess
-    prompt = f"""You are playing 20 Questions. Based on all the questions and answers, make your final guess about what I'm thinking of from the "{category}" category.
+    prompt = f"""You are playing 20 Questions. Based on all the questions and answers, make your final guess about what I'm thinking of.
 
 {history_context}
 
-Based on the answers to my questions, what do you think I'm thinking of? This could be a person, place, object, or concept from the "{category}" category. Respond with just your guess, nothing else."""
+Based on the answers to my questions, what do you think I'm thinking of? This could be a person, place, object, or concept. Respond with just your guess, nothing else."""
 
     try:
         # Get LLM model configuration
@@ -970,7 +963,7 @@ async def answer_ai_question(
             )
 
             ai_final_guess = await generate_ai_final_guess(
-                db, game_id, request.user_id, target_person, history, game_data["category"]
+                db, game_id, request.user_id, target_person, history
             )
             
             # Check if AI's guess is correct
