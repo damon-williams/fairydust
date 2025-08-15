@@ -296,18 +296,24 @@ class StoryImageGenerator:
             # Determine characters in this scene
             characters_in_scene = scene.get("characters_mentioned", [])
 
-            # Generate optimized prompt using multi-agent AI system
+            # Generate optimized prompt using multi-agent AI system (skip for retries)
             prompt_start_time = time.time()
-            enhanced_prompt = await story_image_service.generate_image_prompt(
-                scene["scene_description"],
-                characters_in_scene,
-                target_audience,
-                user_id,  # Pass user_id for proper LLM usage logging
-                story_context,
-                story_theme,
-                story_genre,
-                full_story_content,
-            )
+            if scene.get("is_retry", False):
+                # For retries, use the stored enhanced prompt directly
+                enhanced_prompt = scene["scene_description"]
+                logger.info(f"🔄 Using stored enhanced prompt for retry: {enhanced_prompt[:100]}...")
+            else:
+                # For new generations, enhance the prompt
+                enhanced_prompt = await story_image_service.generate_image_prompt(
+                    scene["scene_description"],
+                    characters_in_scene,
+                    target_audience,
+                    user_id,  # Pass user_id for proper LLM usage logging
+                    story_context,
+                    story_theme,
+                    story_genre,
+                    full_story_content,
+                )
             phase_times["prompt_generation"] = time.time() - prompt_start_time
 
             logger.info("📝 STORY IMAGE PROMPT GENERATION:")

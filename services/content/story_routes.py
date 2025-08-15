@@ -2065,11 +2065,12 @@ async def retry_failed_story_image(
         except Exception:
             target_audience = TargetAudience.EARLY_ELEMENTARY  # Default fallback
 
-        # Create scene data for the single image retry
+        # Create scene data for the single image retry using the original prompt
         scene = {
             "image_id": image_id,
-            "scene_description": image["scene_description"] or "Story scene",
+            "scene_description": image["prompt"] or image["scene_description"] or "Story scene",  # Use stored prompt for retry
             "characters_mentioned": [char for char in characters if char.name.lower() in (image["scene_description"] or "").lower()],
+            "is_retry": True,  # Flag to indicate this is a retry operation
         }
 
         print(f"🚀 IMAGE_RETRY: Starting background regeneration for image {image_id}", flush=True)
