@@ -177,7 +177,7 @@ async def generate_story(
 
                 # Extract scenes for image generation using characters
                 scenes = story_image_service.extract_image_scenes(
-                    story_content, updated_request.story_length, characters_for_images
+                    story_content, updated_request.story_length, characters_for_images, str(story_id)
                 )
 
                 # Insert image markers into story content
@@ -796,11 +796,11 @@ If stories are sufficiently varied, respond with:
 
 Response:"""
 
-        # Get AI analysis using fast model
+        # Get AI analysis using fast model with sufficient tokens for complete guidance
         app_config = {
             "primary_provider": "anthropic",
             "primary_model_id": "claude-3-5-haiku-20241022",
-            "primary_parameters": {"temperature": 0.4, "max_tokens": 150, "top_p": 0.9},
+            "primary_parameters": {"temperature": 0.4, "max_tokens": 500, "top_p": 0.9},
         }
 
         content, metadata = await llm_client.generate_completion(
@@ -1696,7 +1696,7 @@ Provide only the summary, no additional commentary:"""
             "primary_model_id": "claude-3-5-haiku-20241022",
             "primary_parameters": {
                 "temperature": 0.3,  # Lower temperature for consistent summaries
-                "max_tokens": 100,
+                "max_tokens": 200,  # Increased for more detailed summaries
                 "top_p": 0.9,
             },
         }
