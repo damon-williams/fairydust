@@ -1971,7 +1971,7 @@ async def get_story_images_batch_status(
         # Get all image statuses
         images = await db.fetch_all(
             """
-            SELECT image_id, url, status
+            SELECT image_id, url, status, attempt_number, max_attempts, retry_reason
             FROM story_images
             WHERE story_id = $1 AND image_id = ANY($2)
             """,
@@ -1998,7 +1998,11 @@ async def get_story_images_batch_status(
                 )
 
             image_statuses[image["image_id"]] = StoryImageStatus(
-                status=image["status"], url=image_url
+                status=image["status"], 
+                url=image_url,
+                attempt_number=image.get("attempt_number"),
+                max_attempts=image.get("max_attempts"),
+                retry_reason=image.get("retry_reason")
             )
 
         # Add not_found status for missing images

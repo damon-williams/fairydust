@@ -258,8 +258,11 @@ class StoryErrorResponse(BaseModel):
 
 # Story Image Models
 class StoryImageStatus(BaseModel):
-    status: str  # "pending", "generating", "completed", "failed"
+    status: str  # "pending", "generating", "retrying", "completed", "failed"
     url: Optional[str] = None
+    attempt_number: Optional[int] = None  # Current attempt (1, 2, 3, etc.)
+    max_attempts: Optional[int] = None    # Maximum allowed attempts
+    retry_reason: Optional[str] = None    # Reason for retry: "nsfw", "replicate_error", "transient"
 
 
 class StoryImageStatusResponse(BaseModel):

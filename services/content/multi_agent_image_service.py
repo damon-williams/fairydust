@@ -37,7 +37,7 @@ class MultiAgentImageService:
             "model": "claude-3-5-haiku-20241022",
             "parameters": {
                 "temperature": 0.3,  # Lower temperature for analytical tasks
-                "max_tokens": 400,  # Increased for detailed scene analysis
+                "max_tokens": 800,  # Increased for complete 7-section scene analysis
                 "top_p": 0.9,
             },
         }
@@ -463,6 +463,12 @@ Combine all elements into a single, well-structured image prompt that:
 3. **Captures the emotional tone**
 4. **Ends with appropriate style requirements**
 
+## Critical Guidelines
+
+- **PRESERVE CHARACTER NAMES:** Always include character names from the character descriptions (e.g., "Leslie, a 44-year-old woman" not just "A 44-year-old woman")
+- **Pet Names:** Include pet names when present (e.g., "her orange tabby, Momo" not just "an orange tabby")
+- **Name Usage:** Use names naturally in the prompt to create personal connection
+
 ## Output Guidelines
 
 - **Format:** Single flowing prompt (not sections)
@@ -471,7 +477,7 @@ Combine all elements into a single, well-structured image prompt that:
 - **Natural flow:** Make it read naturally while being specific for image generation
 
 ### Example Format
-`[Character descriptions] [doing action] in [setting], [mood/emotion], [style requirements]`
+`[Character name, description] [doing action] in [setting], [mood/emotion], [style requirements]`
 
 ## Your Prompt:"""
 
