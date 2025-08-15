@@ -891,8 +891,30 @@ async def _build_story_prompt(
                 desc += f", traits: {', '.join(char.traits)}"
             character_descriptions.append(desc)
 
+    # Build age-awareness guidance
+    age_guidance = ""
+    if request.characters:
+        ages = []
+        for char in request.characters:
+            if char.birth_date and char.entry_type != "pet":
+                from datetime import date
+                birth = date.fromisoformat(char.birth_date)
+                age = (date.today() - birth).days // 365
+                ages.append(age)
+        
+        if ages:
+            min_age, max_age = min(ages), max(ages)
+            if min_age >= 18:
+                age_guidance = "IMPORTANT: All characters are adults. Place them in age-appropriate adult scenarios (work, relationships, adult responsibilities, etc.). Do NOT put adult characters in school settings unless they are teachers/staff."
+            elif max_age >= 18:
+                age_guidance = "IMPORTANT: Mix of adult and younger characters. Ensure each character is in age-appropriate scenarios - adults in adult situations, children/teens in age-appropriate activities."
+            elif min_age >= 13:
+                age_guidance = "IMPORTANT: All characters are teenagers. Place them in age-appropriate teen scenarios (high school, teenage social situations, age-appropriate challenges)."
+            else:
+                age_guidance = "IMPORTANT: Characters include children/young people. Ensure age-appropriate scenarios and activities for their stated ages."
+
     character_text = (
-        f"Characters to include:\n{chr(10).join(character_descriptions)}"
+        f"## Characters to Include\n{chr(10).join(character_descriptions)}"
         if character_descriptions
         else "No specific characters required - create original characters as needed."
     )
@@ -931,11 +953,10 @@ async def _build_story_prompt(
 
     # Add creativity boosters to avoid repetitive themes
     creativity_boosters = [
-        "AVOID geometric shapes as main characters unless specifically requested.",
-        "AVOID color-based character names (Red Circle, Blue Square, etc.) unless in character list.",
         "Focus on realistic characters, animals, or fantasy beings with personalities.",
-        "Create characters with distinct names, backgrounds, and motivations.",
+        "Create characters with distinct names, backgrounds, and motivations.", 
         "Avoid abstract or educational concepts as primary story elements.",
+        "Ensure characters act according to their stated ages and life stages.",
     ]
 
     selected_variety = random.choice(variety_seeds)
@@ -944,9 +965,13 @@ async def _build_story_prompt(
     # Use AI analysis of recent story summaries to avoid repetitive themes
     recent_themes_guidance = await _get_recent_themes_guidance(db, request.user_id)
 
-    prompt = f"""You are a master storyteller with infinite creativity. {selected_variety} Create a truly unique and surprising story for {audience_guidance[request.target_audience]}{bedtime_guidance} The story should take about {length_descriptions[request.story_length]} to read.
+    prompt = f"""# Story Generation Task
 
-IMPORTANT: {selected_creativity}
+You are a master storyteller with infinite creativity. {selected_variety} Create a truly unique and surprising story for {audience_guidance[request.target_audience]}{bedtime_guidance} The story should take about {length_descriptions[request.story_length]} to read.
+
+## Important Guidelines
+- {selected_creativity}
+{f"- {age_guidance}" if age_guidance else ""}
 
 {recent_themes_guidance}
 
@@ -962,77 +987,78 @@ IMPORTANT: {selected_creativity}
         else False
     )
     if has_protagonist:
-        prompt += "\n\nIMPORTANT: The story should be told from a third-person perspective, but the protagonist character listed above must be actively involved in the story's events, not just observing. Make them central to the action and adventure."
+        prompt += "\n\n## Protagonist Guidelines\n- The story should be told from a third-person perspective, but the protagonist character listed above must be actively involved in the story's events, not just observing. Make them central to the action and adventure."
 
     if request.custom_prompt:
-        prompt += f"\nSpecial request: {request.custom_prompt}"
+        prompt += f"\n\n## Special Request\n{request.custom_prompt}"
 
     # Only add personalization context if no specific characters are provided
     # This avoids confusion between character list and people context
     if user_context != "general user" and not request.characters:
-        prompt += f"\nPersonalization context: {user_context}"
+        prompt += f"\n\n## Personalization Context\n{user_context}"
 
     # Add different creative requirements based on bedtime story flag
     if request.is_bedtime_story:
         prompt += f"""
 
-BEDTIME STORY CREATIVE REQUIREMENTS:
-- Target word count: {target_words} words (for {length_descriptions[request.story_length]})
-- Audience: {request.target_audience.value}
-- CALMING NARRATIVE: Create gentle, predictable story patterns that soothe rather than surprise
-- PEACEFUL THEMES: Focus on comfort, safety, love, and tranquility
-- SIMPLE STRUCTURE: Use clear, straightforward storytelling without complex twists or excitement
-- GENRE SELECTION: Choose calming genres like gentle fantasy, nature stories, family tales, or peaceful adventures
-- SOOTHING SETTINGS: Use cozy, familiar, or naturally peaceful environments (bedrooms, gardens, quiet forests, starlit skies) - NEVER use laundromats
-- GENTLE LANGUAGE: Use soft, rhythmic prose that flows smoothly and calmly
-- COMFORTING ENDINGS: Conclude with reassurance, safety, and peaceful resolution
-- OUTPUT ONLY THE STORY: Do not include any analysis, commentary, or explanations about the story"""
+## Bedtime Story Creative Requirements
+
+- **Target word count:** {target_words} words (for {length_descriptions[request.story_length]})
+- **Audience:** {request.target_audience.value}
+- **Calming Narrative:** Create gentle, predictable story patterns that soothe rather than surprise
+- **Peaceful Themes:** Focus on comfort, safety, love, and tranquility
+- **Simple Structure:** Use clear, straightforward storytelling without complex twists or excitement
+- **Genre Selection:** Choose calming genres like gentle fantasy, nature stories, family tales, or peaceful adventures
+- **Soothing Settings:** Use cozy, familiar, or naturally peaceful environments (bedrooms, gardens, quiet forests, starlit skies)
+- **Gentle Language:** Use soft, rhythmic prose that flows smoothly and calmly
+- **Comforting Endings:** Conclude with reassurance, safety, and peaceful resolution
+- **Output Only the Story:** Do not include any analysis, commentary, or explanations about the story"""
     else:
         prompt += f"""
 
-CREATIVE REQUIREMENTS:
-- Target word count: {target_words} words (for {length_descriptions[request.story_length]})
-- Audience: {request.target_audience.value}
-- BREAK THE MOLD: Avoid predictable story patterns, clichés, and formulaic plots
-- SURPRISE THE READER: Include unexpected twists, unusual perspectives, or creative narrative devices
-- VARY YOUR APPROACH: Choose from different storytelling styles randomly:
+## Creative Requirements
+
+- **Target word count:** {target_words} words (for {length_descriptions[request.story_length]})
+- **Audience:** {request.target_audience.value}
+- **Break the Mold:** Avoid predictable story patterns, clichés, and formulaic plots
+- **Surprise the Reader:** Include unexpected twists, unusual perspectives, or creative narrative devices
+- **Vary Your Approach:** Choose from different storytelling styles randomly:
   * First person, second person, or third person narration
   * Multiple perspectives or unreliable narrator
   * Experimental formats (diary entries, text messages, news reports, etc.)
   * Time jumps, flashbacks, or non-linear storytelling
   * Stories within stories or meta-fiction elements
 
-GENRE VARIETY (pick unexpectedly):
+### Genre Variety (pick unexpectedly)
 - Mix genres creatively (sci-fi comedy, fantasy mystery, historical thriller, etc.)
 - Try unusual combinations: slice-of-life with magical realism, workplace drama with supernatural elements
 - Consider: adventure, mystery, comedy, sci-fi, fantasy, slice-of-life, historical fiction, magical realism, psychological thriller, coming-of-age, workplace drama, family saga, etc.
 
-SETTING CREATIVITY:
-- Avoid overused settings like "magical kingdoms", "haunted houses", or "laundromats"
+### Setting Creativity
+- Avoid overused settings like "magical kingdoms" or "haunted houses"
 - Be specific and unusual: underwater research station, food truck at a music festival, retirement home game night, artist's studio, bookbinding workshop, lighthouse, observatory, etc.
 - Use settings that serve the story and create natural conflict or intrigue
-- AVOID laundromats as story settings entirely
 
-PLOT INNOVATION:
+### Plot Innovation
 - Start in the middle of action or at an unusual moment
 - Subvert reader expectations about character roles and story direction
 - Create organic conflicts that arise from character relationships and setting
 - End with satisfaction but avoid overly neat resolutions
 
-LANGUAGE AND STYLE:
+### Language and Style
 - Match tone to your chosen genre and approach
 - Use vivid, specific details rather than generic descriptions
 - Include natural dialogue that reveals character
 - Vary sentence structure and pacing for engagement
 
-CHARACTER GUIDANCE:
+### Character Guidance
 - For human characters: Develop their personalities, motivations, and relationships naturally
 - For pet characters: Portray them authentically with species-appropriate behaviors while allowing for story magic
 - Pets can be central characters with agency, not just companions
 - Consider the unique perspective pets might have on situations
 - Balance realistic animal behavior with the narrative needs of your story
 
-CRITICAL OUTPUT REQUIREMENTS:
+## Critical Output Requirements
 - Output ONLY the story title and story content
 - Do NOT include any meta-commentary, analysis, or explanations about the story
 - Do NOT explain why the story is age-appropriate or educational
@@ -1040,12 +1066,12 @@ CRITICAL OUTPUT REQUIREMENTS:
 - Do NOT add any text in brackets like "[This story uses...]"
 - The story should speak for itself without explanation
 
-Format the story with:
-TITLE: [Creative, intriguing title]
+### Format the story with:
+**TITLE:** [Creative, intriguing title]
 
 [Story content with rich details, natural dialogue, and compelling narrative]
 
-Remember: Your goal is to create something memorable and unique that readers haven't seen before. Be bold, creative, and surprising while staying appropriate for the audience. OUTPUT ONLY THE STORY - NO META-COMMENTARY OR ANALYSIS."""
+**Remember:** Your goal is to create something memorable and unique that readers haven't seen before. Be bold, creative, and surprising while staying appropriate for the audience. OUTPUT ONLY THE STORY - NO META-COMMENTARY OR ANALYSIS."""
 
     return prompt
 

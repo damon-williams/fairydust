@@ -117,6 +117,7 @@ class ImageGenerationService:
         style: ImageStyle,
         image_size: ImageSize,
         reference_people: list[ImageReferencePerson],
+        image_id: str = None,
     ) -> tuple[str, dict]:
         """Generate image using Replicate - selects appropriate model based on reference people"""
 
@@ -761,6 +762,7 @@ class ImageGenerationService:
         style: ImageStyle,
         image_size: ImageSize,
         reference_people: list[ImageReferencePerson],
+        image_id: str = None,
     ) -> tuple[str, dict]:
         """Generate image using Runway Gen-4 Turbo (supports both text-only and reference images)"""
 
@@ -929,7 +931,7 @@ class ImageGenerationService:
                 status = result["status"]
 
                 print(
-                    f"⏱️ POLLING_TIMING: Gen-4 Turbo Poll #{poll_count} after {elapsed_time}s - Status: {status} (poll took {poll_request_time:.3f}s)"
+                    f"⏱️ POLLING_TIMING: Gen-4 Turbo Poll #{poll_count} after {elapsed_time}s - Status: {status} (poll took {poll_request_time:.3f}s) - Image: {image_id or 'unknown'}"
                 )
 
                 if status == "succeeded":
