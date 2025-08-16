@@ -607,34 +607,50 @@ class StoryImageGenerator:
 
         for attempt in range(max_retries):
             try:
-                # Update database status for retry visibility
-                if attempt == 0:
-                    # First attempt - update to generating
-                    await db.execute(
-                        """
-                        UPDATE story_images 
-                        SET status = $1, attempt_number = $2, max_attempts = $3, updated_at = CURRENT_TIMESTAMP
-                        WHERE story_id = $4 AND image_id = $5
-                        """,
-                        "generating", attempt + 1, max_retries, story_id, image_id
-                    )
-                    logger.info(f"🎯 ATTEMPT {attempt + 1}: Starting first generation attempt for image {image_id}")
-                else:
-                    # Retry attempt - update to retrying
-                    await db.execute(
-                        """
-                        UPDATE story_images 
-                        SET status = $1, attempt_number = $2, retry_reason = $3, updated_at = CURRENT_TIMESTAMP
-                        WHERE story_id = $4 AND image_id = $5
-                        """,
-                        "retrying", attempt + 1, "unknown", story_id, image_id
-                    )
-                    if retry_start_time:
-                        retry_delay = time.time() - retry_start_time
-                        logger.info(
-                            f"⏱️ IMAGE_RETRY_TIMING: Attempt {attempt + 1} for image {image_id} starting after {retry_delay:.2f}s delay"
+                # Update database status for retry visibility (with backward compatibility)
+                try:
+                    if attempt == 0:
+                        # First attempt - update to generating
+                        await db.execute(
+                            """
+                            UPDATE story_images 
+                            SET status = $1, attempt_number = $2, max_attempts = $3, updated_at = CURRENT_TIMESTAMP
+                            WHERE story_id = $4 AND image_id = $5
+                            """,
+                            "generating", attempt + 1, max_retries, story_id, image_id
                         )
-                    logger.info(f"🔄 RETRY {attempt + 1}: Starting retry attempt for image {image_id}")
+                        logger.info(f"🎯 ATTEMPT {attempt + 1}: Starting first generation attempt for image {image_id}")
+                    else:
+                        # Retry attempt - update to retrying
+                        await db.execute(
+                            """
+                            UPDATE story_images 
+                            SET status = $1, attempt_number = $2, retry_reason = $3, updated_at = CURRENT_TIMESTAMP
+                            WHERE story_id = $4 AND image_id = $5
+                            """,
+                            "retrying", attempt + 1, "unknown", story_id, image_id
+                        )
+                        if retry_start_time:
+                            retry_delay = time.time() - retry_start_time
+                            logger.info(
+                                f"⏱️ IMAGE_RETRY_TIMING: Attempt {attempt + 1} for image {image_id} starting after {retry_delay:.2f}s delay"
+                            )
+                        logger.info(f"🔄 RETRY {attempt + 1}: Starting retry attempt for image {image_id}")
+                except Exception as db_error:
+                    # If new columns don't exist yet, just update status
+                    if "attempt_number" in str(db_error):
+                        status = "generating" if attempt == 0 else "retrying"
+                        await db.execute(
+                            """
+                            UPDATE story_images 
+                            SET status = $1, updated_at = CURRENT_TIMESTAMP
+                            WHERE story_id = $2 AND image_id = $3
+                            """,
+                            status, story_id, image_id
+                        )
+                        logger.info(f"🎯 ATTEMPT {attempt + 1}: Starting attempt for image {image_id} (legacy mode)")
+                    else:
+                        raise
                 
                 prompt_to_use = original_prompt
 
@@ -725,15 +741,21 @@ class StoryImageGenerator:
                 ):
                     nsfw_failure_detected = True
                     if attempt < max_retries - 1:
-                        # Update retry reason in database
-                        await db.execute(
-                            """
-                            UPDATE story_images 
-                            SET retry_reason = $1, updated_at = CURRENT_TIMESTAMP
-                            WHERE story_id = $2 AND image_id = $3
-                            """,
-                            "nsfw", story_id, image_id
-                        )
+                        # Update retry reason in database (with backward compatibility)
+                        try:
+                            await db.execute(
+                                """
+                                UPDATE story_images 
+                                SET retry_reason = $1, updated_at = CURRENT_TIMESTAMP
+                                WHERE story_id = $2 AND image_id = $3
+                                """,
+                                "nsfw", story_id, image_id
+                            )
+                        except Exception as db_error:
+                            if "retry_reason" in str(db_error):
+                                logger.info(f"🔄 NSFW retry reason not stored (legacy mode)")
+                            else:
+                                raise
                         logger.warning(
                             f"🚨 NSFW_FAILURE: Image {image_id} attempt {attempt + 1} failed - content policy violation"
                         )
@@ -767,15 +789,21 @@ class StoryImageGenerator:
                     logger.warning(f"   Reference people: {len(reference_people)} images")
                     
                     if attempt < max_retries - 1:
-                        # Update retry reason in database
-                        await db.execute(
-                            """
-                            UPDATE story_images 
-                            SET retry_reason = $1, updated_at = CURRENT_TIMESTAMP
-                            WHERE story_id = $2 AND image_id = $3
-                            """,
-                            "replicate_error", story_id, image_id
-                        )
+                        # Update retry reason in database (with backward compatibility)
+                        try:
+                            await db.execute(
+                                """
+                                UPDATE story_images 
+                                SET retry_reason = $1, updated_at = CURRENT_TIMESTAMP
+                                WHERE story_id = $2 AND image_id = $3
+                                """,
+                                "replicate_error", story_id, image_id
+                            )
+                        except Exception as db_error:
+                            if "retry_reason" in str(db_error):
+                                logger.info(f"🔄 Replicate retry reason not stored (legacy mode)")
+                            else:
+                                raise
                         backoff_delay = 2**attempt  # Exponential backoff: 1s, 2s, 4s
                         logger.info(f"🔄 REPLICATE_RETRY: Will retry image {image_id} in {backoff_delay}s (attempt {attempt + 2}/{max_retries})")
                         await asyncio.sleep(backoff_delay)
@@ -802,15 +830,21 @@ class StoryImageGenerator:
                     or "queue full" in error_msg
                 ):
                     if attempt < max_retries - 1:
-                        # Update retry reason in database
-                        await db.execute(
-                            """
-                            UPDATE story_images 
-                            SET retry_reason = $1, updated_at = CURRENT_TIMESTAMP
-                            WHERE story_id = $2 AND image_id = $3
-                            """,
-                            "transient", story_id, image_id
-                        )
+                        # Update retry reason in database (with backward compatibility)
+                        try:
+                            await db.execute(
+                                """
+                                UPDATE story_images 
+                                SET retry_reason = $1, updated_at = CURRENT_TIMESTAMP
+                                WHERE story_id = $2 AND image_id = $3
+                                """,
+                                "transient", story_id, image_id
+                            )
+                        except Exception as db_error:
+                            if "retry_reason" in str(db_error):
+                                logger.info(f"🔄 Transient retry reason not stored (legacy mode)")
+                            else:
+                                raise
                         backoff_delay = 2**attempt  # Exponential backoff: 1s, 2s, 4s
                         logger.warning(
                             f"⚠️ TRANSIENT_ERROR: Image {image_id} attempt {attempt + 1} failed with retryable error"

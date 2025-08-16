@@ -1968,16 +1968,32 @@ async def get_story_images_batch_status(
         if not image_ids:
             return StoryImageBatchResponse(images={})
 
-        # Get all image statuses
-        images = await db.fetch_all(
-            """
-            SELECT image_id, url, status, attempt_number, max_attempts, retry_reason
-            FROM story_images
-            WHERE story_id = $1 AND image_id = ANY($2)
-            """,
-            story_id,
-            image_ids,
-        )
+        # Get all image statuses (with backward compatibility for new columns)
+        try:
+            images = await db.fetch_all(
+                """
+                SELECT image_id, url, status, attempt_number, max_attempts, retry_reason
+                FROM story_images
+                WHERE story_id = $1 AND image_id = ANY($2)
+                """,
+                story_id,
+                image_ids,
+            )
+        except Exception as e:
+            # Fall back to basic query if new columns don't exist yet
+            if "attempt_number" in str(e):
+                images = await db.fetch_all(
+                    """
+                    SELECT image_id, url, status, 
+                           1 as attempt_number, 3 as max_attempts, NULL as retry_reason
+                    FROM story_images
+                    WHERE story_id = $1 AND image_id = ANY($2)
+                    """,
+                    story_id,
+                    image_ids,
+                )
+            else:
+                raise
 
         # Build response
         image_statuses = {}

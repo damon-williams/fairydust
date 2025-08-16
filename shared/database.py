@@ -921,30 +921,24 @@ async def create_tables():
     )
 
     # Add retry metadata columns to existing story_images tables (safe migrations)
-    await db.execute_schema(
-        """
-        DO $$ 
-        BEGIN
-            -- Add attempt_number column if it doesn't exist
-            IF NOT EXISTS (SELECT 1 FROM information_schema.columns 
-                          WHERE table_name = 'story_images' AND column_name = 'attempt_number') THEN
-                ALTER TABLE story_images ADD COLUMN attempt_number INTEGER DEFAULT 1;
-            END IF;
-
-            -- Add max_attempts column if it doesn't exist  
-            IF NOT EXISTS (SELECT 1 FROM information_schema.columns 
-                          WHERE table_name = 'story_images' AND column_name = 'max_attempts') THEN
-                ALTER TABLE story_images ADD COLUMN max_attempts INTEGER DEFAULT 3;
-            END IF;
-
-            -- Add retry_reason column if it doesn't exist
-            IF NOT EXISTS (SELECT 1 FROM information_schema.columns 
-                          WHERE table_name = 'story_images' AND column_name = 'retry_reason') THEN
-                ALTER TABLE story_images ADD COLUMN retry_reason TEXT DEFAULT NULL;
-            END IF;
-        END $$;
-    """
-    )
+    # Handle each column separately to avoid syntax issues
+    try:
+        await db.execute_schema("ALTER TABLE story_images ADD COLUMN IF NOT EXISTS attempt_number INTEGER DEFAULT 1")
+    except Exception as e:
+        if "already exists" not in str(e):
+            logger.warning(f"Could not add attempt_number column: {e}")
+    
+    try:
+        await db.execute_schema("ALTER TABLE story_images ADD COLUMN IF NOT EXISTS max_attempts INTEGER DEFAULT 3")  
+    except Exception as e:
+        if "already exists" not in str(e):
+            logger.warning(f"Could not add max_attempts column: {e}")
+            
+    try:
+        await db.execute_schema("ALTER TABLE story_images ADD COLUMN IF NOT EXISTS retry_reason TEXT DEFAULT NULL")
+    except Exception as e:
+        if "already exists" not in str(e):
+            logger.warning(f"Could not add retry_reason column: {e}")
 
     # Restaurant App Tables - Execute each statement separately for better error handling
     try:
