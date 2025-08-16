@@ -904,6 +904,9 @@ async def create_tables():
             scene_description TEXT NOT NULL,
             status VARCHAR(20) NOT NULL DEFAULT 'pending',
             generation_metadata JSONB DEFAULT '{}',
+            attempt_number INTEGER DEFAULT 1,
+            max_attempts INTEGER DEFAULT 3,
+            retry_reason TEXT DEFAULT NULL,
             created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
             updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
             UNIQUE(story_id, image_id)
@@ -913,6 +916,33 @@ async def create_tables():
         CREATE INDEX IF NOT EXISTS idx_story_images_user_id ON story_images(user_id);
         CREATE INDEX IF NOT EXISTS idx_story_images_status ON story_images(status);
         CREATE INDEX IF NOT EXISTS idx_story_images_created_at ON story_images(created_at DESC);
+        CREATE INDEX IF NOT EXISTS idx_story_images_status_attempts ON story_images(status, attempt_number) WHERE status IN ('generating', 'retrying', 'failed');
+    """
+    )
+
+    # Add retry metadata columns to existing story_images tables (safe migrations)
+    await db.execute_schema(
+        """
+        DO $$ 
+        BEGIN
+            -- Add attempt_number column if it doesn't exist
+            IF NOT EXISTS (SELECT 1 FROM information_schema.columns 
+                          WHERE table_name = 'story_images' AND column_name = 'attempt_number') THEN
+                ALTER TABLE story_images ADD COLUMN attempt_number INTEGER DEFAULT 1;
+            END IF;
+
+            -- Add max_attempts column if it doesn't exist  
+            IF NOT EXISTS (SELECT 1 FROM information_schema.columns 
+                          WHERE table_name = 'story_images' AND column_name = 'max_attempts') THEN
+                ALTER TABLE story_images ADD COLUMN max_attempts INTEGER DEFAULT 3;
+            END IF;
+
+            -- Add retry_reason column if it doesn't exist
+            IF NOT EXISTS (SELECT 1 FROM information_schema.columns 
+                          WHERE table_name = 'story_images' AND column_name = 'retry_reason') THEN
+                ALTER TABLE story_images ADD COLUMN retry_reason TEXT DEFAULT NULL;
+            END IF;
+        END $$;
     """
     )
 
