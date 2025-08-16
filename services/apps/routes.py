@@ -1453,13 +1453,18 @@ async def get_action_pricing(
 
     try:
         # Try to get from Redis cache first
-        cached_data = await redis.get(cache_key)
-        if cached_data:
-            logger.info("🎯 Returning cached pricing data")
-            return json.loads(cached_data)
+        try:
+            cached_data = await redis.get(cache_key)
+            if cached_data:
+                logger.info("🎯 PRICING_CACHE: Cache HIT - returning cached data")
+                return json.loads(cached_data)
+            else:
+                logger.info("🎯 PRICING_CACHE: Cache MISS - fetching from database")
+        except Exception as cache_error:
+            logger.error(f"🎯 PRICING_CACHE: Redis error: {cache_error}")
+            logger.info("🎯 PRICING_CACHE: Falling back to database")
 
-        # Cache miss - fetch from database
-        logger.info("🎯 Cache miss - fetching pricing from database")
+        # Cache miss or Redis error - fetch from database
         pricing_rows = await db.fetch_all(
             """
             SELECT action_slug, dust_cost, description, updated_at
@@ -1479,9 +1484,13 @@ async def get_action_pricing(
             }
 
         # Cache for 1 hour (3600 seconds)
-        await redis.setex(cache_key, 3600, json.dumps(pricing_data))
-        logger.info(f"🎯 Cached pricing data for {len(pricing_data)} actions")
-        logger.info(f"🎯 Pricing data: {pricing_data}")
+        try:
+            await redis.setex(cache_key, 3600, json.dumps(pricing_data))
+            logger.info(f"🎯 PRICING_CACHE: Cached {len(pricing_data)} actions for 1 hour")
+        except Exception as cache_error:
+            logger.error(f"🎯 PRICING_CACHE: Failed to cache data: {cache_error}")
+
+        logger.info(f"🎯 PRICING_DATA: {pricing_data}")
 
         return pricing_data
 

@@ -446,6 +446,7 @@ async def verify_otp(
     print(f"   - is_first_login_today: {is_bonus_eligible}")
     print(f"   - auth_provider: {user.get('auth_provider', 'unknown')}")
     print(f"   - created_at: {user.get('created_at')}")
+    print(f"   - total_logins: {user_dict['total_logins']}")
 
     return AuthResponse(
         user=User(**user_dict),
