@@ -107,6 +107,80 @@ class StorageService:
         except ClientError:
             return False
 
+    async def upload_character_image(
+        self, file: UploadFile, user_id: str, character_id: str
+    ) -> tuple[str, int]:
+        """
+        Upload an image for a custom character
+
+        Returns:
+            tuple: (image_url, file_size_bytes)
+        """
+        # Validate file type
+        allowed_types = ["image/jpeg", "image/jpg", "image/png", "image/webp"]
+        if file.content_type not in allowed_types:
+            raise HTTPException(
+                status_code=400, detail=f"Invalid file type. Allowed: {', '.join(allowed_types)}"
+            )
+
+        # Validate file size (5MB limit)
+        content = await file.read()
+        file_size = len(content)
+        if file_size > 5 * 1024 * 1024:  # 5MB
+            raise HTTPException(status_code=400, detail="File too large. Maximum 5MB allowed.")
+
+        if file_size == 0:
+            raise HTTPException(status_code=400, detail="Empty file not allowed.")
+
+        # Generate unique filename
+        file_extension = self._get_file_extension(file.filename, file.content_type)
+        unique_filename = f"characters/{user_id}/{character_id}/{uuid.uuid4()}.{file_extension}"
+
+        try:
+            # Upload to R2
+            self.client.put_object(
+                Bucket=self.bucket_name,
+                Key=unique_filename,
+                Body=content,
+                ContentType=file.content_type,
+                CacheControl="public, max-age=31536000",  # Cache for 1 year
+                Metadata={
+                    "user-id": user_id,
+                    "character-id": character_id,
+                    "original-filename": file.filename or "unknown",
+                },
+            )
+
+            # Generate public URL using custom domain
+            image_url = f"https://images.fairydust.fun/{unique_filename}"
+
+            return image_url, file_size
+
+        except ClientError as e:
+            raise HTTPException(status_code=500, detail=f"Upload failed: {str(e)}")
+
+    async def delete_character_image(self, image_url: str) -> bool:
+        """
+        Delete a character's image from R2
+
+        Args:
+            image_url: The URL of the image to delete
+
+        Returns:
+            bool: True if deleted successfully
+        """
+        try:
+            # Extract key from URL
+            key = self._extract_key_from_url(image_url)
+            if not key:
+                return False
+
+            self.client.delete_object(Bucket=self.bucket_name, Key=key)
+            return True
+
+        except ClientError:
+            return False
+
     async def upload_user_avatar(self, file: UploadFile, user_id: str) -> tuple[str, int]:
         """
         Upload an avatar for a user
@@ -262,6 +336,7 @@ class StorageService:
         deletion_summary = {
             "avatars_deleted": 0,
             "people_photos_deleted": 0,
+            "character_images_deleted": 0,
             "generated_images_deleted": 0,
             "total_deleted": 0,
             "errors": [],
@@ -272,6 +347,7 @@ class StorageService:
             prefixes_to_delete = [
                 f"avatars/{user_id}/",
                 f"people/{user_id}/",
+                f"characters/{user_id}/",  # Character images
                 f"generated/{user_id}/",  # Generated images if they exist
             ]
 
@@ -291,6 +367,8 @@ class StorageService:
                                 deletion_summary["avatars_deleted"] += 1
                             elif prefix.startswith("people/"):
                                 deletion_summary["people_photos_deleted"] += 1
+                            elif prefix.startswith("characters/"):
+                                deletion_summary["character_images_deleted"] += 1
                             elif prefix.startswith("generated/"):
                                 deletion_summary["generated_images_deleted"] += 1
 
@@ -313,6 +391,7 @@ class StorageService:
             deletion_summary["total_deleted"] = (
                 deletion_summary["avatars_deleted"]
                 + deletion_summary["people_photos_deleted"]
+                + deletion_summary["character_images_deleted"]
                 + deletion_summary["generated_images_deleted"]
             )
 
@@ -345,6 +424,18 @@ async def upload_user_avatar(file: UploadFile, user_id: str) -> tuple[str, int]:
 async def delete_user_avatar(avatar_url: str) -> bool:
     """Convenience function for deleting user avatars"""
     return await storage_service.delete_user_avatar(avatar_url)
+
+
+async def upload_character_image(
+    file: UploadFile, user_id: str, character_id: str
+) -> tuple[str, int]:
+    """Convenience function for uploading character images"""
+    return await storage_service.upload_character_image(file, user_id, character_id)
+
+
+async def delete_character_image(image_url: str) -> bool:
+    """Convenience function for deleting character images"""
+    return await storage_service.delete_character_image(image_url)
 
 
 async def delete_user_assets(user_id: str) -> dict:

@@ -621,7 +621,7 @@ async def resolve_app_id(app_id_or_slug: str, db: Database, cache: redis.Redis) 
     except ValueError:
         pass
 
-    # It's a slug, try cache first
+    # It's a slug - try cache first
     cache_key = f"app_slug:{app_id_or_slug}"
     try:
         cached_id = await cache.get(cache_key)

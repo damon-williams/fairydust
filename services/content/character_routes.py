@@ -2,7 +2,7 @@
 from datetime import datetime
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, Path, Query
+from fastapi import APIRouter, Depends, File, HTTPException, Path, Query, UploadFile
 from models import (
     CustomCharacter,
     CustomCharacterCreate,
@@ -15,6 +15,7 @@ from models import (
 
 from shared.auth_middleware import TokenData, get_current_user
 from shared.database import Database, get_db
+from shared.storage_service import delete_character_image, upload_character_image
 
 router = APIRouter()
 
@@ -37,7 +38,8 @@ async def get_user_characters(
         # Build query based on active_only parameter
         if active_only:
             query = """
-                SELECT id, user_id, name, description, character_type, is_active, created_at, updated_at
+                SELECT id, user_id, name, description, character_type, is_active,
+                       image_url, image_uploaded_at, image_size_bytes, created_at, updated_at
                 FROM custom_characters
                 WHERE user_id = $1 AND is_active = true
                 ORDER BY created_at DESC
@@ -45,7 +47,8 @@ async def get_user_characters(
             characters_data = await db.fetch_all(query, user_id)
         else:
             query = """
-                SELECT id, user_id, name, description, character_type, is_active, created_at, updated_at
+                SELECT id, user_id, name, description, character_type, is_active,
+                       image_url, image_uploaded_at, image_size_bytes, created_at, updated_at
                 FROM custom_characters
                 WHERE user_id = $1
                 ORDER BY created_at DESC
@@ -96,7 +99,8 @@ async def create_character(
         query = """
             INSERT INTO custom_characters (user_id, name, description, character_type, is_active, created_at, updated_at)
             VALUES ($1, $2, $3, $4, true, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
-            RETURNING id, user_id, name, description, character_type, is_active, created_at, updated_at
+            RETURNING id, user_id, name, description, character_type, is_active,
+                      image_url, image_uploaded_at, image_size_bytes, created_at, updated_at
         """
 
         character_record = await db.fetch_one(
@@ -142,7 +146,7 @@ async def update_character(
     try:
         # Check if character exists and belongs to user
         existing_character = await db.fetch_one(
-            "SELECT id, user_id, name, description, character_type, is_active, created_at, updated_at FROM custom_characters WHERE id = $1 AND user_id = $2",
+            "SELECT id, user_id, name, description, character_type, is_active, image_url, image_uploaded_at, image_size_bytes, created_at, updated_at FROM custom_characters WHERE id = $1 AND user_id = $2",
             character_id,
             user_id,
         )
@@ -210,7 +214,8 @@ async def update_character(
             UPDATE custom_characters
             SET {', '.join(update_fields)}
             WHERE id = ${param_count} AND user_id = ${param_count + 1}
-            RETURNING id, user_id, name, description, character_type, is_active, created_at, updated_at
+            RETURNING id, user_id, name, description, character_type, is_active,
+                      image_url, image_uploaded_at, image_size_bytes, created_at, updated_at
         """
 
         updated_character = await db.fetch_one(query, *update_values)
@@ -297,5 +302,240 @@ async def delete_character(
         return CustomCharacterErrorResponse(
             error="Failed to delete character",
             error_code="DATABASE_ERROR",
+            character_id=character_id,
+        )
+
+
+@router.post("/users/{user_id}/characters/{character_id}/image")
+async def upload_character_image_endpoint(
+    user_id: UUID = Path(..., description="User ID"),
+    character_id: UUID = Path(..., description="Character ID"),
+    file: UploadFile = File(...),
+    current_user: TokenData = Depends(get_current_user),
+    db: Database = Depends(get_db),
+):
+    """Upload an image for a custom character"""
+    # Verify user can only upload images for their own characters
+    if current_user.user_id != str(user_id):
+        return CustomCharacterErrorResponse(
+            error="Can only upload images for your own characters", error_code="FORBIDDEN"
+        )
+
+    try:
+        # Verify character exists and belongs to user
+        existing = await db.fetch_one(
+            "SELECT id, image_url FROM custom_characters WHERE id = $1 AND user_id = $2",
+            character_id,
+            user_id,
+        )
+
+        if not existing:
+            return CustomCharacterErrorResponse(
+                error="Character not found", error_code="NOT_FOUND", character_id=character_id
+            )
+
+        # Upload new image
+        image_url, file_size = await upload_character_image(file, str(user_id), str(character_id))
+
+        # Delete old image if it exists
+        if existing["image_url"]:
+            await delete_character_image(existing["image_url"])
+
+        # Update database
+        await db.execute(
+            """UPDATE custom_characters
+               SET image_url = $1, image_uploaded_at = CURRENT_TIMESTAMP,
+                   image_size_bytes = $2, updated_at = CURRENT_TIMESTAMP
+               WHERE id = $3""",
+            image_url,
+            file_size,
+            character_id,
+        )
+
+        return {
+            "success": True,
+            "message": "Image uploaded successfully",
+            "image_url": image_url,
+            "file_size": file_size,
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"🚨 CHARACTER: Error uploading image for character {character_id}: {e}", flush=True)
+        return CustomCharacterErrorResponse(
+            error="Failed to upload image",
+            error_code="UPLOAD_ERROR",
+            character_id=character_id,
+        )
+
+
+@router.get("/users/{user_id}/characters/{character_id}/image")
+async def get_character_image_endpoint(
+    user_id: UUID = Path(..., description="User ID"),
+    character_id: UUID = Path(..., description="Character ID"),
+    current_user: TokenData = Depends(get_current_user),
+    db: Database = Depends(get_db),
+):
+    """Get image info for a custom character"""
+    # Verify user can only access their own character images
+    if current_user.user_id != str(user_id):
+        return CustomCharacterErrorResponse(
+            error="Can only access your own character images", error_code="FORBIDDEN"
+        )
+
+    try:
+        # Get character with image info
+        character = await db.fetch_one(
+            "SELECT image_url, image_uploaded_at, image_size_bytes FROM custom_characters WHERE id = $1 AND user_id = $2",
+            character_id,
+            user_id,
+        )
+
+        if not character:
+            return CustomCharacterErrorResponse(
+                error="Character not found", error_code="NOT_FOUND", character_id=character_id
+            )
+
+        if not character["image_url"]:
+            return CustomCharacterErrorResponse(
+                error="No image found", error_code="NOT_FOUND", character_id=character_id
+            )
+
+        return {
+            "success": True,
+            "image_url": character["image_url"],
+            "image_uploaded_at": character["image_uploaded_at"],
+            "image_size_bytes": character["image_size_bytes"],
+        }
+
+    except Exception as e:
+        print(f"🚨 CHARACTER: Error getting image for character {character_id}: {e}", flush=True)
+        return CustomCharacterErrorResponse(
+            error="Failed to get image info",
+            error_code="DATABASE_ERROR",
+            character_id=character_id,
+        )
+
+
+@router.patch("/users/{user_id}/characters/{character_id}/image")
+async def update_character_image_endpoint(
+    user_id: UUID = Path(..., description="User ID"),
+    character_id: UUID = Path(..., description="Character ID"),
+    file: UploadFile = File(...),
+    current_user: TokenData = Depends(get_current_user),
+    db: Database = Depends(get_db),
+):
+    """Update/replace an image for a custom character"""
+    # Verify user can only update images for their own characters
+    if current_user.user_id != str(user_id):
+        return CustomCharacterErrorResponse(
+            error="Can only update images for your own characters", error_code="FORBIDDEN"
+        )
+
+    try:
+        # Verify character exists and belongs to user
+        existing = await db.fetch_one(
+            "SELECT id, image_url FROM custom_characters WHERE id = $1 AND user_id = $2",
+            character_id,
+            user_id,
+        )
+
+        if not existing:
+            return CustomCharacterErrorResponse(
+                error="Character not found", error_code="NOT_FOUND", character_id=character_id
+            )
+
+        # Upload new image
+        image_url, file_size = await upload_character_image(file, str(user_id), str(character_id))
+
+        # Delete old image if it exists
+        if existing["image_url"]:
+            await delete_character_image(existing["image_url"])
+
+        # Update database
+        await db.execute(
+            """UPDATE custom_characters
+               SET image_url = $1, image_uploaded_at = CURRENT_TIMESTAMP,
+                   image_size_bytes = $2, updated_at = CURRENT_TIMESTAMP
+               WHERE id = $3""",
+            image_url,
+            file_size,
+            character_id,
+        )
+
+        return {
+            "success": True,
+            "message": "Image updated successfully",
+            "image_url": image_url,
+            "file_size": file_size,
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"🚨 CHARACTER: Error updating image for character {character_id}: {e}", flush=True)
+        return CustomCharacterErrorResponse(
+            error="Failed to update image",
+            error_code="UPDATE_ERROR",
+            character_id=character_id,
+        )
+
+
+@router.delete("/users/{user_id}/characters/{character_id}/image")
+async def delete_character_image_endpoint(
+    user_id: UUID = Path(..., description="User ID"),
+    character_id: UUID = Path(..., description="Character ID"),
+    current_user: TokenData = Depends(get_current_user),
+    db: Database = Depends(get_db),
+):
+    """Delete an image for a custom character"""
+    # Verify user can only delete images for their own characters
+    if current_user.user_id != str(user_id):
+        return CustomCharacterErrorResponse(
+            error="Can only delete images for your own characters", error_code="FORBIDDEN"
+        )
+
+    try:
+        # Verify character exists and belongs to user and get image URL
+        existing = await db.fetch_one(
+            "SELECT image_url FROM custom_characters WHERE id = $1 AND user_id = $2",
+            character_id,
+            user_id,
+        )
+
+        if not existing:
+            return CustomCharacterErrorResponse(
+                error="Character not found", error_code="NOT_FOUND", character_id=character_id
+            )
+
+        if not existing["image_url"]:
+            return CustomCharacterErrorResponse(
+                error="No image to delete", error_code="NOT_FOUND", character_id=character_id
+            )
+
+        # Delete from R2
+        deleted = await delete_character_image(existing["image_url"])
+
+        # Update database (remove image reference)
+        await db.execute(
+            """UPDATE custom_characters
+               SET image_url = NULL, image_uploaded_at = NULL,
+                   image_size_bytes = NULL, updated_at = CURRENT_TIMESTAMP
+               WHERE id = $1""",
+            character_id,
+        )
+
+        return {
+            "success": True,
+            "message": "Image deleted successfully",
+            "deleted_from_storage": deleted,
+        }
+
+    except Exception as e:
+        print(f"🚨 CHARACTER: Error deleting image for character {character_id}: {e}", flush=True)
+        return CustomCharacterErrorResponse(
+            error="Failed to delete image",
+            error_code="DELETE_ERROR",
             character_id=character_id,
         )

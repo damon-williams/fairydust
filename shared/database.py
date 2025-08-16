@@ -1295,6 +1295,11 @@ async def create_tables():
 
         CREATE INDEX IF NOT EXISTS idx_custom_characters_user_id ON custom_characters(user_id);
         CREATE INDEX IF NOT EXISTS idx_custom_characters_active ON custom_characters(user_id, is_active);
+
+        -- Add image support columns for custom characters
+        ALTER TABLE custom_characters ADD COLUMN IF NOT EXISTS image_url TEXT;
+        ALTER TABLE custom_characters ADD COLUMN IF NOT EXISTS image_uploaded_at TIMESTAMP WITH TIME ZONE;
+        ALTER TABLE custom_characters ADD COLUMN IF NOT EXISTS image_size_bytes INTEGER;
     """
     )
 
