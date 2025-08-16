@@ -489,7 +489,7 @@ export function AppConfig() {
                 <div className="space-y-2">
                   <Label>Primary Provider</Label>
                   <Select 
-                    value={config.text_config.primary_provider}
+                    value={config.text_config.primary_provider || ""}
                     onValueChange={(value) => setConfig(prev => ({
                       ...prev,
                       text_config: prev.text_config ? {
@@ -499,19 +499,20 @@ export function AppConfig() {
                     }))}
                   >
                     <SelectTrigger>
-                      <SelectValue />
+                      <SelectValue placeholder="Select provider..." />
                     </SelectTrigger>
                     <SelectContent>
                       <SelectItem value="anthropic">Anthropic</SelectItem>
                       <SelectItem value="openai">OpenAI</SelectItem>
                     </SelectContent>
                   </Select>
+                  <p className="text-xs text-gray-500">Current value: "{config.text_config.primary_provider}"</p>
                 </div>
 
                 <div className="space-y-2">
                   <Label>Primary Model</Label>
                   <Select 
-                    value={config.text_config.primary_model_id}
+                    value={config.text_config.primary_model_id || ""}
                     onValueChange={(value) => setConfig(prev => ({
                       ...prev,
                       text_config: prev.text_config ? {
@@ -521,7 +522,7 @@ export function AppConfig() {
                     }))}
                   >
                     <SelectTrigger>
-                      <SelectValue />
+                      <SelectValue placeholder="Select model..." />
                     </SelectTrigger>
                     <SelectContent>
                       {config.text_config.primary_provider === 'anthropic' ? (
@@ -540,6 +541,7 @@ export function AppConfig() {
                       )}
                     </SelectContent>
                   </Select>
+                  <p className="text-xs text-gray-500">Current value: "{config.text_config.primary_model_id}"</p>
                 </div>
 
                 <div className="grid grid-cols-2 gap-2">
