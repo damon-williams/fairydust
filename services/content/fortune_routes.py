@@ -488,7 +488,23 @@ async def _get_llm_model_config() -> dict:
     app_result = await db.fetch_one("SELECT id FROM apps WHERE slug = $1", app_slug)
 
     if not app_result:
-        # Return default config if app not found
+        # Get global fallback configuration instead of hardcoded defaults
+        print(f"❌ FORTUNE_CONFIG: App not found for slug: {app_slug}", flush=True)
+        try:
+            from shared.llm_client import llm_client
+
+            global_fallbacks = await llm_client._get_global_fallbacks()
+            if global_fallbacks:
+                primary_provider, primary_model = global_fallbacks[0]
+                return {
+                    "primary_provider": primary_provider,
+                    "primary_model_id": primary_model,
+                    "primary_parameters": {"temperature": 0.8, "max_tokens": 400, "top_p": 0.9},
+                }
+        except Exception as e:
+            print(f"⚠️ FORTUNE_CONFIG: Failed to get global fallbacks: {e}", flush=True)
+
+        # Emergency hardcoded fallback only if global config fails
         return {
             "primary_provider": "anthropic",
             "primary_model_id": "claude-3-5-sonnet-20241022",
@@ -502,9 +518,21 @@ async def _get_llm_model_config() -> dict:
     cached_config = await cache.get_model_config(app_id)
 
     if cached_config:
+        # Get global fallbacks for defaults
+        default_provider = "anthropic"
+        default_model = "claude-3-5-sonnet-20241022"
+        try:
+            from shared.llm_client import llm_client
+
+            global_fallbacks = await llm_client._get_global_fallbacks()
+            if global_fallbacks:
+                default_provider, default_model = global_fallbacks[0]
+        except:
+            pass
+
         return {
-            "primary_provider": cached_config.get("primary_provider", "anthropic"),
-            "primary_model_id": cached_config.get("primary_model_id", "claude-3-5-sonnet-20241022"),
+            "primary_provider": cached_config.get("primary_provider", default_provider),
+            "primary_model_id": cached_config.get("primary_model_id", default_model),
             "primary_parameters": cached_config.get(
                 "primary_parameters", {"temperature": 0.8, "max_tokens": 400, "top_p": 0.9}
             ),
@@ -542,10 +570,24 @@ async def _get_llm_model_config() -> dict:
     except Exception as e:
         print(f"⚠️ FORTUNE_CONFIG: Error loading normalized config: {e}")
 
-    # Fallback to default config
+    # Fallback to global default config
+    print("🔄 FORTUNE_CONFIG: Using global default config (no cache, no database)", flush=True)
+
+    # Get global fallbacks
+    default_provider = "anthropic"
+    default_model = "claude-3-5-sonnet-20241022"
+    try:
+        from shared.llm_client import llm_client
+
+        global_fallbacks = await llm_client._get_global_fallbacks()
+        if global_fallbacks:
+            default_provider, default_model = global_fallbacks[0]
+    except Exception as e:
+        print(f"⚠️ FORTUNE_CONFIG: Failed to get global fallbacks for default: {e}", flush=True)
+
     default_config = {
-        "primary_provider": "anthropic",
-        "primary_model_id": "claude-3-5-sonnet-20241022",
+        "primary_provider": default_provider,
+        "primary_model_id": default_model,
         "primary_parameters": {"temperature": 0.8, "max_tokens": 400, "top_p": 0.9},
     }
 
