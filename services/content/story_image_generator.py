@@ -636,9 +636,6 @@ class StoryImageGenerator:
                         )
                     logger.info(f"🔄 RETRY {attempt + 1}: Starting retry attempt for image {image_id}")
                 
-                # Log timing between attempts
-                if attempt > 0:
-
                 prompt_to_use = original_prompt
 
                 if attempt > 0 and nsfw_failure_detected:
