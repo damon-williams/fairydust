@@ -639,6 +639,20 @@ async def _get_wyr_llm_model_config() -> dict:
 
     if not app_result:
         print(f"❌ WYR_CONFIG: App not found for slug: {app_slug}", flush=True)
+        # Get global fallback configuration instead of hardcoded defaults
+        try:
+            global_fallbacks = await llm_client._get_global_fallbacks()
+            if global_fallbacks:
+                primary_provider, primary_model = global_fallbacks[0]
+                return {
+                    "primary_provider": primary_provider,
+                    "primary_model_id": primary_model,
+                    "primary_parameters": {"temperature": 1.0, "max_tokens": 1000, "top_p": 0.95},
+                }
+        except Exception as e:
+            print(f"⚠️ WYR_CONFIG: Failed to get global fallbacks: {e}", flush=True)
+
+        # Emergency hardcoded fallback only if global config fails
         return {
             "primary_provider": "anthropic",
             "primary_model_id": "claude-3-5-sonnet-20241022",
@@ -676,11 +690,21 @@ async def _get_wyr_llm_model_config() -> dict:
                     logger.warning(f"Failed to parse cached parameters JSON: {cached_parameters}")
                     cached_parameters = {"temperature": 1.0, "max_tokens": 1000, "top_p": 0.95}
 
+            # Get global fallbacks for defaults
+            global_fallbacks = []
+            try:
+                global_fallbacks = await llm_client._get_global_fallbacks()
+            except:
+                pass
+
+            default_provider = "anthropic"
+            default_model = "claude-3-5-sonnet-20241022"
+            if global_fallbacks:
+                default_provider, default_model = global_fallbacks[0]
+
             config = {
-                "primary_provider": cached_config.get("primary_provider", "anthropic"),
-                "primary_model_id": cached_config.get(
-                    "primary_model_id", "claude-3-5-sonnet-20241022"
-                ),
+                "primary_provider": cached_config.get("primary_provider", default_provider),
+                "primary_model_id": cached_config.get("primary_model_id", default_model),
                 "primary_parameters": cached_parameters,
             }
 
@@ -731,11 +755,22 @@ async def _get_wyr_llm_model_config() -> dict:
     except Exception as e:
         print(f"❌ WYR_CONFIG: Database error: {e}", flush=True)
 
-    # Fallback to default config
-    print("🔄 WYR_CONFIG: Using default config (no cache, no database)", flush=True)
+    # Fallback to global default config
+    print("🔄 WYR_CONFIG: Using global default config (no cache, no database)", flush=True)
+
+    # Get global fallbacks
+    default_provider = "anthropic"
+    default_model = "claude-3-5-sonnet-20241022"
+    try:
+        global_fallbacks = await llm_client._get_global_fallbacks()
+        if global_fallbacks:
+            default_provider, default_model = global_fallbacks[0]
+    except Exception as e:
+        print(f"⚠️ WYR_CONFIG: Failed to get global fallbacks for default: {e}", flush=True)
+
     default_config = {
-        "primary_provider": "anthropic",
-        "primary_model_id": "claude-3-5-sonnet-20241022",
+        "primary_provider": default_provider,
+        "primary_model_id": default_model,
         "primary_parameters": {"temperature": 1.0, "max_tokens": 1000, "top_p": 0.95},
     }
 
@@ -1280,16 +1315,27 @@ async def _generate_personality_analysis(
         # Build analysis prompt
         prompt = _build_analysis_prompt(questions, answers, category, age_context)
 
-        # Use simpler config for analysis - fixed model with appropriate parameters
-        app_config = {
-            "primary_provider": "anthropic",
-            "primary_model_id": "claude-3-5-sonnet-20241022",
-            "primary_parameters": {
+        # Get LLM model configuration from database (same as question generation)
+        model_config = await _get_wyr_llm_model_config()
+
+        # Adjust parameters for personality analysis (shorter, more creative)
+        parameters = model_config.get("primary_parameters", {}).copy()
+        parameters.update(
+            {
                 "max_tokens": 100,  # Much shorter for whimsical summaries
-                "temperature": 0.8,  # Higher creativity for whimsical tone
-                "top_p": 0.9,
-            },
-        }
+                "temperature": min(
+                    parameters.get("temperature", 0.7) + 0.1, 1.0
+                ),  # Slightly higher creativity
+            }
+        )
+
+        # Use the same model configuration as questions
+        app_config = {**model_config, "primary_parameters": parameters}
+
+        print(
+            f"🔧 WYR_ANALYSIS: Using {app_config['primary_provider']}/{app_config['primary_model_id']}",
+            flush=True,
+        )
 
         # Create request metadata for logging
         request_metadata = {
