@@ -348,7 +348,14 @@ async def generate_ai_final_guess(
 
 {history_context}
 
-Based on the answers to my questions, what do you think I'm thinking of? This could be a person, place, object, or concept. Respond with just your guess, nothing else."""
+Based on the answers to my questions, what do you think I'm thinking of? This could be a person, place, object, or concept. 
+
+IMPORTANT: You must make a specific guess. Do not respond with "Unknown", "I don't know", or anything vague. Even if you're uncertain, make your best educated guess based on the information you have.
+
+Examples of good guesses: "a cat", "pizza", "The Lion King", "Albert Einstein", "a bicycle"
+Examples of bad responses: "Unknown", "I'm not sure", "Something living"
+
+Respond with just your specific guess, nothing else:"""
 
     try:
         # Get LLM model configuration
@@ -366,18 +373,34 @@ Based on the answers to my questions, what do you think I'm thinking of? This co
             action="twenty_questions_final_guess",
             request_metadata={
                 "game_id": str(game_id),
-                "category": category,
                 "target_person_name": target_person.get("name", "Unknown"),
                 "history_length": len(history),
             },
         )
 
-        return completion.strip()
+        final_guess = completion.strip()
+        
+        # Post-processing: If AI somehow still returned "Unknown" or similar, fix it
+        if final_guess.lower() in ["unknown", "i don't know", "not sure", "unclear", "uncertain", ""]:
+            logger.warning(f"AI returned invalid guess '{final_guess}', using fallback")
+            fallback_guesses = [
+                "a cat", "a dog", "pizza", "a car", "a tree", "a book", 
+                "a phone", "a movie", "music", "a game"
+            ]
+            import random
+            final_guess = random.choice(fallback_guesses)
+        
+        return final_guess
 
     except Exception as e:
         logger.error(f"Failed to generate AI final guess: {e}")
-        # Fallback guess
-        return "Unknown"
+        # Fallback guess - make a reasonable attempt based on common answers
+        fallback_guesses = [
+            "a cat", "a dog", "pizza", "a car", "a tree", "a book", 
+            "a phone", "a movie", "music", "a game"
+        ]
+        import random
+        return random.choice(fallback_guesses)
 
 
 def check_guess_accuracy(guess: str, correct_answer: str) -> bool:
