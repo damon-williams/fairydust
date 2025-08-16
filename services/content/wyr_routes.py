@@ -1088,7 +1088,7 @@ FINAL INSTRUCTIONS FOR RELIABLE JSON:
 - Do NOT include "or" or both options in a single field
 - GPT-5 models: Be extra careful to return only pure JSON
 
-RESPOND NOW WITH JSON ONLY - START WITH [ IMMEDIATELY:
+RESPOND NOW WITH JSON ONLY - START WITH [ IMMEDIATELY:"""
 
     return base_prompt
 
