@@ -47,14 +47,15 @@ class OpenAIGPT4Adapter(ModelAdapter):
 
 
 class OpenAIGPT5Adapter(ModelAdapter):
-    """Adapter for GPT-5 family models with stricter requirements"""
+    """Adapter for GPT-5 family models with very strict requirements"""
     
     def adapt_parameters(self, parameters: dict) -> dict:
-        # GPT-5 only supports temperature=1 and uses max_completion_tokens
+        # GPT-5 only supports max_completion_tokens and temperature=1
+        # Does NOT support top_p or other parameters
         return {
             "max_completion_tokens": parameters.get("max_tokens", 1000),
             "temperature": 1,  # Only supported value for GPT-5
-            "top_p": parameters.get("top_p", 0.9),
+            # Note: top_p and other parameters are NOT supported by GPT-5
         }
 
 
@@ -155,12 +156,12 @@ class LLMClient:
 
         # Extract configuration
         primary_provider = app_config.get("primary_provider", "anthropic")
-        primary_model = app_config.get("primary_model_id", "claude-3-5-sonnet-20241022")
+        primary_model = app_config.get("primary_model_id")
         parameters = app_config.get("primary_parameters", {})
         fallback_models = app_config.get("fallback_models", [])
 
         # Build provider attempt list
-        providers_to_try = self._build_provider_list(
+        providers_to_try = await self._build_provider_list(
             primary_provider, primary_model, fallback_models
         )
 
@@ -235,7 +236,7 @@ class LLMClient:
         # All attempts failed
         raise LLMError(f"All LLM providers failed. Last error: {str(last_error)}")
 
-    def _build_provider_list(
+    async def _build_provider_list(
         self, primary_provider: str, primary_model: str, fallback_models: list[dict]
     ) -> list[tuple[str, str]]:
         """Build ordered list of (provider, model) pairs to try"""
@@ -248,14 +249,9 @@ class LLMClient:
             if provider and model and (provider, model) not in providers:
                 providers.append((provider, model))
 
-        # Add default fallbacks if not already present
-        defaults = [
-            ("openai", "gpt-4o"),
-            ("anthropic", "claude-3-5-sonnet-20241022"),
-            ("openai", "gpt-4o-mini"),
-        ]
-
-        for provider, model in defaults:
+        # Add global default fallbacks from admin configuration
+        global_fallbacks = await self._get_global_fallbacks()
+        for provider, model in global_fallbacks:
             if (provider, model) not in providers and self._has_provider_key(provider):
                 providers.append((provider, model))
 
@@ -269,6 +265,44 @@ class LLMClient:
         elif provider == "openai":
             return bool(self.openai_key)
         return False
+
+    async def _get_global_fallbacks(self) -> list[tuple[str, str]]:
+        """Get global fallback models from admin configuration"""
+        try:
+            # Get environment-based admin URL
+            environment = os.getenv('ENVIRONMENT', 'staging')
+            admin_url_suffix = 'production' if environment == 'production' else 'staging'
+            admin_url = f"https://fairydust-admin-{admin_url_suffix}.up.railway.app"
+            
+            async with httpx.AsyncClient(timeout=5.0) as client:
+                # Fetch global LLM fallback configuration
+                response = await client.get(f"{admin_url}/api/global-fallbacks")
+                
+                if response.status_code == 200:
+                    config = response.json()
+                    fallbacks = []
+                    
+                    # Add primary global model first
+                    if config.get("primary_provider") and config.get("primary_model"):
+                        fallbacks.append((config["primary_provider"], config["primary_model"]))
+                    
+                    # Add configured fallbacks
+                    for fallback in config.get("fallbacks", []):
+                        provider = fallback.get("provider")
+                        model = fallback.get("model")
+                        if provider and model:
+                            fallbacks.append((provider, model))
+                    
+                    return fallbacks
+                    
+        except Exception as e:
+            print(f"⚠️ LLM_CLIENT: Failed to fetch global fallbacks: {e}")
+        
+        # Hardcoded emergency fallbacks only if admin service is unreachable
+        return [
+            ("anthropic", "claude-3-5-sonnet-20241022"),
+            ("openai", "gpt-4o"),
+        ]
 
     async def _make_api_call(
         self, provider: str, model_id: str, prompt: str, parameters: dict
