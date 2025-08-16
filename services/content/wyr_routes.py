@@ -1080,7 +1080,7 @@ Generate exactly {game_length.value} creative, engaging questions now.
 
 FINAL INSTRUCTIONS FOR RELIABLE JSON:
 - Your response MUST start with [ as the very first character
-- Your response MUST end with ] as the very last character  
+- Your response MUST end with ] as the very last character
 - Do NOT use ```json``` markdown blocks
 - Do NOT add any explanatory text before or after the JSON
 - Do NOT include newlines before the opening [
@@ -1104,7 +1104,7 @@ def _parse_questions_response(content: str, category: GameCategory) -> list[Ques
         print(f"🔍 WYR_PARSE: Response length: {len(content)} characters", flush=True)
         print(f"🔍 WYR_PARSE: First 100 chars: '{content[:100]}'", flush=True)
         print(f"🔍 WYR_PARSE: Last 100 chars: '{content[-100:]}'", flush=True)
-        
+
         # Check for empty or whitespace-only content
         if not content or not content.strip():
             print("❌ WYR_PARSE: Response is empty or whitespace only", flush=True)
@@ -1117,12 +1117,12 @@ def _parse_questions_response(content: str, category: GameCategory) -> list[Ques
 
         # Pattern 1: Clean the content first (remove common GPT-5 formatting issues)
         cleaned_content = content.strip()
-        
+
         # Pattern 1a: Direct JSON array (exact match from start to end)
-        if cleaned_content.startswith('[') and cleaned_content.endswith(']'):
+        if cleaned_content.startswith("[") and cleaned_content.endswith("]"):
             json_text = cleaned_content
             print("🔍 WYR_PARSE: Used Pattern 1a (direct clean JSON)", flush=True)
-        
+
         # Pattern 1b: Direct JSON array (greedy match for complete array)
         if not json_text:
             json_match = re.search(r"(\[(?:[^[\]]|(?:\[[^[\]]*\]))*\])", content, re.DOTALL)
@@ -1171,7 +1171,10 @@ def _parse_questions_response(content: str, category: GameCategory) -> list[Ques
         if not json_text:
             print("❌ WYR_PARSE: No JSON array found in response", flush=True)
             print(f"🔍 WYR_PARSE: Full response was: '{content}'", flush=True)
-            print(f"🔍 WYR_PARSE: Content bytes: {content.encode('utf-8') if content else b''}", flush=True)
+            print(
+                f"🔍 WYR_PARSE: Content bytes: {content.encode('utf-8') if content else b''}",
+                flush=True,
+            )
             return []
 
         # Try to parse the JSON

@@ -694,11 +694,17 @@ async def refresh_token(
 ):
     """Refresh access token using refresh token"""
     try:
-        print(f"🔄 REFRESH: Attempting token refresh for token: {request.refresh_token[:50]}...", flush=True)
-        
+        print(
+            f"🔄 REFRESH: Attempting token refresh for token: {request.refresh_token[:50]}...",
+            flush=True,
+        )
+
         # Decode refresh token
         token_data = await auth_service.decode_token(request.refresh_token)
-        print(f"🔄 REFRESH: Decoded token for user {token_data.user_id}, type: {token_data.type}", flush=True)
+        print(
+            f"🔄 REFRESH: Decoded token for user {token_data.user_id}, type: {token_data.type}",
+            flush=True,
+        )
 
         if token_data.type != "refresh":
             print(f"❌ REFRESH: Invalid token type: {token_data.type}", flush=True)
@@ -707,17 +713,26 @@ async def refresh_token(
         # Check if refresh token is still valid in Redis
         redis_key = f"refresh_token:{token_data.user_id}"
         stored_token = await auth_service.redis.get(redis_key)
-        print(f"🔄 REFRESH: Redis lookup for {redis_key}: {'found' if stored_token else 'not found'}", flush=True)
-        
+        print(
+            f"🔄 REFRESH: Redis lookup for {redis_key}: {'found' if stored_token else 'not found'}",
+            flush=True,
+        )
+
         if not stored_token:
-            print(f"❌ REFRESH: No stored token found in Redis for user {token_data.user_id}", flush=True)
+            print(
+                f"❌ REFRESH: No stored token found in Redis for user {token_data.user_id}",
+                flush=True,
+            )
             raise HTTPException(status_code=401, detail="Refresh token not found")
-        
+
         if stored_token != request.refresh_token:
             print(f"❌ REFRESH: Token mismatch for user {token_data.user_id}", flush=True)
-            print(f"❌ REFRESH: Stored: {stored_token[:50]}... vs Provided: {request.refresh_token[:50]}...", flush=True)
+            print(
+                f"❌ REFRESH: Stored: {stored_token[:50]}... vs Provided: {request.refresh_token[:50]}...",
+                flush=True,
+            )
             raise HTTPException(status_code=401, detail="Invalid refresh token")
-            
+
         print(f"✅ REFRESH: Token validation successful for user {token_data.user_id}", flush=True)
     except HTTPException:
         raise

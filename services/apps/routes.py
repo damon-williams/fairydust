@@ -635,6 +635,7 @@ async def create_app_model_config(
     # Invalidate cache after successful creation
     try:
         from shared.app_config_cache import get_app_config_cache
+
         cache = await get_app_config_cache()
         await cache.invalidate_model_config(app_id)
         print(f"✅ CACHE_INVALIDATE: Invalidated model config cache for app {app_id} (new config)")
@@ -735,6 +736,7 @@ async def update_app_model_config_by_type(
     # Invalidate cache after successful update
     try:
         from shared.app_config_cache import get_app_config_cache
+
         cache = await get_app_config_cache()
         await cache.invalidate_model_config(app_id)
         print(f"✅ CACHE_INVALIDATE: Invalidated model config cache for app {app_id}")
@@ -772,9 +774,12 @@ async def delete_app_model_config(
     # Invalidate cache after successful deletion
     try:
         from shared.app_config_cache import get_app_config_cache
+
         cache = await get_app_config_cache()
         await cache.invalidate_model_config(app_id)
-        print(f"✅ CACHE_INVALIDATE: Invalidated model config cache for app {app_id} (deleted config)")
+        print(
+            f"✅ CACHE_INVALIDATE: Invalidated model config cache for app {app_id} (deleted config)"
+        )
     except Exception as e:
         print(f"⚠️ CACHE_INVALIDATE: Failed to invalidate cache for app {app_id}: {e}")
 
@@ -869,7 +874,7 @@ async def update_global_fallback(
 ) -> GlobalFallbackModel:
     """Update an existing global fallback model configuration"""
     import json
-    
+
     try:
         fallback_uuid = UUID(fallback_id)
     except ValueError:
@@ -879,7 +884,7 @@ async def update_global_fallback(
     existing_fallback = await db.fetch_one(
         "SELECT * FROM global_fallback_models WHERE id = $1", fallback_uuid
     )
-    
+
     if not existing_fallback:
         raise HTTPException(status_code=404, detail="Global fallback model not found")
 

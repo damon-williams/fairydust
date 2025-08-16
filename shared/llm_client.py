@@ -81,7 +81,7 @@ class LLMClient:
     def __init__(self):
         self.anthropic_key = os.getenv("ANTHROPIC_API_KEY")
         self.openai_key = os.getenv("OPENAI_API_KEY")
-        
+
         # Cache for global fallbacks with TTL
         self._global_fallbacks_cache = None
         self._global_fallbacks_cache_time = None
@@ -272,15 +272,17 @@ class LLMClient:
     async def _get_global_fallbacks(self) -> list[tuple[str, str]]:
         """Get global fallback models from admin configuration with caching"""
         import time
-        
+
         # Check cache validity
         current_time = time.time()
-        if (self._global_fallbacks_cache is not None and 
-            self._global_fallbacks_cache_time is not None and
-            current_time - self._global_fallbacks_cache_time < self._global_fallbacks_cache_ttl):
+        if (
+            self._global_fallbacks_cache is not None
+            and self._global_fallbacks_cache_time is not None
+            and current_time - self._global_fallbacks_cache_time < self._global_fallbacks_cache_ttl
+        ):
             # Cache is valid, return cached value
             return self._global_fallbacks_cache
-        
+
         try:
             # Get environment-based admin URL
             environment = os.getenv("ENVIRONMENT", "staging")
@@ -309,15 +311,15 @@ class LLMClient:
                     # Cache the successful response
                     self._global_fallbacks_cache = fallbacks
                     self._global_fallbacks_cache_time = current_time
-                    
+
                     return fallbacks
 
         except Exception as e:
             print(f"⚠️ LLM_CLIENT: Failed to fetch global fallbacks: {e}")
-            
+
             # If we have a stale cache, use it rather than hardcoded fallbacks
             if self._global_fallbacks_cache is not None:
-                print(f"⚠️ LLM_CLIENT: Using stale cache for global fallbacks")
+                print("⚠️ LLM_CLIENT: Using stale cache for global fallbacks")
                 return self._global_fallbacks_cache
 
         # Hardcoded emergency fallbacks only if admin service is unreachable AND no cache
