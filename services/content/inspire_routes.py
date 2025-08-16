@@ -1,10 +1,9 @@
 # services/content/inspire_routes.py
 # Service URL configuration based on environment
 import os
-from uuid import UUID
-from shared.uuid_utils import generate_uuid7
 from datetime import datetime
 from typing import Optional
+from uuid import UUID
 
 import httpx
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
@@ -24,6 +23,7 @@ from models import (
 from shared.auth_middleware import TokenData, get_current_user
 from shared.database import Database, get_db
 from shared.llm_client import LLMError, llm_client
+from shared.uuid_utils import generate_uuid7
 
 # Service URL configuration
 environment = os.getenv("ENVIRONMENT", "staging")
@@ -435,7 +435,6 @@ async def _get_user_balance(user_id: UUID, auth_token: str) -> int:
         return 0
 
 
-
 async def _check_rate_limit(db: Database, user_id: UUID) -> bool:
     """Check if user has exceeded rate limit for inspiration generation"""
     try:
@@ -624,7 +623,22 @@ async def _get_llm_model_config() -> dict:
 
     if not app_result:
         print(f"❌ INSPIRE_CONFIG: App with slug '{app_slug}' not found in database", flush=True)
-        # Return default config if app not found
+        # Get global fallback configuration instead of hardcoded defaults
+        try:
+            from shared.llm_client import llm_client
+
+            global_fallbacks = await llm_client._get_global_fallbacks()
+            if global_fallbacks:
+                primary_provider, primary_model = global_fallbacks[0]
+                return {
+                    "primary_provider": primary_provider,
+                    "primary_model_id": primary_model,
+                    "primary_parameters": {"temperature": 0.8, "max_tokens": 150, "top_p": 0.9},
+                }
+        except Exception as e:
+            print(f"⚠️ INSPIRE_CONFIG: Failed to get global fallbacks: {e}", flush=True)
+
+        # Emergency hardcoded fallback only if global config fails
         return {
             "primary_provider": "anthropic",
             "primary_model_id": "claude-3-5-haiku-20241022",
@@ -639,9 +653,21 @@ async def _get_llm_model_config() -> dict:
     cached_config = await cache.get_model_config(app_id)
 
     if cached_config:
+        # Get global fallbacks for defaults
+        default_provider = "anthropic"
+        default_model = "claude-3-5-haiku-20241022"
+        try:
+            from shared.llm_client import llm_client
+
+            global_fallbacks = await llm_client._get_global_fallbacks()
+            if global_fallbacks:
+                default_provider, default_model = global_fallbacks[0]
+        except:
+            pass
+
         return {
-            "primary_provider": cached_config.get("primary_provider", "anthropic"),
-            "primary_model_id": cached_config.get("primary_model_id", "claude-3-5-haiku-20241022"),
+            "primary_provider": cached_config.get("primary_provider", default_provider),
+            "primary_model_id": cached_config.get("primary_model_id", default_model),
             "primary_parameters": cached_config.get(
                 "primary_parameters", {"temperature": 0.8, "max_tokens": 150, "top_p": 0.9}
             ),
@@ -687,11 +713,24 @@ async def _get_llm_model_config() -> dict:
     except Exception as e:
         print(f"❌ INSPIRE_CONFIG: Database error: {e}", flush=True)
 
-    # Fallback to default config
-    print("🔄 INSPIRE_CONFIG: Using default config (no cache, no database)", flush=True)
+    # Fallback to global default config
+    print("🔄 INSPIRE_CONFIG: Using global default config (no cache, no database)", flush=True)
+
+    # Get global fallbacks
+    default_provider = "anthropic"
+    default_model = "claude-3-5-haiku-20241022"
+    try:
+        from shared.llm_client import llm_client
+
+        global_fallbacks = await llm_client._get_global_fallbacks()
+        if global_fallbacks:
+            default_provider, default_model = global_fallbacks[0]
+    except Exception as e:
+        print(f"⚠️ INSPIRE_CONFIG: Failed to get global fallbacks for default: {e}", flush=True)
+
     default_config = {
-        "primary_provider": "anthropic",
-        "primary_model_id": "claude-3-5-haiku-20241022",
+        "primary_provider": default_provider,
+        "primary_model_id": default_model,
         "primary_parameters": {"temperature": 0.8, "max_tokens": 150, "top_p": 0.9},
     }
 

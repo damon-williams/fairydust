@@ -20,7 +20,7 @@ class ImageGenerationService:
             raise ValueError("Missing REPLICATE_API_TOKEN environment variable")
 
     async def _get_image_model_config(self) -> dict:
-        """Get image model configuration from app config (normalized structure)"""
+        """Get image model configuration from app config (reads from parameters JSON)"""
         try:
             from shared.database import get_db
             from shared.json_utils import parse_jsonb_field
@@ -28,67 +28,40 @@ class ImageGenerationService:
             # Get the Story app ID (which has image generation capabilities)
             STORY_APP_ID = "fairydust-story"
 
-            # Fetch ALL enabled image models from database, ordered by priority
+            # Fetch the single image model configuration record
             db = await get_db()
-            models = await db.fetch_all(
+            model_record = await db.fetch_one(
                 """
-                SELECT provider, model_id, parameters, priority
+                SELECT provider, model_id, parameters
                 FROM app_model_configs
                 WHERE app_id = (SELECT id FROM apps WHERE slug = $1)
                 AND model_type = 'image'
                 AND is_enabled = true
-                ORDER BY COALESCE(priority, 999), created_at ASC
                 """,
                 STORY_APP_ID,
             )
 
-            if models:
+            if model_record:
+                # Parse parameters to get standard_model and reference_model
+                params = parse_jsonb_field(
+                    model_record["parameters"], default={}, field_name="image_parameters"
+                )
+
+                # Extract models from parameters (admin portal stores them here)
+                standard_model = params.get("standard_model", model_record["model_id"])
+                reference_model = params.get("reference_model", "runwayml/gen4-image")
+
+                # Build fallback list from global fallbacks if available
+                fallback_models = ["stability-ai/sdxl", "black-forest-labs/flux-schnell"]
+
                 config_result = {
-                    "models": [],
-                    "standard_model": None,
-                    "reference_model": None,
-                    "fallback_models": [],
+                    "standard_model": standard_model,
+                    "reference_model": reference_model,
+                    "fallback_models": fallback_models,
                 }
 
-                for i, model in enumerate(models):
-                    model_name = (
-                        f"{model['provider']}/{model['model_id']}"
-                        if model["provider"]
-                        else model["model_id"]
-                    )
-
-                    # Parse parameters for this model
-                    params = parse_jsonb_field(
-                        model["parameters"], default={}, field_name=f"image_parameters_{i}"
-                    )
-
-                    model_config = {
-                        "model": model_name,
-                        "provider": model["provider"],
-                        "model_id": model["model_id"],
-                        "priority": model.get("priority", 999),
-                        "parameters": params,
-                    }
-                    config_result["models"].append(model_config)
-
-                    # Determine model roles based on configuration or naming patterns
-                    model_lower = model_name.lower()
-                    if not config_result["standard_model"]:
-                        # First model is standard/primary
-                        config_result["standard_model"] = model_name
-                    elif "gen4" in model_lower or "runway" in model_lower:
-                        # Gen4 models are for reference people
-                        config_result["reference_model"] = model_name
-                    else:
-                        # Additional models are fallbacks
-                        config_result["fallback_models"].append(model_name)
-
-                # Set reference model default if not found
-                if not config_result["reference_model"]:
-                    config_result["reference_model"] = config_result["standard_model"]
-
-                print(f"✅ IMAGE_CONFIG: Loaded {len(models)} models from database")
-                print(f"   Primary: {config_result['standard_model']}")
+                print("✅ IMAGE_CONFIG: Loaded image config from database")
+                print(f"   Standard: {config_result['standard_model']}")
                 print(f"   Reference: {config_result['reference_model']}")
                 print(f"   Fallbacks: {config_result['fallback_models']}")
 
@@ -97,7 +70,6 @@ class ImageGenerationService:
             # Return defaults if no config found
             print("⚠️ IMAGE_CONFIG: No image models found in database, using defaults")
             return {
-                "models": [],
                 "standard_model": "black-forest-labs/flux-1.1-pro",
                 "reference_model": "runwayml/gen4-image",
                 "fallback_models": ["stability-ai/sdxl", "black-forest-labs/flux-schnell"],
@@ -107,7 +79,6 @@ class ImageGenerationService:
             print(f"⚠️ IMAGE_MODEL_CONFIG: Error loading config: {e}")
             # Return defaults on error
             return {
-                "models": [],
                 "standard_model": "black-forest-labs/flux-1.1-pro",
                 "reference_model": "runwayml/gen4-image",
                 "fallback_models": ["stability-ai/sdxl", "black-forest-labs/flux-schnell"],
@@ -119,6 +90,7 @@ class ImageGenerationService:
         style: ImageStyle,
         image_size: ImageSize,
         reference_people: list[ImageReferencePerson],
+        image_id: str = None,
     ) -> tuple[str, dict]:
         """
         Generate an AI image using FLUX for all generations
@@ -145,6 +117,7 @@ class ImageGenerationService:
         style: ImageStyle,
         image_size: ImageSize,
         reference_people: list[ImageReferencePerson],
+        image_id: str = None,
     ) -> tuple[str, dict]:
         """Generate image using Replicate - selects appropriate model based on reference people"""
 
@@ -155,9 +128,16 @@ class ImageGenerationService:
         if reference_people:
             # Use configured model for multiple face references (up to 3)
             model = image_models.get("reference_model", "runwayml/gen4-image")
-            return await self._generate_with_gen4_image(
-                model, prompt, style, image_size, reference_people
-            )
+
+            # Check if it's a gen4-turbo model (supports both with and without reference people)
+            if "gen4-image-turbo" in model:
+                return await self._generate_with_gen4_turbo(
+                    model, prompt, style, image_size, reference_people, image_id
+                )
+            else:
+                return await self._generate_with_gen4_image(
+                    model, prompt, style, image_size, reference_people, image_id
+                )
         else:
             # Use configured model for text-only generation with fallback support
             primary_model = image_models.get("standard_model", "black-forest-labs/flux-1.1-pro")
@@ -168,9 +148,16 @@ class ImageGenerationService:
             # Try primary model first
             try:
                 print(f"🎯 IMAGE_GENERATION: Attempting primary model: {primary_model}")
-                return await self._generate_standard_replicate(
-                    primary_model, prompt, style, image_size, reference_people
-                )
+
+                # Check if primary model is gen4-turbo (can handle text-only generation)
+                if "gen4-image-turbo" in primary_model:
+                    return await self._generate_with_gen4_turbo(
+                        primary_model, prompt, style, image_size, reference_people, image_id
+                    )
+                else:
+                    return await self._generate_standard_replicate(
+                        primary_model, prompt, style, image_size, reference_people, image_id
+                    )
             except Exception as e:
                 print(f"❌ IMAGE_GENERATION: Primary model {primary_model} failed: {str(e)}")
 
@@ -178,9 +165,26 @@ class ImageGenerationService:
                 for fallback_model in fallback_models:
                     try:
                         print(f"🔄 IMAGE_GENERATION: Attempting fallback model: {fallback_model}")
-                        result = await self._generate_standard_replicate(
-                            fallback_model, prompt, style, image_size, reference_people
-                        )
+
+                        # Check if fallback model is gen4-turbo
+                        if "gen4-image-turbo" in fallback_model:
+                            result = await self._generate_with_gen4_turbo(
+                                fallback_model,
+                                prompt,
+                                style,
+                                image_size,
+                                reference_people,
+                                image_id,
+                            )
+                        else:
+                            result = await self._generate_standard_replicate(
+                                fallback_model,
+                                prompt,
+                                style,
+                                image_size,
+                                reference_people,
+                                image_id,
+                            )
                         # Add fallback metadata
                         url, metadata = result
                         metadata["was_fallback"] = True
@@ -208,6 +212,7 @@ class ImageGenerationService:
         style: ImageStyle,
         image_size: ImageSize,
         reference_people: list[ImageReferencePerson],
+        image_id: str = None,
     ) -> tuple[str, dict]:
         """Generate image using standard Replicate models (text-only)"""
 
@@ -525,6 +530,7 @@ class ImageGenerationService:
         style: ImageStyle,
         image_size: ImageSize,
         reference_people: list[ImageReferencePerson],
+        image_id: str = None,
     ) -> tuple[str, dict]:
         """Generate image using Runway Gen-4 Image with multiple face references (up to 3)"""
 
@@ -689,7 +695,7 @@ class ImageGenerationService:
                 status = result["status"]
 
                 print(
-                    f"⏱️ POLLING_TIMING: Gen-4 Poll #{poll_count} after {elapsed_time}s - Status: {status} (poll took {poll_request_time:.3f}s)"
+                    f"⏱️ POLLING_TIMING: Gen-4 Poll #{poll_count} after {elapsed_time}s - Status: {status} (poll took {poll_request_time:.3f}s) - Image: {image_id or 'unknown'}"
                 )
 
                 if status == "succeeded":
@@ -718,6 +724,261 @@ class ImageGenerationService:
                         "polling_time": total_poll_time,
                         "poll_count": poll_count,
                     }
+
+                    return image_url, metadata
+
+                elif status == "failed":
+                    error_msg = result.get("error", "Unknown generation error")
+
+                    # Enhanced error logging for failed predictions
+                    print(f"❌ REPLICATE PREDICTION FAILED: {prediction_id}")
+                    print(f"   Model: {model}")
+                    print(f"   Error Message: {error_msg}")
+                    print(f"   Full Result: {result}")
+                    print(f"   Elapsed Time: {elapsed_time}s")
+
+                    # Handle NSFW content detection gracefully
+                    if (
+                        "nsfw" in error_msg.lower()
+                        or "inappropriate" in error_msg.lower()
+                        or "flagged as sensitive" in error_msg.lower()
+                        or "(e005)" in error_msg.lower()
+                        or "sensitive content" in error_msg.lower()
+                    ):
+                        raise HTTPException(
+                            status_code=400,
+                            detail="Content not allowed. Please modify your prompt to avoid inappropriate content.",
+                        )
+
+                    raise HTTPException(
+                        status_code=500, detail=f"Image generation failed: {error_msg}"
+                    )
+
+        # Timeout - enhanced logging
+        print(f"⏱️ REPLICATE PREDICTION TIMEOUT: {prediction_id}")
+        print(f"   Model: {model}")
+        print(f"   Max Wait Time: {max_wait_time}s")
+        print(f"   Total Elapsed: {elapsed_time}s")
+        print(
+            f"   Last Status: {result.get('status', 'unknown') if 'result' in locals() else 'unknown'}"
+        )
+
+        raise HTTPException(status_code=500, detail="Image generation timed out")
+
+    async def _generate_with_gen4_turbo(
+        self,
+        model: str,
+        prompt: str,
+        style: ImageStyle,
+        image_size: ImageSize,
+        reference_people: list[ImageReferencePerson],
+        image_id: str = None,
+    ) -> tuple[str, dict]:
+        """Generate image using Runway Gen-4 Turbo (supports both text-only and reference images)"""
+
+        # Map our styles to Gen-4 Turbo optimized prompts
+        style_prompts = {
+            ImageStyle.REALISTIC: "photorealistic, high quality, professional photography, detailed",
+            ImageStyle.ARTISTIC: "artistic, painted style, fine art, creative composition",
+            ImageStyle.CARTOON: "cartoon style, animated, colorful, stylized illustration",
+            ImageStyle.ABSTRACT: "abstract art, artistic interpretation, creative",
+            ImageStyle.VINTAGE: "vintage style, retro aesthetic, classic photography",
+            ImageStyle.MODERN: "modern, contemporary, clean aesthetic",
+        }
+
+        # Build enhanced prompt with style
+        enhanced_prompt = f"{prompt}, {style_prompts[style]}"
+
+        # Map image sizes to Gen-4 Turbo aspect ratios
+        size_map = {
+            ImageSize.STANDARD: "16:9",  # Standard widescreen
+            ImageSize.LARGE: "4:3",  # Portrait-ish
+            ImageSize.SQUARE: "1:1",  # Square
+        }
+
+        aspect_ratio = size_map[image_size]
+
+        # Prepare reference images and tags if people are provided
+        reference_images = []
+        reference_tags = []
+
+        if reference_people:
+            for person in reference_people[:3]:  # Limit to 3 people
+                if person.photo_url:
+                    reference_images.append(person.photo_url)
+
+                    # Extract person name and create alphanumeric tag
+                    person_name = (
+                        person.description.split(" (")[0]
+                        if " (" in person.description
+                        else person.description
+                    )
+                    # Create clean alphanumeric tag from name (Gen-4 requirements: 3-15 chars, start with letter)
+                    import re
+
+                    tag = re.sub(r"[^a-zA-Z0-9]", "", person_name.lower())[
+                        :15
+                    ]  # Remove non-alphanumeric, max 15 chars
+                    if not tag or not tag[0].isalpha():  # Ensure starts with letter
+                        tag = f"person{len(reference_tags)+1}"
+                    elif len(tag) < 3:  # Ensure minimum 3 chars
+                        tag = f"{tag}{len(reference_tags)+1}"
+
+                    reference_tags.append(tag)
+
+                    # Add person reference to prompt using their name as tag
+                    enhanced_prompt += f", featuring @{tag} as {person_name}"
+
+        # Add quality enhancers
+        enhanced_prompt += ", high quality, detailed"
+
+        # Build payload - reference images are optional for gen4-turbo
+        payload = {
+            "input": {
+                "prompt": enhanced_prompt,
+                "aspect_ratio": aspect_ratio,
+                "resolution": "1080p",  # Default to high quality
+            }
+        }
+
+        # Only add reference data if we have reference people
+        if reference_images and reference_tags:
+            payload["input"]["reference_images"] = reference_images
+            payload["input"]["reference_tags"] = reference_tags
+
+        headers = {
+            "Authorization": f"Token {self.replicate_api_token}",
+            "Content-Type": "application/json",
+        }
+
+        # Start prediction
+        async with httpx.AsyncClient() as client:
+            try:
+                print(f"🤖 REPLICATE REQUEST: {model}")
+                print(f"🎨 FULL ENHANCED PROMPT: {enhanced_prompt}")
+                print(f"📏 PROMPT LENGTH: {len(enhanced_prompt)} characters")
+                print(f"👥 REFERENCE PEOPLE: {len(reference_people)}")
+                print(f"🖼️ ASPECT RATIO: {aspect_ratio}")
+                print("⚙️ REQUEST PAYLOAD:")
+                print(json.dumps(payload, indent=2))
+
+                # Time the initial API request
+                api_request_start = time.time()
+                response = await client.post(
+                    f"https://api.replicate.com/v1/models/{model}/predictions",
+                    headers=headers,
+                    json=payload,
+                    timeout=10.0,
+                )
+                api_request_time = time.time() - api_request_start
+                print(f"⏱️ API_TIMING: Initial request took {api_request_time:.2f}s")
+
+                if response.status_code != 201:
+                    error_data = response.json() if response.content else {}
+                    error_detail = error_data.get("detail", "Unknown error")
+
+                    # Enhanced error logging
+                    print(f"❌ REPLICATE API ERROR: {response.status_code}")
+                    print(f"   Model: {model}")
+                    print(f"   Error Detail: {error_detail}")
+                    print(f"   Full Error Response: {error_data}")
+                    print(f"   Request Payload: {payload}")
+
+                    # Handle NSFW content detection gracefully
+                    if "nsfw" in error_detail.lower() or "inappropriate" in error_detail.lower():
+                        raise HTTPException(
+                            status_code=400,
+                            detail="Content not allowed. Please modify your prompt to avoid inappropriate content.",
+                        )
+
+                    raise HTTPException(
+                        status_code=500, detail=f"Image generation service error: {error_detail}"
+                    )
+
+            except httpx.TimeoutException:
+                print(f"⏱️ REPLICATE TIMEOUT: Request to {model} timed out after 10s")
+                print(f"   Prompt: {prompt[:100]}...")
+                raise HTTPException(
+                    status_code=500, detail="Image generation service timeout - please try again"
+                )
+            except httpx.RequestError as e:
+                print(f"🌐 REPLICATE CONNECTION ERROR: {str(e)}")
+                print(f"   Model: {model}")
+                print(f"   Prompt: {prompt[:100]}...")
+                raise HTTPException(
+                    status_code=500, detail="Unable to connect to image generation service"
+                )
+
+            prediction = response.json()
+            prediction_id = prediction["id"]
+            print(f"✅ REPLICATE PREDICTION STARTED: {prediction_id}")
+
+        # Poll for completion
+        max_wait_time = 120  # 2 minutes (Gen-4 Turbo should be faster than regular Gen-4)
+        poll_interval = 2  # 2 seconds
+        elapsed_time = 0
+        poll_start_time = time.time()
+        poll_count = 0
+
+        print(f"⏱️ POLLING_TIMING: Starting to poll Gen-4 Turbo prediction {prediction_id}")
+
+        async with httpx.AsyncClient() as client:
+            while elapsed_time < max_wait_time:
+                await asyncio.sleep(poll_interval)
+                elapsed_time += poll_interval
+                poll_count += 1
+
+                poll_request_start = time.time()
+                poll_response = await client.get(
+                    f"https://api.replicate.com/v1/predictions/{prediction_id}", headers=headers
+                )
+                poll_request_time = time.time() - poll_request_start
+
+                if poll_response.status_code != 200:
+                    raise HTTPException(status_code=500, detail="Failed to check prediction status")
+
+                result = poll_response.json()
+                status = result["status"]
+
+                print(
+                    f"⏱️ POLLING_TIMING: Gen-4 Turbo Poll #{poll_count} after {elapsed_time}s - Status: {status} (poll took {poll_request_time:.3f}s) - Image: {image_id or 'unknown'}"
+                )
+
+                if status == "succeeded":
+                    total_poll_time = time.time() - poll_start_time
+                    print(
+                        f"✅ POLLING_TIMING: Gen-4 Turbo prediction completed! Total polling time: {total_poll_time:.2f}s over {poll_count} polls"
+                    )
+
+                    image_url = (
+                        result["output"][0]
+                        if isinstance(result["output"], list)
+                        else result["output"]
+                    )
+
+                    generation_approach = (
+                        "gen4_turbo_text_only"
+                        if not reference_people
+                        else "gen4_turbo_with_references"
+                    )
+
+                    metadata = {
+                        "model_used": model,
+                        "api_provider": "replicate",
+                        "enhanced_prompt": enhanced_prompt,
+                        "prediction_id": prediction_id,
+                        "reference_people_count": len(reference_people),
+                        "generation_approach": generation_approach,
+                        "aspect_ratio": aspect_ratio,
+                        "api_request_time": api_request_time,
+                        "polling_time": total_poll_time,
+                        "poll_count": poll_count,
+                    }
+
+                    # Add reference data to metadata if used
+                    if reference_images and reference_tags:
+                        metadata["reference_images"] = reference_images
+                        metadata["reference_tags"] = reference_tags
 
                     return image_url, metadata
 

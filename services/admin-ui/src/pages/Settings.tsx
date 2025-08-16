@@ -19,7 +19,7 @@ interface SystemConfigItem {
 export default function Settings() {
   const [configs, setConfigs] = useState<SystemConfigItem[]>([]);
   const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState<string | null>(null);
+  const [savingAll, setSavingAll] = useState(false);
   const [editingValues, setEditingValues] = useState<Record<string, string>>({});
   const [editingDescriptions, setEditingDescriptions] = useState<Record<string, string>>({});
 
@@ -47,24 +47,46 @@ export default function Settings() {
     }
   };
 
-  // Save a configuration value
-  const saveConfig = async (key: string) => {
+
+  // Save all configurations with unsaved changes
+  const saveAllConfigs = async () => {
     try {
-      setSaving(key);
-      await AdminAPI.updateSystemConfigValue(
-        key, 
-        editingValues[key], 
-        editingDescriptions[key]
-      );
+      setSavingAll(true);
+      const changedConfigs = configs.filter(item => hasUnsavedChanges(item));
       
-      // Reload configs to get updated data
-      await loadConfigs();
-      toast.success(`Updated ${key} successfully`);
+      if (changedConfigs.length === 0) {
+        toast.info('No changes to save');
+        return;
+      }
+
+      // Save all changed configurations
+      for (const item of changedConfigs) {
+        await AdminAPI.updateSystemConfigValue(
+          item.key, 
+          editingValues[item.key], 
+          editingDescriptions[item.key]
+        );
+      }
+      
+      // Update local state for all changed items
+      setConfigs(prev => prev.map(item => {
+        if (hasUnsavedChanges(item)) {
+          return {
+            ...item,
+            value: editingValues[item.key],
+            description: editingDescriptions[item.key],
+            updated_at: new Date().toISOString()
+          };
+        }
+        return item;
+      }));
+      
+      toast.success(`Updated ${changedConfigs.length} configuration${changedConfigs.length > 1 ? 's' : ''} successfully`);
     } catch (error) {
-      console.error(`Failed to save ${key}:`, error);
-      toast.error(`Failed to update ${key}`);
+      console.error('Failed to save configurations:', error);
+      toast.error('Failed to update configurations');
     } finally {
-      setSaving(null);
+      setSavingAll(false);
     }
   };
 
@@ -82,6 +104,11 @@ export default function Settings() {
   const hasUnsavedChanges = (item: SystemConfigItem) => {
     return editingValues[item.key] !== item.value || 
            editingDescriptions[item.key] !== (item.description || '');
+  };
+
+  // Check if there are any unsaved changes across all configs
+  const hasAnyUnsavedChanges = () => {
+    return configs.some(item => hasUnsavedChanges(item));
   };
 
   // Format timestamp
@@ -144,10 +171,26 @@ export default function Settings() {
             Manage system-wide configuration values
           </p>
         </div>
-        <Button onClick={loadConfigs} variant="outline">
-          <RefreshCw className="h-4 w-4 mr-2" />
-          Refresh
-        </Button>
+        <div className="flex gap-2">
+          {hasAnyUnsavedChanges() && (
+            <Button 
+              onClick={saveAllConfigs} 
+              disabled={savingAll}
+              className="bg-green-600 hover:bg-green-700"
+            >
+              {savingAll ? (
+                <RefreshCw className="h-4 w-4 mr-2 animate-spin" />
+              ) : (
+                <Save className="h-4 w-4 mr-2" />
+              )}
+              Save All Changes
+            </Button>
+          )}
+          <Button onClick={loadConfigs} variant="outline">
+            <RefreshCw className="h-4 w-4 mr-2" />
+            Refresh
+          </Button>
+        </div>
       </div>
 
 
@@ -177,7 +220,7 @@ export default function Settings() {
                     )}
                   </div>
                   
-                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div className="space-y-2">
                       <Label htmlFor={`value-${item.key}`}>Value</Label>
                       <Input
@@ -196,23 +239,6 @@ export default function Settings() {
                         onChange={(e) => handleDescriptionChange(item.key, e.target.value)}
                         placeholder="Description of this setting"
                       />
-                    </div>
-                    
-                    <div className="space-y-2">
-                      <Label>Actions</Label>
-                      <div className="flex gap-2">
-                        <Button
-                          onClick={() => saveConfig(item.key)}
-                          disabled={!hasUnsavedChanges(item) || saving === item.key}
-                          size="sm"
-                        >
-                          {saving === item.key ? (
-                            <RefreshCw className="h-4 w-4 animate-spin" />
-                          ) : (
-                            <Save className="h-4 w-4" />
-                          )}
-                        </Button>
-                      </div>
                     </div>
                   </div>
                   

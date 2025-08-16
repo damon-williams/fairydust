@@ -133,9 +133,11 @@ export function AppConfig() {
       
       // Parse normalized configuration structure
       if (configData) {
+        console.log('🔍 FRONTEND: Raw config data from API:', configData);
         const textConfig = configData.text_config;
         const imageConfig = configData.image_config;
         const videoConfig = configData.video_config;
+        console.log('🔍 FRONTEND: Text config:', textConfig);
         
         setExistingConfigs({
           text: !!(textConfig),
@@ -149,8 +151,8 @@ export function AppConfig() {
           video_models_enabled: !!(videoConfig),
           
           text_config: textConfig ? {
-            primary_provider: textConfig.provider || 'anthropic',
-            primary_model_id: textConfig.model_id || 'claude-3-5-sonnet-20241022',
+            primary_provider: textConfig.provider || '',
+            primary_model_id: textConfig.model_id || '',
             parameters: {
               temperature: textConfig.parameters?.temperature || 0.7,
               max_tokens: textConfig.parameters?.max_tokens || 1000,
@@ -259,7 +261,7 @@ export function AppConfig() {
       if (config.image_models_enabled && config.image_config) {
         const imagePayload = {
           provider: 'replicate',
-          model_id: config.image_config.standard_model,
+          model_id: 'image-config',  // Generic identifier since we store actual models in parameters
           parameters: {
             standard_model: config.image_config.standard_model,
             reference_model: config.image_config.reference_model,
@@ -326,9 +328,10 @@ export function AppConfig() {
         case 'text':
           newConfig.text_models_enabled = enabled;
           if (enabled && !newConfig.text_config) {
+            // Use OpenAI as default since it's the current global fallback
             newConfig.text_config = {
-              primary_provider: 'anthropic',
-              primary_model_id: 'claude-3-5-sonnet-20241022',
+              primary_provider: 'openai',
+              primary_model_id: 'gpt-5-mini',
               parameters: {
                 temperature: 0.7,
                 max_tokens: 1000,
@@ -486,7 +489,7 @@ export function AppConfig() {
                 <div className="space-y-2">
                   <Label>Primary Provider</Label>
                   <Select 
-                    value={config.text_config.primary_provider}
+                    value={config.text_config.primary_provider || ""}
                     onValueChange={(value) => setConfig(prev => ({
                       ...prev,
                       text_config: prev.text_config ? {
@@ -496,19 +499,20 @@ export function AppConfig() {
                     }))}
                   >
                     <SelectTrigger>
-                      <SelectValue />
+                      <SelectValue placeholder="Select provider..." />
                     </SelectTrigger>
                     <SelectContent>
                       <SelectItem value="anthropic">Anthropic</SelectItem>
                       <SelectItem value="openai">OpenAI</SelectItem>
                     </SelectContent>
                   </Select>
+                  <p className="text-xs text-gray-500">Current value: "{config.text_config.primary_provider}"</p>
                 </div>
 
                 <div className="space-y-2">
                   <Label>Primary Model</Label>
                   <Select 
-                    value={config.text_config.primary_model_id}
+                    value={config.text_config.primary_model_id || ""}
                     onValueChange={(value) => setConfig(prev => ({
                       ...prev,
                       text_config: prev.text_config ? {
@@ -518,7 +522,7 @@ export function AppConfig() {
                     }))}
                   >
                     <SelectTrigger>
-                      <SelectValue />
+                      <SelectValue placeholder="Select model..." />
                     </SelectTrigger>
                     <SelectContent>
                       {config.text_config.primary_provider === 'anthropic' ? (
@@ -537,6 +541,7 @@ export function AppConfig() {
                       )}
                     </SelectContent>
                   </Select>
+                  <p className="text-xs text-gray-500">Current value: "{config.text_config.primary_model_id}"</p>
                 </div>
 
                 <div className="grid grid-cols-2 gap-2">
@@ -622,9 +627,9 @@ export function AppConfig() {
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="black-forest-labs/flux-1.1-pro">FLUX 1.1 Pro ($0.040)</SelectItem>
-                      <SelectItem value="black-forest-labs/flux-schnell">FLUX Schnell ($0.003)</SelectItem>
-                      <SelectItem value="bytedance/seedream-3">ByteDance SeeDream-3 ($0.008)</SelectItem>
+                      <SelectItem value="black-forest-labs/flux-1.1-pro">FLUX 1.1 Pro</SelectItem>
+                      <SelectItem value="black-forest-labs/flux-schnell">FLUX Schnell</SelectItem>
+                      <SelectItem value="bytedance/seedream-3">ByteDance SeeDream-3</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
@@ -645,7 +650,8 @@ export function AppConfig() {
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="runwayml/gen4-image">Runway Gen-4 ($0.050)</SelectItem>
+                      <SelectItem value="runwayml/gen4-image">Runway Gen-4</SelectItem>
+                      <SelectItem value="runwayml/gen4-image-turbo">Runway Gen-4 Turbo</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
@@ -720,8 +726,8 @@ export function AppConfig() {
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="minimax/video-01">MiniMax Video-01 ($0.100 per video)</SelectItem>
-                      <SelectItem value="bytedance/seedance-1-pro">ByteDance SeeDance-1-Pro ($0.080 per video)</SelectItem>
+                      <SelectItem value="minimax/video-01">MiniMax Video-01</SelectItem>
+                      <SelectItem value="bytedance/seedance-1-pro">ByteDance SeeDance-1-Pro</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
@@ -745,7 +751,7 @@ export function AppConfig() {
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="bytedance/seedance-1-pro">ByteDance SeeDance-1-Pro ($0.080 per video)</SelectItem>
+                      <SelectItem value="bytedance/seedance-1-pro">ByteDance SeeDance-1-Pro</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>

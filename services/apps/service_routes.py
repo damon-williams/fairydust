@@ -1,13 +1,13 @@
 # services/apps/service_routes.py
 from datetime import datetime
 from typing import Optional
-from shared.uuid_utils import generate_uuid7
 
 from fastapi import APIRouter, Depends, Header, HTTPException, status
 from models import App, AppCategory, AppStatus
 from pydantic import BaseModel, Field
 
 from shared.database import Database, get_db
+from shared.uuid_utils import generate_uuid7
 
 service_router = APIRouter()
 

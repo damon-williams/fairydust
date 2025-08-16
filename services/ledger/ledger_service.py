@@ -2,7 +2,6 @@
 import json
 from typing import Optional
 from uuid import UUID
-from shared.uuid_utils import generate_uuid7
 
 import redis.asyncio as redis
 from fastapi import HTTPException
@@ -16,6 +15,7 @@ from models import (
 from shared.daily_bonus_utils import update_last_login_for_bonus
 from shared.database import Database
 from shared.redis_client import RedisCache
+from shared.uuid_utils import generate_uuid7
 
 
 class LedgerService:

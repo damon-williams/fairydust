@@ -6,9 +6,10 @@ import re
 from datetime import datetime
 from typing import Optional
 from uuid import UUID
-from shared.uuid_utils import generate_uuid7
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
+
+from shared.uuid_utils import generate_uuid7
 
 # Service URL configuration
 environment = os.getenv("ENVIRONMENT", "staging")
@@ -177,7 +178,10 @@ async def generate_story(
 
                 # Extract scenes for image generation using characters
                 scenes = story_image_service.extract_image_scenes(
-                    story_content, updated_request.story_length, characters_for_images
+                    story_content,
+                    updated_request.story_length,
+                    characters_for_images,
+                    str(story_id),
                 )
 
                 # Insert image markers into story content
@@ -683,6 +687,23 @@ async def _get_llm_model_config() -> dict:
 
     if not app_result:
         # Return default config if app not found
+        # Get global fallback configuration instead of hardcoded defaults
+        print(f"❌ STORY_CONFIG: App not found for slug: {app_slug}", flush=True)
+        try:
+            from shared.llm_client import llm_client
+
+            global_fallbacks = await llm_client._get_global_fallbacks()
+            if global_fallbacks:
+                primary_provider, primary_model = global_fallbacks[0]
+                return {
+                    "primary_provider": primary_provider,
+                    "primary_model_id": primary_model,
+                    "primary_parameters": {"temperature": 0.8, "max_tokens": 3000, "top_p": 0.9},
+                }
+        except Exception as e:
+            print(f"⚠️ STORY_CONFIG: Failed to get global fallbacks: {e}", flush=True)
+
+        # Emergency hardcoded fallback only if global config fails
         return {
             "primary_provider": "anthropic",
             "primary_model_id": "claude-3-5-sonnet-20241022",
@@ -696,9 +717,21 @@ async def _get_llm_model_config() -> dict:
     cached_config = await cache.get_model_config(app_id)
 
     if cached_config:
+        # Get global fallbacks for defaults
+        default_provider = "anthropic"
+        default_model = "claude-3-5-sonnet-20241022"
+        try:
+            from shared.llm_client import llm_client
+
+            global_fallbacks = await llm_client._get_global_fallbacks()
+            if global_fallbacks:
+                default_provider, default_model = global_fallbacks[0]
+        except:
+            pass
+
         config = {
-            "primary_provider": cached_config.get("primary_provider", "anthropic"),
-            "primary_model_id": cached_config.get("primary_model_id", "claude-3-5-sonnet-20241022"),
+            "primary_provider": cached_config.get("primary_provider", default_provider),
+            "primary_model_id": cached_config.get("primary_model_id", default_model),
             "primary_parameters": cached_config.get(
                 "primary_parameters", {"temperature": 0.8, "max_tokens": 3000, "top_p": 0.9}
             ),
@@ -737,10 +770,24 @@ async def _get_llm_model_config() -> dict:
     except Exception as e:
         print(f"⚠️ LLM_CONFIG: Error loading normalized config: {e}")
 
-    # Fallback to default config
+    # Fallback to global default config
+    print("🔄 STORY_CONFIG: Using global default config (no cache, no database)", flush=True)
+
+    # Get global fallbacks
+    default_provider = "anthropic"
+    default_model = "claude-3-5-sonnet-20241022"
+    try:
+        from shared.llm_client import llm_client
+
+        global_fallbacks = await llm_client._get_global_fallbacks()
+        if global_fallbacks:
+            default_provider, default_model = global_fallbacks[0]
+    except Exception as e:
+        print(f"⚠️ STORY_CONFIG: Failed to get global fallbacks for default: {e}", flush=True)
+
     default_config = {
-        "primary_provider": "anthropic",
-        "primary_model_id": "claude-3-5-sonnet-20241022",
+        "primary_provider": default_provider,
+        "primary_model_id": default_model,
         "primary_parameters": {"temperature": 0.8, "max_tokens": 3000, "top_p": 0.9},
     }
 
@@ -796,11 +843,11 @@ If stories are sufficiently varied, respond with:
 
 Response:"""
 
-        # Get AI analysis using fast model
+        # Get AI analysis using fast model with sufficient tokens for complete guidance
         app_config = {
             "primary_provider": "anthropic",
             "primary_model_id": "claude-3-5-haiku-20241022",
-            "primary_parameters": {"temperature": 0.4, "max_tokens": 150, "top_p": 0.9},
+            "primary_parameters": {"temperature": 0.4, "max_tokens": 500, "top_p": 0.9},
         }
 
         content, metadata = await llm_client.generate_completion(
@@ -891,8 +938,31 @@ async def _build_story_prompt(
                 desc += f", traits: {', '.join(char.traits)}"
             character_descriptions.append(desc)
 
+    # Build age-awareness guidance
+    age_guidance = ""
+    if request.characters:
+        ages = []
+        for char in request.characters:
+            if char.birth_date and char.entry_type != "pet":
+                from datetime import date
+
+                birth = date.fromisoformat(char.birth_date)
+                age = (date.today() - birth).days // 365
+                ages.append(age)
+
+        if ages:
+            min_age, max_age = min(ages), max(ages)
+            if min_age >= 18:
+                age_guidance = "IMPORTANT: All characters are adults. Place them in age-appropriate adult scenarios (work, relationships, adult responsibilities, etc.). Do NOT put adult characters in school settings unless they are teachers/staff."
+            elif max_age >= 18:
+                age_guidance = "IMPORTANT: Mix of adult and younger characters. Ensure each character is in age-appropriate scenarios - adults in adult situations, children/teens in age-appropriate activities."
+            elif min_age >= 13:
+                age_guidance = "IMPORTANT: All characters are teenagers. Place them in age-appropriate teen scenarios (high school, teenage social situations, age-appropriate challenges)."
+            else:
+                age_guidance = "IMPORTANT: Characters include children/young people. Ensure age-appropriate scenarios and activities for their stated ages."
+
     character_text = (
-        f"Characters to include:\n{chr(10).join(character_descriptions)}"
+        f"## Characters to Include\n{chr(10).join(character_descriptions)}"
         if character_descriptions
         else "No specific characters required - create original characters as needed."
     )
@@ -931,11 +1001,10 @@ async def _build_story_prompt(
 
     # Add creativity boosters to avoid repetitive themes
     creativity_boosters = [
-        "AVOID geometric shapes as main characters unless specifically requested.",
-        "AVOID color-based character names (Red Circle, Blue Square, etc.) unless in character list.",
         "Focus on realistic characters, animals, or fantasy beings with personalities.",
         "Create characters with distinct names, backgrounds, and motivations.",
         "Avoid abstract or educational concepts as primary story elements.",
+        "Ensure characters act according to their stated ages and life stages.",
     ]
 
     selected_variety = random.choice(variety_seeds)
@@ -944,9 +1013,13 @@ async def _build_story_prompt(
     # Use AI analysis of recent story summaries to avoid repetitive themes
     recent_themes_guidance = await _get_recent_themes_guidance(db, request.user_id)
 
-    prompt = f"""You are a master storyteller with infinite creativity. {selected_variety} Create a truly unique and surprising story for {audience_guidance[request.target_audience]}{bedtime_guidance} The story should take about {length_descriptions[request.story_length]} to read.
+    prompt = f"""# Story Generation Task
 
-IMPORTANT: {selected_creativity}
+You are a master storyteller with infinite creativity. {selected_variety} Create a truly unique and surprising story for {audience_guidance[request.target_audience]}{bedtime_guidance} The story should take about {length_descriptions[request.story_length]} to read.
+
+## Important Guidelines
+- {selected_creativity}
+{f"- {age_guidance}" if age_guidance else ""}
 
 {recent_themes_guidance}
 
@@ -962,77 +1035,78 @@ IMPORTANT: {selected_creativity}
         else False
     )
     if has_protagonist:
-        prompt += "\n\nIMPORTANT: The story should be told from a third-person perspective, but the protagonist character listed above must be actively involved in the story's events, not just observing. Make them central to the action and adventure."
+        prompt += "\n\n## Protagonist Guidelines\n- The story should be told from a third-person perspective, but the protagonist character listed above must be actively involved in the story's events, not just observing. Make them central to the action and adventure."
 
     if request.custom_prompt:
-        prompt += f"\nSpecial request: {request.custom_prompt}"
+        prompt += f"\n\n## Special Request\n{request.custom_prompt}"
 
     # Only add personalization context if no specific characters are provided
     # This avoids confusion between character list and people context
     if user_context != "general user" and not request.characters:
-        prompt += f"\nPersonalization context: {user_context}"
+        prompt += f"\n\n## Personalization Context\n{user_context}"
 
     # Add different creative requirements based on bedtime story flag
     if request.is_bedtime_story:
         prompt += f"""
 
-BEDTIME STORY CREATIVE REQUIREMENTS:
-- Target word count: {target_words} words (for {length_descriptions[request.story_length]})
-- Audience: {request.target_audience.value}
-- CALMING NARRATIVE: Create gentle, predictable story patterns that soothe rather than surprise
-- PEACEFUL THEMES: Focus on comfort, safety, love, and tranquility
-- SIMPLE STRUCTURE: Use clear, straightforward storytelling without complex twists or excitement
-- GENRE SELECTION: Choose calming genres like gentle fantasy, nature stories, family tales, or peaceful adventures
-- SOOTHING SETTINGS: Use cozy, familiar, or naturally peaceful environments (bedrooms, gardens, quiet forests, starlit skies) - NEVER use laundromats
-- GENTLE LANGUAGE: Use soft, rhythmic prose that flows smoothly and calmly
-- COMFORTING ENDINGS: Conclude with reassurance, safety, and peaceful resolution
-- OUTPUT ONLY THE STORY: Do not include any analysis, commentary, or explanations about the story"""
+## Bedtime Story Creative Requirements
+
+- **Target word count:** {target_words} words (for {length_descriptions[request.story_length]})
+- **Audience:** {request.target_audience.value}
+- **Calming Narrative:** Create gentle, predictable story patterns that soothe rather than surprise
+- **Peaceful Themes:** Focus on comfort, safety, love, and tranquility
+- **Simple Structure:** Use clear, straightforward storytelling without complex twists or excitement
+- **Genre Selection:** Choose calming genres like gentle fantasy, nature stories, family tales, or peaceful adventures
+- **Soothing Settings:** Use cozy, familiar, or naturally peaceful environments (bedrooms, gardens, quiet forests, starlit skies)
+- **Gentle Language:** Use soft, rhythmic prose that flows smoothly and calmly
+- **Comforting Endings:** Conclude with reassurance, safety, and peaceful resolution
+- **Output Only the Story:** Do not include any analysis, commentary, or explanations about the story"""
     else:
         prompt += f"""
 
-CREATIVE REQUIREMENTS:
-- Target word count: {target_words} words (for {length_descriptions[request.story_length]})
-- Audience: {request.target_audience.value}
-- BREAK THE MOLD: Avoid predictable story patterns, clichés, and formulaic plots
-- SURPRISE THE READER: Include unexpected twists, unusual perspectives, or creative narrative devices
-- VARY YOUR APPROACH: Choose from different storytelling styles randomly:
+## Creative Requirements
+
+- **Target word count:** {target_words} words (for {length_descriptions[request.story_length]})
+- **Audience:** {request.target_audience.value}
+- **Break the Mold:** Avoid predictable story patterns, clichés, and formulaic plots
+- **Surprise the Reader:** Include unexpected twists, unusual perspectives, or creative narrative devices
+- **Vary Your Approach:** Choose from different storytelling styles randomly:
   * First person, second person, or third person narration
   * Multiple perspectives or unreliable narrator
   * Experimental formats (diary entries, text messages, news reports, etc.)
   * Time jumps, flashbacks, or non-linear storytelling
   * Stories within stories or meta-fiction elements
 
-GENRE VARIETY (pick unexpectedly):
+### Genre Variety (pick unexpectedly)
 - Mix genres creatively (sci-fi comedy, fantasy mystery, historical thriller, etc.)
 - Try unusual combinations: slice-of-life with magical realism, workplace drama with supernatural elements
 - Consider: adventure, mystery, comedy, sci-fi, fantasy, slice-of-life, historical fiction, magical realism, psychological thriller, coming-of-age, workplace drama, family saga, etc.
 
-SETTING CREATIVITY:
-- Avoid overused settings like "magical kingdoms", "haunted houses", or "laundromats"
+### Setting Creativity
+- Avoid overused settings like "magical kingdoms" or "haunted houses"
 - Be specific and unusual: underwater research station, food truck at a music festival, retirement home game night, artist's studio, bookbinding workshop, lighthouse, observatory, etc.
 - Use settings that serve the story and create natural conflict or intrigue
-- AVOID laundromats as story settings entirely
 
-PLOT INNOVATION:
+### Plot Innovation
 - Start in the middle of action or at an unusual moment
 - Subvert reader expectations about character roles and story direction
 - Create organic conflicts that arise from character relationships and setting
 - End with satisfaction but avoid overly neat resolutions
 
-LANGUAGE AND STYLE:
+### Language and Style
 - Match tone to your chosen genre and approach
 - Use vivid, specific details rather than generic descriptions
 - Include natural dialogue that reveals character
 - Vary sentence structure and pacing for engagement
 
-CHARACTER GUIDANCE:
+### Character Guidance
 - For human characters: Develop their personalities, motivations, and relationships naturally
 - For pet characters: Portray them authentically with species-appropriate behaviors while allowing for story magic
 - Pets can be central characters with agency, not just companions
 - Consider the unique perspective pets might have on situations
 - Balance realistic animal behavior with the narrative needs of your story
 
-CRITICAL OUTPUT REQUIREMENTS:
+## Critical Output Requirements
 - Output ONLY the story title and story content
 - Do NOT include any meta-commentary, analysis, or explanations about the story
 - Do NOT explain why the story is age-appropriate or educational
@@ -1040,12 +1114,12 @@ CRITICAL OUTPUT REQUIREMENTS:
 - Do NOT add any text in brackets like "[This story uses...]"
 - The story should speak for itself without explanation
 
-Format the story with:
-TITLE: [Creative, intriguing title]
+### Format the story with:
+**TITLE:** [Creative, intriguing title]
 
 [Story content with rich details, natural dialogue, and compelling narrative]
 
-Remember: Your goal is to create something memorable and unique that readers haven't seen before. Be bold, creative, and surprising while staying appropriate for the audience. OUTPUT ONLY THE STORY - NO META-COMMENTARY OR ANALYSIS."""
+**Remember:** Your goal is to create something memorable and unique that readers haven't seen before. Be bold, creative, and surprising while staying appropriate for the audience. OUTPUT ONLY THE STORY - NO META-COMMENTARY OR ANALYSIS."""
 
     return prompt
 
@@ -1660,14 +1734,14 @@ async def _generate_story_llm(
 
     except LLMError as e:
         print(f"❌ STORY_LLM: LLM error: {str(e)}", flush=True)
-        return None, "", 0, "", "claude-3-5-sonnet-20241022", {}, 0.0, 0, "anthropic"
+        return None, "", 0, "", "unknown-model", {}, 0.0, 0, "unknown"
     except Exception as e:
         print(f"❌ STORY_LLM: Unexpected error generating story: {str(e)}", flush=True)
         print(f"❌ STORY_LLM: Error type: {type(e).__name__}", flush=True)
         import traceback
 
         print(f"❌ STORY_LLM: Traceback: {traceback.format_exc()}", flush=True)
-        return None, "", 0, "", "claude-3-5-sonnet-20241022", {}, 0.0, 0, "anthropic"
+        return None, "", 0, "", "unknown-model", {}, 0.0, 0, "unknown"
 
 
 @traceable(run_type="llm", name="story-summary-generation")
@@ -1696,7 +1770,7 @@ Provide only the summary, no additional commentary:"""
             "primary_model_id": "claude-3-5-haiku-20241022",
             "primary_parameters": {
                 "temperature": 0.3,  # Lower temperature for consistent summaries
-                "max_tokens": 100,
+                "max_tokens": 200,  # Increased for more detailed summaries
                 "top_p": 0.9,
             },
         }
@@ -1942,16 +2016,32 @@ async def get_story_images_batch_status(
         if not image_ids:
             return StoryImageBatchResponse(images={})
 
-        # Get all image statuses
-        images = await db.fetch_all(
-            """
-            SELECT image_id, url, status
-            FROM story_images
-            WHERE story_id = $1 AND image_id = ANY($2)
-            """,
-            story_id,
-            image_ids,
-        )
+        # Get all image statuses (with backward compatibility for new columns)
+        try:
+            images = await db.fetch_all(
+                """
+                SELECT image_id, url, status, attempt_number, max_attempts, retry_reason
+                FROM story_images
+                WHERE story_id = $1 AND image_id = ANY($2)
+                """,
+                story_id,
+                image_ids,
+            )
+        except Exception as e:
+            # Fall back to basic query if new columns don't exist yet
+            if "attempt_number" in str(e):
+                images = await db.fetch_all(
+                    """
+                    SELECT image_id, url, status,
+                           1 as attempt_number, 3 as max_attempts, NULL as retry_reason
+                    FROM story_images
+                    WHERE story_id = $1 AND image_id = ANY($2)
+                    """,
+                    story_id,
+                    image_ids,
+                )
+            else:
+                raise
 
         # Build response
         image_statuses = {}
@@ -1972,7 +2062,11 @@ async def get_story_images_batch_status(
                 )
 
             image_statuses[image["image_id"]] = StoryImageStatus(
-                status=image["status"], url=image_url
+                status=image["status"],
+                url=image_url,
+                attempt_number=image.get("attempt_number"),
+                max_attempts=image.get("max_attempts"),
+                retry_reason=image.get("retry_reason"),
             )
 
         # Add not_found status for missing images
@@ -1987,3 +2081,135 @@ async def get_story_images_batch_status(
     except Exception as e:
         print(f"❌ STORY_IMAGE_BATCH: Error getting batch image status: {str(e)}", flush=True)
         raise HTTPException(status_code=500, detail="Failed to get batch image status")
+
+
+@router.post("/stories/{story_id}/images/{image_id}/retry")
+async def retry_failed_story_image(
+    story_id: str,
+    image_id: str,
+    current_user: TokenData = Depends(get_current_user),
+    db: Database = Depends(get_db),
+):
+    """Retry generation for a specific failed story image"""
+    try:
+        print(
+            f"🔄 IMAGE_RETRY: User {current_user.user_id} requesting retry for image {image_id} in story {story_id}",
+            flush=True,
+        )
+
+        # Verify the story belongs to the user
+        story = await db.fetch_one(
+            "SELECT user_id, characters_involved, target_audience FROM user_stories WHERE id = $1",
+            story_id,
+        )
+
+        if not story:
+            raise HTTPException(status_code=404, detail="Story not found")
+
+        if current_user.user_id != str(story["user_id"]) and not current_user.is_admin:
+            raise HTTPException(status_code=403, detail="Access denied")
+
+        # Check if the specific image exists and is failed
+        image = await db.fetch_one(
+            """
+            SELECT status, prompt, scene_description, generation_metadata
+            FROM story_images
+            WHERE story_id = $1 AND image_id = $2
+            """,
+            story_id,
+            image_id,
+        )
+
+        if not image:
+            raise HTTPException(status_code=404, detail="Image not found")
+
+        if image["status"] != "failed":
+            raise HTTPException(
+                status_code=400,
+                detail=f"Image is not in failed status. Current status: {image['status']}",
+            )
+
+        print(
+            f"✅ IMAGE_RETRY: Image {image_id} found with failed status, proceeding with retry",
+            flush=True,
+        )
+
+        # Reset the image status to pending and clear previous error metadata
+        await db.execute(
+            """
+            UPDATE story_images
+            SET status = 'pending',
+                url = NULL,
+                generation_metadata = NULL,
+                updated_at = CURRENT_TIMESTAMP
+            WHERE story_id = $1 AND image_id = $2
+            """,
+            story_id,
+            image_id,
+        )
+
+        print(f"🔄 IMAGE_RETRY: Reset image {image_id} to pending status", flush=True)
+
+        # Parse characters from story
+        characters = []
+        if story["characters_involved"]:
+            try:
+                characters_data = (
+                    json.loads(story["characters_involved"])
+                    if isinstance(story["characters_involved"], str)
+                    else story["characters_involved"]
+                )
+                characters = [StoryCharacter(**char) for char in characters_data]
+            except Exception as e:
+                print(f"⚠️ IMAGE_RETRY: Failed to parse characters: {e}", flush=True)
+
+        # Parse target audience
+        try:
+            target_audience = TargetAudience(story["target_audience"])
+        except Exception:
+            target_audience = TargetAudience.EARLY_ELEMENTARY  # Default fallback
+
+        # Create scene data for the single image retry using the original prompt
+        scene = {
+            "image_id": image_id,
+            "scene_description": image["prompt"]
+            or image["scene_description"]
+            or "Story scene",  # Use stored prompt for retry
+            "characters_mentioned": [
+                char
+                for char in characters
+                if char.name.lower() in (image["scene_description"] or "").lower()
+            ],
+            "is_retry": True,  # Flag to indicate this is a retry operation
+        }
+
+        print(f"🚀 IMAGE_RETRY: Starting background regeneration for image {image_id}", flush=True)
+
+        # Start background regeneration for just this one image
+        asyncio.create_task(
+            story_image_generator._generate_single_image_with_error_handling(
+                db=db,
+                story_id=story_id,
+                user_id=UUID(current_user.user_id),
+                scene=scene,
+                characters=characters,
+                target_audience=target_audience,
+                full_story_content=None,  # Not needed for retry
+                story_theme=None,
+                story_genre=None,
+                story_context=None,
+            )
+        )
+
+        return {
+            "success": True,
+            "message": f"Image {image_id} retry started",
+            "image_id": image_id,
+            "status": "pending",
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"❌ IMAGE_RETRY: Error retrying image {image_id}: {str(e)}", flush=True)
+        raise HTTPException(status_code=500, detail="Failed to retry image generation")

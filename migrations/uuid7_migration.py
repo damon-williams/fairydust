@@ -20,16 +20,16 @@ Performance Benefits:
 
 Usage:
     python migrations/uuid7_migration.py --env production
-    python migrations/uuid7_migration.py --env staging  
+    python migrations/uuid7_migration.py --env staging
     python migrations/uuid7_migration.py --env development
 """
 
+import argparse
 import asyncio
-import asyncpg
 import os
 import sys
-import argparse
-from typing import List, Tuple
+
+import asyncpg
 
 
 async def get_database_connection(env: str) -> asyncpg.Connection:
@@ -40,21 +40,21 @@ async def get_database_connection(env: str) -> asyncpg.Connection:
         db_url = os.getenv("DATABASE_URL_STAGING", os.getenv("DATABASE_URL"))
     else:
         db_url = os.getenv("DATABASE_URL")
-    
+
     if not db_url:
         raise ValueError(f"DATABASE_URL not found for environment: {env}")
-    
+
     # Fix Railway's postgres:// to postgresql:// for asyncpg compatibility
     if db_url.startswith("postgres://"):
         db_url = db_url.replace("postgres://", "postgresql://", 1)
-    
+
     return await asyncpg.connect(db_url)
 
 
-async def get_tables_with_uuid_defaults(conn: asyncpg.Connection) -> List[Tuple[str, str]]:
+async def get_tables_with_uuid_defaults(conn: asyncpg.Connection) -> list[tuple[str, str]]:
     """Find all tables that currently use gen_random_uuid() as default."""
     query = """
-    SELECT 
+    SELECT
         t.table_name,
         c.column_name
     FROM information_schema.tables t
@@ -64,26 +64,26 @@ async def get_tables_with_uuid_defaults(conn: asyncpg.Connection) -> List[Tuple[
       AND c.data_type = 'uuid'
     ORDER BY t.table_name, c.column_name;
     """
-    
+
     rows = await conn.fetch(query)
-    return [(row['table_name'], row['column_name']) for row in rows]
+    return [(row["table_name"], row["column_name"]) for row in rows]
 
 
-async def remove_uuid_defaults(conn: asyncpg.Connection, tables: List[Tuple[str, str]]) -> None:
+async def remove_uuid_defaults(conn: asyncpg.Connection, tables: list[tuple[str, str]]) -> None:
     """Remove gen_random_uuid() defaults from specified tables."""
     print(f"\n🔄 Removing UUID defaults from {len(tables)} table columns...")
-    
+
     for table_name, column_name in tables:
         try:
             # Remove the DEFAULT clause
             alter_query = f"""
-            ALTER TABLE {table_name} 
+            ALTER TABLE {table_name}
             ALTER COLUMN {column_name} DROP DEFAULT;
             """
-            
+
             await conn.execute(alter_query)
             print(f"✅ Removed default from {table_name}.{column_name}")
-            
+
         except Exception as e:
             print(f"❌ Failed to update {table_name}.{column_name}: {e}")
             raise
@@ -92,14 +92,14 @@ async def remove_uuid_defaults(conn: asyncpg.Connection, tables: List[Tuple[str,
 async def verify_migration(conn: asyncpg.Connection) -> None:
     """Verify that no tables still have gen_random_uuid() defaults."""
     remaining_tables = await get_tables_with_uuid_defaults(conn)
-    
+
     if remaining_tables:
         print(f"\n❌ Migration incomplete! {len(remaining_tables)} tables still have UUID defaults:")
         for table_name, column_name in remaining_tables:
             print(f"   - {table_name}.{column_name}")
         return False
     else:
-        print(f"\n✅ Migration successful! No tables have gen_random_uuid() defaults.")
+        print("\n✅ Migration successful! No tables have gen_random_uuid() defaults.")
         return True
 
 
@@ -109,104 +109,111 @@ async def create_backup_info(conn: asyncpg.Connection, env: str) -> None:
 -- UUIDv7 Migration Backup Information
 -- Environment: {env}
 -- Date: {asyncio.get_event_loop().time()}
--- 
+--
 -- To rollback this migration, restore these DEFAULT clauses:
 
 """
-    
+
     tables = await get_tables_with_uuid_defaults(conn)
-    
+
     for table_name, column_name in tables:
-        backup_info += f"ALTER TABLE {table_name} ALTER COLUMN {column_name} SET DEFAULT gen_random_uuid();\n"
-    
+        backup_info += (
+            f"ALTER TABLE {table_name} ALTER COLUMN {column_name} SET DEFAULT gen_random_uuid();\n"
+        )
+
     # Write backup info to file
     backup_file = f"migrations/uuid7_rollback_{env}.sql"
-    with open(backup_file, 'w') as f:
+    with open(backup_file, "w") as f:
         f.write(backup_info)
-    
+
     print(f"📝 Rollback information saved to: {backup_file}")
 
 
 async def get_database_stats(conn: asyncpg.Connection) -> dict:
     """Get current database statistics for monitoring."""
     stats_query = """
-    SELECT 
+    SELECT
         schemaname,
         tablename,
         n_tup_ins as inserts,
         n_tup_upd as updates,
         n_tup_del as deletes
-    FROM pg_stat_user_tables 
+    FROM pg_stat_user_tables
     WHERE schemaname = 'public'
     ORDER BY n_tup_ins DESC
     LIMIT 10;
     """
-    
+
     rows = await conn.fetch(stats_query)
-    return {row['tablename']: dict(row) for row in rows}
+    return {row["tablename"]: dict(row) for row in rows}
 
 
 async def main():
     """Main migration function."""
-    parser = argparse.ArgumentParser(description='Migrate database to UUIDv7')
-    parser.add_argument('--env', required=True, choices=['development', 'staging', 'production'],
-                       help='Environment to migrate')
-    parser.add_argument('--dry-run', action='store_true', 
-                       help='Show what would be changed without making changes')
-    
+    parser = argparse.ArgumentParser(description="Migrate database to UUIDv7")
+    parser.add_argument(
+        "--env",
+        required=True,
+        choices=["development", "staging", "production"],
+        help="Environment to migrate",
+    )
+    parser.add_argument(
+        "--dry-run", action="store_true", help="Show what would be changed without making changes"
+    )
+
     args = parser.parse_args()
-    
+
     print(f"🚀 Starting UUIDv7 Migration for {args.env} environment...")
-    
+
     try:
         # Connect to database
         print("🔌 Connecting to database...")
         conn = await get_database_connection(args.env)
-        
+
         # Get PostgreSQL version
         version = await conn.fetchval("SELECT version()")
         print(f"📊 Connected to: {version}")
-        
+
         # Get current database stats
         print("📈 Getting current database statistics...")
         stats_before = await get_database_stats(conn)
-        
+
         # Find tables with UUID defaults
         print("🔍 Scanning for tables with gen_random_uuid() defaults...")
         tables_to_migrate = await get_tables_with_uuid_defaults(conn)
-        
+
         if not tables_to_migrate:
             print("✅ No tables found with gen_random_uuid() defaults. Migration not needed.")
             return
-        
+
         print(f"📋 Found {len(tables_to_migrate)} table columns to migrate:")
         for table_name, column_name in tables_to_migrate:
             print(f"   - {table_name}.{column_name}")
-        
+
         if args.dry_run:
             print("\n🔍 DRY RUN: Would remove defaults from the above tables.")
             print("Run without --dry-run to execute the migration.")
             return
-        
+
         # Create rollback information
         print("\n📝 Creating rollback information...")
         await create_backup_info(conn, args.env)
-        
+
         # Confirm migration
-        if args.env == 'production':
+        if args.env == "production":
             confirm = input("\n⚠️  PRODUCTION MIGRATION: Are you sure? (type 'yes' to continue): ")
-            if confirm.lower() != 'yes':
+            if confirm.lower() != "yes":
                 print("❌ Migration cancelled.")
                 return
-        
+
         # Perform migration
         print("\n🔄 Starting migration...")
         await remove_uuid_defaults(conn, tables_to_migrate)
-        
+
         # Verify migration
         print("\n🔍 Verifying migration...")
         success = await verify_migration(conn)
-        
+
         if success:
             print("\n🎉 UUIDv7 migration completed successfully!")
             print("\n📝 Next steps:")
@@ -217,13 +224,13 @@ async def main():
         else:
             print("\n❌ Migration failed verification. Check logs above.")
             sys.exit(1)
-        
+
     except Exception as e:
         print(f"\n❌ Migration failed with error: {e}")
         sys.exit(1)
-    
+
     finally:
-        if 'conn' in locals():
+        if "conn" in locals():
             await conn.close()
 
 

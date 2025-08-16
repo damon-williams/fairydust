@@ -3,7 +3,6 @@ import secrets
 import string
 from datetime import datetime
 from typing import Optional
-from shared.uuid_utils import generate_uuid7
 
 from auth import AuthService, TokenData, get_current_user
 from fastapi import (
@@ -55,6 +54,7 @@ from shared.storage_service import (
     upload_person_photo,
     upload_user_avatar,
 )
+from shared.uuid_utils import generate_uuid7
 
 
 async def get_daily_bonus_amount(db: Database) -> int:
@@ -396,8 +396,14 @@ async def verify_otp(
         db, str(user["id"]), user.get("last_login_date")
     )
 
-    # Note: Database is NOT updated in auth - only checked for response
-    # DUST grant endpoint will handle actual database updates
+    # Update login statistics (total_logins should increment on every successful login)
+    await db.execute(
+        "UPDATE users SET total_logins = total_logins + 1, updated_at = CURRENT_TIMESTAMP WHERE id = $1",
+        user["id"],
+    )
+
+    # Note: last_login_date is NOT updated here - only checked for response
+    # DUST grant endpoint will handle last_login_date updates to avoid bonus timing issues
 
     # Get daily bonus amount from system config
     daily_bonus_amount = await get_daily_bonus_amount(db)
@@ -407,6 +413,8 @@ async def verify_otp(
 
     # Add calculated daily bonus fields to user data
     user_dict = dict(user)
+    # Update total_logins in response to reflect the database increment
+    user_dict["total_logins"] = user.get("total_logins", 0) + 1
     daily_bonus_value = (
         not is_new_user and is_bonus_eligible and user.get("is_onboarding_completed", False)
     )
@@ -611,8 +619,14 @@ async def oauth_login(
         db, str(user["id"]), user.get("last_login_date")
     )
 
-    # Note: Database is NOT updated in auth - only checked for response
-    # DUST grant endpoint will handle actual database updates
+    # Update login statistics (total_logins should increment on every successful login)
+    await db.execute(
+        "UPDATE users SET total_logins = total_logins + 1, updated_at = CURRENT_TIMESTAMP WHERE id = $1",
+        user["id"],
+    )
+
+    # Note: last_login_date is NOT updated here - only checked for response
+    # DUST grant endpoint will handle last_login_date updates to avoid bonus timing issues
 
     # Get daily bonus amount from system config
     daily_bonus_amount = await get_daily_bonus_amount(db)
@@ -622,6 +636,8 @@ async def oauth_login(
 
     # Add calculated daily bonus fields to user data
     user_dict = dict(user)
+    # Update total_logins in response to reflect the database increment
+    user_dict["total_logins"] = user.get("total_logins", 0) + 1
     daily_bonus_value = (
         not is_new_user and is_bonus_eligible and user.get("is_onboarding_completed", False)
     )
@@ -647,7 +663,9 @@ async def oauth_login(
     extracted_birthdate = user_info.get("birthdate") if user_info else None
 
     # Consolidated login response log
-    print(f"✅ {provider.upper()} LOGIN: {user['fairyname']} | new_user: {is_new_user} | bonus_eligible: {daily_bonus_value} | balance: {user.get('dust_balance', 0)} DUST")
+    print(
+        f"✅ {provider.upper()} LOGIN: {user['fairyname']} | new_user: {is_new_user} | bonus_eligible: {daily_bonus_value} | balance: {user.get('dust_balance', 0)} DUST"
+    )
 
     response_data = AuthResponse(
         user=User(**user_dict),
@@ -675,16 +693,37 @@ async def refresh_token(
     auth_service: AuthService = Depends(lambda r=Depends(get_redis): AuthService(r)),
 ):
     """Refresh access token using refresh token"""
-    # Decode refresh token
-    token_data = await auth_service.decode_token(request.refresh_token)
+    try:
+        print(f"🔄 REFRESH: Attempting token refresh for token: {request.refresh_token[:50]}...", flush=True)
+        
+        # Decode refresh token
+        token_data = await auth_service.decode_token(request.refresh_token)
+        print(f"🔄 REFRESH: Decoded token for user {token_data.user_id}, type: {token_data.type}", flush=True)
 
-    if token_data.type != "refresh":
-        raise HTTPException(status_code=400, detail="Invalid token type")
+        if token_data.type != "refresh":
+            print(f"❌ REFRESH: Invalid token type: {token_data.type}", flush=True)
+            raise HTTPException(status_code=400, detail="Invalid token type")
 
-    # Check if refresh token is still valid in Redis
-    stored_token = await auth_service.redis.get(f"refresh_token:{token_data.user_id}")
-    if not stored_token or stored_token != request.refresh_token:
-        raise HTTPException(status_code=401, detail="Invalid refresh token")
+        # Check if refresh token is still valid in Redis
+        redis_key = f"refresh_token:{token_data.user_id}"
+        stored_token = await auth_service.redis.get(redis_key)
+        print(f"🔄 REFRESH: Redis lookup for {redis_key}: {'found' if stored_token else 'not found'}", flush=True)
+        
+        if not stored_token:
+            print(f"❌ REFRESH: No stored token found in Redis for user {token_data.user_id}", flush=True)
+            raise HTTPException(status_code=401, detail="Refresh token not found")
+        
+        if stored_token != request.refresh_token:
+            print(f"❌ REFRESH: Token mismatch for user {token_data.user_id}", flush=True)
+            print(f"❌ REFRESH: Stored: {stored_token[:50]}... vs Provided: {request.refresh_token[:50]}...", flush=True)
+            raise HTTPException(status_code=401, detail="Invalid refresh token")
+            
+        print(f"✅ REFRESH: Token validation successful for user {token_data.user_id}", flush=True)
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"❌ REFRESH: Unexpected error during token validation: {str(e)}", flush=True)
+        raise HTTPException(status_code=401, detail="Token validation failed")
 
     # Create new access token
     new_token_data = {

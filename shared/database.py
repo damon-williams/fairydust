@@ -5,7 +5,6 @@ from contextlib import asynccontextmanager
 from typing import Any, Optional
 
 import asyncpg
-from .uuid_utils import generate_uuid7
 
 DATABASE_URL = os.getenv("DATABASE_URL")
 
@@ -743,12 +742,7 @@ async def create_tables():
             true
         FROM apps a
         WHERE a.slug IN ('fairydust-inspire', 'fairydust-recipe', 'fairydust-fortune-teller')
-        ON CONFLICT (app_id, model_type) DO UPDATE SET
-            provider = EXCLUDED.provider,
-            model_id = EXCLUDED.model_id,
-            parameters = EXCLUDED.parameters,
-            is_enabled = EXCLUDED.is_enabled,
-            updated_at = CURRENT_TIMESTAMP;
+        ON CONFLICT (app_id, model_type) DO NOTHING;
 
         -- Insert image model configurations for Story app (has image generation)
         INSERT INTO app_model_configs (app_id, model_type, provider, model_id, parameters, is_enabled)
@@ -761,12 +755,7 @@ async def create_tables():
             true
         FROM apps a
         WHERE a.slug = 'fairydust-story'
-        ON CONFLICT (app_id, model_type) DO UPDATE SET
-            provider = EXCLUDED.provider,
-            model_id = EXCLUDED.model_id,
-            parameters = EXCLUDED.parameters,
-            is_enabled = EXCLUDED.is_enabled,
-            updated_at = CURRENT_TIMESTAMP;
+        ON CONFLICT (app_id, model_type) DO NOTHING;
     """
     )
 
@@ -782,12 +771,7 @@ async def create_tables():
         ('image', 'replicate', 'black-forest-labs/flux-schnell', '{"guidance_scale": 2.5}'::jsonb),
         -- Video model fallback (future)
         ('video', 'runwayml', 'runwayml/gen4-video', '{"duration": 5, "fps": 24, "resolution": "1080p"}'::jsonb)
-        ON CONFLICT (model_type)
-        DO UPDATE SET
-            provider = EXCLUDED.provider,
-            model_id = EXCLUDED.model_id,
-            parameters = EXCLUDED.parameters,
-            updated_at = CURRENT_TIMESTAMP;
+        ON CONFLICT (model_type) DO NOTHING;
     """
     )
 
@@ -904,6 +888,9 @@ async def create_tables():
             scene_description TEXT NOT NULL,
             status VARCHAR(20) NOT NULL DEFAULT 'pending',
             generation_metadata JSONB DEFAULT '{}',
+            attempt_number INTEGER DEFAULT 1,
+            max_attempts INTEGER DEFAULT 3,
+            retry_reason TEXT DEFAULT NULL,
             created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
             updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
             UNIQUE(story_id, image_id)
@@ -915,6 +902,40 @@ async def create_tables():
         CREATE INDEX IF NOT EXISTS idx_story_images_created_at ON story_images(created_at DESC);
     """
     )
+
+    # Add retry metadata columns to existing story_images tables (safe migrations)
+    # Handle each column separately to avoid syntax issues
+    try:
+        await db.execute_schema(
+            "ALTER TABLE story_images ADD COLUMN IF NOT EXISTS attempt_number INTEGER DEFAULT 1"
+        )
+    except Exception as e:
+        if "already exists" not in str(e):
+            logger.warning(f"Could not add attempt_number column: {e}")
+
+    try:
+        await db.execute_schema(
+            "ALTER TABLE story_images ADD COLUMN IF NOT EXISTS max_attempts INTEGER DEFAULT 3"
+        )
+    except Exception as e:
+        if "already exists" not in str(e):
+            logger.warning(f"Could not add max_attempts column: {e}")
+
+    try:
+        await db.execute_schema(
+            "ALTER TABLE story_images ADD COLUMN IF NOT EXISTS retry_reason TEXT DEFAULT NULL"
+        )
+    except Exception as e:
+        if "already exists" not in str(e):
+            logger.warning(f"Could not add retry_reason column: {e}")
+
+    # Add index for retry columns after they exist
+    try:
+        await db.execute_schema(
+            "CREATE INDEX IF NOT EXISTS idx_story_images_status_attempts ON story_images(status, attempt_number) WHERE status IN ('generating', 'retrying', 'failed')"
+        )
+    except Exception as e:
+        logger.warning(f"Could not create retry status index: {e}")
 
     # Restaurant App Tables - Execute each statement separately for better error handling
     try:
@@ -1300,6 +1321,24 @@ async def create_tables():
         CREATE INDEX IF NOT EXISTS idx_wyr_sessions_user_id ON wyr_game_sessions(user_id);
         CREATE INDEX IF NOT EXISTS idx_wyr_sessions_status ON wyr_game_sessions(user_id, status);
         CREATE INDEX IF NOT EXISTS idx_wyr_sessions_created ON wyr_game_sessions(created_at DESC);
+    """
+    )
+
+    # User question history table for Would You Rather duplicate prevention
+    await db.execute_schema(
+        """
+        CREATE TABLE IF NOT EXISTS user_question_history (
+            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            user_id UUID REFERENCES users(id) ON DELETE CASCADE,
+            question_hash TEXT NOT NULL,
+            question_content JSONB NOT NULL,
+            game_session_id UUID REFERENCES wyr_game_sessions(id) ON DELETE CASCADE,
+            created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_user_question_hash ON user_question_history(user_id, question_hash);
+        CREATE INDEX IF NOT EXISTS idx_user_question_created ON user_question_history(user_id, created_at DESC);
+        CREATE INDEX IF NOT EXISTS idx_question_history_session ON user_question_history(game_session_id);
     """
     )
 

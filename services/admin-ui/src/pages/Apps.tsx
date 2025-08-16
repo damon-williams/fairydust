@@ -44,6 +44,7 @@ export function Apps() {
   const [apps, setApps] = useState<App[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [appConfigs, setAppConfigs] = useState<Record<string, any>>({});
 
   // Debug logging
   console.log('🔍 APPS_DEBUG: Apps component loaded with LLM Config and max-w-6xl modal v2.1.7');
@@ -97,12 +98,57 @@ export function Apps() {
       setError(null);
       const data = await AdminAPI.getApps();
       setApps(data.apps);
+      
+      // Load model configurations for each app
+      await loadAppConfigs(data.apps);
     } catch (err) {
       console.error('Failed to load apps:', err);
       setError('Failed to load apps. Please try again.');
     } finally {
       setLoading(false);
     }
+  };
+
+  const loadAppConfigs = async (appsList: App[]) => {
+    try {
+      const configs: Record<string, any> = {};
+      
+      // Load configs for all apps in parallel
+      await Promise.all(
+        appsList.map(async (app) => {
+          try {
+            const config = await AdminAPI.getAppModelConfigs(app.id);
+            configs[app.id] = config;
+          } catch (err) {
+            console.error(`Failed to load config for app ${app.id}:`, err);
+            configs[app.id] = null;
+          }
+        })
+      );
+      
+      setAppConfigs(configs);
+    } catch (err) {
+      console.error('Failed to load app configs:', err);
+    }
+  };
+
+  const formatModelDisplay = (config: any, modelType: string) => {
+    if (!config) return <span className="text-gray-400 text-sm">-</span>;
+    
+    const modelConfig = config[`${modelType}_config`];
+    if (!modelConfig) return <span className="text-gray-400 text-sm">-</span>;
+    
+    const provider = modelConfig.provider;
+    const modelId = modelConfig.model_id;
+    
+    if (!provider || !modelId) return <span className="text-gray-400 text-sm">-</span>;
+    
+    return (
+      <div className="text-sm">
+        <div className="font-medium capitalize">{provider}</div>
+        <div className="text-gray-500 font-mono text-xs">{modelId}</div>
+      </div>
+    );
   };
 
   const loadBuilders = async () => {
@@ -448,7 +494,9 @@ export function Apps() {
             <TableHeader>
               <TableRow>
                 <TableHead>App</TableHead>
-                <TableHead>Slug</TableHead>
+                <TableHead>Text Model</TableHead>
+                <TableHead>Image Model</TableHead>
+                <TableHead>Video Model</TableHead>
                 <TableHead>Actions</TableHead>
               </TableRow>
             </TableHeader>
@@ -467,13 +515,20 @@ export function Apps() {
                         <div className="text-sm text-slate-500 max-w-xs truncate">
                           {app.description}
                         </div>
+                        <div className="text-xs text-slate-400 font-mono">
+                          {app.slug}
+                        </div>
                       </div>
                     </div>
                   </TableCell>
                   <TableCell>
-                    <div className="text-sm font-mono text-slate-700 max-w-[200px] truncate" title={app.slug}>
-                      {app.slug}
-                    </div>
+                    {formatModelDisplay(appConfigs[app.id], 'text')}
+                  </TableCell>
+                  <TableCell>
+                    {formatModelDisplay(appConfigs[app.id], 'image')}
+                  </TableCell>
+                  <TableCell>
+                    {formatModelDisplay(appConfigs[app.id], 'video')}
                   </TableCell>
                   <TableCell>
                     <div className="flex items-center space-x-2">

@@ -152,8 +152,42 @@ ledger_url = f"https://fairydust-ledger-{base_url_suffix}.up.railway.app"
 
 ### Docker Build System
 fairydust uses **dual Dockerfile approach**:
-- **Main Dockerfile** (`/Dockerfile`): Installs all service dependencies for multi-service deployment
+- **Main Dockerfile** (`/Dockerfile`): Installs all service dependencies for multi-service deployment  
 - **Individual service Dockerfiles** (`services/*/Dockerfile`): Service-specific builds with Railway
+
+### Railway Build Configuration
+Railway uses **individual service Dockerfiles** specified in `railway.json`:
+```json
+{
+  "build": {
+    "builder": "DOCKERFILE", 
+    "dockerfilePath": "services/content/Dockerfile"
+  }
+}
+```
+
+### Database Schema Initialization
+**CRITICAL:** Database schema changes are applied via `shared/database.py` during service startup.
+
+#### Schema Init Behavior:
+- **By default**: Schema initialization runs on all services  
+- **`SKIP_SCHEMA_INIT=true`**: Skips schema initialization (used for admin service only)
+- **Content service**: Forces `SKIP_SCHEMA_INIT=false` to ensure retry columns exist
+
+#### Adding New Database Columns:
+1. **Add to table definition** in `shared/database.py` `create_tables()` function
+2. **Add safe migrations** using `ALTER TABLE ... IF NOT EXISTS` for existing tables  
+3. **Force schema init** in service `main.py` if needed:
+   ```python
+   os.environ.setdefault("SKIP_SCHEMA_INIT", "false")
+   ```
+4. **Deploy** - Railway will rebuild and apply schema changes automatically
+
+#### Database Schema Debugging:
+- Schema changes apply during `init_db()` in service startup
+- Check logs for "Starting schema creation/update..." vs "Skipping schema initialization"
+- If columns missing: ensure `SKIP_SCHEMA_INIT` not set to `true` for that service
+- Railway deployments rebuild Docker images, ensuring fresh `shared/database.py`
 
 ### Critical Python Library Debugging Steps
 

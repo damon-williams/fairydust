@@ -2,7 +2,6 @@
 
 import json
 import os
-from shared.uuid_utils import generate_uuid7
 
 import httpx
 from fastapi import APIRouter, Depends, HTTPException
@@ -25,6 +24,7 @@ from models import (
 )
 
 from shared.database import Database, get_db
+from shared.uuid_utils import generate_uuid7
 
 security = HTTPBearer()
 

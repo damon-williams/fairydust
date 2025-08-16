@@ -1,10 +1,9 @@
 # services/content/wyr_routes.py
 import hashlib
 import json
-from uuid import UUID
-from shared.uuid_utils import generate_uuid7
 from datetime import datetime
 from typing import Optional
+from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Path, Query, Request
 from models import (
@@ -27,6 +26,7 @@ from shared.auth_middleware import TokenData, get_current_user
 from shared.database import Database, get_db
 from shared.json_utils import safe_json_parse
 from shared.llm_client import LLMError, llm_client
+from shared.uuid_utils import generate_uuid7
 
 router = APIRouter()
 
@@ -639,6 +639,20 @@ async def _get_wyr_llm_model_config() -> dict:
 
     if not app_result:
         print(f"❌ WYR_CONFIG: App not found for slug: {app_slug}", flush=True)
+        # Get global fallback configuration instead of hardcoded defaults
+        try:
+            global_fallbacks = await llm_client._get_global_fallbacks()
+            if global_fallbacks:
+                primary_provider, primary_model = global_fallbacks[0]
+                return {
+                    "primary_provider": primary_provider,
+                    "primary_model_id": primary_model,
+                    "primary_parameters": {"temperature": 1.0, "max_tokens": 1000, "top_p": 0.95},
+                }
+        except Exception as e:
+            print(f"⚠️ WYR_CONFIG: Failed to get global fallbacks: {e}", flush=True)
+
+        # Emergency hardcoded fallback only if global config fails
         return {
             "primary_provider": "anthropic",
             "primary_model_id": "claude-3-5-sonnet-20241022",
@@ -663,14 +677,35 @@ async def _get_wyr_llm_model_config() -> dict:
             print(f"✅ WYR_CONFIG: Provider: {cached_config.get('primary_provider')}", flush=True)
             print(f"✅ WYR_CONFIG: Model: {cached_config.get('primary_model_id')}", flush=True)
 
+            # Parse cached parameters if they're a string
+            cached_parameters = cached_config.get(
+                "primary_parameters", {"temperature": 1.0, "max_tokens": 1000, "top_p": 0.95}
+            )
+            if isinstance(cached_parameters, str):
+                import json
+
+                try:
+                    cached_parameters = json.loads(cached_parameters)
+                except json.JSONDecodeError:
+                    logger.warning(f"Failed to parse cached parameters JSON: {cached_parameters}")
+                    cached_parameters = {"temperature": 1.0, "max_tokens": 1000, "top_p": 0.95}
+
+            # Get global fallbacks for defaults
+            global_fallbacks = []
+            try:
+                global_fallbacks = await llm_client._get_global_fallbacks()
+            except:
+                pass
+
+            default_provider = "anthropic"
+            default_model = "claude-3-5-sonnet-20241022"
+            if global_fallbacks:
+                default_provider, default_model = global_fallbacks[0]
+
             config = {
-                "primary_provider": cached_config.get("primary_provider", "anthropic"),
-                "primary_model_id": cached_config.get(
-                    "primary_model_id", "claude-3-5-sonnet-20241022"
-                ),
-                "primary_parameters": cached_config.get(
-                    "primary_parameters", {"temperature": 1.0, "max_tokens": 1000, "top_p": 0.95}
-                ),
+                "primary_provider": cached_config.get("primary_provider", default_provider),
+                "primary_model_id": cached_config.get("primary_model_id", default_model),
+                "primary_parameters": cached_parameters,
             }
 
             print(f"✅ WYR_CONFIG: Returning cached config: {config}", flush=True)
@@ -680,23 +715,34 @@ async def _get_wyr_llm_model_config() -> dict:
     print("⚠️ WYR_CONFIG: Cache miss, checking database directly", flush=True)
 
     try:
-        db_config = await db.fetch_one("SELECT * FROM app_model_configs WHERE app_id = $1", app_id)
+        db_config = await db.fetch_one(
+            "SELECT provider, model_id, parameters FROM app_model_configs WHERE app_id = $1 AND model_type = 'text'",
+            app_id,
+        )
 
         if db_config:
             print("📊 WYR_CONFIG: Found database config", flush=True)
-            print(f"📊 WYR_CONFIG: DB Provider: {db_config['primary_provider']}", flush=True)
-            print(f"📊 WYR_CONFIG: DB Model: {db_config['primary_model_id']}", flush=True)
+            print(f"📊 WYR_CONFIG: DB Provider: {db_config['provider']}", flush=True)
+            print(f"📊 WYR_CONFIG: DB Model: {db_config['model_id']}", flush=True)
 
             # Parse and cache the database config
-            from shared.json_utils import parse_model_config_field
+            # Parse parameters if it's a string (JSONB field might return as string)
+            parameters = db_config.get("parameters", {})
+            if isinstance(parameters, str):
+                import json
+
+                try:
+                    parameters = json.loads(parameters)
+                except json.JSONDecodeError:
+                    logger.warning(f"Failed to parse parameters JSON: {parameters}")
+                    parameters = {"temperature": 1.0, "max_tokens": 1000, "top_p": 0.95}
+            elif parameters is None:
+                parameters = {"temperature": 1.0, "max_tokens": 1000, "top_p": 0.95}
 
             parsed_config = {
-                "primary_provider": db_config["primary_provider"],
-                "primary_model_id": db_config["primary_model_id"],
-                "primary_parameters": parse_model_config_field(
-                    dict(db_config), "primary_parameters"
-                )
-                or {"temperature": 1.0, "max_tokens": 1000, "top_p": 0.95},
+                "primary_provider": db_config["provider"],
+                "primary_model_id": db_config["model_id"],
+                "primary_parameters": parameters,
             }
 
             # Cache the database config
@@ -709,11 +755,22 @@ async def _get_wyr_llm_model_config() -> dict:
     except Exception as e:
         print(f"❌ WYR_CONFIG: Database error: {e}", flush=True)
 
-    # Fallback to default config
-    print("🔄 WYR_CONFIG: Using default config (no cache, no database)", flush=True)
+    # Fallback to global default config
+    print("🔄 WYR_CONFIG: Using global default config (no cache, no database)", flush=True)
+
+    # Get global fallbacks
+    default_provider = "anthropic"
+    default_model = "claude-3-5-sonnet-20241022"
+    try:
+        global_fallbacks = await llm_client._get_global_fallbacks()
+        if global_fallbacks:
+            default_provider, default_model = global_fallbacks[0]
+    except Exception as e:
+        print(f"⚠️ WYR_CONFIG: Failed to get global fallbacks for default: {e}", flush=True)
+
     default_config = {
-        "primary_provider": "anthropic",
-        "primary_model_id": "claude-3-5-sonnet-20241022",
+        "primary_provider": default_provider,
+        "primary_model_id": default_model,
         "primary_parameters": {"temperature": 1.0, "max_tokens": 1000, "top_p": 0.95},
     }
 
@@ -963,7 +1020,13 @@ QUALITY REQUIREMENTS:
 
 CRITICAL: Each option_a and option_b should be a SINGLE choice only. Do NOT include both choices in one option or use "or" in the options.
 
-FORMAT: Return ONLY a valid JSON array of objects with this exact structure (no other text):
+CRITICAL OUTPUT FORMAT: You MUST return ONLY a valid JSON array. Do NOT include any explanations, introductions, or additional text before or after the JSON.
+
+IMPORTANT FOR GPT-5 MODELS: Your entire response must be valid JSON. Start immediately with [ and end with ]. No markdown, no code blocks, no text.
+
+Your response should start with [ and end with ].
+
+JSON structure required:
 [
   {{
     "question_number": 1,
@@ -1015,10 +1078,17 @@ CORRECT JSON FORMAT EXAMPLE:
 
 Generate exactly {game_length.value} creative, engaging questions now.
 
-IMPORTANT:
-- Return ONLY the JSON array, no explanations, no additional text
+FINAL INSTRUCTIONS FOR RELIABLE JSON:
+- Your response MUST start with [ as the very first character
+- Your response MUST end with ] as the very last character  
+- Do NOT use ```json``` markdown blocks
+- Do NOT add any explanatory text before or after the JSON
+- Do NOT include newlines before the opening [
 - Each option should be a single choice, not a full question
-- Do NOT include "or" or both options in a single field"""
+- Do NOT include "or" or both options in a single field
+- GPT-5 models: Be extra careful to return only pure JSON
+
+RESPOND NOW WITH JSON ONLY - START WITH [ IMMEDIATELY:"""
 
     return base_prompt
 
@@ -1031,33 +1101,91 @@ def _parse_questions_response(content: str, category: GameCategory) -> list[Ques
 
         # Debug: Print the actual response content
         print(f"🔍 WYR_PARSE: OpenAI response content: {content[:500]}...", flush=True)
+        print(f"🔍 WYR_PARSE: Response length: {len(content)} characters", flush=True)
+        print(f"🔍 WYR_PARSE: First 100 chars: '{content[:100]}'", flush=True)
+        print(f"🔍 WYR_PARSE: Last 100 chars: '{content[-100:]}'", flush=True)
+        
+        # Check for empty or whitespace-only content
+        if not content or not content.strip():
+            print("❌ WYR_PARSE: Response is empty or whitespace only", flush=True)
+            print(f"🔍 WYR_PARSE: Full response was: '{content}'", flush=True)
+            return []
 
         # Look for JSON array in the response - try multiple patterns
         json_match = None
+        json_text = None
 
-        # Pattern 1: Direct JSON array
-        json_match = re.search(r"\[.*\]", content, re.DOTALL)
+        # Pattern 1: Clean the content first (remove common GPT-5 formatting issues)
+        cleaned_content = content.strip()
+        
+        # Pattern 1a: Direct JSON array (exact match from start to end)
+        if cleaned_content.startswith('[') and cleaned_content.endswith(']'):
+            json_text = cleaned_content
+            print("🔍 WYR_PARSE: Used Pattern 1a (direct clean JSON)", flush=True)
+        
+        # Pattern 1b: Direct JSON array (greedy match for complete array)
+        if not json_text:
+            json_match = re.search(r"(\[(?:[^[\]]|(?:\[[^[\]]*\]))*\])", content, re.DOTALL)
+            if json_match:
+                json_text = json_match.group(1)
+                print("🔍 WYR_PARSE: Used Pattern 1b (regex JSON)", flush=True)
 
         # Pattern 2: JSON in markdown code blocks
-        if not json_match:
+        if not json_text:
             json_match = re.search(r"```(?:json)?\s*(\[.*?\])\s*```", content, re.DOTALL)
             if json_match:
-                json_match = type("Match", (), {"group": lambda: json_match.group(1)})()
+                json_text = json_match.group(1)
 
-        # Pattern 3: JSON after some introductory text
-        if not json_match:
-            json_match = re.search(
-                r"(?:here|questions|array).*?(\[.*\])", content, re.DOTALL | re.IGNORECASE
-            )
-            if json_match:
-                json_match = type("Match", (), {"group": lambda: json_match.group(1)})()
+        # Pattern 3: JSON after some introductory text (more flexible)
+        if not json_text:
+            # Look for patterns that indicate JSON follows
+            patterns = [
+                r"(?:here\s+(?:are|is)|questions?|array|response|result).*?(\[.*?\])",
+                r"(?:json|output).*?(\[.*?\])",
+                r"(?:^|\n)\s*(\[.*?\])\s*(?:$|\n)",  # Array on its own line
+            ]
+            for pattern in patterns:
+                json_match = re.search(pattern, content, re.DOTALL | re.IGNORECASE)
+                if json_match:
+                    json_text = json_match.group(1)
+                    break
 
-        if not json_match:
+        # Pattern 4: Try to find any valid JSON array structure
+        if not json_text:
+            # Find all potential JSON arrays and validate them
+            potential_arrays = re.findall(r"\[(?:[^[\]]|(?:\[[^[\]]*\]))*\]", content, re.DOTALL)
+            for potential_json in potential_arrays:
+                try:
+                    parsed = json.loads(potential_json.strip())
+                    if isinstance(parsed, list) and len(parsed) > 0:
+                        # Check if it looks like question data
+                        first_item = parsed[0]
+                        if isinstance(first_item, dict) and (
+                            "option_a" in first_item or "question" in first_item
+                        ):
+                            json_text = potential_json
+                            break
+                except:
+                    continue
+
+        if not json_text:
             print("❌ WYR_PARSE: No JSON array found in response", flush=True)
-            print(f"🔍 WYR_PARSE: Full response was: {content}", flush=True)
+            print(f"🔍 WYR_PARSE: Full response was: '{content}'", flush=True)
+            print(f"🔍 WYR_PARSE: Content bytes: {content.encode('utf-8') if content else b''}", flush=True)
             return []
 
-        questions_data = json.loads(json_match.group())
+        # Try to parse the JSON
+        try:
+            questions_data = json.loads(json_text.strip())
+        except json.JSONDecodeError as e:
+            print(f"❌ WYR_PARSE: JSON decode error: {e}", flush=True)
+            print(f"🔍 WYR_PARSE: Attempted to parse: {json_text[:200]}...", flush=True)
+            return []
+
+        if not isinstance(questions_data, list):
+            print(f"❌ WYR_PARSE: Expected list but got {type(questions_data)}", flush=True)
+            return []
+
         questions = []
 
         for i, q_data in enumerate(questions_data):
@@ -1212,16 +1340,27 @@ async def _generate_personality_analysis(
         # Build analysis prompt
         prompt = _build_analysis_prompt(questions, answers, category, age_context)
 
-        # Use simpler config for analysis - fixed model with appropriate parameters
-        app_config = {
-            "primary_provider": "anthropic",
-            "primary_model_id": "claude-3-5-sonnet-20241022",
-            "primary_parameters": {
+        # Get LLM model configuration from database (same as question generation)
+        model_config = await _get_wyr_llm_model_config()
+
+        # Adjust parameters for personality analysis (shorter, more creative)
+        parameters = model_config.get("primary_parameters", {}).copy()
+        parameters.update(
+            {
                 "max_tokens": 100,  # Much shorter for whimsical summaries
-                "temperature": 0.8,  # Higher creativity for whimsical tone
-                "top_p": 0.9,
-            },
-        }
+                "temperature": min(
+                    parameters.get("temperature", 0.7) + 0.1, 1.0
+                ),  # Slightly higher creativity
+            }
+        )
+
+        # Use the same model configuration as questions
+        app_config = {**model_config, "primary_parameters": parameters}
+
+        print(
+            f"🔧 WYR_ANALYSIS: Using {app_config['primary_provider']}/{app_config['primary_model_id']}",
+            flush=True,
+        )
 
         # Create request metadata for logging
         request_metadata = {

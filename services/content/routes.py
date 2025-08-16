@@ -2,7 +2,6 @@
 from datetime import datetime
 from typing import Optional
 from uuid import UUID
-from shared.uuid_utils import generate_uuid7
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from models import (
@@ -18,6 +17,7 @@ from shared.auth_middleware import TokenData, get_current_user
 from shared.database import Database, get_db
 from shared.json_utils import parse_recipe_metadata as parse_recipe_data
 from shared.json_utils import safe_json_dumps
+from shared.uuid_utils import generate_uuid7
 
 # Create router
 content_router = APIRouter()

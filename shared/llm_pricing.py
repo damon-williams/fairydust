@@ -23,6 +23,7 @@ class LLMProvider(str, Enum):
 _pricing_cache: Optional[dict] = None
 _cache_timestamp: Optional[float] = None
 CACHE_TTL = 300  # 5 minutes
+_sync_fallback_warned = False  # Track if we've already warned about sync fallback
 
 
 # Pricing per million tokens (input/output) for LLMs, per image for image models - Updated 2024
@@ -52,6 +53,7 @@ PRICING_CONFIG = {
         "black-forest-labs/flux-schnell": {"cost": 0.003},  # $3.00 per 1000 images
         "bytedance/seedream-3": {"cost": 0.008},  # Estimated cost per image
         "runwayml/gen4-image": {"cost": 0.05},
+        "runwayml/gen4-image-turbo": {"cost": 0.03},
     },
     "video": {
         # Video models - per video generation
@@ -123,13 +125,18 @@ async def load_pricing_from_db():
 
 def get_pricing_config():
     """Get current pricing configuration (sync version for non-async contexts)"""
-    global _pricing_cache
+    global _pricing_cache, _sync_fallback_warned
 
     if _pricing_cache is not None:
         return _pricing_cache
 
-    # Return hard-coded config as fallback for sync contexts
-    logger.warning("🔄 Using hard-coded pricing configuration (sync context)")
+    # Return hard-coded config as fallback for sync contexts (warn only once)
+    if not _sync_fallback_warned:
+        logger.info(
+            "💰 Pricing: Using built-in configuration (database cache not available in sync context)"
+        )
+        _sync_fallback_warned = True
+
     return PRICING_CONFIG
 
 

@@ -27,6 +27,49 @@ class LLMError(Exception):
         self.retry_after = retry_after
 
 
+class ModelAdapter:
+    """Base class for model-specific parameter adapters"""
+
+    def adapt_parameters(self, parameters: dict) -> dict:
+        """Adapt generic parameters to model-specific ones"""
+        return parameters
+
+
+class OpenAIGPT4Adapter(ModelAdapter):
+    """Adapter for GPT-4 family models"""
+
+    def adapt_parameters(self, parameters: dict) -> dict:
+        return {
+            "max_tokens": parameters.get("max_tokens", 1000),
+            "temperature": parameters.get("temperature", 0.7),
+            "top_p": parameters.get("top_p", 0.9),
+        }
+
+
+class OpenAIGPT5Adapter(ModelAdapter):
+    """Adapter for GPT-5 family models with strict requirements"""
+
+    def adapt_parameters(self, parameters: dict) -> dict:
+        # GPT-5 only supports max_completion_tokens and temperature=1
+        # Does NOT support top_p or custom temperature values
+        return {
+            "max_completion_tokens": parameters.get("max_tokens", 1000),
+            "temperature": 1,  # Only supported value for GPT-5
+            # Note: top_p and other parameters are NOT supported by GPT-5
+        }
+
+
+class AnthropicAdapter(ModelAdapter):
+    """Adapter for Anthropic Claude models"""
+
+    def adapt_parameters(self, parameters: dict) -> dict:
+        return {
+            "max_tokens": parameters.get("max_tokens", 1000),
+            "temperature": parameters.get("temperature", 0.7),
+            "top_p": parameters.get("top_p", 0.9),
+        }
+
+
 class LLMClient:
     """
     Centralized LLM client with automatic retry logic and provider fallback.
@@ -41,6 +84,45 @@ class LLMClient:
 
         if not self.anthropic_key and not self.openai_key:
             raise ValueError("At least one LLM API key must be configured")
+
+        # Model adapter registry
+        self.adapters = {
+            # OpenAI GPT-4 family
+            "gpt-4": OpenAIGPT4Adapter(),
+            "gpt-4-turbo": OpenAIGPT4Adapter(),
+            "gpt-4o": OpenAIGPT4Adapter(),
+            "gpt-4o-mini": OpenAIGPT4Adapter(),
+            # OpenAI GPT-5 family
+            "gpt-5": OpenAIGPT5Adapter(),
+            "gpt-5-mini": OpenAIGPT5Adapter(),
+            "gpt-5-turbo": OpenAIGPT5Adapter(),
+            # Anthropic Claude family
+            "claude-3-5-sonnet": AnthropicAdapter(),
+            "claude-3-5-haiku": AnthropicAdapter(),
+            "claude-3-opus": AnthropicAdapter(),
+        }
+
+    def _get_adapter(self, model_id: str) -> ModelAdapter:
+        """Get the appropriate adapter for a model"""
+        # Check for exact match first
+        if model_id in self.adapters:
+            return self.adapters[model_id]
+
+        # Check for prefix matches
+        for model_prefix, adapter in self.adapters.items():
+            if model_id.startswith(model_prefix):
+                return adapter
+
+        # Default fallback based on provider
+        if "gpt-5" in model_id.lower():
+            return OpenAIGPT5Adapter()
+        elif "gpt" in model_id.lower():
+            return OpenAIGPT4Adapter()
+        elif "claude" in model_id.lower():
+            return AnthropicAdapter()
+        else:
+            # Generic fallback
+            return ModelAdapter()
 
     async def generate_completion(
         self,
@@ -72,12 +154,12 @@ class LLMClient:
 
         # Extract configuration
         primary_provider = app_config.get("primary_provider", "anthropic")
-        primary_model = app_config.get("primary_model_id", "claude-3-5-sonnet-20241022")
+        primary_model = app_config.get("primary_model_id")
         parameters = app_config.get("primary_parameters", {})
         fallback_models = app_config.get("fallback_models", [])
 
         # Build provider attempt list
-        providers_to_try = self._build_provider_list(
+        providers_to_try = await self._build_provider_list(
             primary_provider, primary_model, fallback_models
         )
 
@@ -111,17 +193,14 @@ class LLMClient:
                     cost_usd=cost_usd,
                     latency_ms=generation_time_ms,
                     was_fallback=is_fallback,
-                    fallback_reason=f"Primary provider failed: {str(last_error)}"
+                    fallback_reason=f"Primary provider failed: {str(last_error)}"[:100]
                     if is_fallback
                     else None,
                     action=action,
                     request_metadata=request_metadata,
                 )
 
-                if is_fallback:
-                    print(f"✅ LLM_CLIENT: Fallback success with {provider}/{model_id}")
-                else:
-                    print(f"✅ LLM_CLIENT: Primary success with {provider}/{model_id}")
+                # Success logging now handled by usage logger with more detail
 
                 # Return completion and metadata
                 return completion, {
@@ -155,7 +234,7 @@ class LLMClient:
         # All attempts failed
         raise LLMError(f"All LLM providers failed. Last error: {str(last_error)}")
 
-    def _build_provider_list(
+    async def _build_provider_list(
         self, primary_provider: str, primary_model: str, fallback_models: list[dict]
     ) -> list[tuple[str, str]]:
         """Build ordered list of (provider, model) pairs to try"""
@@ -168,14 +247,9 @@ class LLMClient:
             if provider and model and (provider, model) not in providers:
                 providers.append((provider, model))
 
-        # Add default fallbacks if not already present
-        defaults = [
-            ("openai", "gpt-4o"),
-            ("anthropic", "claude-3-5-sonnet-20241022"),
-            ("openai", "gpt-4o-mini"),
-        ]
-
-        for provider, model in defaults:
+        # Add global default fallbacks from admin configuration
+        global_fallbacks = await self._get_global_fallbacks()
+        for provider, model in global_fallbacks:
             if (provider, model) not in providers and self._has_provider_key(provider):
                 providers.append((provider, model))
 
@@ -190,26 +264,59 @@ class LLMClient:
             return bool(self.openai_key)
         return False
 
+    async def _get_global_fallbacks(self) -> list[tuple[str, str]]:
+        """Get global fallback models from admin configuration"""
+        try:
+            # Get environment-based admin URL
+            environment = os.getenv("ENVIRONMENT", "staging")
+            admin_url_suffix = "production" if environment == "production" else "staging"
+            admin_url = f"https://fairydust-admin-{admin_url_suffix}.up.railway.app"
+
+            async with httpx.AsyncClient(timeout=5.0) as client:
+                # Fetch global LLM fallback configuration
+                response = await client.get(f"{admin_url}/api/global-fallbacks")
+
+                if response.status_code == 200:
+                    config = response.json()
+                    fallbacks = []
+
+                    # Add primary global model first
+                    if config.get("primary_provider") and config.get("primary_model"):
+                        fallbacks.append((config["primary_provider"], config["primary_model"]))
+
+                    # Add configured fallbacks
+                    for fallback in config.get("fallbacks", []):
+                        provider = fallback.get("provider")
+                        model = fallback.get("model")
+                        if provider and model:
+                            fallbacks.append((provider, model))
+
+                    return fallbacks
+
+        except Exception as e:
+            print(f"⚠️ LLM_CLIENT: Failed to fetch global fallbacks: {e}")
+
+        # Hardcoded emergency fallbacks only if admin service is unreachable
+        return [
+            ("anthropic", "claude-3-5-sonnet-20241022"),
+            ("openai", "gpt-4o"),
+        ]
+
     async def _make_api_call(
         self, provider: str, model_id: str, prompt: str, parameters: dict
     ) -> tuple[str, dict]:
         """Make the actual API call to the specified provider"""
 
-        # Extract parameters with defaults
-        max_tokens = parameters.get("max_tokens", 1000)
-        temperature = parameters.get("temperature", 0.7)
-        top_p = parameters.get("top_p", 0.9)
+        # Get the appropriate adapter for this model
+        adapter = self._get_adapter(model_id)
+        adapted_params = adapter.adapt_parameters(parameters)
 
         try:
             async with httpx.AsyncClient(timeout=30.0) as client:
                 if provider == "anthropic":
-                    return await self._call_anthropic(
-                        client, model_id, prompt, max_tokens, temperature, top_p
-                    )
+                    return await self._call_anthropic(client, model_id, prompt, adapted_params)
                 elif provider == "openai":
-                    return await self._call_openai(
-                        client, model_id, prompt, max_tokens, temperature, top_p
-                    )
+                    return await self._call_openai(client, model_id, prompt, adapted_params)
                 else:
                     raise LLMError(f"Unsupported provider: {provider}")
 
@@ -225,9 +332,7 @@ class LLMClient:
         client: httpx.AsyncClient,
         model_id: str,
         prompt: str,
-        max_tokens: int,
-        temperature: float,
-        top_p: float,
+        adapted_params: dict,
     ) -> tuple[str, dict]:
         """Make API call to Anthropic"""
 
@@ -243,9 +348,9 @@ class LLMClient:
             },
             json={
                 "model": model_id,
-                "max_tokens": max_tokens,
-                "temperature": temperature,
-                "top_p": top_p,
+                "max_tokens": adapted_params.get("max_tokens", 1000),
+                "temperature": adapted_params.get("temperature", 0.7),
+                "top_p": adapted_params.get("top_p", 0.9),
                 "messages": [{"role": "user", "content": prompt}],
             },
         )
@@ -299,9 +404,7 @@ class LLMClient:
         client: httpx.AsyncClient,
         model_id: str,
         prompt: str,
-        max_tokens: int,
-        temperature: float,
-        top_p: float,
+        adapted_params: dict,
     ) -> tuple[str, dict]:
         """Make API call to OpenAI"""
 
@@ -316,10 +419,10 @@ class LLMClient:
             },
             json={
                 "model": model_id,
-                "max_tokens": max_tokens,
-                "temperature": temperature,
-                "top_p": top_p,
                 "messages": [{"role": "user", "content": prompt}],
+                **{
+                    k: v for k, v in adapted_params.items() if v is not None
+                },  # Dynamic params from adapter
             },
         )
 

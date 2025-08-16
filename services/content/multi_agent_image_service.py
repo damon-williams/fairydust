@@ -17,12 +17,12 @@ import logging
 import re
 from typing import Optional
 from uuid import UUID
-from shared.uuid_utils import generate_uuid7
 
 from langsmith import traceable
 from models import StoryCharacter, TargetAudience
 
 from shared.llm_client import llm_client
+from shared.uuid_utils import generate_uuid7
 
 logger = logging.getLogger(__name__)
 
@@ -37,7 +37,7 @@ class MultiAgentImageService:
             "model": "claude-3-5-haiku-20241022",
             "parameters": {
                 "temperature": 0.3,  # Lower temperature for analytical tasks
-                "max_tokens": 400,  # Increased for detailed scene analysis
+                "max_tokens": 800,  # Increased for complete 7-section scene analysis
                 "top_p": 0.9,
             },
         }
@@ -190,41 +190,49 @@ class MultiAgentImageService:
         # Build audience-specific analysis prompt
         audience_guidance = self._get_audience_analysis_guidance(target_audience)
 
-        scene_prompt = f"""Analyze this {target_audience.value} story scene with deep contextual understanding for high-quality image generation:
+        scene_prompt = f"""# Scene Intelligence Analysis
 
-SCENE CONTENT:
+Analyze this **{target_audience.value}** story scene with deep contextual understanding for high-quality image generation.
+
+## Scene Content
 {enhanced_scene}
 
-CHARACTER INFORMATION:
+## Character Information
 {character_context}
 
-STORY CONTEXT:
+## Story Context
 {story_info}
 
-AUDIENCE GUIDANCE:
+## Audience Guidance
 {audience_guidance}
 
-REQUIRED: You must provide a complete analysis with ALL 7 sections. Do not stop after the first section.
+## Analysis Requirements
+
+**REQUIRED:** You must provide a complete analysis with ALL 7 sections. Do not stop after the first section.
+
+**CRITICAL SPECIES IDENTIFICATION:** When analyzing characters, you MUST carefully read the story text to determine each character's species. Look for explicit mentions like "the cat", "white cat", "dog", "human", etc. Characters described as animals MUST be identified as their correct species, not as humans.
 
 Analyze this scene for image generation and provide ALL of the following sections:
 
-1. CHARACTERS_PRESENT: Which specific characters are in this scene (use character names, relationships, and visual descriptions from context)
-2. CHARACTER_INTERACTIONS: How are the characters positioned/interacting with each other
-3. MAIN_ACTION: The primary action or moment being depicted (be specific and visual)
-4. SETTING_DETAILS: Detailed environment description (indoor/outdoor, specific location, atmospheric elements)
-5. EMOTIONAL_TONE: The mood and emotional energy of the scene
-6. VISUAL_FOCUS: The most compelling visual element that captures the story moment
-7. STORY_SIGNIFICANCE: Why this moment matters to the narrative
+1. **CHARACTERS_PRESENT:** Which specific characters are in this scene (use character names, relationships, and SPECIES from story text - if the story says "Luna is a cat" or "the white cat", Luna MUST be identified as a cat, not a human)
+2. **CHARACTER_INTERACTIONS:** How are the characters positioned/interacting with each other
+3. **MAIN_ACTION:** The primary action or moment being depicted (be specific and visual)
+4. **SETTING_DETAILS:** Detailed environment description (indoor/outdoor, specific location, atmospheric elements)
+5. **EMOTIONAL_TONE:** The mood and emotional energy of the scene
+6. **VISUAL_FOCUS:** The most compelling visual element that captures the story moment
+7. **STORY_SIGNIFICANCE:** Why this moment matters to the narrative
 
-IMPORTANT: You must include ALL 7 sections in your response. Format exactly as shown below:
+## Output Format
 
-CHARACTERS_PRESENT: [detailed character list with descriptions]
-CHARACTER_INTERACTIONS: [positioning and interaction details]
-MAIN_ACTION: [specific visual action]
-SETTING_DETAILS: [comprehensive environment description]
-EMOTIONAL_TONE: [mood and emotional energy]
-VISUAL_FOCUS: [key compelling element]
-STORY_SIGNIFICANCE: [narrative importance]
+**IMPORTANT:** You must include ALL 7 sections in your response. Format exactly as shown below:
+
+**CHARACTERS_PRESENT:** [detailed character list with descriptions INCLUDING CORRECT SPECIES - e.g., "Luna, a white cat" NOT "Luna, a young girl"]
+**CHARACTER_INTERACTIONS:** [positioning and interaction details]
+**MAIN_ACTION:** [specific visual action]
+**SETTING_DETAILS:** [comprehensive environment description]
+**EMOTIONAL_TONE:** [mood and emotional energy]
+**VISUAL_FOCUS:** [key compelling element]
+**STORY_SIGNIFICANCE:** [narrative importance]
 
 Complete all sections - do not stop early."""
 
@@ -325,28 +333,64 @@ STORY_SIGNIFICANCE: Important narrative moment"""
                 "traits": char.traits[:5] if char.traits else [],
                 "has_photo": bool(char.photo_url),
             }
+            # Debug logging for photo URL and species
+            if char.photo_url:
+                logger.info(
+                    f"👤 CHARACTER_AGENT: {char.name} has photo_url: {char.photo_url[:50]}... (has_photo: True)"
+                )
+            else:
+                logger.info(f"👤 CHARACTER_AGENT: {char.name} has NO photo_url (has_photo: False)")
+
+            # Debug logging for species information
+            if char.species:
+                logger.info(
+                    f"🐾 CHARACTER_AGENT: {char.name} is a {char.species} ({char.entry_type})"
+                )
+            elif char.entry_type == "pet":
+                logger.warning(
+                    f"⚠️ CHARACTER_AGENT: {char.name} is marked as pet but has no species!"
+                )
+
             character_data.append(char_info)
 
-        character_prompt = f"""Based on this scene analysis, create detailed visual descriptions for the characters present:
+        # Debug: Log the complete character data being sent to the agent
+        logger.info(
+            f"👤 CHARACTER_AGENT: Full character data: {json.dumps(character_data, indent=2)}"
+        )
 
-SCENE ANALYSIS:
+        character_prompt = f"""# Character Rendering Task
+
+Based on this scene analysis, create detailed visual descriptions for the characters present.
+
+## Scene Analysis
 {scene_analysis}
 
-AVAILABLE CHARACTERS:
+## Available Characters
+```json
 {json.dumps(character_data, indent=2)}
+```
 
-For each character that appears in the scene (as identified in CHARACTERS_PRESENT), provide a detailed visual description that includes:
-- Physical appearance that accurately reflects their specified age (CRITICAL: if age is provided, ensure the character looks that age, not younger)
-- Key visual traits that make them recognizable
-- Any special characteristics (for pets, fantasy characters, etc.)
-- How they should appear in this specific scene
+## Character Description Requirements
 
-Focus on visual elements that will help an image generator create accurate, recognizable characters.
-If a character has a photo reference (has_photo: true), mention that they should match their reference photo.
-IMPORTANT: Pay close attention to age information - an 8-year-old should look like an 8-year-old, not a toddler or preschooler.
+For each character that appears in the scene (as identified in **CHARACTERS_PRESENT**), provide a detailed visual description that includes:
+
+- **Physical appearance** that accurately reflects their specified age (CRITICAL: if age is provided, ensure the character looks that age, not younger)
+- **Species accuracy** (CRITICAL: if species is specified for pets, ensure they are rendered as that species, not as humans)
+- **Key visual traits** that make them recognizable
+- **Special characteristics** (for pets, fantasy characters, etc.)
+- **Scene-specific appearance** (how they should appear in this specific scene)
+
+## Critical Guidelines
+
+- **Age Accuracy:** An 8-year-old should look like an 8-year-old, not a toddler or preschooler
+- **Species Accuracy:** Pets must be rendered as their specified species (e.g., cat characters as cats, dog characters as dogs)
+- **Photo References:** If a character has a photo reference (has_photo: true), mention that they should match their reference photo
+- **Visual Elements:** Focus on elements that will help an image generator create accurate, recognizable characters
+
+## Output Format
 
 Format as:
-CHARACTER_NAME: [detailed visual description]
+**CHARACTER_NAME:** [detailed visual description]
 
 Keep descriptions vivid but concise (2-3 sentences each)."""
 
@@ -406,29 +450,46 @@ Keep descriptions vivid but concise (2-3 sentences each)."""
         # Get style requirements for target audience
         style_requirements = self._get_style_requirements(target_audience)
 
-        composition_prompt = f"""Create a structured image generation prompt by combining these elements:
+        composition_prompt = f"""# Visual Composition Task
 
-SCENE ANALYSIS:
+Create a structured image generation prompt by combining these elements.
+
+## Scene Analysis
 {scene_analysis}
 
-CHARACTER DESCRIPTIONS:
+## Character Descriptions
 {character_descriptions}
 
-TARGET AUDIENCE: {target_audience.value}
-STYLE REQUIREMENTS: {style_requirements}
+## Target Specifications
+- **Audience:** {target_audience.value}
+- **Style Requirements:** {style_requirements}
+
+## Composition Requirements
 
 Combine all elements into a single, well-structured image prompt that:
-1. Starts with the main characters and their visual descriptions
-2. Includes the setting and main action from the scene
-3. Captures the emotional tone
-4. Ends with appropriate style requirements
 
-Format as a single prompt (not sections). Make it flow naturally while being specific enough for image generation.
-Aim for 150-250 characters. Focus on visual elements that will create a compelling, story-relevant image.
+1. **Starts with the main characters** and their visual descriptions
+2. **Includes the setting and main action** from the scene
+3. **Captures the emotional tone**
+4. **Ends with appropriate style requirements**
 
-Example format: "[Character descriptions] [doing action] in [setting], [mood/emotion], [style requirements]"
+## Critical Guidelines
 
-Your prompt:"""
+- **PRESERVE CHARACTER NAMES:** Always include character names from the character descriptions (e.g., "Leslie, a 44-year-old woman" not just "A 44-year-old woman")
+- **Pet Names:** Include pet names when present (e.g., "her orange tabby, Momo" not just "an orange tabby")
+- **Name Usage:** Use names naturally in the prompt to create personal connection
+
+## Output Guidelines
+
+- **Format:** Single flowing prompt (not sections)
+- **Length:** Aim for 150-250 characters
+- **Focus:** Visual elements that create a compelling, story-relevant image
+- **Natural flow:** Make it read naturally while being specific for image generation
+
+### Example Format
+`[Character name, description] [doing action] in [setting], [mood/emotion], [style requirements]`
+
+## Your Prompt:"""
 
         try:
             # Prepare app config for LLM client
@@ -481,24 +542,33 @@ Your prompt:"""
 
         logger.info("✨ QUALITY_AGENT: Enhancing and validating prompt...")
 
-        quality_prompt = f"""CRITICAL: You must enhance the existing prompt while staying TRUE to the story scene. Do NOT create a different scene.
+        quality_prompt = f"""# Quality Enhancement Task
 
-CURRENT PROMPT TO ENHANCE:
+**CRITICAL:** You must enhance the existing prompt while staying TRUE to the story scene. Do NOT create a different scene.
+
+## Current Prompt to Enhance
 {visual_prompt}
 
-ACTUAL STORY SCENE (this is what's happening):
+## Actual Story Scene (Reference)
 {original_scene[:400]}
 
-TARGET AUDIENCE: {target_audience.value}
+## Target Specifications
+- **Audience:** {target_audience.value}
+
+## Enhancement Requirements
 
 Your task:
-1. Polish the existing prompt for clarity and visual specificity
-2. Keep ALL the original characters and actions from the current prompt
-3. Add visual details that enhance but don't change the scene
-4. Ensure age-appropriate language for {target_audience.value}
-5. Keep it under 300 characters
+1. **Polish** the existing prompt for clarity and visual specificity
+2. **Preserve** ALL the original characters and actions from the current prompt
+3. **Add visual details** that enhance but don't change the scene
+4. **Ensure age-appropriate language** for {target_audience.value}
+5. **Keep it under 300 characters**
 
-IMPORTANT: The enhanced prompt must describe the SAME SCENE with the SAME CHARACTERS doing the SAME ACTIONS. Only improve the visual clarity and description quality.
+## Critical Guidelines
+
+**IMPORTANT:** The enhanced prompt must describe the **SAME SCENE** with the **SAME CHARACTERS** doing the **SAME ACTIONS**. Only improve the visual clarity and description quality.
+
+## Output
 
 Return ONLY the enhanced prompt text, nothing else:"""
 
@@ -559,13 +629,17 @@ Return ONLY the enhanced prompt text, nothing else:"""
                 visual_traits = [trait for trait in char.traits[:5]]  # Top 5 traits
                 char_info.append(f"  - Traits: {', '.join(visual_traits)}")
 
+            # Add species for pets/creatures (prioritize this information)
+            if hasattr(char, "species") and char.species:
+                char_info.append(
+                    f"  - Species: {char.species} (CRITICAL: This character is a {char.species}, not a human)"
+                )
+
             # Add character type information
             if char.entry_type:
                 char_info.append(f"  - Type: {char.entry_type}")
-
-            # Add species for pets/creatures
-            if hasattr(char, "species") and char.species:
-                char_info.append(f"  - Species: {char.species}")
+                if char.entry_type == "pet" and not (hasattr(char, "species") and char.species):
+                    char_info.append("  - WARNING: Pet character missing species information")
 
             # Add photo reference indicator
             if char.photo_url:
@@ -701,6 +775,35 @@ Return ONLY the enhanced prompt text, nothing else:"""
         enhanced = re.sub(r'"[^"]{50,}"', "[dialogue]", enhanced)  # Replace long dialogue
         enhanced = re.sub(r'"([^"]{1,49})"', r'saying "\1"', enhanced)  # Keep short dialogue
 
+        # Preserve species-related words (critical for character identification)
+        species_markers = [
+            "cat",
+            "dog",
+            "bird",
+            "fish",
+            "rabbit",
+            "hamster",
+            "horse",
+            "cow",
+            "pig",
+            "duck",
+            "chicken",
+            "mouse",
+            "rat",
+            "snake",
+            "lizard",
+            "turtle",
+            "frog",
+            "animal",
+            "pet",
+            "creature",
+            "white cat",
+            "black dog",
+            "tabby",
+            "kitten",
+            "puppy",
+        ]
+
         # Preserve emotional context words
         emotion_markers = [
             "happy",
@@ -713,6 +816,7 @@ Return ONLY the enhanced prompt text, nothing else:"""
             "peaceful",
         ]
         preserved_emotions = [word for word in emotion_markers if word in enhanced.lower()]
+        preserved_species = [word for word in species_markers if word in enhanced.lower()]
 
         # Don't truncate aggressively - allow up to 500 characters
         if len(enhanced) > 500:
@@ -723,6 +827,12 @@ Return ONLY the enhanced prompt text, nothing else:"""
             else:
                 # Break at word boundary
                 enhanced = enhanced[:500].rsplit(" ", 1)[0] + "..."
+
+        # If we found species references, ensure they're prominently mentioned
+        if preserved_species:
+            enhanced = (
+                f"[SPECIES CONTEXT: Scene mentions {', '.join(preserved_species)}] {enhanced}"
+            )
 
         return enhanced
 
