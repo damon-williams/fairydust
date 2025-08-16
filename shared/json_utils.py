@@ -78,8 +78,8 @@ def parse_jsonb_field(field_value: Any, default: dict = None, field_name: str = 
     # Parse JSON string
     parsed = safe_json_parse(field_value, default, dict)
 
-    # Only warn if parsing failed AND the field value wasn't a valid empty object
-    if parsed == default and field_value and field_value != "{}":
+    # Only warn if parsing actually failed (parsed is the exact same object as default)
+    if parsed is default and field_value and field_value != "{}":
         logger.warning(f"Failed to parse JSONB field '{field_name}': {field_value}")
 
     return parsed
