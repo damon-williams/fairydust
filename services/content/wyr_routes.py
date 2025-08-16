@@ -1022,6 +1022,8 @@ CRITICAL: Each option_a and option_b should be a SINGLE choice only. Do NOT incl
 
 CRITICAL OUTPUT FORMAT: You MUST return ONLY a valid JSON array. Do NOT include any explanations, introductions, or additional text before or after the JSON.
 
+IMPORTANT FOR GPT-5 MODELS: Your entire response must be valid JSON. Start immediately with [ and end with ]. No markdown, no code blocks, no text.
+
 Your response should start with [ and end with ].
 
 JSON structure required:
@@ -1076,14 +1078,17 @@ CORRECT JSON FORMAT EXAMPLE:
 
 Generate exactly {game_length.value} creative, engaging questions now.
 
-FINAL INSTRUCTIONS:
-- Return ONLY the JSON array that starts with [ and ends with ]
-- Do NOT add any text before or after the JSON
-- No explanations, no comments, no markdown formatting
+FINAL INSTRUCTIONS FOR RELIABLE JSON:
+- Your response MUST start with [ as the very first character
+- Your response MUST end with ] as the very last character  
+- Do NOT use ```json``` markdown blocks
+- Do NOT add any explanatory text before or after the JSON
+- Do NOT include newlines before the opening [
 - Each option should be a single choice, not a full question
 - Do NOT include "or" or both options in a single field
+- GPT-5 models: Be extra careful to return only pure JSON
 
-Begin your response with [ immediately."""
+RESPOND NOW WITH JSON ONLY - START WITH [ IMMEDIATELY:
 
     return base_prompt
 
@@ -1101,10 +1106,20 @@ def _parse_questions_response(content: str, category: GameCategory) -> list[Ques
         json_match = None
         json_text = None
 
-        # Pattern 1: Direct JSON array (greedy match for complete array)
-        json_match = re.search(r"(\[(?:[^[\]]|(?:\[[^[\]]*\]))*\])", content, re.DOTALL)
-        if json_match:
-            json_text = json_match.group(1)
+        # Pattern 1: Clean the content first (remove common GPT-5 formatting issues)
+        cleaned_content = content.strip()
+        
+        # Pattern 1a: Direct JSON array (exact match from start to end)
+        if cleaned_content.startswith('[') and cleaned_content.endswith(']'):
+            json_text = cleaned_content
+            print("🔍 WYR_PARSE: Used Pattern 1a (direct clean JSON)", flush=True)
+        
+        # Pattern 1b: Direct JSON array (greedy match for complete array)
+        if not json_text:
+            json_match = re.search(r"(\[(?:[^[\]]|(?:\[[^[\]]*\]))*\])", content, re.DOTALL)
+            if json_match:
+                json_text = json_match.group(1)
+                print("🔍 WYR_PARSE: Used Pattern 1b (regex JSON)", flush=True)
 
         # Pattern 2: JSON in markdown code blocks
         if not json_text:
