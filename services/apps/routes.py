@@ -1447,6 +1447,7 @@ async def get_action_pricing(
     import logging
 
     logger = logging.getLogger(__name__)
+    print("🚨 APPS_PRICING: Function called - this should always appear!")
     logger.info("🎯 Mobile pricing endpoint called: /apps/pricing/actions")
 
     cache_key = "action_pricing:mobile"
