@@ -691,10 +691,22 @@ async def _get_wyr_llm_model_config() -> dict:
             print(f"📊 WYR_CONFIG: DB Model: {db_config['model_id']}", flush=True)
 
             # Parse and cache the database config
+            # Parse parameters if it's a string (JSONB field might return as string)
+            parameters = db_config.get("parameters", {})
+            if isinstance(parameters, str):
+                import json
+                try:
+                    parameters = json.loads(parameters)
+                except json.JSONDecodeError:
+                    logger.warning(f"Failed to parse parameters JSON: {parameters}")
+                    parameters = {"temperature": 1.0, "max_tokens": 1000, "top_p": 0.95}
+            elif parameters is None:
+                parameters = {"temperature": 1.0, "max_tokens": 1000, "top_p": 0.95}
+            
             parsed_config = {
                 "primary_provider": db_config["provider"],
                 "primary_model_id": db_config["model_id"],
-                "primary_parameters": db_config.get("parameters", {"temperature": 1.0, "max_tokens": 1000, "top_p": 0.95}),
+                "primary_parameters": parameters,
             }
 
             # Cache the database config
