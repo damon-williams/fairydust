@@ -41,6 +41,9 @@ from shared.redis_client import close_redis, init_redis
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    # Force schema initialization for content service to ensure retry columns exist
+    os.environ.setdefault("SKIP_SCHEMA_INIT", "false")
+    
     # Initialize database and Redis
     await init_db()
     await init_redis()
