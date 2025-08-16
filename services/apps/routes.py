@@ -860,6 +860,93 @@ async def create_global_fallback(
     return GlobalFallbackModel(**fallback_dict)
 
 
+@model_config_router.put("/fallbacks/{fallback_id}")
+async def update_global_fallback(
+    fallback_id: str,
+    fallback_update: dict,
+    current_user: TokenData = Depends(require_admin),
+    db: Database = Depends(get_db),
+) -> GlobalFallbackModel:
+    """Update an existing global fallback model configuration"""
+    import json
+    
+    try:
+        fallback_uuid = UUID(fallback_id)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid fallback ID format")
+
+    # Check if fallback exists
+    existing_fallback = await db.fetch_one(
+        "SELECT * FROM global_fallback_models WHERE id = $1", fallback_uuid
+    )
+    
+    if not existing_fallback:
+        raise HTTPException(status_code=404, detail="Global fallback model not found")
+
+    # Build update query
+    update_fields = []
+    update_values = []
+    param_count = 1
+
+    if "provider" in fallback_update:
+        update_fields.append(f"provider = ${param_count}")
+        update_values.append(fallback_update["provider"])
+        param_count += 1
+
+    if "model_id" in fallback_update:
+        update_fields.append(f"model_id = ${param_count}")
+        update_values.append(fallback_update["model_id"])
+        param_count += 1
+
+    if "parameters" in fallback_update:
+        update_fields.append(f"parameters = ${param_count}::jsonb")
+        update_values.append(json.dumps(fallback_update["parameters"]))
+        param_count += 1
+
+    if "is_enabled" in fallback_update:
+        update_fields.append(f"is_enabled = ${param_count}")
+        update_values.append(fallback_update["is_enabled"])
+        param_count += 1
+
+    if not update_fields:
+        # No updates, return existing
+        fallback_dict = dict(existing_fallback)
+        fallback_dict["id"] = str(fallback_dict["id"])
+        if fallback_dict["parameters"]:
+            fallback_dict["parameters"] = json.loads(fallback_dict["parameters"])
+        else:
+            fallback_dict["parameters"] = {}
+        return GlobalFallbackModel(**fallback_dict)
+
+    # Add updated_at
+    update_fields.append(f"updated_at = ${param_count}")
+    update_values.append(datetime.utcnow())
+    param_count += 1
+
+    # Add WHERE clause parameter
+    update_values.append(fallback_uuid)
+
+    query = f"""
+        UPDATE global_fallback_models
+        SET {', '.join(update_fields)}
+        WHERE id = ${param_count}
+        RETURNING *
+    """
+
+    updated_fallback = await db.fetch_one(query, *update_values)
+
+    fallback_dict = dict(updated_fallback)
+    fallback_dict["id"] = str(fallback_dict["id"])
+
+    # Parse JSON parameters back to dict
+    if fallback_dict["parameters"]:
+        fallback_dict["parameters"] = json.loads(fallback_dict["parameters"])
+    else:
+        fallback_dict["parameters"] = {}
+
+    return GlobalFallbackModel(**fallback_dict)
+
+
 # ============================================================================
 # IMAGE MODEL USAGE LOGGING
 # ============================================================================
