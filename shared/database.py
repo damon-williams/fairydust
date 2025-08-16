@@ -742,12 +742,7 @@ async def create_tables():
             true
         FROM apps a
         WHERE a.slug IN ('fairydust-inspire', 'fairydust-recipe', 'fairydust-fortune-teller')
-        ON CONFLICT (app_id, model_type) DO UPDATE SET
-            provider = EXCLUDED.provider,
-            model_id = EXCLUDED.model_id,
-            parameters = EXCLUDED.parameters,
-            is_enabled = EXCLUDED.is_enabled,
-            updated_at = CURRENT_TIMESTAMP;
+        ON CONFLICT (app_id, model_type) DO NOTHING;
 
         -- Insert image model configurations for Story app (has image generation)
         INSERT INTO app_model_configs (app_id, model_type, provider, model_id, parameters, is_enabled)
@@ -760,12 +755,7 @@ async def create_tables():
             true
         FROM apps a
         WHERE a.slug = 'fairydust-story'
-        ON CONFLICT (app_id, model_type) DO UPDATE SET
-            provider = EXCLUDED.provider,
-            model_id = EXCLUDED.model_id,
-            parameters = EXCLUDED.parameters,
-            is_enabled = EXCLUDED.is_enabled,
-            updated_at = CURRENT_TIMESTAMP;
+        ON CONFLICT (app_id, model_type) DO NOTHING;
     """
     )
 
@@ -781,12 +771,7 @@ async def create_tables():
         ('image', 'replicate', 'black-forest-labs/flux-schnell', '{"guidance_scale": 2.5}'::jsonb),
         -- Video model fallback (future)
         ('video', 'runwayml', 'runwayml/gen4-video', '{"duration": 5, "fps": 24, "resolution": "1080p"}'::jsonb)
-        ON CONFLICT (model_type)
-        DO UPDATE SET
-            provider = EXCLUDED.provider,
-            model_id = EXCLUDED.model_id,
-            parameters = EXCLUDED.parameters,
-            updated_at = CURRENT_TIMESTAMP;
+        ON CONFLICT (model_type) DO NOTHING;
     """
     )
 
