@@ -37,6 +37,7 @@ from models import (
 
 from shared.auth_middleware import TokenData, get_current_user, require_admin
 from shared.database import Database, get_db
+from shared.redis_client import get_redis
 from shared.uuid_utils import generate_uuid7
 
 # Create routers
@@ -1422,22 +1423,43 @@ async def animate_image(
         raise HTTPException(status_code=500, detail=f"Video animation failed: {str(e)}")
 
 
+# Helper function for pricing cache invalidation
+async def invalidate_pricing_cache(redis):
+    """Invalidate all pricing-related cache keys"""
+    try:
+        cache_key = "action_pricing:mobile"
+        await redis.delete(cache_key)
+        print(f"✅ CACHE_INVALIDATE: Invalidated pricing cache key: {cache_key}")
+    except Exception as e:
+        print(f"⚠️ CACHE_INVALIDATE: Failed to invalidate pricing cache: {e}")
+
+
 # Action-based DUST pricing endpoints
 @app_router.get("/pricing/actions")
 async def get_action_pricing(
     db: Database = Depends(get_db),
+    redis=Depends(get_redis),
 ):
     """
     Get action-based DUST pricing for mobile app.
-    Returns pricing for all active action slugs with caching headers.
+    Returns pricing for all active action slugs with Redis caching.
     """
     import logging
 
     logger = logging.getLogger(__name__)
     logger.info("🎯 Mobile pricing endpoint called: /apps/pricing/actions")
 
+    cache_key = "action_pricing:mobile"
+
     try:
-        # Get all active pricing
+        # Try to get from Redis cache first
+        cached_data = await redis.get(cache_key)
+        if cached_data:
+            logger.info("🎯 Returning cached pricing data")
+            return json.loads(cached_data)
+
+        # Cache miss - fetch from database
+        logger.info("🎯 Cache miss - fetching pricing from database")
         pricing_rows = await db.fetch_all(
             """
             SELECT action_slug, dust_cost, description, updated_at
@@ -1456,8 +1478,11 @@ async def get_action_pricing(
                 "last_updated": row["updated_at"].isoformat() + "Z",
             }
 
-        logger.info(f"🎯 Returning {len(pricing_data)} pricing entries to mobile app")
+        # Cache for 1 hour (3600 seconds)
+        await redis.setex(cache_key, 3600, json.dumps(pricing_data))
+        logger.info(f"🎯 Cached pricing data for {len(pricing_data)} actions")
         logger.info(f"🎯 Pricing data: {pricing_data}")
+
         return pricing_data
 
     except Exception as e:
@@ -1872,6 +1897,7 @@ async def create_action_pricing(
     pricing_data: dict,
     admin_user: TokenData = Depends(require_admin),
     db: Database = Depends(get_db),
+    redis=Depends(get_redis),
 ):
     """
     Create action pricing. Admin only.
@@ -1917,6 +1943,9 @@ async def create_action_pricing(
             action_slug,
         )
 
+        # Invalidate pricing cache
+        await invalidate_pricing_cache(redis)
+
         return dict(created_row)
 
     except HTTPException:
@@ -1935,6 +1964,7 @@ async def update_action_pricing(
     pricing_data: dict,
     admin_user: TokenData = Depends(require_admin),
     db: Database = Depends(get_db),
+    redis=Depends(get_redis),
 ):
     """
     Update action pricing. Admin only.
@@ -1988,6 +2018,9 @@ async def update_action_pricing(
             action_slug,
         )
 
+        # Invalidate pricing cache
+        await invalidate_pricing_cache(redis)
+
         return dict(updated_row)
 
     except HTTPException:
@@ -2005,6 +2038,7 @@ async def delete_action_pricing(
     action_slug: str,
     admin_user: TokenData = Depends(require_admin),
     db: Database = Depends(get_db),
+    redis=Depends(get_redis),
 ):
     """
     Delete action pricing. Admin only.
@@ -2014,6 +2048,9 @@ async def delete_action_pricing(
 
         if "DELETE 0" in result:
             raise HTTPException(status_code=404, detail="Action pricing not found")
+
+        # Invalidate pricing cache
+        await invalidate_pricing_cache(redis)
 
         return {"message": f"Action pricing for '{action_slug}' deleted successfully"}
 
