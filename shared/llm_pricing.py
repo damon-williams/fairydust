@@ -132,9 +132,11 @@ def get_pricing_config():
 
     # Return hard-coded config as fallback for sync contexts (warn only once)
     if not _sync_fallback_warned:
-        logger.info("💰 Pricing: Using built-in configuration (database cache not available in sync context)")
+        logger.info(
+            "💰 Pricing: Using built-in configuration (database cache not available in sync context)"
+        )
         _sync_fallback_warned = True
-    
+
     return PRICING_CONFIG
 
 

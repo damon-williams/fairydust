@@ -2,11 +2,12 @@ import os
 import sys
 from typing import Optional
 from uuid import UUID
-from shared.uuid_utils import generate_uuid7
 
 import httpx
 from fastapi import APIRouter, Depends, Form, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
+
+from shared.uuid_utils import generate_uuid7
 
 sys.path.append(os.path.join(os.path.dirname(__file__), "..", ".."))
 from auth import BuilderAuth, get_current_builder_user, optional_builder_user

@@ -1,7 +1,6 @@
 """Story image extraction and scene identification service"""
 
 import re
-from shared.uuid_utils import generate_uuid7
 from typing import Optional
 
 from models import (
@@ -10,6 +9,8 @@ from models import (
     StoryLength,
     TargetAudience,
 )
+
+from shared.uuid_utils import generate_uuid7
 
 # Image counts by story length
 IMAGE_COUNTS = {StoryLength.QUICK: 2, StoryLength.MEDIUM: 3, StoryLength.LONG: 4}
@@ -22,7 +23,11 @@ class StoryImageService:
         pass
 
     def extract_image_scenes(
-        self, story_content: str, story_length: StoryLength, characters: list[StoryCharacter], story_id: str = None
+        self,
+        story_content: str,
+        story_length: StoryLength,
+        characters: list[StoryCharacter],
+        story_id: str = None,
     ) -> list[dict]:
         """Extract key scenes from story for image generation with proper image count"""
 
@@ -63,7 +68,7 @@ class StoryImageService:
             # Use story ID prefix for uniqueness (if available) or generate UUID
             if story_id:
                 # Use middle part of story ID to avoid time-based prefix collisions
-                story_suffix = str(story_id).replace('-', '')[-8:]  # Last 8 chars, no hyphens
+                story_suffix = str(story_id).replace("-", "")[-8:]  # Last 8 chars, no hyphens
                 image_id = f"img_{i+1:02d}_{story_suffix}"
             else:
                 # Fallback to UUID with more characters for uniqueness

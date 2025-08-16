@@ -29,7 +29,7 @@ class LLMError(Exception):
 
 class ModelAdapter:
     """Base class for model-specific parameter adapters"""
-    
+
     def adapt_parameters(self, parameters: dict) -> dict:
         """Adapt generic parameters to model-specific ones"""
         return parameters
@@ -37,7 +37,7 @@ class ModelAdapter:
 
 class OpenAIGPT4Adapter(ModelAdapter):
     """Adapter for GPT-4 family models"""
-    
+
     def adapt_parameters(self, parameters: dict) -> dict:
         return {
             "max_tokens": parameters.get("max_tokens", 1000),
@@ -48,7 +48,7 @@ class OpenAIGPT4Adapter(ModelAdapter):
 
 class OpenAIGPT5Adapter(ModelAdapter):
     """Adapter for GPT-5 family models with very strict requirements"""
-    
+
     def adapt_parameters(self, parameters: dict) -> dict:
         # GPT-5 only supports max_completion_tokens and temperature=1
         # Does NOT support top_p or other parameters
@@ -61,7 +61,7 @@ class OpenAIGPT5Adapter(ModelAdapter):
 
 class AnthropicAdapter(ModelAdapter):
     """Adapter for Anthropic Claude models"""
-    
+
     def adapt_parameters(self, parameters: dict) -> dict:
         return {
             "max_tokens": parameters.get("max_tokens", 1000),
@@ -84,7 +84,7 @@ class LLMClient:
 
         if not self.anthropic_key and not self.openai_key:
             raise ValueError("At least one LLM API key must be configured")
-            
+
         # Model adapter registry
         self.adapters = {
             # OpenAI GPT-4 family
@@ -92,29 +92,27 @@ class LLMClient:
             "gpt-4-turbo": OpenAIGPT4Adapter(),
             "gpt-4o": OpenAIGPT4Adapter(),
             "gpt-4o-mini": OpenAIGPT4Adapter(),
-            
-            # OpenAI GPT-5 family  
+            # OpenAI GPT-5 family
             "gpt-5": OpenAIGPT5Adapter(),
             "gpt-5-mini": OpenAIGPT5Adapter(),
             "gpt-5-turbo": OpenAIGPT5Adapter(),
-            
             # Anthropic Claude family
             "claude-3-5-sonnet": AnthropicAdapter(),
             "claude-3-5-haiku": AnthropicAdapter(),
             "claude-3-opus": AnthropicAdapter(),
         }
-    
+
     def _get_adapter(self, model_id: str) -> ModelAdapter:
         """Get the appropriate adapter for a model"""
         # Check for exact match first
         if model_id in self.adapters:
             return self.adapters[model_id]
-            
+
         # Check for prefix matches
         for model_prefix, adapter in self.adapters.items():
             if model_id.startswith(model_prefix):
                 return adapter
-        
+
         # Default fallback based on provider
         if "gpt-5" in model_id.lower():
             return OpenAIGPT5Adapter()
@@ -270,34 +268,34 @@ class LLMClient:
         """Get global fallback models from admin configuration"""
         try:
             # Get environment-based admin URL
-            environment = os.getenv('ENVIRONMENT', 'staging')
-            admin_url_suffix = 'production' if environment == 'production' else 'staging'
+            environment = os.getenv("ENVIRONMENT", "staging")
+            admin_url_suffix = "production" if environment == "production" else "staging"
             admin_url = f"https://fairydust-admin-{admin_url_suffix}.up.railway.app"
-            
+
             async with httpx.AsyncClient(timeout=5.0) as client:
                 # Fetch global LLM fallback configuration
                 response = await client.get(f"{admin_url}/api/global-fallbacks")
-                
+
                 if response.status_code == 200:
                     config = response.json()
                     fallbacks = []
-                    
+
                     # Add primary global model first
                     if config.get("primary_provider") and config.get("primary_model"):
                         fallbacks.append((config["primary_provider"], config["primary_model"]))
-                    
+
                     # Add configured fallbacks
                     for fallback in config.get("fallbacks", []):
                         provider = fallback.get("provider")
                         model = fallback.get("model")
                         if provider and model:
                             fallbacks.append((provider, model))
-                    
+
                     return fallbacks
-                    
+
         except Exception as e:
             print(f"⚠️ LLM_CLIENT: Failed to fetch global fallbacks: {e}")
-        
+
         # Hardcoded emergency fallbacks only if admin service is unreachable
         return [
             ("anthropic", "claude-3-5-sonnet-20241022"),
@@ -422,7 +420,9 @@ class LLMClient:
             json={
                 "model": model_id,
                 "messages": [{"role": "user", "content": prompt}],
-                **{k: v for k, v in adapted_params.items() if v is not None}  # Dynamic params from adapter
+                **{
+                    k: v for k, v in adapted_params.items() if v is not None
+                },  # Dynamic params from adapter
             },
         )
 

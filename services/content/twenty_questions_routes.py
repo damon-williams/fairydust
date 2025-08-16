@@ -1,9 +1,7 @@
 # services/content/twenty_questions_routes.py
 import logging
-import random
 from typing import Union
 from uuid import UUID
-from shared.uuid_utils import generate_uuid7
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from models import (
@@ -26,6 +24,7 @@ from models import (
 
 from shared.database import Database, get_db
 from shared.llm_client import llm_client
+from shared.uuid_utils import generate_uuid7
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -34,20 +33,19 @@ logger = logging.getLogger(__name__)
 TWENTY_QUESTIONS_RATE_LIMIT = 10  # Max 10 games per hour per user
 
 
-
-
 async def generate_secret_answer(category: str, user_id: UUID) -> str:
     """Generate a secret answer for fairydust_thinks mode, avoiding previous answers."""
     try:
         # Get database connection
         from shared.database import get_db
+
         db = await get_db()
 
         # Get user's previous secret answers from this category to avoid duplicates
         previous_answers = await db.fetch_all(
             """
-            SELECT secret_answer 
-            FROM twenty_questions_games 
+            SELECT secret_answer
+            FROM twenty_questions_games
             WHERE user_id = $1 AND category = $2 AND secret_answer IS NOT NULL
             ORDER BY created_at DESC
             LIMIT 20
@@ -55,9 +53,11 @@ async def generate_secret_answer(category: str, user_id: UUID) -> str:
             user_id,
             category,
         )
-        
+
         previous_list = [row["secret_answer"] for row in previous_answers if row["secret_answer"]]
-        logger.info(f"🔍 SECRET_GEN: Found {len(previous_list)} previous answers for {category}: {previous_list}")
+        logger.info(
+            f"🔍 SECRET_GEN: Found {len(previous_list)} previous answers for {category}: {previous_list}"
+        )
 
         # Get LLM model configuration
         model_config = await get_llm_model_config()
@@ -92,8 +92,10 @@ Generate one answer from the "{category}" category. Respond with just the answer
         # Try multiple times to avoid duplicates
         max_attempts = 3
         for attempt in range(max_attempts):
-            logger.info(f"🎲 SECRET_GEN: Attempt {attempt + 1}/{max_attempts} for category {category}")
-            
+            logger.info(
+                f"🎲 SECRET_GEN: Attempt {attempt + 1}/{max_attempts} for category {category}"
+            )
+
             # Use centralized LLM client
             completion, metadata = await llm_client.generate_completion(
                 prompt=prompt,
@@ -109,37 +111,94 @@ Generate one answer from the "{category}" category. Respond with just the answer
             )
 
             new_answer = completion.strip()
-            
+
             # Check if this answer was used before (case-insensitive)
             if not any(new_answer.lower() == prev.lower() for prev in previous_list):
                 logger.info(f"✅ SECRET_GEN: Generated unique answer: {new_answer}")
                 return new_answer
             else:
-                logger.warning(f"⚠️ SECRET_GEN: Generated duplicate answer '{new_answer}', retrying...")
+                logger.warning(
+                    f"⚠️ SECRET_GEN: Generated duplicate answer '{new_answer}', retrying..."
+                )
 
         # If all attempts failed, use fallback with uniqueness check
-        logger.warning(f"❌ SECRET_GEN: All LLM attempts generated duplicates, using fallback")
-        
+        logger.warning("❌ SECRET_GEN: All LLM attempts generated duplicates, using fallback")
+
     except Exception as e:
         logger.error(f"❌ SECRET_GEN: Failed to generate secret answer: {e}")
 
     # Fallback answers by category with uniqueness check
     fallback_answers = {
-        "animals": ["elephant", "dolphin", "butterfly", "penguin", "giraffe", "kangaroo", "octopus", "flamingo", "zebra", "panda"],
-        "movies": ["Titanic", "Star Wars", "The Lion King", "Avatar", "Frozen", "Jurassic Park", "The Matrix", "Finding Nemo", "Shrek", "Toy Story"],
-        "food": ["pizza", "chocolate", "apple", "banana", "hamburger", "sushi", "ice cream", "pasta", "sandwich", "cookies"],
-        "objects": ["bicycle", "smartphone", "book", "umbrella", "guitar", "camera", "lamp", "mirror", "clock", "pillow"],
-        "general": ["tree", "ocean", "mountain", "rainbow", "sunset", "cloud", "river", "flower", "bridge", "castle"],
+        "animals": [
+            "elephant",
+            "dolphin",
+            "butterfly",
+            "penguin",
+            "giraffe",
+            "kangaroo",
+            "octopus",
+            "flamingo",
+            "zebra",
+            "panda",
+        ],
+        "movies": [
+            "Titanic",
+            "Star Wars",
+            "The Lion King",
+            "Avatar",
+            "Frozen",
+            "Jurassic Park",
+            "The Matrix",
+            "Finding Nemo",
+            "Shrek",
+            "Toy Story",
+        ],
+        "food": [
+            "pizza",
+            "chocolate",
+            "apple",
+            "banana",
+            "hamburger",
+            "sushi",
+            "ice cream",
+            "pasta",
+            "sandwich",
+            "cookies",
+        ],
+        "objects": [
+            "bicycle",
+            "smartphone",
+            "book",
+            "umbrella",
+            "guitar",
+            "camera",
+            "lamp",
+            "mirror",
+            "clock",
+            "pillow",
+        ],
+        "general": [
+            "tree",
+            "ocean",
+            "mountain",
+            "rainbow",
+            "sunset",
+            "cloud",
+            "river",
+            "flower",
+            "bridge",
+            "castle",
+        ],
     }
-    
+
     category_answers = fallback_answers.get(category.lower(), fallback_answers["general"])
-    
+
     # Try to find a unique fallback answer
     for answer in category_answers:
         if not previous_list or not any(answer.lower() == prev.lower() for prev in previous_list):
             logger.info(f"🔄 SECRET_GEN: Using unique fallback answer: {answer}")
             return answer
-    
+
     # If even fallbacks are all used, just return the first one (very unlikely)
     fallback_answer = category_answers[0]
     logger.warning(f"⚠️ SECRET_GEN: All fallbacks used, returning: {fallback_answer}")
@@ -219,7 +278,7 @@ async def get_llm_model_config() -> dict:
 
         # Cache the result
         await cache.set_model_config(app_id, model_config)
-        logger.info(f"💾 20Q_CONFIG: Cached config for future use")
+        logger.info("💾 20Q_CONFIG: Cached config for future use")
         return model_config
 
     except Exception as e:
@@ -328,7 +387,7 @@ async def generate_ai_final_guess(
     history: list[dict],
 ) -> str:
     """Generate AI's final guess based on all Q&A history."""
-    
+
     # Build context from game history
     history_context = ""
     if history:
@@ -348,7 +407,7 @@ async def generate_ai_final_guess(
 
 {history_context}
 
-Based on the answers to my questions, what do you think I'm thinking of? This could be a person, place, object, or concept. 
+Based on the answers to my questions, what do you think I'm thinking of? This could be a person, place, object, or concept.
 
 IMPORTANT: You must make a specific guess. Do not respond with "Unknown", "I don't know", or anything vague. Even if you're uncertain, make your best educated guess based on the information you have.
 
@@ -379,27 +438,52 @@ Respond with just your specific guess, nothing else:"""
         )
 
         final_guess = completion.strip()
-        
+
         # Post-processing: If AI somehow still returned "Unknown" or similar, fix it
-        if final_guess.lower() in ["unknown", "i don't know", "not sure", "unclear", "uncertain", ""]:
+        if final_guess.lower() in [
+            "unknown",
+            "i don't know",
+            "not sure",
+            "unclear",
+            "uncertain",
+            "",
+        ]:
             logger.warning(f"AI returned invalid guess '{final_guess}', using fallback")
             fallback_guesses = [
-                "a cat", "a dog", "pizza", "a car", "a tree", "a book", 
-                "a phone", "a movie", "music", "a game"
+                "a cat",
+                "a dog",
+                "pizza",
+                "a car",
+                "a tree",
+                "a book",
+                "a phone",
+                "a movie",
+                "music",
+                "a game",
             ]
             import random
+
             final_guess = random.choice(fallback_guesses)
-        
+
         return final_guess
 
     except Exception as e:
         logger.error(f"Failed to generate AI final guess: {e}")
         # Fallback guess - make a reasonable attempt based on common answers
         fallback_guesses = [
-            "a cat", "a dog", "pizza", "a car", "a tree", "a book", 
-            "a phone", "a movie", "music", "a game"
+            "a cat",
+            "a dog",
+            "pizza",
+            "a car",
+            "a tree",
+            "a book",
+            "a phone",
+            "a movie",
+            "music",
+            "a game",
         ]
         import random
+
         return random.choice(fallback_guesses)
 
 
@@ -407,27 +491,27 @@ def check_guess_accuracy(guess: str, correct_answer: str) -> bool:
     """Check if the guess matches the correct answer (case-insensitive partial match)."""
     if not guess or not correct_answer:
         return False
-    
+
     guess_lower = guess.lower().strip()
     answer_lower = correct_answer.lower().strip()
-    
+
     # Exact match
     if guess_lower == answer_lower:
         return True
-    
+
     # Partial matches (one contains the other)
     if guess_lower in answer_lower or answer_lower in guess_lower:
         return True
-    
+
     # Check individual words for name variations
     guess_words = set(guess_lower.split())
     answer_words = set(answer_lower.split())
-    
+
     # If they share significant words, consider it correct
     shared_words = guess_words.intersection(answer_words)
     if len(shared_words) > 0 and len(shared_words) / max(len(guess_words), len(answer_words)) > 0.5:
         return True
-    
+
     return False
 
 
@@ -441,19 +525,17 @@ async def generate_ai_answer_to_user_question(
     history: list[dict],
 ) -> TwentyQuestionsAnswer:
     """Generate AI's answer to user's question in fairydust_thinks mode."""
-    
+
     # Build context from previous Q&A
     history_context = ""
     if history:
         history_items = []
         for entry in history:
             if not entry.get("is_guess", False):
-                history_items.append(
-                    f"Q: {entry['question_text']} - A: {entry['answer']}"
-                )
+                history_items.append(f"Q: {entry['question_text']} - A: {entry['answer']}")
         if history_items:
             history_context = "\n\nPrevious Q&A:\n" + "\n".join(history_items)
-    
+
     prompt = f"""You are playing 20 Questions. I'm thinking of "{secret_answer}" from the category "{category}".
 
 A user just asked: "{question}"
@@ -464,7 +546,7 @@ Based on my secret answer "{secret_answer}", how should I respond to this questi
 
 Answer with exactly one of these responses:
 - "yes" if the answer is clearly yes
-- "no" if the answer is clearly no  
+- "no" if the answer is clearly no
 - "sometimes" if it depends or is partially true
 - "unknown" if the information is not clear or not applicable
 
@@ -515,7 +597,7 @@ async def determine_ai_answer(
     target_person: dict, question: str, category: str = "general"
 ) -> TwentyQuestionsAnswer:
     """Determine how the AI should answer based on the target and question."""
-    
+
     # For all categories, the AI conceptually chooses and answers
     # This should eventually use LLM to determine answers based on the category
     # For now, return SOMETIMES to make the game playable
@@ -612,7 +694,7 @@ async def start_game(
             # User thinks mode - AI will ask questions
             secret_answer = None
             target_name = f"Something from {request.category}"
-            start_message = f"Game started! I'm thinking of something. Here's my first question:"
+            start_message = "Game started! I'm thinking of something. Here's my first question:"
 
         # Create new game
         game_id = generate_uuid7()
@@ -763,7 +845,7 @@ async def ask_question(
 
         elif game_mode == TwentyQuestionsMode.FAIRYDUST_THINKS.value:
             # Fairydust thinks mode - User is asking the AI a question
-            
+
             # Get game history for context
             history = await db.fetch_all(
                 """
@@ -777,8 +859,13 @@ async def ask_question(
 
             # Generate AI's answer to user's question
             ai_answer = await generate_ai_answer_to_user_question(
-                db, game_id, request.user_id, game_data["secret_answer"], 
-                request.question, game_data["category"], history
+                db,
+                game_id,
+                request.user_id,
+                game_data["secret_answer"],
+                request.question,
+                game_data["category"],
+                history,
             )
 
             # Update game state
@@ -934,7 +1021,7 @@ async def answer_ai_question(
         # Generate next AI question or make final guess
         next_ai_question = None
         ai_final_guess = None
-        
+
         if new_questions_remaining > 0:
             # Get target info
             target_person = {"name": game_data["target_person_name"]}
@@ -988,13 +1075,13 @@ async def answer_ai_question(
             ai_final_guess = await generate_ai_final_guess(
                 db, game_id, request.user_id, target_person, history
             )
-            
+
             # Check if AI's guess is correct
             is_ai_correct = check_guess_accuracy(ai_final_guess, game_data["target_person_name"])
-            
+
             # Update game with AI's final guess and result
             new_status = TwentyQuestionsStatus.LOST if is_ai_correct else TwentyQuestionsStatus.WON
-            
+
             await db.execute(
                 """
                 UPDATE twenty_questions_games
@@ -1007,7 +1094,7 @@ async def answer_ai_question(
                 is_ai_correct,
                 game_id,
             )
-            
+
             # Add AI's final guess to history
             await db.execute(
                 """
@@ -1077,7 +1164,7 @@ async def answer_ai_question(
                 message = f"🤖 I guessed '{ai_final_guess}' and I was correct! I win this round! 🏆"
             else:
                 message = f"🤖 I guessed '{ai_final_guess}' but I was wrong. You win! The correct answer was '{game_data['target_person_name']}'. 🎉"
-                
+
             return TwentyQuestionsAnswerResponse(
                 game=game,
                 ai_final_guess=ai_final_guess,

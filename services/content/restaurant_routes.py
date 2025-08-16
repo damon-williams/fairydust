@@ -4,9 +4,10 @@ import os
 import random
 from datetime import datetime, timedelta
 from uuid import UUID
-from shared.uuid_utils import generate_uuid7
 
 import httpx
+
+from shared.uuid_utils import generate_uuid7
 
 environment = os.getenv("ENVIRONMENT", "staging")
 base_url_suffix = "production" if environment == "production" else "staging"

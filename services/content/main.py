@@ -43,42 +43,49 @@ from shared.redis_client import close_redis, init_redis
 async def lifespan(app: FastAPI):
     # Force schema initialization for content service to ensure retry columns exist
     os.environ.setdefault("SKIP_SCHEMA_INIT", "false")
-    
+
     # Initialize database and Redis
     await init_db()
-    
+
     # EMERGENCY: Add retry columns directly if they don't exist
     # This bypasses any shared/database.py issues
     try:
         from shared.database import get_db
+
         db = await get_db()
-        
+
         logger.info("🔧 EMERGENCY: Adding retry columns directly...")
-        
+
         # Add columns one by one
         try:
-            await db.execute_schema("ALTER TABLE story_images ADD COLUMN IF NOT EXISTS attempt_number INTEGER DEFAULT 1")
+            await db.execute_schema(
+                "ALTER TABLE story_images ADD COLUMN IF NOT EXISTS attempt_number INTEGER DEFAULT 1"
+            )
             logger.info("✅ Added attempt_number column")
         except Exception as e:
             logger.info(f"📝 attempt_number: {e}")
-            
+
         try:
-            await db.execute_schema("ALTER TABLE story_images ADD COLUMN IF NOT EXISTS max_attempts INTEGER DEFAULT 3")
+            await db.execute_schema(
+                "ALTER TABLE story_images ADD COLUMN IF NOT EXISTS max_attempts INTEGER DEFAULT 3"
+            )
             logger.info("✅ Added max_attempts column")
         except Exception as e:
             logger.info(f"📝 max_attempts: {e}")
-            
+
         try:
-            await db.execute_schema("ALTER TABLE story_images ADD COLUMN IF NOT EXISTS retry_reason TEXT DEFAULT NULL")
+            await db.execute_schema(
+                "ALTER TABLE story_images ADD COLUMN IF NOT EXISTS retry_reason TEXT DEFAULT NULL"
+            )
             logger.info("✅ Added retry_reason column")
         except Exception as e:
             logger.info(f"📝 retry_reason: {e}")
-            
+
         logger.info("🔧 EMERGENCY: Retry columns setup complete")
-        
+
     except Exception as e:
         logger.error(f"❌ EMERGENCY: Failed to add retry columns: {e}")
-    
+
     await init_redis()
 
     # Start video background processor

@@ -5,7 +5,6 @@ import re
 from datetime import datetime
 from typing import Optional
 from uuid import UUID
-from shared.uuid_utils import generate_uuid7
 
 import httpx
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
@@ -846,9 +845,7 @@ async def _check_rate_limit(db: Database, user_id: UUID) -> bool:
         return False
 
 
-async def _validate_selected_people(
-    db: Database, user_id: UUID, person_ids: list[UUID]
-) -> bool:
+async def _validate_selected_people(db: Database, user_id: UUID, person_ids: list[UUID]) -> bool:
     """Validate that all person_ids exist in user's 'People in My Life'"""
     if not person_ids:
         return True
@@ -870,9 +867,7 @@ async def _validate_selected_people(
         return False
 
 
-async def _get_user_context(
-    db: Database, user_id: UUID, selected_people: list[UUID]
-) -> str:
+async def _get_user_context(db: Database, user_id: UUID, selected_people: list[UUID]) -> str:
     """Get user context for personalization"""
     try:
         context_parts = []

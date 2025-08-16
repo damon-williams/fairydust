@@ -5,7 +5,6 @@ from contextlib import asynccontextmanager
 from typing import Any, Optional
 
 import asyncpg
-from .uuid_utils import generate_uuid7
 
 DATABASE_URL = os.getenv("DATABASE_URL")
 
@@ -922,26 +921,34 @@ async def create_tables():
     # Add retry metadata columns to existing story_images tables (safe migrations)
     # Handle each column separately to avoid syntax issues
     try:
-        await db.execute_schema("ALTER TABLE story_images ADD COLUMN IF NOT EXISTS attempt_number INTEGER DEFAULT 1")
+        await db.execute_schema(
+            "ALTER TABLE story_images ADD COLUMN IF NOT EXISTS attempt_number INTEGER DEFAULT 1"
+        )
     except Exception as e:
         if "already exists" not in str(e):
             logger.warning(f"Could not add attempt_number column: {e}")
-    
+
     try:
-        await db.execute_schema("ALTER TABLE story_images ADD COLUMN IF NOT EXISTS max_attempts INTEGER DEFAULT 3")  
+        await db.execute_schema(
+            "ALTER TABLE story_images ADD COLUMN IF NOT EXISTS max_attempts INTEGER DEFAULT 3"
+        )
     except Exception as e:
         if "already exists" not in str(e):
             logger.warning(f"Could not add max_attempts column: {e}")
-            
+
     try:
-        await db.execute_schema("ALTER TABLE story_images ADD COLUMN IF NOT EXISTS retry_reason TEXT DEFAULT NULL")
+        await db.execute_schema(
+            "ALTER TABLE story_images ADD COLUMN IF NOT EXISTS retry_reason TEXT DEFAULT NULL"
+        )
     except Exception as e:
         if "already exists" not in str(e):
             logger.warning(f"Could not add retry_reason column: {e}")
-    
+
     # Add index for retry columns after they exist
     try:
-        await db.execute_schema("CREATE INDEX IF NOT EXISTS idx_story_images_status_attempts ON story_images(status, attempt_number) WHERE status IN ('generating', 'retrying', 'failed')")
+        await db.execute_schema(
+            "CREATE INDEX IF NOT EXISTS idx_story_images_status_attempts ON story_images(status, attempt_number) WHERE status IN ('generating', 'retrying', 'failed')"
+        )
     except Exception as e:
         logger.warning(f"Could not create retry status index: {e}")
 

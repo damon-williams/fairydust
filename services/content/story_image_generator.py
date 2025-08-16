@@ -123,18 +123,24 @@ class StoryImageGenerator:
             )
             logger.info(f"   Failed: {failed_count} images")
             logger.info("📊 RETRY_STATISTICS:")
-            logger.info(f"   First attempt successes: {retry_stats.get('first_attempt_successes', 0)}")
-            logger.info(f"   First attempt failures: {retry_stats.get('first_attempt_failures', 0)}")
+            logger.info(
+                f"   First attempt successes: {retry_stats.get('first_attempt_successes', 0)}"
+            )
+            logger.info(
+                f"   First attempt failures: {retry_stats.get('first_attempt_failures', 0)}"
+            )
             logger.info(f"   Total retry attempts: {retry_stats.get('total_retry_attempts', 0)}")
             logger.info(f"   Retry successes: {retry_stats.get('retry_successes', 0)}")
             logger.info(f"   Retry failures: {retry_stats.get('retry_failures', 0)}")
-            
+
             # Calculate retry success rate if there were any retries
-            total_retries = retry_stats.get('total_retry_attempts', 0)
-            retry_successes = retry_stats.get('retry_successes', 0)
+            total_retries = retry_stats.get("total_retry_attempts", 0)
+            retry_successes = retry_stats.get("retry_successes", 0)
             if total_retries > 0:
                 retry_success_rate = (retry_successes / total_retries) * 100
-                logger.info(f"   Retry success rate: {retry_success_rate:.1f}% ({retry_successes}/{total_retries} retry attempts)")
+                logger.info(
+                    f"   Retry success rate: {retry_success_rate:.1f}% ({retry_successes}/{total_retries} retry attempts)"
+                )
             else:
                 logger.info("   Retry success rate: N/A (no retries attempted)")
             logger.info("⏱️ TIMING_METRICS:")
@@ -209,16 +215,16 @@ class StoryImageGenerator:
         except Exception as e:
             total_time = time.time() - start_time
             logger.error(f"❌ INDIVIDUAL_TIMING: Image {image_id} FAILED after {total_time:.2f}s")
-            
+
             # Check if this is a known Replicate error that we handle gracefully
             error_msg = str(e).lower()
             is_known_replicate_error = (
-                "replicate internal.bad_output" in error_msg 
+                "replicate internal.bad_output" in error_msg
                 or "replicate_bad_output" in getattr(e, "retry_type", "")
                 or "nsfw" in getattr(e, "retry_type", "")
                 or "transient" in getattr(e, "retry_type", "")
             )
-            
+
             if is_known_replicate_error:
                 # Clean logging for known errors - no stack trace needed
                 logger.error(f"❌ Known service error for image {image_id}: {str(e)}")
@@ -386,7 +392,13 @@ class StoryImageGenerator:
             # Generate image with retry logic for NSFW false positives
             generation_start_time = time.time()
             image_url, generation_metadata = await self._generate_image_with_retry(
-                db, story_id, enhanced_prompt, scene, characters_in_scene, target_audience, reference_people
+                db,
+                story_id,
+                enhanced_prompt,
+                scene,
+                characters_in_scene,
+                target_audience,
+                reference_people,
             )
             phase_times["image_generation"] = time.time() - generation_start_time
 
@@ -541,13 +553,13 @@ class StoryImageGenerator:
                     metadata = (
                         json.loads(row["generation_metadata"]) if row["generation_metadata"] else {}
                     )
-                    
+
                     total_attempts = metadata.get("total_attempts", 1)
                     retry_success = metadata.get("retry_success", False)
-                    
+
                     if total_attempts > 1:
                         # This image had retries
-                        total_retry_attempts += (total_attempts - 1)  # Don't count first attempt
+                        total_retry_attempts += total_attempts - 1  # Don't count first attempt
                         if row["status"] == "completed" and retry_success:
                             retry_successes += 1
                         elif row["status"] == "failed":
@@ -558,7 +570,7 @@ class StoryImageGenerator:
                             first_attempt_successes += 1
                         elif row["status"] == "failed":
                             first_attempt_failures += 1
-                            
+
                 except (json.JSONDecodeError, TypeError):
                     # Default to first attempt failure if we can't parse metadata
                     if row["status"] == "failed":
@@ -577,11 +589,11 @@ class StoryImageGenerator:
         except Exception as e:
             logger.error(f"Failed to get retry statistics: {e}")
             return {
-                "retry_successes": 0, 
-                "retry_failures": 0, 
+                "retry_successes": 0,
+                "retry_failures": 0,
                 "total_retry_attempts": 0,
                 "first_attempt_successes": 0,
-                "first_attempt_failures": 0
+                "first_attempt_failures": 0,
             }
 
     async def _generate_image_with_retry(
@@ -613,45 +625,61 @@ class StoryImageGenerator:
                         # First attempt - update to generating
                         await db.execute(
                             """
-                            UPDATE story_images 
+                            UPDATE story_images
                             SET status = $1, attempt_number = $2, max_attempts = $3, updated_at = CURRENT_TIMESTAMP
                             WHERE story_id = $4 AND image_id = $5
                             """,
-                            "generating", attempt + 1, max_retries, story_id, image_id
+                            "generating",
+                            attempt + 1,
+                            max_retries,
+                            story_id,
+                            image_id,
                         )
-                        logger.info(f"🎯 ATTEMPT {attempt + 1}: Starting first generation attempt for image {image_id}")
+                        logger.info(
+                            f"🎯 ATTEMPT {attempt + 1}: Starting first generation attempt for image {image_id}"
+                        )
                     else:
                         # Retry attempt - update to retrying
                         await db.execute(
                             """
-                            UPDATE story_images 
+                            UPDATE story_images
                             SET status = $1, attempt_number = $2, retry_reason = $3, updated_at = CURRENT_TIMESTAMP
                             WHERE story_id = $4 AND image_id = $5
                             """,
-                            "retrying", attempt + 1, "unknown", story_id, image_id
+                            "retrying",
+                            attempt + 1,
+                            "unknown",
+                            story_id,
+                            image_id,
                         )
                         if retry_start_time:
                             retry_delay = time.time() - retry_start_time
                             logger.info(
                                 f"⏱️ IMAGE_RETRY_TIMING: Attempt {attempt + 1} for image {image_id} starting after {retry_delay:.2f}s delay"
                             )
-                        logger.info(f"🔄 RETRY {attempt + 1}: Starting retry attempt for image {image_id}")
+                        logger.info(
+                            f"🔄 RETRY {attempt + 1}: Starting retry attempt for image {image_id}"
+                        )
                 except Exception as db_error:
                     # If new columns don't exist yet, just update status
                     if "attempt_number" in str(db_error):
                         status = "generating" if attempt == 0 else "retrying"
                         await db.execute(
                             """
-                            UPDATE story_images 
+                            UPDATE story_images
                             SET status = $1, updated_at = CURRENT_TIMESTAMP
                             WHERE story_id = $2 AND image_id = $3
                             """,
-                            status, story_id, image_id
+                            status,
+                            story_id,
+                            image_id,
                         )
-                        logger.info(f"🎯 ATTEMPT {attempt + 1}: Starting attempt for image {image_id} (legacy mode)")
+                        logger.info(
+                            f"🎯 ATTEMPT {attempt + 1}: Starting attempt for image {image_id} (legacy mode)"
+                        )
                     else:
                         raise
-                
+
                 prompt_to_use = original_prompt
 
                 if attempt > 0 and nsfw_failure_detected:
@@ -717,17 +745,23 @@ class StoryImageGenerator:
                 else:
                     error_msg = str(e).lower()
                     full_error = str(e)
-                    
+
                 retry_start_time = time.time()  # Track when retry delay starts
-                
+
                 # Debug logging for error pattern matching
                 logger.info(f"🔍 ERROR_DEBUG: Image {image_id} attempt {attempt + 1} failed")
                 logger.info(f"   Exception type: {type(e).__name__}")
                 logger.info(f"   Error message (lowercase): {error_msg}")
                 logger.info(f"   Full error: {full_error}")
-                logger.info(f"   Contains 'internal.bad_output': {'internal.bad_output' in error_msg}")
-                logger.info(f"   Contains 'INTERNAL.BAD_OUTPUT': {'INTERNAL.BAD_OUTPUT' in full_error}")
-                logger.info(f"   Contains 'unexpected error occurred': {'unexpected error occurred' in error_msg or 'unexpected error occurred' in full_error}")
+                logger.info(
+                    f"   Contains 'internal.bad_output': {'internal.bad_output' in error_msg}"
+                )
+                logger.info(
+                    f"   Contains 'INTERNAL.BAD_OUTPUT': {'INTERNAL.BAD_OUTPUT' in full_error}"
+                )
+                logger.info(
+                    f"   Contains 'unexpected error occurred': {'unexpected error occurred' in error_msg or 'unexpected error occurred' in full_error}"
+                )
 
                 # Check for NSFW-related errors (these need prompt sanitization)
                 if (
@@ -745,15 +779,17 @@ class StoryImageGenerator:
                         try:
                             await db.execute(
                                 """
-                                UPDATE story_images 
+                                UPDATE story_images
                                 SET retry_reason = $1, updated_at = CURRENT_TIMESTAMP
                                 WHERE story_id = $2 AND image_id = $3
                                 """,
-                                "nsfw", story_id, image_id
+                                "nsfw",
+                                story_id,
+                                image_id,
                             )
                         except Exception as db_error:
                             if "retry_reason" in str(db_error):
-                                logger.info(f"🔄 NSFW retry reason not stored (legacy mode)")
+                                logger.info("🔄 NSFW retry reason not stored (legacy mode)")
                             else:
                                 raise
                         logger.warning(
@@ -780,45 +816,57 @@ class StoryImageGenerator:
                 # Check for specific Replicate INTERNAL.BAD_OUTPUT errors (special handling)
                 elif "internal.bad_output" in error_msg or "INTERNAL.BAD_OUTPUT" in full_error:
                     # Special logging for INTERNAL.BAD_OUTPUT errors with prompt details
-                    logger.warning(f"🔧 REPLICATE_BAD_OUTPUT: Image {image_id} attempt {attempt + 1} failed with Replicate internal error")
-                    logger.warning(f"   Error code: INTERNAL.BAD_OUTPUT (Replicate model failure)")
+                    logger.warning(
+                        f"🔧 REPLICATE_BAD_OUTPUT: Image {image_id} attempt {attempt + 1} failed with Replicate internal error"
+                    )
+                    logger.warning("   Error code: INTERNAL.BAD_OUTPUT (Replicate model failure)")
                     logger.warning(f"   Full error: {full_error}")
                     logger.warning(f"   Original prompt: {original_prompt}")
                     logger.warning(f"   Current prompt: {prompt_to_use}")
                     logger.warning(f"   Prompt length: {len(prompt_to_use)} characters")
                     logger.warning(f"   Reference people: {len(reference_people)} images")
-                    
+
                     if attempt < max_retries - 1:
                         # Update retry reason in database (with backward compatibility)
                         try:
                             await db.execute(
                                 """
-                                UPDATE story_images 
+                                UPDATE story_images
                                 SET retry_reason = $1, updated_at = CURRENT_TIMESTAMP
                                 WHERE story_id = $2 AND image_id = $3
                                 """,
-                                "replicate_error", story_id, image_id
+                                "replicate_error",
+                                story_id,
+                                image_id,
                             )
                         except Exception as db_error:
                             if "retry_reason" in str(db_error):
-                                logger.info(f"🔄 Replicate retry reason not stored (legacy mode)")
+                                logger.info("🔄 Replicate retry reason not stored (legacy mode)")
                             else:
                                 raise
                         backoff_delay = 2**attempt  # Exponential backoff: 1s, 2s, 4s
-                        logger.info(f"🔄 REPLICATE_RETRY: Will retry image {image_id} in {backoff_delay}s (attempt {attempt + 2}/{max_retries})")
+                        logger.info(
+                            f"🔄 REPLICATE_RETRY: Will retry image {image_id} in {backoff_delay}s (attempt {attempt + 2}/{max_retries})"
+                        )
                         await asyncio.sleep(backoff_delay)
                         continue
                     else:
-                        logger.error(f"❌ REPLICATE_FINAL_FAILURE: Image {image_id} failed all {max_retries} attempts with INTERNAL.BAD_OUTPUT")
-                        logger.error(f"   This suggests a persistent issue with the prompt or Replicate service")
+                        logger.error(
+                            f"❌ REPLICATE_FINAL_FAILURE: Image {image_id} failed all {max_retries} attempts with INTERNAL.BAD_OUTPUT"
+                        )
+                        logger.error(
+                            "   This suggests a persistent issue with the prompt or Replicate service"
+                        )
                         logger.error(f"   Final prompt attempted: {prompt_to_use}")
-                        final_error = f"Replicate INTERNAL.BAD_OUTPUT error after {max_retries} attempts"
+                        final_error = (
+                            f"Replicate INTERNAL.BAD_OUTPUT error after {max_retries} attempts"
+                        )
                         error_with_retry_info = Exception(final_error)
                         error_with_retry_info.retry_count = attempt
                         error_with_retry_info.retry_type = "replicate_bad_output"
                         error_with_retry_info.prompt_used = prompt_to_use
                         raise error_with_retry_info
-                
+
                 # Check for other transient Replicate errors (general handling)
                 elif (
                     "unexpected error occurred" in error_msg
@@ -834,15 +882,17 @@ class StoryImageGenerator:
                         try:
                             await db.execute(
                                 """
-                                UPDATE story_images 
+                                UPDATE story_images
                                 SET retry_reason = $1, updated_at = CURRENT_TIMESTAMP
                                 WHERE story_id = $2 AND image_id = $3
                                 """,
-                                "transient", story_id, image_id
+                                "transient",
+                                story_id,
+                                image_id,
                             )
                         except Exception as db_error:
                             if "retry_reason" in str(db_error):
-                                logger.info(f"🔄 Transient retry reason not stored (legacy mode)")
+                                logger.info("🔄 Transient retry reason not stored (legacy mode)")
                             else:
                                 raise
                         backoff_delay = 2**attempt  # Exponential backoff: 1s, 2s, 4s
@@ -871,9 +921,9 @@ class StoryImageGenerator:
                 else:
                     # Non-retryable error
                     logger.error(f"❌ Non-retryable error ({type(e).__name__}): {full_error}")
-                    logger.error(f"   Error message doesn't match any retryable patterns")
+                    logger.error("   Error message doesn't match any retryable patterns")
                     logger.error(f"   Full error: {full_error}")
-                    
+
                     if isinstance(e, HTTPException):
                         logger.error(f"   HTTP Status Code: {e.status_code}")
                         logger.error(f"   HTTP Detail: {e.detail}")

@@ -3,7 +3,6 @@ import secrets
 import string
 from datetime import datetime
 from typing import Optional
-from shared.uuid_utils import generate_uuid7
 
 from auth import AuthService, TokenData, get_current_user
 from fastapi import (
@@ -55,6 +54,7 @@ from shared.storage_service import (
     upload_person_photo,
     upload_user_avatar,
 )
+from shared.uuid_utils import generate_uuid7
 
 
 async def get_daily_bonus_amount(db: Database) -> int:
@@ -399,9 +399,9 @@ async def verify_otp(
     # Update login statistics (total_logins should increment on every successful login)
     await db.execute(
         "UPDATE users SET total_logins = total_logins + 1, updated_at = CURRENT_TIMESTAMP WHERE id = $1",
-        user["id"]
+        user["id"],
     )
-    
+
     # Note: last_login_date is NOT updated here - only checked for response
     # DUST grant endpoint will handle last_login_date updates to avoid bonus timing issues
 
@@ -622,9 +622,9 @@ async def oauth_login(
     # Update login statistics (total_logins should increment on every successful login)
     await db.execute(
         "UPDATE users SET total_logins = total_logins + 1, updated_at = CURRENT_TIMESTAMP WHERE id = $1",
-        user["id"]
+        user["id"],
     )
-    
+
     # Note: last_login_date is NOT updated here - only checked for response
     # DUST grant endpoint will handle last_login_date updates to avoid bonus timing issues
 
@@ -663,7 +663,9 @@ async def oauth_login(
     extracted_birthdate = user_info.get("birthdate") if user_info else None
 
     # Consolidated login response log
-    print(f"✅ {provider.upper()} LOGIN: {user['fairyname']} | new_user: {is_new_user} | bonus_eligible: {daily_bonus_value} | balance: {user.get('dust_balance', 0)} DUST")
+    print(
+        f"✅ {provider.upper()} LOGIN: {user['fairyname']} | new_user: {is_new_user} | bonus_eligible: {daily_bonus_value} | balance: {user.get('dust_balance', 0)} DUST"
+    )
 
     response_data = AuthResponse(
         user=User(**user_dict),

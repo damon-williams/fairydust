@@ -50,17 +50,17 @@ class ImageGenerationService:
                 # Extract models from parameters (admin portal stores them here)
                 standard_model = params.get("standard_model", model_record["model_id"])
                 reference_model = params.get("reference_model", "runwayml/gen4-image")
-                
+
                 # Build fallback list from global fallbacks if available
                 fallback_models = ["stability-ai/sdxl", "black-forest-labs/flux-schnell"]
-                
+
                 config_result = {
                     "standard_model": standard_model,
                     "reference_model": reference_model,
                     "fallback_models": fallback_models,
                 }
 
-                print(f"✅ IMAGE_CONFIG: Loaded image config from database")
+                print("✅ IMAGE_CONFIG: Loaded image config from database")
                 print(f"   Standard: {config_result['standard_model']}")
                 print(f"   Reference: {config_result['reference_model']}")
                 print(f"   Fallbacks: {config_result['fallback_models']}")
@@ -128,7 +128,7 @@ class ImageGenerationService:
         if reference_people:
             # Use configured model for multiple face references (up to 3)
             model = image_models.get("reference_model", "runwayml/gen4-image")
-            
+
             # Check if it's a gen4-turbo model (supports both with and without reference people)
             if "gen4-image-turbo" in model:
                 return await self._generate_with_gen4_turbo(
@@ -148,7 +148,7 @@ class ImageGenerationService:
             # Try primary model first
             try:
                 print(f"🎯 IMAGE_GENERATION: Attempting primary model: {primary_model}")
-                
+
                 # Check if primary model is gen4-turbo (can handle text-only generation)
                 if "gen4-image-turbo" in primary_model:
                     return await self._generate_with_gen4_turbo(
@@ -165,15 +165,25 @@ class ImageGenerationService:
                 for fallback_model in fallback_models:
                     try:
                         print(f"🔄 IMAGE_GENERATION: Attempting fallback model: {fallback_model}")
-                        
+
                         # Check if fallback model is gen4-turbo
                         if "gen4-image-turbo" in fallback_model:
                             result = await self._generate_with_gen4_turbo(
-                                fallback_model, prompt, style, image_size, reference_people, image_id
+                                fallback_model,
+                                prompt,
+                                style,
+                                image_size,
+                                reference_people,
+                                image_id,
                             )
                         else:
                             result = await self._generate_standard_replicate(
-                                fallback_model, prompt, style, image_size, reference_people, image_id
+                                fallback_model,
+                                prompt,
+                                style,
+                                image_size,
+                                reference_people,
+                                image_id,
                             )
                         # Add fallback metadata
                         url, metadata = result
@@ -782,8 +792,8 @@ class ImageGenerationService:
         # Map image sizes to Gen-4 Turbo aspect ratios
         size_map = {
             ImageSize.STANDARD: "16:9",  # Standard widescreen
-            ImageSize.LARGE: "4:3",      # Portrait-ish 
-            ImageSize.SQUARE: "1:1"      # Square
+            ImageSize.LARGE: "4:3",  # Portrait-ish
+            ImageSize.SQUARE: "1:1",  # Square
         }
 
         aspect_ratio = size_map[image_size]
@@ -946,7 +956,11 @@ class ImageGenerationService:
                         else result["output"]
                     )
 
-                    generation_approach = "gen4_turbo_text_only" if not reference_people else "gen4_turbo_with_references"
+                    generation_approach = (
+                        "gen4_turbo_text_only"
+                        if not reference_people
+                        else "gen4_turbo_with_references"
+                    )
 
                     metadata = {
                         "model_used": model,

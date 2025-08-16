@@ -1,10 +1,9 @@
 # services/content/inspire_routes.py
 # Service URL configuration based on environment
 import os
-from uuid import UUID
-from shared.uuid_utils import generate_uuid7
 from datetime import datetime
 from typing import Optional
+from uuid import UUID
 
 import httpx
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
@@ -24,6 +23,7 @@ from models import (
 from shared.auth_middleware import TokenData, get_current_user
 from shared.database import Database, get_db
 from shared.llm_client import LLMError, llm_client
+from shared.uuid_utils import generate_uuid7
 
 # Service URL configuration
 environment = os.getenv("ENVIRONMENT", "staging")
@@ -433,7 +433,6 @@ async def _get_user_balance(user_id: UUID, auth_token: str) -> int:
     except Exception as e:
         print(f"❌ INSPIRE_BALANCE: Exception getting balance: {str(e)}", flush=True)
         return 0
-
 
 
 async def _check_rate_limit(db: Database, user_id: UUID) -> bool:

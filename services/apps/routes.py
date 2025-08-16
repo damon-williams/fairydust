@@ -4,7 +4,6 @@ import os
 from datetime import datetime
 from typing import Optional
 from uuid import UUID
-from shared.uuid_utils import generate_uuid7
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
@@ -38,6 +37,7 @@ from models import (
 
 from shared.auth_middleware import TokenData, get_current_user, require_admin
 from shared.database import Database, get_db
+from shared.uuid_utils import generate_uuid7
 
 # Create routers
 app_router = APIRouter()

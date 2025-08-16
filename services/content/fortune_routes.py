@@ -1,9 +1,8 @@
 # services/content/fortune_routes.py
 import json
-from uuid import UUID
-from shared.uuid_utils import generate_uuid7
 from datetime import datetime
 from typing import Optional
+from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from models import (
@@ -25,6 +24,7 @@ from shared.auth_middleware import TokenData, get_current_user
 from shared.database import Database, get_db
 from shared.llm_client import LLMError, llm_client
 from shared.llm_usage_logger import create_request_metadata
+from shared.uuid_utils import generate_uuid7
 
 router = APIRouter()
 

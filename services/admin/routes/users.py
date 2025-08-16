@@ -153,6 +153,7 @@ async def delete_user_json(
     """Delete user via JSON API with audit logging"""
     import json
     from datetime import datetime
+
     from shared.uuid_utils import generate_uuid7
 
     # Verify user exists

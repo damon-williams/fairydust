@@ -1,10 +1,9 @@
 # services/content/wyr_routes.py
 import hashlib
 import json
-from uuid import UUID
-from shared.uuid_utils import generate_uuid7
 from datetime import datetime
 from typing import Optional
+from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Path, Query, Request
 from models import (
@@ -27,6 +26,7 @@ from shared.auth_middleware import TokenData, get_current_user
 from shared.database import Database, get_db
 from shared.json_utils import safe_json_parse
 from shared.llm_client import LLMError, llm_client
+from shared.uuid_utils import generate_uuid7
 
 router = APIRouter()
 
@@ -664,15 +664,18 @@ async def _get_wyr_llm_model_config() -> dict:
             print(f"✅ WYR_CONFIG: Model: {cached_config.get('primary_model_id')}", flush=True)
 
             # Parse cached parameters if they're a string
-            cached_parameters = cached_config.get("primary_parameters", {"temperature": 1.0, "max_tokens": 1000, "top_p": 0.95})
+            cached_parameters = cached_config.get(
+                "primary_parameters", {"temperature": 1.0, "max_tokens": 1000, "top_p": 0.95}
+            )
             if isinstance(cached_parameters, str):
                 import json
+
                 try:
                     cached_parameters = json.loads(cached_parameters)
                 except json.JSONDecodeError:
                     logger.warning(f"Failed to parse cached parameters JSON: {cached_parameters}")
                     cached_parameters = {"temperature": 1.0, "max_tokens": 1000, "top_p": 0.95}
-            
+
             config = {
                 "primary_provider": cached_config.get("primary_provider", "anthropic"),
                 "primary_model_id": cached_config.get(
@@ -689,8 +692,8 @@ async def _get_wyr_llm_model_config() -> dict:
 
     try:
         db_config = await db.fetch_one(
-            "SELECT provider, model_id, parameters FROM app_model_configs WHERE app_id = $1 AND model_type = 'text'", 
-            app_id
+            "SELECT provider, model_id, parameters FROM app_model_configs WHERE app_id = $1 AND model_type = 'text'",
+            app_id,
         )
 
         if db_config:
@@ -703,6 +706,7 @@ async def _get_wyr_llm_model_config() -> dict:
             parameters = db_config.get("parameters", {})
             if isinstance(parameters, str):
                 import json
+
                 try:
                     parameters = json.loads(parameters)
                 except json.JSONDecodeError:
@@ -710,7 +714,7 @@ async def _get_wyr_llm_model_config() -> dict:
                     parameters = {"temperature": 1.0, "max_tokens": 1000, "top_p": 0.95}
             elif parameters is None:
                 parameters = {"temperature": 1.0, "max_tokens": 1000, "top_p": 0.95}
-            
+
             parsed_config = {
                 "primary_provider": db_config["provider"],
                 "primary_model_id": db_config["model_id"],

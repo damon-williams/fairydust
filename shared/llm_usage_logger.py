@@ -100,7 +100,10 @@ async def log_llm_usage(
 
             if response.status_code == 201:
                 fallback_text = " (fallback)" if was_fallback else ""
-                print(f"✅ LLM_USAGE: Successfully logged usage for {app_id} with {provider}/{model_id}{fallback_text}", flush=True)
+                print(
+                    f"✅ LLM_USAGE: Successfully logged usage for {app_id} with {provider}/{model_id}{fallback_text}",
+                    flush=True,
+                )
                 return True
             else:
                 print(

@@ -17,12 +17,12 @@ import logging
 import re
 from typing import Optional
 from uuid import UUID
-from shared.uuid_utils import generate_uuid7
 
 from langsmith import traceable
 from models import StoryCharacter, TargetAudience
 
 from shared.llm_client import llm_client
+from shared.uuid_utils import generate_uuid7
 
 logger = logging.getLogger(__name__)
 
@@ -210,9 +210,11 @@ Analyze this **{target_audience.value}** story scene with deep contextual unders
 
 **REQUIRED:** You must provide a complete analysis with ALL 7 sections. Do not stop after the first section.
 
+**CRITICAL SPECIES IDENTIFICATION:** When analyzing characters, you MUST carefully read the story text to determine each character's species. Look for explicit mentions like "the cat", "white cat", "dog", "human", etc. Characters described as animals MUST be identified as their correct species, not as humans.
+
 Analyze this scene for image generation and provide ALL of the following sections:
 
-1. **CHARACTERS_PRESENT:** Which specific characters are in this scene (use character names, relationships, and visual descriptions from context)
+1. **CHARACTERS_PRESENT:** Which specific characters are in this scene (use character names, relationships, and SPECIES from story text - if the story says "Luna is a cat" or "the white cat", Luna MUST be identified as a cat, not a human)
 2. **CHARACTER_INTERACTIONS:** How are the characters positioned/interacting with each other
 3. **MAIN_ACTION:** The primary action or moment being depicted (be specific and visual)
 4. **SETTING_DETAILS:** Detailed environment description (indoor/outdoor, specific location, atmospheric elements)
@@ -224,7 +226,7 @@ Analyze this scene for image generation and provide ALL of the following section
 
 **IMPORTANT:** You must include ALL 7 sections in your response. Format exactly as shown below:
 
-**CHARACTERS_PRESENT:** [detailed character list with descriptions]
+**CHARACTERS_PRESENT:** [detailed character list with descriptions INCLUDING CORRECT SPECIES - e.g., "Luna, a white cat" NOT "Luna, a young girl"]
 **CHARACTER_INTERACTIONS:** [positioning and interaction details]
 **MAIN_ACTION:** [specific visual action]
 **SETTING_DETAILS:** [comprehensive environment description]
@@ -333,20 +335,28 @@ STORY_SIGNIFICANCE: Important narrative moment"""
             }
             # Debug logging for photo URL and species
             if char.photo_url:
-                logger.info(f"👤 CHARACTER_AGENT: {char.name} has photo_url: {char.photo_url[:50]}... (has_photo: True)")
+                logger.info(
+                    f"👤 CHARACTER_AGENT: {char.name} has photo_url: {char.photo_url[:50]}... (has_photo: True)"
+                )
             else:
                 logger.info(f"👤 CHARACTER_AGENT: {char.name} has NO photo_url (has_photo: False)")
-            
-            # Debug logging for species information  
+
+            # Debug logging for species information
             if char.species:
-                logger.info(f"🐾 CHARACTER_AGENT: {char.name} is a {char.species} ({char.entry_type})")
+                logger.info(
+                    f"🐾 CHARACTER_AGENT: {char.name} is a {char.species} ({char.entry_type})"
+                )
             elif char.entry_type == "pet":
-                logger.warning(f"⚠️ CHARACTER_AGENT: {char.name} is marked as pet but has no species!")
-            
+                logger.warning(
+                    f"⚠️ CHARACTER_AGENT: {char.name} is marked as pet but has no species!"
+                )
+
             character_data.append(char_info)
 
         # Debug: Log the complete character data being sent to the agent
-        logger.info(f"👤 CHARACTER_AGENT: Full character data: {json.dumps(character_data, indent=2)}")
+        logger.info(
+            f"👤 CHARACTER_AGENT: Full character data: {json.dumps(character_data, indent=2)}"
+        )
 
         character_prompt = f"""# Character Rendering Task
 
@@ -619,13 +629,17 @@ Return ONLY the enhanced prompt text, nothing else:"""
                 visual_traits = [trait for trait in char.traits[:5]]  # Top 5 traits
                 char_info.append(f"  - Traits: {', '.join(visual_traits)}")
 
+            # Add species for pets/creatures (prioritize this information)
+            if hasattr(char, "species") and char.species:
+                char_info.append(
+                    f"  - Species: {char.species} (CRITICAL: This character is a {char.species}, not a human)"
+                )
+
             # Add character type information
             if char.entry_type:
                 char_info.append(f"  - Type: {char.entry_type}")
-
-            # Add species for pets/creatures
-            if hasattr(char, "species") and char.species:
-                char_info.append(f"  - Species: {char.species}")
+                if char.entry_type == "pet" and not (hasattr(char, "species") and char.species):
+                    char_info.append("  - WARNING: Pet character missing species information")
 
             # Add photo reference indicator
             if char.photo_url:
@@ -761,6 +775,35 @@ Return ONLY the enhanced prompt text, nothing else:"""
         enhanced = re.sub(r'"[^"]{50,}"', "[dialogue]", enhanced)  # Replace long dialogue
         enhanced = re.sub(r'"([^"]{1,49})"', r'saying "\1"', enhanced)  # Keep short dialogue
 
+        # Preserve species-related words (critical for character identification)
+        species_markers = [
+            "cat",
+            "dog",
+            "bird",
+            "fish",
+            "rabbit",
+            "hamster",
+            "horse",
+            "cow",
+            "pig",
+            "duck",
+            "chicken",
+            "mouse",
+            "rat",
+            "snake",
+            "lizard",
+            "turtle",
+            "frog",
+            "animal",
+            "pet",
+            "creature",
+            "white cat",
+            "black dog",
+            "tabby",
+            "kitten",
+            "puppy",
+        ]
+
         # Preserve emotional context words
         emotion_markers = [
             "happy",
@@ -773,6 +816,7 @@ Return ONLY the enhanced prompt text, nothing else:"""
             "peaceful",
         ]
         preserved_emotions = [word for word in emotion_markers if word in enhanced.lower()]
+        preserved_species = [word for word in species_markers if word in enhanced.lower()]
 
         # Don't truncate aggressively - allow up to 500 characters
         if len(enhanced) > 500:
@@ -783,6 +827,12 @@ Return ONLY the enhanced prompt text, nothing else:"""
             else:
                 # Break at word boundary
                 enhanced = enhanced[:500].rsplit(" ", 1)[0] + "..."
+
+        # If we found species references, ensure they're prominently mentioned
+        if preserved_species:
+            enhanced = (
+                f"[SPECIES CONTEXT: Scene mentions {', '.join(preserved_species)}] {enhanced}"
+            )
 
         return enhanced
 

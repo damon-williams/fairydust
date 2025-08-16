@@ -2,7 +2,6 @@
 import json
 import os
 from uuid import UUID
-from shared.uuid_utils import generate_uuid7
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from models import (
@@ -18,6 +17,7 @@ from shared.auth_middleware import TokenData, get_current_user
 from shared.database import Database, get_db
 from shared.llm_client import LLMError, llm_client
 from shared.llm_usage_logger import create_request_metadata
+from shared.uuid_utils import generate_uuid7
 
 router = APIRouter()
 
@@ -194,9 +194,7 @@ async def _get_app_id(db: Database) -> str:
     return str(result["id"])
 
 
-async def _get_people_info(
-    db: Database, user_id: UUID, selected_people: list[str]
-) -> list[dict]:
+async def _get_people_info(db: Database, user_id: UUID, selected_people: list[str]) -> list[dict]:
     """Get information about selected people and pets from Identity Service for AI context"""
     if not selected_people:
         print("🔍 ACTIVITY_PEOPLE: No selected people, returning empty list")

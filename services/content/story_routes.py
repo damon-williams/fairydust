@@ -6,9 +6,10 @@ import re
 from datetime import datetime
 from typing import Optional
 from uuid import UUID
-from shared.uuid_utils import generate_uuid7
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
+
+from shared.uuid_utils import generate_uuid7
 
 # Service URL configuration
 environment = os.getenv("ENVIRONMENT", "staging")
@@ -177,7 +178,10 @@ async def generate_story(
 
                 # Extract scenes for image generation using characters
                 scenes = story_image_service.extract_image_scenes(
-                    story_content, updated_request.story_length, characters_for_images, str(story_id)
+                    story_content,
+                    updated_request.story_length,
+                    characters_for_images,
+                    str(story_id),
                 )
 
                 # Insert image markers into story content
@@ -898,10 +902,11 @@ async def _build_story_prompt(
         for char in request.characters:
             if char.birth_date and char.entry_type != "pet":
                 from datetime import date
+
                 birth = date.fromisoformat(char.birth_date)
                 age = (date.today() - birth).days // 365
                 ages.append(age)
-        
+
         if ages:
             min_age, max_age = min(ages), max(ages)
             if min_age >= 18:
@@ -954,7 +959,7 @@ async def _build_story_prompt(
     # Add creativity boosters to avoid repetitive themes
     creativity_boosters = [
         "Focus on realistic characters, animals, or fantasy beings with personalities.",
-        "Create characters with distinct names, backgrounds, and motivations.", 
+        "Create characters with distinct names, backgrounds, and motivations.",
         "Avoid abstract or educational concepts as primary story elements.",
         "Ensure characters act according to their stated ages and life stages.",
     ]
@@ -1984,7 +1989,7 @@ async def get_story_images_batch_status(
             if "attempt_number" in str(e):
                 images = await db.fetch_all(
                     """
-                    SELECT image_id, url, status, 
+                    SELECT image_id, url, status,
                            1 as attempt_number, 3 as max_attempts, NULL as retry_reason
                     FROM story_images
                     WHERE story_id = $1 AND image_id = ANY($2)
@@ -2014,11 +2019,11 @@ async def get_story_images_batch_status(
                 )
 
             image_statuses[image["image_id"]] = StoryImageStatus(
-                status=image["status"], 
+                status=image["status"],
                 url=image_url,
                 attempt_number=image.get("attempt_number"),
                 max_attempts=image.get("max_attempts"),
-                retry_reason=image.get("retry_reason")
+                retry_reason=image.get("retry_reason"),
             )
 
         # Add not_found status for missing images
@@ -2044,12 +2049,15 @@ async def retry_failed_story_image(
 ):
     """Retry generation for a specific failed story image"""
     try:
-        print(f"🔄 IMAGE_RETRY: User {current_user.user_id} requesting retry for image {image_id} in story {story_id}", flush=True)
-        
+        print(
+            f"🔄 IMAGE_RETRY: User {current_user.user_id} requesting retry for image {image_id} in story {story_id}",
+            flush=True,
+        )
+
         # Verify the story belongs to the user
         story = await db.fetch_one(
-            "SELECT user_id, characters_involved, target_audience FROM user_stories WHERE id = $1", 
-            story_id
+            "SELECT user_id, characters_involved, target_audience FROM user_stories WHERE id = $1",
+            story_id,
         )
 
         if not story:
@@ -2074,18 +2082,21 @@ async def retry_failed_story_image(
 
         if image["status"] != "failed":
             raise HTTPException(
-                status_code=400, 
-                detail=f"Image is not in failed status. Current status: {image['status']}"
+                status_code=400,
+                detail=f"Image is not in failed status. Current status: {image['status']}",
             )
 
-        print(f"✅ IMAGE_RETRY: Image {image_id} found with failed status, proceeding with retry", flush=True)
+        print(
+            f"✅ IMAGE_RETRY: Image {image_id} found with failed status, proceeding with retry",
+            flush=True,
+        )
 
         # Reset the image status to pending and clear previous error metadata
         await db.execute(
             """
-            UPDATE story_images 
-            SET status = 'pending', 
-                url = NULL, 
+            UPDATE story_images
+            SET status = 'pending',
+                url = NULL,
                 generation_metadata = NULL,
                 updated_at = CURRENT_TIMESTAMP
             WHERE story_id = $1 AND image_id = $2
@@ -2100,7 +2111,11 @@ async def retry_failed_story_image(
         characters = []
         if story["characters_involved"]:
             try:
-                characters_data = json.loads(story["characters_involved"]) if isinstance(story["characters_involved"], str) else story["characters_involved"]
+                characters_data = (
+                    json.loads(story["characters_involved"])
+                    if isinstance(story["characters_involved"], str)
+                    else story["characters_involved"]
+                )
                 characters = [StoryCharacter(**char) for char in characters_data]
             except Exception as e:
                 print(f"⚠️ IMAGE_RETRY: Failed to parse characters: {e}", flush=True)
@@ -2114,8 +2129,14 @@ async def retry_failed_story_image(
         # Create scene data for the single image retry using the original prompt
         scene = {
             "image_id": image_id,
-            "scene_description": image["prompt"] or image["scene_description"] or "Story scene",  # Use stored prompt for retry
-            "characters_mentioned": [char for char in characters if char.name.lower() in (image["scene_description"] or "").lower()],
+            "scene_description": image["prompt"]
+            or image["scene_description"]
+            or "Story scene",  # Use stored prompt for retry
+            "characters_mentioned": [
+                char
+                for char in characters
+                if char.name.lower() in (image["scene_description"] or "").lower()
+            ],
             "is_retry": True,  # Flag to indicate this is a retry operation
         }
 
@@ -2141,7 +2162,7 @@ async def retry_failed_story_image(
             "success": True,
             "message": f"Image {image_id} retry started",
             "image_id": image_id,
-            "status": "pending"
+            "status": "pending",
         }
 
     except HTTPException:
