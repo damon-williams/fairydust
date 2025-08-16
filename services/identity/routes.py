@@ -413,6 +413,8 @@ async def verify_otp(
 
     # Add calculated daily bonus fields to user data
     user_dict = dict(user)
+    # Update total_logins in response to reflect the database increment
+    user_dict["total_logins"] = user.get("total_logins", 0) + 1
     daily_bonus_value = (
         not is_new_user and is_bonus_eligible and user.get("is_onboarding_completed", False)
     )
@@ -634,6 +636,8 @@ async def oauth_login(
 
     # Add calculated daily bonus fields to user data
     user_dict = dict(user)
+    # Update total_logins in response to reflect the database increment
+    user_dict["total_logins"] = user.get("total_logins", 0) + 1
     daily_bonus_value = (
         not is_new_user and is_bonus_eligible and user.get("is_onboarding_completed", False)
     )
