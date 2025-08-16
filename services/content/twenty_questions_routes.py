@@ -222,12 +222,30 @@ async def get_llm_model_config() -> dict:
     if not app_result:
         logger.warning(f"❌ 20Q_CONFIG: App with slug '{app_slug}' not found in database")
         # Return default config if app not found
+        # Get global fallback configuration instead of hardcoded defaults
+        try:
+            from shared.llm_client import llm_client
+
+            global_fallbacks = await llm_client._get_global_fallbacks()
+            if global_fallbacks:
+                primary_provider, primary_model = global_fallbacks[0]
+                default_config = {
+                    "primary_provider": primary_provider,
+                    "primary_model_id": primary_model,
+                    "primary_parameters": {"temperature": 0.8, "max_tokens": 150, "top_p": 0.9},
+                }
+                logger.info(f"🔄 20Q_CONFIG: Using global default config: {default_config}")
+                return default_config
+        except Exception as e:
+            logger.warning(f"⚠️ 20Q_CONFIG: Failed to get global fallbacks: {e}")
+
+        # Emergency hardcoded fallback only if global config fails
         default_config = {
             "primary_provider": "anthropic",
             "primary_model_id": "claude-3-5-haiku-20241022",
             "primary_parameters": {"temperature": 0.8, "max_tokens": 150, "top_p": 0.9},
         }
-        logger.info(f"🔄 20Q_CONFIG: Using default config: {default_config}")
+        logger.info(f"🔄 20Q_CONFIG: Using emergency default config: {default_config}")
         return default_config
 
     app_id = str(app_result["id"])
@@ -283,13 +301,32 @@ async def get_llm_model_config() -> dict:
 
     except Exception as e:
         logger.error(f"❌ 20Q_CONFIG: Error fetching LLM config for {app_slug}: {e}")
-        # Return default on error
+        # Get global fallback configuration on error
+        try:
+            from shared.llm_client import llm_client
+
+            global_fallbacks = await llm_client._get_global_fallbacks()
+            if global_fallbacks:
+                primary_provider, primary_model = global_fallbacks[0]
+                default_config = {
+                    "primary_provider": primary_provider,
+                    "primary_model_id": primary_model,
+                    "primary_parameters": {"temperature": 0.8, "max_tokens": 150, "top_p": 0.9},
+                }
+                logger.info(
+                    f"🔄 20Q_CONFIG: Using global default config due to error: {default_config}"
+                )
+                return default_config
+        except Exception as fallback_error:
+            logger.warning(f"⚠️ 20Q_CONFIG: Failed to get global fallbacks: {fallback_error}")
+
+        # Emergency hardcoded fallback only if global config fails
         default_config = {
             "primary_provider": "anthropic",
             "primary_model_id": "claude-3-5-haiku-20241022",
             "primary_parameters": {"temperature": 0.8, "max_tokens": 150, "top_p": 0.9},
         }
-        logger.info(f"🔄 20Q_CONFIG: Using default config due to error: {default_config}")
+        logger.info(f"🔄 20Q_CONFIG: Using emergency default config due to error: {default_config}")
         return default_config
 
 

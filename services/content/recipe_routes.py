@@ -1018,7 +1018,22 @@ async def _get_llm_model_config() -> dict:
 
     if not app_result:
         print(f"❌ RECIPE_CONFIG: App with slug '{app_slug}' not found in database", flush=True)
-        # Return default config if app not found
+        # Get global fallback configuration instead of hardcoded defaults
+        try:
+            from shared.llm_client import llm_client
+
+            global_fallbacks = await llm_client._get_global_fallbacks()
+            if global_fallbacks:
+                primary_provider, primary_model = global_fallbacks[0]
+                return {
+                    "primary_provider": primary_provider,
+                    "primary_model_id": primary_model,
+                    "primary_parameters": {"temperature": 0.7, "max_tokens": 1000, "top_p": 0.9},
+                }
+        except Exception as e:
+            print(f"⚠️ RECIPE_CONFIG: Failed to get global fallbacks: {e}", flush=True)
+
+        # Emergency hardcoded fallback only if global config fails
         return {
             "primary_provider": "anthropic",
             "primary_model_id": "claude-3-5-sonnet-20241022",
@@ -1033,9 +1048,21 @@ async def _get_llm_model_config() -> dict:
     cached_config = await cache.get_model_config(app_id)
 
     if cached_config:
+        # Get global fallbacks for defaults
+        default_provider = "anthropic"
+        default_model = "claude-3-5-sonnet-20241022"
+        try:
+            from shared.llm_client import llm_client
+
+            global_fallbacks = await llm_client._get_global_fallbacks()
+            if global_fallbacks:
+                default_provider, default_model = global_fallbacks[0]
+        except:
+            pass
+
         return {
-            "primary_provider": cached_config.get("primary_provider", "anthropic"),
-            "primary_model_id": cached_config.get("primary_model_id", "claude-3-5-sonnet-20241022"),
+            "primary_provider": cached_config.get("primary_provider", default_provider),
+            "primary_model_id": cached_config.get("primary_model_id", default_model),
             "primary_parameters": cached_config.get(
                 "primary_parameters", {"temperature": 0.7, "max_tokens": 1000, "top_p": 0.9}
             ),
@@ -1081,11 +1108,24 @@ async def _get_llm_model_config() -> dict:
     except Exception as e:
         print(f"❌ RECIPE_CONFIG: Database error: {e}", flush=True)
 
-    # Fallback to default config
-    print("🔄 RECIPE_CONFIG: Using default config (no cache, no database)", flush=True)
+    # Fallback to global default config
+    print("🔄 RECIPE_CONFIG: Using global default config (no cache, no database)", flush=True)
+
+    # Get global fallbacks
+    default_provider = "anthropic"
+    default_model = "claude-3-5-sonnet-20241022"
+    try:
+        from shared.llm_client import llm_client
+
+        global_fallbacks = await llm_client._get_global_fallbacks()
+        if global_fallbacks:
+            default_provider, default_model = global_fallbacks[0]
+    except Exception as e:
+        print(f"⚠️ RECIPE_CONFIG: Failed to get global fallbacks for default: {e}", flush=True)
+
     default_config = {
-        "primary_provider": "anthropic",
-        "primary_model_id": "claude-3-5-sonnet-20241022",
+        "primary_provider": default_provider,
+        "primary_model_id": default_model,
         "primary_parameters": {"temperature": 0.7, "max_tokens": 1000, "top_p": 0.9},
     }
 
@@ -1110,8 +1150,20 @@ async def _generate_recipe_llm(
         # Get LLM model configuration from database/cache
         model_config = await _get_llm_model_config()
 
-        provider = model_config.get("primary_provider", "anthropic")
-        model_id = model_config.get("primary_model_id", "claude-3-5-sonnet-20241022")
+        # Get global fallbacks for defaults
+        default_provider = "anthropic"
+        default_model = "claude-3-5-sonnet-20241022"
+        try:
+            from shared.llm_client import llm_client
+
+            global_fallbacks = await llm_client._get_global_fallbacks()
+            if global_fallbacks:
+                default_provider, default_model = global_fallbacks[0]
+        except:
+            pass
+
+        provider = model_config.get("primary_provider", default_provider)
+        model_id = model_config.get("primary_model_id", default_model)
         parameters = model_config.get("primary_parameters", {})
 
         temperature = parameters.get("temperature", 0.7)
@@ -1308,11 +1360,11 @@ IMPORTANT: Always include the Nutritional Info section with estimated values."""
                     f"⚠️ RECIPE_LLM: Unsupported provider {provider}, falling back to Anthropic",
                     flush=True,
                 )
-                return None, "", 0, None, None, "claude-3-5-sonnet-20241022", {}, 0.0, "anthropic"
+                return None, "", 0, None, None, "unknown-model", {}, 0.0, "unknown"
 
     except Exception as e:
         print(f"❌ RECIPE_LLM: Error generating recipe: {str(e)}", flush=True)
-        return None, "", 0, None, None, "claude-3-5-sonnet-20241022", {}, 0.0
+        return None, "", 0, None, None, "unknown-model", {}, 0.0
 
 
 def _extract_recipe_title(content: str, dish: Optional[str]) -> str:
@@ -1457,8 +1509,20 @@ async def _adjust_recipe_llm(
         # Get LLM model configuration from database/cache
         model_config = await _get_llm_model_config()
 
-        provider = model_config.get("primary_provider", "anthropic")
-        model_id = model_config.get("primary_model_id", "claude-3-5-sonnet-20241022")
+        # Get global fallbacks for defaults
+        default_provider = "anthropic"
+        default_model = "claude-3-5-sonnet-20241022"
+        try:
+            from shared.llm_client import llm_client
+
+            global_fallbacks = await llm_client._get_global_fallbacks()
+            if global_fallbacks:
+                default_provider, default_model = global_fallbacks[0]
+        except:
+            pass
+
+        provider = model_config.get("primary_provider", default_provider)
+        model_id = model_config.get("primary_model_id", default_model)
         parameters = model_config.get("primary_parameters", {})
 
         temperature = parameters.get("temperature", 0.7)
