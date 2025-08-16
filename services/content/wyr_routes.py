@@ -663,14 +663,22 @@ async def _get_wyr_llm_model_config() -> dict:
             print(f"✅ WYR_CONFIG: Provider: {cached_config.get('primary_provider')}", flush=True)
             print(f"✅ WYR_CONFIG: Model: {cached_config.get('primary_model_id')}", flush=True)
 
+            # Parse cached parameters if they're a string
+            cached_parameters = cached_config.get("primary_parameters", {"temperature": 1.0, "max_tokens": 1000, "top_p": 0.95})
+            if isinstance(cached_parameters, str):
+                import json
+                try:
+                    cached_parameters = json.loads(cached_parameters)
+                except json.JSONDecodeError:
+                    logger.warning(f"Failed to parse cached parameters JSON: {cached_parameters}")
+                    cached_parameters = {"temperature": 1.0, "max_tokens": 1000, "top_p": 0.95}
+            
             config = {
                 "primary_provider": cached_config.get("primary_provider", "anthropic"),
                 "primary_model_id": cached_config.get(
                     "primary_model_id", "claude-3-5-sonnet-20241022"
                 ),
-                "primary_parameters": cached_config.get(
-                    "primary_parameters", {"temperature": 1.0, "max_tokens": 1000, "top_p": 0.95}
-                ),
+                "primary_parameters": cached_parameters,
             }
 
             print(f"✅ WYR_CONFIG: Returning cached config: {config}", flush=True)
