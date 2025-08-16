@@ -81,6 +81,11 @@ class LLMClient:
     def __init__(self):
         self.anthropic_key = os.getenv("ANTHROPIC_API_KEY")
         self.openai_key = os.getenv("OPENAI_API_KEY")
+        
+        # Cache for global fallbacks with TTL
+        self._global_fallbacks_cache = None
+        self._global_fallbacks_cache_time = None
+        self._global_fallbacks_cache_ttl = 300  # 5 minutes TTL
 
         if not self.anthropic_key and not self.openai_key:
             raise ValueError("At least one LLM API key must be configured")
@@ -265,7 +270,17 @@ class LLMClient:
         return False
 
     async def _get_global_fallbacks(self) -> list[tuple[str, str]]:
-        """Get global fallback models from admin configuration"""
+        """Get global fallback models from admin configuration with caching"""
+        import time
+        
+        # Check cache validity
+        current_time = time.time()
+        if (self._global_fallbacks_cache is not None and 
+            self._global_fallbacks_cache_time is not None and
+            current_time - self._global_fallbacks_cache_time < self._global_fallbacks_cache_ttl):
+            # Cache is valid, return cached value
+            return self._global_fallbacks_cache
+        
         try:
             # Get environment-based admin URL
             environment = os.getenv("ENVIRONMENT", "staging")
@@ -291,12 +306,21 @@ class LLMClient:
                         if provider and model:
                             fallbacks.append((provider, model))
 
+                    # Cache the successful response
+                    self._global_fallbacks_cache = fallbacks
+                    self._global_fallbacks_cache_time = current_time
+                    
                     return fallbacks
 
         except Exception as e:
             print(f"⚠️ LLM_CLIENT: Failed to fetch global fallbacks: {e}")
+            
+            # If we have a stale cache, use it rather than hardcoded fallbacks
+            if self._global_fallbacks_cache is not None:
+                print(f"⚠️ LLM_CLIENT: Using stale cache for global fallbacks")
+                return self._global_fallbacks_cache
 
-        # Hardcoded emergency fallbacks only if admin service is unreachable
+        # Hardcoded emergency fallbacks only if admin service is unreachable AND no cache
         return [
             ("anthropic", "claude-3-5-sonnet-20241022"),
             ("openai", "gpt-4o"),
