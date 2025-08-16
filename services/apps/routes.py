@@ -632,6 +632,15 @@ async def create_app_model_config(
     else:
         config_dict["parameters"] = {}
 
+    # Invalidate cache after successful creation
+    try:
+        from shared.app_config_cache import get_app_config_cache
+        cache = await get_app_config_cache()
+        await cache.invalidate_model_config(app_id)
+        print(f"✅ CACHE_INVALIDATE: Invalidated model config cache for app {app_id} (new config)")
+    except Exception as e:
+        print(f"⚠️ CACHE_INVALIDATE: Failed to invalidate cache for app {app_id}: {e}")
+
     return AppModelConfig(**config_dict)
 
 
@@ -723,6 +732,15 @@ async def update_app_model_config_by_type(
     else:
         config_dict["parameters"] = {}
 
+    # Invalidate cache after successful update
+    try:
+        from shared.app_config_cache import get_app_config_cache
+        cache = await get_app_config_cache()
+        await cache.invalidate_model_config(app_id)
+        print(f"✅ CACHE_INVALIDATE: Invalidated model config cache for app {app_id}")
+    except Exception as e:
+        print(f"⚠️ CACHE_INVALIDATE: Failed to invalidate cache for app {app_id}: {e}")
+
     return AppModelConfig(**config_dict)
 
 
@@ -750,6 +768,15 @@ async def delete_app_model_config(
 
     if "DELETE 0" in result:
         raise HTTPException(status_code=404, detail="Model configuration not found")
+
+    # Invalidate cache after successful deletion
+    try:
+        from shared.app_config_cache import get_app_config_cache
+        cache = await get_app_config_cache()
+        await cache.invalidate_model_config(app_id)
+        print(f"✅ CACHE_INVALIDATE: Invalidated model config cache for app {app_id} (deleted config)")
+    except Exception as e:
+        print(f"⚠️ CACHE_INVALIDATE: Failed to invalidate cache for app {app_id}: {e}")
 
     return {"message": f"Deleted {model_type.value} model configuration"}
 

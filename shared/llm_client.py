@@ -47,16 +47,23 @@ class OpenAIGPT4Adapter(ModelAdapter):
 
 
 class OpenAIGPT5Adapter(ModelAdapter):
-    """Adapter for GPT-5 family models with very strict requirements"""
+    """Adapter for GPT-5 family models with updated parameter support"""
 
     def adapt_parameters(self, parameters: dict) -> dict:
-        # GPT-5 only supports max_completion_tokens and temperature=1
-        # Does NOT support top_p or other parameters
-        return {
+        # GPT-5 uses max_completion_tokens instead of max_tokens
+        # May support more parameters than initially documented
+        adapted = {
             "max_completion_tokens": parameters.get("max_tokens", 1000),
-            "temperature": 1,  # Only supported value for GPT-5
-            # Note: top_p and other parameters are NOT supported by GPT-5
         }
+        
+        # Allow temperature if specified, but default to 0.7 for consistency
+        if "temperature" in parameters:
+            adapted["temperature"] = parameters["temperature"]
+        else:
+            adapted["temperature"] = 0.7
+            
+        # Exclude top_p for now as it may not be supported
+        return adapted
 
 
 class AnthropicAdapter(ModelAdapter):
