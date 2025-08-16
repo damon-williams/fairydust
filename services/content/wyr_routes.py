@@ -985,7 +985,11 @@ QUALITY REQUIREMENTS:
 
 CRITICAL: Each option_a and option_b should be a SINGLE choice only. Do NOT include both choices in one option or use "or" in the options.
 
-FORMAT: Return ONLY a valid JSON array of objects with this exact structure (no other text):
+CRITICAL OUTPUT FORMAT: You MUST return ONLY a valid JSON array. Do NOT include any explanations, introductions, or additional text before or after the JSON.
+
+Your response should start with [ and end with ].
+
+JSON structure required:
 [
   {{
     "question_number": 1,
@@ -1037,10 +1041,14 @@ CORRECT JSON FORMAT EXAMPLE:
 
 Generate exactly {game_length.value} creative, engaging questions now.
 
-IMPORTANT:
-- Return ONLY the JSON array, no explanations, no additional text
+FINAL INSTRUCTIONS:
+- Return ONLY the JSON array that starts with [ and ends with ]
+- Do NOT add any text before or after the JSON
+- No explanations, no comments, no markdown formatting
 - Each option should be a single choice, not a full question
-- Do NOT include "or" or both options in a single field"""
+- Do NOT include "or" or both options in a single field
+
+Begin your response with [ immediately."""
 
     return base_prompt
 
@@ -1056,30 +1064,68 @@ def _parse_questions_response(content: str, category: GameCategory) -> list[Ques
 
         # Look for JSON array in the response - try multiple patterns
         json_match = None
+        json_text = None
 
-        # Pattern 1: Direct JSON array
-        json_match = re.search(r"\[.*\]", content, re.DOTALL)
+        # Pattern 1: Direct JSON array (greedy match for complete array)
+        json_match = re.search(r"(\[(?:[^[\]]|(?:\[[^[\]]*\]))*\])", content, re.DOTALL)
+        if json_match:
+            json_text = json_match.group(1)
 
         # Pattern 2: JSON in markdown code blocks
-        if not json_match:
+        if not json_text:
             json_match = re.search(r"```(?:json)?\s*(\[.*?\])\s*```", content, re.DOTALL)
             if json_match:
-                json_match = type("Match", (), {"group": lambda: json_match.group(1)})()
+                json_text = json_match.group(1)
 
-        # Pattern 3: JSON after some introductory text
-        if not json_match:
-            json_match = re.search(
-                r"(?:here|questions|array).*?(\[.*\])", content, re.DOTALL | re.IGNORECASE
-            )
-            if json_match:
-                json_match = type("Match", (), {"group": lambda: json_match.group(1)})()
+        # Pattern 3: JSON after some introductory text (more flexible)
+        if not json_text:
+            # Look for patterns that indicate JSON follows
+            patterns = [
+                r"(?:here\s+(?:are|is)|questions?|array|response|result).*?(\[.*?\])",
+                r"(?:json|output).*?(\[.*?\])",
+                r"(?:^|\n)\s*(\[.*?\])\s*(?:$|\n)",  # Array on its own line
+            ]
+            for pattern in patterns:
+                json_match = re.search(pattern, content, re.DOTALL | re.IGNORECASE)
+                if json_match:
+                    json_text = json_match.group(1)
+                    break
 
-        if not json_match:
+        # Pattern 4: Try to find any valid JSON array structure
+        if not json_text:
+            # Find all potential JSON arrays and validate them
+            potential_arrays = re.findall(r"\[(?:[^[\]]|(?:\[[^[\]]*\]))*\]", content, re.DOTALL)
+            for potential_json in potential_arrays:
+                try:
+                    parsed = json.loads(potential_json.strip())
+                    if isinstance(parsed, list) and len(parsed) > 0:
+                        # Check if it looks like question data
+                        first_item = parsed[0]
+                        if isinstance(first_item, dict) and (
+                            "option_a" in first_item or "question" in first_item
+                        ):
+                            json_text = potential_json
+                            break
+                except:
+                    continue
+
+        if not json_text:
             print("❌ WYR_PARSE: No JSON array found in response", flush=True)
             print(f"🔍 WYR_PARSE: Full response was: {content}", flush=True)
             return []
 
-        questions_data = json.loads(json_match.group())
+        # Try to parse the JSON
+        try:
+            questions_data = json.loads(json_text.strip())
+        except json.JSONDecodeError as e:
+            print(f"❌ WYR_PARSE: JSON decode error: {e}", flush=True)
+            print(f"🔍 WYR_PARSE: Attempted to parse: {json_text[:200]}...", flush=True)
+            return []
+
+        if not isinstance(questions_data, list):
+            print(f"❌ WYR_PARSE: Expected list but got {type(questions_data)}", flush=True)
+            return []
+
         questions = []
 
         for i, q_data in enumerate(questions_data):
