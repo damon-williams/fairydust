@@ -916,7 +916,6 @@ async def create_tables():
         CREATE INDEX IF NOT EXISTS idx_story_images_user_id ON story_images(user_id);
         CREATE INDEX IF NOT EXISTS idx_story_images_status ON story_images(status);
         CREATE INDEX IF NOT EXISTS idx_story_images_created_at ON story_images(created_at DESC);
-        CREATE INDEX IF NOT EXISTS idx_story_images_status_attempts ON story_images(status, attempt_number) WHERE status IN ('generating', 'retrying', 'failed');
     """
     )
 
@@ -939,6 +938,12 @@ async def create_tables():
     except Exception as e:
         if "already exists" not in str(e):
             logger.warning(f"Could not add retry_reason column: {e}")
+    
+    # Add index for retry columns after they exist
+    try:
+        await db.execute_schema("CREATE INDEX IF NOT EXISTS idx_story_images_status_attempts ON story_images(status, attempt_number) WHERE status IN ('generating', 'retrying', 'failed')")
+    except Exception as e:
+        logger.warning(f"Could not create retry status index: {e}")
 
     # Restaurant App Tables - Execute each statement separately for better error handling
     try:
