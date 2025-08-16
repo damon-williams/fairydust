@@ -680,23 +680,21 @@ async def _get_wyr_llm_model_config() -> dict:
     print("⚠️ WYR_CONFIG: Cache miss, checking database directly", flush=True)
 
     try:
-        db_config = await db.fetch_one("SELECT * FROM app_model_configs WHERE app_id = $1", app_id)
+        db_config = await db.fetch_one(
+            "SELECT provider, model_id, parameters FROM app_model_configs WHERE app_id = $1 AND model_type = 'text'", 
+            app_id
+        )
 
         if db_config:
             print("📊 WYR_CONFIG: Found database config", flush=True)
-            print(f"📊 WYR_CONFIG: DB Provider: {db_config['primary_provider']}", flush=True)
-            print(f"📊 WYR_CONFIG: DB Model: {db_config['primary_model_id']}", flush=True)
+            print(f"📊 WYR_CONFIG: DB Provider: {db_config['provider']}", flush=True)
+            print(f"📊 WYR_CONFIG: DB Model: {db_config['model_id']}", flush=True)
 
             # Parse and cache the database config
-            from shared.json_utils import parse_model_config_field
-
             parsed_config = {
-                "primary_provider": db_config["primary_provider"],
-                "primary_model_id": db_config["primary_model_id"],
-                "primary_parameters": parse_model_config_field(
-                    dict(db_config), "primary_parameters"
-                )
-                or {"temperature": 1.0, "max_tokens": 1000, "top_p": 0.95},
+                "primary_provider": db_config["provider"],
+                "primary_model_id": db_config["model_id"],
+                "primary_parameters": db_config.get("parameters", {"temperature": 1.0, "max_tokens": 1000, "top_p": 0.95}),
             }
 
             # Cache the database config

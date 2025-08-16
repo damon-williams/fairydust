@@ -1332,6 +1332,24 @@ async def create_tables():
     """
     )
 
+    # User question history table for Would You Rather duplicate prevention
+    await db.execute_schema(
+        """
+        CREATE TABLE IF NOT EXISTS user_question_history (
+            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            user_id UUID REFERENCES users(id) ON DELETE CASCADE,
+            question_hash TEXT NOT NULL,
+            question_content JSONB NOT NULL,
+            game_session_id UUID REFERENCES wyr_game_sessions(id) ON DELETE CASCADE,
+            created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_user_question_hash ON user_question_history(user_id, question_hash);
+        CREATE INDEX IF NOT EXISTS idx_user_question_created ON user_question_history(user_id, created_at DESC);
+        CREATE INDEX IF NOT EXISTS idx_question_history_session ON user_question_history(game_session_id);
+    """
+    )
+
     # Referral System Tables
     await db.execute_schema(
         """
