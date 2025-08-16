@@ -133,9 +133,11 @@ export function AppConfig() {
       
       // Parse normalized configuration structure
       if (configData) {
+        console.log('🔍 FRONTEND: Raw config data from API:', configData);
         const textConfig = configData.text_config;
         const imageConfig = configData.image_config;
         const videoConfig = configData.video_config;
+        console.log('🔍 FRONTEND: Text config:', textConfig);
         
         setExistingConfigs({
           text: !!(textConfig),
@@ -149,8 +151,8 @@ export function AppConfig() {
           video_models_enabled: !!(videoConfig),
           
           text_config: textConfig ? {
-            primary_provider: textConfig.provider,
-            primary_model_id: textConfig.model_id,
+            primary_provider: textConfig.provider || '',
+            primary_model_id: textConfig.model_id || '',
             parameters: {
               temperature: textConfig.parameters?.temperature || 0.7,
               max_tokens: textConfig.parameters?.max_tokens || 1000,
