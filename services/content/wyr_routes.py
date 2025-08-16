@@ -1101,6 +1101,15 @@ def _parse_questions_response(content: str, category: GameCategory) -> list[Ques
 
         # Debug: Print the actual response content
         print(f"🔍 WYR_PARSE: OpenAI response content: {content[:500]}...", flush=True)
+        print(f"🔍 WYR_PARSE: Response length: {len(content)} characters", flush=True)
+        print(f"🔍 WYR_PARSE: First 100 chars: '{content[:100]}'", flush=True)
+        print(f"🔍 WYR_PARSE: Last 100 chars: '{content[-100:]}'", flush=True)
+        
+        # Check for empty or whitespace-only content
+        if not content or not content.strip():
+            print("❌ WYR_PARSE: Response is empty or whitespace only", flush=True)
+            print(f"🔍 WYR_PARSE: Full response was: '{content}'", flush=True)
+            return []
 
         # Look for JSON array in the response - try multiple patterns
         json_match = None
@@ -1161,7 +1170,8 @@ def _parse_questions_response(content: str, category: GameCategory) -> list[Ques
 
         if not json_text:
             print("❌ WYR_PARSE: No JSON array found in response", flush=True)
-            print(f"🔍 WYR_PARSE: Full response was: {content}", flush=True)
+            print(f"🔍 WYR_PARSE: Full response was: '{content}'", flush=True)
+            print(f"🔍 WYR_PARSE: Content bytes: {content.encode('utf-8') if content else b''}", flush=True)
             return []
 
         # Try to parse the JSON
