@@ -396,8 +396,14 @@ async def verify_otp(
         db, str(user["id"]), user.get("last_login_date")
     )
 
-    # Note: Database is NOT updated in auth - only checked for response
-    # DUST grant endpoint will handle actual database updates
+    # Update login statistics (total_logins should increment on every successful login)
+    await db.execute(
+        "UPDATE users SET total_logins = total_logins + 1, updated_at = CURRENT_TIMESTAMP WHERE id = $1",
+        user["id"]
+    )
+    
+    # Note: last_login_date is NOT updated here - only checked for response
+    # DUST grant endpoint will handle last_login_date updates to avoid bonus timing issues
 
     # Get daily bonus amount from system config
     daily_bonus_amount = await get_daily_bonus_amount(db)
@@ -611,8 +617,14 @@ async def oauth_login(
         db, str(user["id"]), user.get("last_login_date")
     )
 
-    # Note: Database is NOT updated in auth - only checked for response
-    # DUST grant endpoint will handle actual database updates
+    # Update login statistics (total_logins should increment on every successful login)
+    await db.execute(
+        "UPDATE users SET total_logins = total_logins + 1, updated_at = CURRENT_TIMESTAMP WHERE id = $1",
+        user["id"]
+    )
+    
+    # Note: last_login_date is NOT updated here - only checked for response
+    # DUST grant endpoint will handle last_login_date updates to avoid bonus timing issues
 
     # Get daily bonus amount from system config
     daily_bonus_amount = await get_daily_bonus_amount(db)
