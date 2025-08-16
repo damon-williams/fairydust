@@ -27,6 +27,48 @@ class LLMError(Exception):
         self.retry_after = retry_after
 
 
+class ModelAdapter:
+    """Base class for model-specific parameter adapters"""
+    
+    def adapt_parameters(self, parameters: dict) -> dict:
+        """Adapt generic parameters to model-specific ones"""
+        return parameters
+
+
+class OpenAIGPT4Adapter(ModelAdapter):
+    """Adapter for GPT-4 family models"""
+    
+    def adapt_parameters(self, parameters: dict) -> dict:
+        return {
+            "max_tokens": parameters.get("max_tokens", 1000),
+            "temperature": parameters.get("temperature", 0.7),
+            "top_p": parameters.get("top_p", 0.9),
+        }
+
+
+class OpenAIGPT5Adapter(ModelAdapter):
+    """Adapter for GPT-5 family models with stricter requirements"""
+    
+    def adapt_parameters(self, parameters: dict) -> dict:
+        # GPT-5 only supports temperature=1 and uses max_completion_tokens
+        return {
+            "max_completion_tokens": parameters.get("max_tokens", 1000),
+            "temperature": 1,  # Only supported value for GPT-5
+            "top_p": parameters.get("top_p", 0.9),
+        }
+
+
+class AnthropicAdapter(ModelAdapter):
+    """Adapter for Anthropic Claude models"""
+    
+    def adapt_parameters(self, parameters: dict) -> dict:
+        return {
+            "max_tokens": parameters.get("max_tokens", 1000),
+            "temperature": parameters.get("temperature", 0.7),
+            "top_p": parameters.get("top_p", 0.9),
+        }
+
+
 class LLMClient:
     """
     Centralized LLM client with automatic retry logic and provider fallback.
@@ -41,6 +83,47 @@ class LLMClient:
 
         if not self.anthropic_key and not self.openai_key:
             raise ValueError("At least one LLM API key must be configured")
+            
+        # Model adapter registry
+        self.adapters = {
+            # OpenAI GPT-4 family
+            "gpt-4": OpenAIGPT4Adapter(),
+            "gpt-4-turbo": OpenAIGPT4Adapter(),
+            "gpt-4o": OpenAIGPT4Adapter(),
+            "gpt-4o-mini": OpenAIGPT4Adapter(),
+            
+            # OpenAI GPT-5 family  
+            "gpt-5": OpenAIGPT5Adapter(),
+            "gpt-5-mini": OpenAIGPT5Adapter(),
+            "gpt-5-turbo": OpenAIGPT5Adapter(),
+            
+            # Anthropic Claude family
+            "claude-3-5-sonnet": AnthropicAdapter(),
+            "claude-3-5-haiku": AnthropicAdapter(),
+            "claude-3-opus": AnthropicAdapter(),
+        }
+    
+    def _get_adapter(self, model_id: str) -> ModelAdapter:
+        """Get the appropriate adapter for a model"""
+        # Check for exact match first
+        if model_id in self.adapters:
+            return self.adapters[model_id]
+            
+        # Check for prefix matches
+        for model_prefix, adapter in self.adapters.items():
+            if model_id.startswith(model_prefix):
+                return adapter
+        
+        # Default fallback based on provider
+        if "gpt-5" in model_id.lower():
+            return OpenAIGPT5Adapter()
+        elif "gpt" in model_id.lower():
+            return OpenAIGPT4Adapter()
+        elif "claude" in model_id.lower():
+            return AnthropicAdapter()
+        else:
+            # Generic fallback
+            return ModelAdapter()
 
     async def generate_completion(
         self,
@@ -192,21 +275,16 @@ class LLMClient:
     ) -> tuple[str, dict]:
         """Make the actual API call to the specified provider"""
 
-        # Extract parameters with defaults
-        max_tokens = parameters.get("max_tokens", 1000)
-        temperature = parameters.get("temperature", 0.7)
-        top_p = parameters.get("top_p", 0.9)
+        # Get the appropriate adapter for this model
+        adapter = self._get_adapter(model_id)
+        adapted_params = adapter.adapt_parameters(parameters)
 
         try:
             async with httpx.AsyncClient(timeout=30.0) as client:
                 if provider == "anthropic":
-                    return await self._call_anthropic(
-                        client, model_id, prompt, max_tokens, temperature, top_p
-                    )
+                    return await self._call_anthropic(client, model_id, prompt, adapted_params)
                 elif provider == "openai":
-                    return await self._call_openai(
-                        client, model_id, prompt, max_tokens, temperature, top_p
-                    )
+                    return await self._call_openai(client, model_id, prompt, adapted_params)
                 else:
                     raise LLMError(f"Unsupported provider: {provider}")
 
@@ -222,9 +300,7 @@ class LLMClient:
         client: httpx.AsyncClient,
         model_id: str,
         prompt: str,
-        max_tokens: int,
-        temperature: float,
-        top_p: float,
+        adapted_params: dict,
     ) -> tuple[str, dict]:
         """Make API call to Anthropic"""
 
@@ -240,9 +316,9 @@ class LLMClient:
             },
             json={
                 "model": model_id,
-                "max_tokens": max_tokens,
-                "temperature": temperature,
-                "top_p": top_p,
+                "max_tokens": adapted_params.get("max_tokens", 1000),
+                "temperature": adapted_params.get("temperature", 0.7),
+                "top_p": adapted_params.get("top_p", 0.9),
                 "messages": [{"role": "user", "content": prompt}],
             },
         )
@@ -296,9 +372,7 @@ class LLMClient:
         client: httpx.AsyncClient,
         model_id: str,
         prompt: str,
-        max_tokens: int,
-        temperature: float,
-        top_p: float,
+        adapted_params: dict,
     ) -> tuple[str, dict]:
         """Make API call to OpenAI"""
 
@@ -313,10 +387,8 @@ class LLMClient:
             },
             json={
                 "model": model_id,
-                "max_completion_tokens": max_tokens,  # Updated parameter name for newer OpenAI models
-                "temperature": temperature,
-                "top_p": top_p,
                 "messages": [{"role": "user", "content": prompt}],
+                **{k: v for k, v in adapted_params.items() if v is not None}  # Dynamic params from adapter
             },
         )
 
