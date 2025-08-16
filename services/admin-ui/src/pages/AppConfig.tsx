@@ -149,8 +149,8 @@ export function AppConfig() {
           video_models_enabled: !!(videoConfig),
           
           text_config: textConfig ? {
-            primary_provider: textConfig.provider || 'anthropic',
-            primary_model_id: textConfig.model_id || 'claude-3-5-sonnet-20241022',
+            primary_provider: textConfig.provider,
+            primary_model_id: textConfig.model_id,
             parameters: {
               temperature: textConfig.parameters?.temperature || 0.7,
               max_tokens: textConfig.parameters?.max_tokens || 1000,
@@ -326,9 +326,10 @@ export function AppConfig() {
         case 'text':
           newConfig.text_models_enabled = enabled;
           if (enabled && !newConfig.text_config) {
+            // Use OpenAI as default since it's the current global fallback
             newConfig.text_config = {
-              primary_provider: 'anthropic',
-              primary_model_id: 'claude-3-5-sonnet-20241022',
+              primary_provider: 'openai',
+              primary_model_id: 'gpt-5-mini',
               parameters: {
                 temperature: 0.7,
                 max_tokens: 1000,
