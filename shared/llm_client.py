@@ -111,7 +111,7 @@ class LLMClient:
                     cost_usd=cost_usd,
                     latency_ms=generation_time_ms,
                     was_fallback=is_fallback,
-                    fallback_reason=f"Primary provider failed: {str(last_error)}"
+                    fallback_reason=f"Primary provider failed: {str(last_error)}"[:100]
                     if is_fallback
                     else None,
                     action=action,
@@ -313,7 +313,7 @@ class LLMClient:
             },
             json={
                 "model": model_id,
-                "max_tokens": max_tokens,
+                "max_completion_tokens": max_tokens,  # Updated parameter name for newer OpenAI models
                 "temperature": temperature,
                 "top_p": top_p,
                 "messages": [{"role": "user", "content": prompt}],
