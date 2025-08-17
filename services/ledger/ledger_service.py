@@ -724,6 +724,27 @@ class LedgerService:
 
         try:
             async with self.db.transaction() as conn:
+                # First check if user already claimed bonus today (before doing any updates)
+                existing_grant = await conn.fetchrow(
+                    """
+                    SELECT id FROM app_grants
+                    WHERE user_id = $1 AND app_id = $2 AND grant_type = 'daily_bonus' AND granted_date = $3
+                    """,
+                    user_id,
+                    app_id,
+                    today,
+                )
+
+                if existing_grant:
+                    print(
+                        f"🎁 DAILY_BONUS_ALREADY_CLAIMED: User {user_id} already claimed bonus for {today} PT",
+                        flush=True,
+                    )
+                    raise HTTPException(
+                        status_code=409,
+                        detail="Daily bonus already claimed today for this app",
+                    )
+
                 # Verify user exists and get current info
                 user = await conn.fetchrow(
                     "SELECT id, dust_balance, last_login_date FROM users WHERE id = $1", user_id
@@ -767,34 +788,21 @@ class LedgerService:
                     json.dumps({"grant_type": "daily_bonus", "app_id": str(app_id)}),
                 )
 
-                # Record grant in app_grants table
-                try:
-                    await conn.execute(
-                        """
-                        INSERT INTO app_grants (
-                            user_id, app_id, grant_type, amount, granted_date, idempotency_key, metadata
-                        ) VALUES ($1, $2, $3, $4, $5, $6, $7)
-                        """,
-                        user_id,
-                        app_id,
-                        "daily_bonus",
-                        amount,
-                        today,
-                        idempotency_key,
-                        json.dumps({"transaction_id": str(transaction_id)}),
-                    )
-                except Exception as e:
-                    # Check for unique constraint violation (already claimed today)
-                    if "duplicate key value violates unique constraint" in str(e) and (
-                        "app_grants_user_id_app_id_grant_type" in str(e) or "granted_date" in str(e)
-                    ):
-                        raise HTTPException(
-                            status_code=409,
-                            detail="Daily bonus already claimed today for this app",
-                        )
-                    else:
-                        # Re-raise other database errors
-                        raise
+                # Record grant in app_grants table (should not fail now)
+                await conn.execute(
+                    """
+                    INSERT INTO app_grants (
+                        user_id, app_id, grant_type, amount, granted_date, idempotency_key, metadata
+                    ) VALUES ($1, $2, $3, $4, $5, $6, $7)
+                    """,
+                    user_id,
+                    app_id,
+                    "daily_bonus",
+                    amount,
+                    today,
+                    idempotency_key,
+                    json.dumps({"transaction_id": str(transaction_id)}),
+                )
 
                 # Invalidate cache
                 await self.balance_cache.delete(str(user_id))
