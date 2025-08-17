@@ -712,6 +712,9 @@ class LedgerService:
         now_pacific = now_utc_aware.astimezone(pacific_tz)
         today_pacific = now_pacific.date()
 
+        # Keep 'today' for database storage (stores Pacific date)
+        today = today_pacific
+
         print(f"🎁 DAILY_BONUS_GRANT: Processing for date {today_pacific} PT", flush=True)
 
         # Acquire lock
