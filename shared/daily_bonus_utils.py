@@ -4,6 +4,8 @@ import logging
 from datetime import datetime
 from typing import Optional
 
+import pytz
+
 logger = logging.getLogger(__name__)
 
 
@@ -33,28 +35,50 @@ async def check_daily_bonus_eligibility(
     Args:
         db: Database connection
         user_id: User's UUID
-        last_login_date: User's last login timestamp
+        last_login_date: User's last login timestamp (stored in UTC)
 
     Returns:
-        tuple of (is_bonus_eligible, current_time)
+        tuple of (is_bonus_eligible, current_time_utc)
 
     Business Rules:
-    - Eligible if: first login ever OR different UTC date from last login
-    - Uses UTC dates for consistency
-    - Simple and predictable
+    - Eligible if: first login ever OR different calendar date in US Pacific Time
+    - Daily reset happens at midnight Pacific Time (PT/PDT)
+    - This means: midnight PT, 3 AM ET, 8 AM UTC (winter) or 7 AM UTC (summer)
     """
-    now = datetime.utcnow()
+    # Get current time in UTC (for database storage)
+    now_utc = datetime.utcnow()
+
+    # Define Pacific timezone
+    pacific_tz = pytz.timezone("America/Los_Angeles")
+
+    # Convert current UTC time to Pacific for comparison
+    now_utc_aware = pytz.UTC.localize(now_utc)
+    now_pacific = now_utc_aware.astimezone(pacific_tz)
 
     if not last_login_date:
         # First login ever - eligible for bonus
-        return True, now
+        logger.info(f"🎁 DAILY_BONUS: User {user_id} first login - eligible for bonus")
+        return True, now_utc
 
-    # Check if different UTC dates
-    last_login_date_only = last_login_date.date()
-    current_date = now.date()
-    is_different_date = current_date != last_login_date_only
+    # Convert last login from UTC to Pacific for date comparison
+    if last_login_date.tzinfo is None:
+        # Add UTC timezone info if missing
+        last_login_date = pytz.UTC.localize(last_login_date)
+    last_login_pacific = last_login_date.astimezone(pacific_tz)
 
-    return is_different_date, now
+    # Check if different calendar dates in Pacific Time
+    last_login_date_only = last_login_pacific.date()
+    current_date_pacific = now_pacific.date()
+    is_different_date = current_date_pacific != last_login_date_only
+
+    logger.info(
+        f"🎁 DAILY_BONUS: User {user_id} - "
+        f"Last login: {last_login_date_only} PT, "
+        f"Current: {current_date_pacific} PT, "
+        f"Eligible: {is_different_date}"
+    )
+
+    return is_different_date, now_utc
 
 
 async def update_last_login_for_bonus(db, user_id: str, current_time: datetime) -> datetime:
