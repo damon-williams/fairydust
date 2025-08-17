@@ -45,3 +45,4 @@ uuid7==0.1.0
 # Additional utilities that might be needed
 python-dateutil==2.8.2
 typing-extensions==4.8.0
+pytz==2024.1

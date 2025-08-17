@@ -3,6 +3,7 @@ import json
 from typing import Optional
 from uuid import UUID
 
+import pytz
 import redis.asyncio as redis
 from fastapi import HTTPException
 from models import (
@@ -701,10 +702,17 @@ class LedgerService:
         if amount > 100:
             raise HTTPException(status_code=400, detail="Daily bonus cannot exceed 100 DUST")
 
-        # Use UTC date to ensure consistency across timezones
+        # Use Pacific Time for daily bonus reset (midnight PT)
         from datetime import datetime
 
-        today = datetime.utcnow().date()
+        # Get current Pacific date for logging
+        pacific_tz = pytz.timezone("America/Los_Angeles")
+        now_utc = datetime.utcnow()
+        now_utc_aware = pytz.UTC.localize(now_utc)
+        now_pacific = now_utc_aware.astimezone(pacific_tz)
+        today_pacific = now_pacific.date()
+
+        print(f"🎁 DAILY_BONUS_GRANT: Processing for date {today_pacific} PT", flush=True)
 
         # Acquire lock
         lock_acquired = await self._acquire_balance_lock(user_id)
@@ -721,7 +729,7 @@ class LedgerService:
                 if not user:
                     raise HTTPException(status_code=404, detail="User not found")
 
-                # Update last login date
+                # Update last login date (stored in UTC)
                 current_time = datetime.utcnow()
                 await update_last_login_for_bonus(conn, str(user_id), current_time)
 
