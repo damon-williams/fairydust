@@ -19,7 +19,7 @@ The video generation API has been updated to support asynchronous processing. Vi
 {
   "user_id": "uuid",
   "prompt": "A cat playing piano in a jazz club",
-  "duration": "short|medium|long",  // short=5s, medium=10s, long=15s
+  "duration": 5,  // Duration in seconds (1-30)
   "resolution": "sd_480p|hd_720p|hd_1080p|4k_2160p",
   "aspect_ratio": "16:9|9:16|1:1|4:3|3:4",
   "reference_person": {  // Optional - for personalized videos
@@ -50,7 +50,7 @@ The video generation API has been updated to support asynchronous processing. Vi
   "user_id": "uuid",
   "image_url": "https://example.com/image.jpg",
   "prompt": "Make the person in the image dance",
-  "duration": "short|medium|long",
+  "duration": 8,  // Duration in seconds (1-30)
   "resolution": "sd_480p|hd_720p|hd_1080p|4k_2160p",
   "camera_fixed": false  // Optional
 }
@@ -272,17 +272,17 @@ The video generation API has been updated to support asynchronous processing. Vi
 
 ## Duration and Resolution Parameters
 
-### Duration Options
-The `duration` parameter controls video length and accepts these values:
+### Duration Parameter
+The `duration` parameter controls video length and accepts an integer value:
 
-- **`"short"`**: 5 seconds of video
-- **`"medium"`**: 10 seconds of video  
-- **`"long"`**: 15 seconds of video
+- **Type**: Integer (1-30 seconds)
+- **Default**: 5 seconds
+- **Validation**: Must be between 1 and 30 seconds
 
 **Important Notes:**
 - Longer videos take significantly more time to generate
-- Pricing varies by duration (per-second billing for some models)
-- Different models may have different duration limits
+- Pricing is per-second for SeeDance models
+- Generation time increases roughly linearly with duration
 
 ### Resolution Options
 The `resolution` parameter controls video quality and accepts these values:
@@ -320,7 +320,7 @@ The `aspect_ratio` parameter controls video dimensions:
 **For Social Media (Mobile):**
 ```json
 {
-  "duration": "short",
+  "duration": 8,
   "resolution": "hd_1080p", 
   "aspect_ratio": "9:16"
 }
@@ -329,7 +329,7 @@ The `aspect_ratio` parameter controls video dimensions:
 **For Web/Desktop:**
 ```json
 {
-  "duration": "medium",
+  "duration": 15,
   "resolution": "hd_1080p",
   "aspect_ratio": "16:9"
 }
@@ -338,7 +338,7 @@ The `aspect_ratio` parameter controls video dimensions:
 **For Quick Previews:**
 ```json
 {
-  "duration": "short",
+  "duration": 5,
   "resolution": "sd_480p",
   "aspect_ratio": "16:9"
 }

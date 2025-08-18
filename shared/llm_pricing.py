@@ -32,7 +32,7 @@ PRICING_CONFIG = {
         # Claude models - per million tokens
         "claude-opus-4": {"input": 15.0, "output": 75.0},
         "claude-sonnet-4": {"input": 3.0, "output": 15.0},
-        "claude-3-5-sonnet-20241022": {"input": 3.0, "output": 15.0},  # Current production model
+        "claude-3-5-sonnet-20241022": {"input": 3.0, "output": 15.0},
         "claude-3-5-haiku-20241022": {"input": 0.8, "output": 4.0},
         "claude-3-5-haiku": {"input": 0.8, "output": 4.0},
         "claude-3-haiku-20240307": {"input": 0.25, "output": 1.25},  # Legacy haiku model
@@ -59,11 +59,13 @@ PRICING_CONFIG = {
         # Video models - per video generation
         "bytedance/seedance-1-pro": {
             "480p": {"cost_per_second": 0.03},
+            "720p": {"cost_per_second": 0.06},
             "1080p": {"cost_per_second": 0.15},
         },
         "bytedance/seedance-1-lite": {
-            "480p": {"cost_per_second": 0.015},  # 50% cheaper than pro
-            "1080p": {"cost_per_second": 0.075},  # 50% cheaper than pro
+            "480p": {"cost_per_second": 0.018},  
+            "720p": {"cost_per_second": 0.036},
+            "1080p": {"cost_per_second": 0.072}, 
         },
         "minimax/video-01": {"cost": 0.50},  # Fixed cost per video
     },
