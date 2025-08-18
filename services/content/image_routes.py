@@ -527,7 +527,7 @@ async def regenerate_image(
 @image_router.get("/users/{user_id}", response_model=ImageListResponse)
 async def get_user_images(
     user_id: str,
-    limit: int = 20,
+    limit: int = 50,
     offset: int = 0,
     favorites_only: bool = False,
     style: str = None,
