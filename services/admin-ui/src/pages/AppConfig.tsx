@@ -59,13 +59,10 @@ interface AppModelConfig {
   
   // Video Configuration
   video_config?: {
-    standard_model: string;
     parameters: {
       text_to_video_model?: string;
+      text_to_video_with_reference_model?: string;
       image_to_video_model?: string;
-      duration: number;
-      fps: number;
-      resolution: string;
     };
   };
 }
@@ -171,13 +168,10 @@ export function AppConfig() {
           } : undefined,
           
           video_config: videoConfig ? {
-            standard_model: videoConfig.parameters?.text_to_video_model || videoConfig.parameters?.standard_model || 'minimax/video-01',
             parameters: {
-              text_to_video_model: videoConfig.parameters?.text_to_video_model || videoConfig.parameters?.standard_model || 'minimax/video-01',
+              text_to_video_model: videoConfig.parameters?.text_to_video_model || 'minimax/video-01',
+              text_to_video_with_reference_model: videoConfig.parameters?.text_to_video_with_reference_model || 'minimax/video-01',
               image_to_video_model: videoConfig.parameters?.image_to_video_model || 'bytedance/seedance-1-pro',
-              duration: videoConfig.parameters?.duration || 5,
-              fps: videoConfig.parameters?.fps || 24,
-              resolution: videoConfig.parameters?.resolution || '1080p'
             }
           } : undefined,
         });
@@ -283,13 +277,11 @@ export function AppConfig() {
       if (config.video_models_enabled && config.video_config) {
         const videoPayload = {
           provider: 'replicate',
-          model_id: config.video_config.standard_model,
+          model_id: 'video-config',  // Generic identifier since we store actual models in parameters
           parameters: {
-            text_to_video_model: config.video_config.parameters?.text_to_video_model || config.video_config.standard_model,
+            text_to_video_model: config.video_config.parameters?.text_to_video_model || 'minimax/video-01',
+            text_to_video_with_reference_model: config.video_config.parameters?.text_to_video_with_reference_model || 'minimax/video-01',
             image_to_video_model: config.video_config.parameters?.image_to_video_model || 'bytedance/seedance-1-pro',
-            duration: config.video_config.parameters.duration,
-            fps: config.video_config.parameters.fps,
-            resolution: config.video_config.parameters.resolution,
           },
           is_enabled: true,
         };
@@ -360,13 +352,10 @@ export function AppConfig() {
           newConfig.video_models_enabled = enabled;
           if (enabled && !newConfig.video_config) {
             newConfig.video_config = {
-              standard_model: 'minimax/video-01',
               parameters: {
                 text_to_video_model: 'minimax/video-01',
+                text_to_video_with_reference_model: 'minimax/video-01',
                 image_to_video_model: 'bytedance/seedance-1-pro',
-                duration: 5,
-                fps: 24,
-                resolution: '1080p'
               }
             };
           }
@@ -713,12 +702,15 @@ export function AppConfig() {
                 <div className="space-y-2">
                   <Label>Text-to-Video Model</Label>
                   <Select 
-                    value={config.video_config.standard_model}
+                    value={config.video_config.parameters?.text_to_video_model || 'minimax/video-01'}
                     onValueChange={(value) => setConfig(prev => ({
                       ...prev,
                       video_config: prev.video_config ? {
                         ...prev.video_config,
-                        standard_model: value
+                        parameters: {
+                          ...prev.video_config.parameters,
+                          text_to_video_model: value
+                        }
                       } : undefined
                     }))}
                   >
@@ -728,6 +720,33 @@ export function AppConfig() {
                     <SelectContent>
                       <SelectItem value="minimax/video-01">MiniMax Video-01</SelectItem>
                       <SelectItem value="bytedance/seedance-1-pro">ByteDance SeeDance-1-Pro</SelectItem>
+                      <SelectItem value="bytedance/seedance-1-lite">ByteDance SeeDance-1-Lite</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div className="space-y-2">
+                  <Label>Text-to-Video with Reference Image Model</Label>
+                  <Select 
+                    value={config.video_config.parameters?.text_to_video_with_reference_model || 'minimax/video-01'}
+                    onValueChange={(value) => setConfig(prev => ({
+                      ...prev,
+                      video_config: prev.video_config ? {
+                        ...prev.video_config,
+                        parameters: {
+                          ...prev.video_config.parameters,
+                          text_to_video_with_reference_model: value
+                        }
+                      } : undefined
+                    }))}
+                  >
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="minimax/video-01">MiniMax Video-01</SelectItem>
+                      <SelectItem value="bytedance/seedance-1-pro">ByteDance SeeDance-1-Pro</SelectItem>
+                      <SelectItem value="bytedance/seedance-1-lite">ByteDance SeeDance-1-Lite</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
@@ -752,59 +771,9 @@ export function AppConfig() {
                     </SelectTrigger>
                     <SelectContent>
                       <SelectItem value="bytedance/seedance-1-pro">ByteDance SeeDance-1-Pro</SelectItem>
+                      <SelectItem value="bytedance/seedance-1-lite">ByteDance SeeDance-1-Lite</SelectItem>
                     </SelectContent>
                   </Select>
-                </div>
-
-                <div className="grid grid-cols-2 gap-2">
-                  <div className="space-y-2">
-                    <Label>Default Duration</Label>
-                    <Select 
-                      value={config.video_config.parameters.duration.toString()}
-                      onValueChange={(value) => setConfig(prev => ({
-                        ...prev,
-                        video_config: prev.video_config ? {
-                          ...prev.video_config,
-                          parameters: {
-                            ...prev.video_config.parameters,
-                            duration: parseInt(value)
-                          }
-                        } : undefined
-                      }))}
-                    >
-                      <SelectTrigger>
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="5">5 seconds</SelectItem>
-                        <SelectItem value="10">10 seconds</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
-                  <div className="space-y-2">
-                    <Label>Resolution</Label>
-                    <Select 
-                      value={config.video_config.parameters.resolution}
-                      onValueChange={(value) => setConfig(prev => ({
-                        ...prev,
-                        video_config: prev.video_config ? {
-                          ...prev.video_config,
-                          parameters: {
-                            ...prev.video_config.parameters,
-                            resolution: value
-                          }
-                        } : undefined
-                      }))}
-                    >
-                      <SelectTrigger>
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="720p">720p HD</SelectItem>
-                        <SelectItem value="1080p">1080p Full HD</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
                 </div>
               </>
             ) : (
