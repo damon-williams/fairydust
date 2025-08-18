@@ -55,7 +55,7 @@ class VideoGenerationService:
 
             # Return defaults if no config found
             return {
-                "text_to_video_model": "minimax/video-01",
+                "text_to_video_model": "bytedance/seedance-1-pro",
                 "text_to_video_with_reference_model": "minimax/video-01",
                 "image_to_video_model": "bytedance/seedance-1-pro",
             }
@@ -64,7 +64,7 @@ class VideoGenerationService:
             print(f"⚠️ VIDEO_MODEL_CONFIG: Error loading config: {e}")
             # Return defaults on error
             return {
-                "text_to_video_model": "minimax/video-01",
+                "text_to_video_model": "bytedance/seedance-1-pro",
                 "text_to_video_with_reference_model": "minimax/video-01",
                 "image_to_video_model": "bytedance/seedance-1-pro",
             }
@@ -96,23 +96,48 @@ class VideoGenerationService:
             # Text-to-video WITH reference person (Category 2)
             model = video_models.get("text_to_video_with_reference_model", "minimax/video-01")
             print(f"🎬 VIDEO_GENERATION: Using text-to-video with reference model: {model}")
-            video_url, metadata = await self._generate_with_minimax(
-                model, prompt, duration, resolution, aspect_ratio, reference_person, camera_fixed
-            )
+            
+            # Route to correct generation function based on model
+            if "minimax" in model:
+                video_url, metadata = await self._generate_with_minimax(
+                    model, prompt, duration, resolution, aspect_ratio, reference_person, camera_fixed
+                )
+            else:
+                # SeeDance models don't properly support reference persons, but try anyway
+                print("⚠️ WARNING: SeeDance model selected for text-to-video with reference person")
+                video_url, metadata = await self._generate_with_seedance(
+                    model, prompt, None, duration, resolution, aspect_ratio, camera_fixed
+                )
         elif generation_type == VideoGenerationType.IMAGE_TO_VIDEO:
             # Image-to-video (Category 3)
             model = video_models.get("image_to_video_model", "bytedance/seedance-1-pro")
             print(f"🎬 VIDEO_GENERATION: Using image-to-video model: {model}")
-            video_url, metadata = await self._generate_with_seedance(
-                model, prompt, source_image_url, duration, resolution, aspect_ratio, camera_fixed
-            )
+            
+            # Route to correct generation function based on model
+            if "minimax" in model:
+                # Note: MiniMax doesn't support image-to-video, this will likely fail
+                print("⚠️ WARNING: MiniMax model selected for image-to-video, this may not work")
+                video_url, metadata = await self._generate_with_minimax(
+                    model, prompt, duration, resolution, aspect_ratio, None, camera_fixed
+                )
+            else:
+                video_url, metadata = await self._generate_with_seedance(
+                    model, prompt, source_image_url, duration, resolution, aspect_ratio, camera_fixed
+                )
         else:
             # Text-to-video WITHOUT reference person (Category 1)
-            model = video_models.get("text_to_video_model", "minimax/video-01")
+            model = video_models.get("text_to_video_model", "bytedance/seedance-1-pro")
             print(f"🎬 VIDEO_GENERATION: Using text-to-video model: {model}")
-            video_url, metadata = await self._generate_with_seedance(
-                model, prompt, None, duration, resolution, aspect_ratio, camera_fixed
-            )
+            
+            # Route to correct generation function based on model
+            if "minimax" in model:
+                video_url, metadata = await self._generate_with_minimax(
+                    model, prompt, duration, resolution, aspect_ratio, None, camera_fixed
+                )
+            else:
+                video_url, metadata = await self._generate_with_seedance(
+                    model, prompt, None, duration, resolution, aspect_ratio, camera_fixed
+                )
 
         generation_time_ms = int((time.time() - start_time) * 1000)
         metadata["generation_time_ms"] = generation_time_ms
