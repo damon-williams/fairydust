@@ -1115,7 +1115,7 @@ class VideoReferencePerson(BaseModel):
 class VideoGenerateRequest(BaseModel):
     user_id: UUID
     prompt: str = Field(..., min_length=1, max_length=1000)
-    duration: int = Field(5, ge=1, le=30, description="Duration in seconds (1-30)")
+    duration: VideoDuration = VideoDuration.SHORT
     resolution: VideoResolution = VideoResolution.HD_1080P
     aspect_ratio: VideoAspectRatio = VideoAspectRatio.ASPECT_16_9
     reference_person: Optional[VideoReferencePerson] = None  # Only 1 person supported
@@ -1127,7 +1127,7 @@ class VideoAnimateRequest(BaseModel):
     user_id: UUID
     image_url: str = Field(..., max_length=1000)
     prompt: str = Field(..., min_length=1, max_length=1000)
-    duration: int = Field(5, ge=1, le=30, description="Duration in seconds (1-30)")
+    duration: VideoDuration = VideoDuration.SHORT
     resolution: VideoResolution = VideoResolution.HD_1080P
     camera_fixed: bool = False
     metadata: Optional[dict] = Field(default_factory=dict)

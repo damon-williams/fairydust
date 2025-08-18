@@ -73,7 +73,7 @@ class VideoGenerationService:
         self,
         prompt: str,
         generation_type: VideoGenerationType,
-        duration: int,
+        duration: VideoDuration,
         resolution: VideoResolution,
         aspect_ratio: VideoAspectRatio,
         reference_person: VideoReferencePerson = None,
@@ -124,7 +124,7 @@ class VideoGenerationService:
         self,
         model: str,
         prompt: str,
-        duration: int,
+        duration: VideoDuration,
         resolution: VideoResolution,
         aspect_ratio: VideoAspectRatio,
         reference_person: VideoReferencePerson,
@@ -134,7 +134,7 @@ class VideoGenerationService:
 
         print(f"🎭 MINIMAX GENERATION STARTING - Model: {model}")
         print(f"   Original prompt: {prompt}")
-        print(f"   Duration: {duration} seconds")
+        print(f"   Duration: {duration.value}")
         print(f"   Resolution: {resolution.value}")
         print(f"   Reference person: {reference_person.description if reference_person else None}")
 
@@ -224,7 +224,7 @@ class VideoGenerationService:
         model: str,
         prompt: str,
         source_image_url: str,
-        duration: int,
+        duration: VideoDuration,
         resolution: VideoResolution,
         aspect_ratio: VideoAspectRatio,
         camera_fixed: bool,
@@ -233,13 +233,13 @@ class VideoGenerationService:
 
         print(f"🎭 SEEDANCE GENERATION STARTING - Model: {model}")
         print(f"   Original prompt: {prompt}")
-        print(f"   Duration: {duration} seconds")
+        print(f"   Duration: {duration.value}")
         print(f"   Resolution: {resolution.value}")
         print(f"   Aspect ratio: {aspect_ratio.value}")
         print(f"   Source image: {source_image_url is not None}")
 
-        # Duration is now provided in seconds directly
-        duration_seconds = duration
+        # Map duration to seconds
+        duration_seconds = 5 if duration == VideoDuration.SHORT else 10
 
         # Map resolution to SeeDance format
         if resolution == VideoResolution.SD_480P:

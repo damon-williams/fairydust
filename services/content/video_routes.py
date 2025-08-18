@@ -208,7 +208,7 @@ async def generate_video(
     try:
         print(f"🎬 ASYNC VIDEO: Starting generation job for user {request.user_id}")
         print(f"   Prompt: {request.prompt[:100]}...")
-        print(f"   Duration: {request.duration} seconds")
+        print(f"   Duration: {request.duration.value}")
         print(f"   Resolution: {request.resolution.value}")
         print(f"   Has reference: {request.reference_person is not None}")
 
@@ -655,7 +655,7 @@ async def animate_image(
         print(f"🎬 ASYNC VIDEO: Starting animation job for user {request.user_id}")
         print(f"   Image URL: {request.image_url}")
         print(f"   Prompt: {request.prompt[:100]}...")
-        print(f"   Duration: {request.duration} seconds")
+        print(f"   Duration: {request.duration.value}")
         print(f"   Resolution: {request.resolution.value}")
 
         # Verify user can only create videos for themselves
