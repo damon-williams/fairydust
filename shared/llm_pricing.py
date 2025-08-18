@@ -61,6 +61,10 @@ PRICING_CONFIG = {
             "480p": {"cost_per_second": 0.03},
             "1080p": {"cost_per_second": 0.15},
         },
+        "bytedance/seedance-1-lite": {
+            "480p": {"cost_per_second": 0.015},  # 50% cheaper than pro
+            "1080p": {"cost_per_second": 0.075},  # 50% cheaper than pro
+        },
         "minimax/video-01": {"cost": 0.50},  # Fixed cost per video
     },
 }
@@ -406,7 +410,7 @@ def get_video_model_pricing(model_id: str, resolution: str = "1080p") -> dict:
 
     model_pricing = pricing_config["video"][model_id]
 
-    if model_id == "bytedance/seedance-1-pro":
+    if model_id in ["bytedance/seedance-1-pro", "bytedance/seedance-1-lite"]:
         if resolution not in model_pricing:
             resolution = "1080p"
         return {
@@ -439,7 +443,7 @@ async def get_video_model_pricing_async(model_id: str, resolution: str = "1080p"
 
     model_pricing = pricing_config["video"][model_id]
 
-    if model_id == "bytedance/seedance-1-pro":
+    if model_id in ["bytedance/seedance-1-pro", "bytedance/seedance-1-lite"]:
         if resolution not in model_pricing:
             resolution = "1080p"
         return {
@@ -485,8 +489,8 @@ def calculate_video_cost(
 
     model_pricing = pricing_config["video"][model_id]
 
-    # Handle SeeDance-1-Pro duration and resolution-based pricing
-    if model_id == "bytedance/seedance-1-pro":
+    # Handle SeeDance duration and resolution-based pricing
+    if model_id in ["bytedance/seedance-1-pro", "bytedance/seedance-1-lite"]:
         if resolution not in model_pricing:
             logger.warning(f"Unknown resolution '{resolution}' for {model_id}, using 1080p pricing")
             resolution = "1080p"

@@ -56,6 +56,7 @@ class VideoGenerationService:
             # Return defaults if no config found
             return {
                 "text_to_video_model": "minimax/video-01",
+                "text_to_video_with_reference_model": "minimax/video-01",
                 "image_to_video_model": "bytedance/seedance-1-pro",
             }
 
@@ -64,6 +65,7 @@ class VideoGenerationService:
             # Return defaults on error
             return {
                 "text_to_video_model": "minimax/video-01",
+                "text_to_video_with_reference_model": "minimax/video-01",
                 "image_to_video_model": "bytedance/seedance-1-pro",
             }
 
@@ -91,20 +93,23 @@ class VideoGenerationService:
 
         # Choose model based on generation type and reference person
         if generation_type == VideoGenerationType.TEXT_TO_VIDEO and reference_person:
-            # Use MiniMax Video-01 ONLY for text-to-video WITH reference person
-            model = "minimax/video-01"
+            # Text-to-video WITH reference person (Category 2)
+            model = video_models.get("text_to_video_with_reference_model", "minimax/video-01")
+            print(f"🎬 VIDEO_GENERATION: Using text-to-video with reference model: {model}")
             video_url, metadata = await self._generate_with_minimax(
                 model, prompt, duration, resolution, aspect_ratio, reference_person, camera_fixed
             )
         elif generation_type == VideoGenerationType.IMAGE_TO_VIDEO:
-            # Use ByteDance SeeDance-1-Pro for image-to-video (always)
-            model = "bytedance/seedance-1-pro"
+            # Image-to-video (Category 3)
+            model = video_models.get("image_to_video_model", "bytedance/seedance-1-pro")
+            print(f"🎬 VIDEO_GENERATION: Using image-to-video model: {model}")
             video_url, metadata = await self._generate_with_seedance(
                 model, prompt, source_image_url, duration, resolution, aspect_ratio, camera_fixed
             )
         else:
-            # Use ByteDance SeeDance-1-Pro for text-to-video WITHOUT reference person
-            model = "bytedance/seedance-1-pro"
+            # Text-to-video WITHOUT reference person (Category 1)
+            model = video_models.get("text_to_video_model", "minimax/video-01")
+            print(f"🎬 VIDEO_GENERATION: Using text-to-video model: {model}")
             video_url, metadata = await self._generate_with_seedance(
                 model, prompt, None, duration, resolution, aspect_ratio, camera_fixed
             )
@@ -224,7 +229,7 @@ class VideoGenerationService:
         aspect_ratio: VideoAspectRatio,
         camera_fixed: bool,
     ) -> tuple[str, dict]:
-        """Generate video using ByteDance SeeDance-1-Pro (text-to-video or image-to-video)"""
+        """Generate video using ByteDance SeeDance models (text-to-video or image-to-video)"""
 
         print(f"🎭 SEEDANCE GENERATION STARTING - Model: {model}")
         print(f"   Original prompt: {prompt}")
@@ -310,9 +315,11 @@ class VideoGenerationService:
         # Poll for completion (extended for generations that can take 10+ minutes)
         video_url = await self._poll_for_completion(prediction_id, model, max_wait_time=600)
 
-        generation_approach = (
-            "seedance_image_to_video" if source_image_url else "seedance_text_to_video"
-        )
+        # Determine generation approach based on model and input
+        if source_image_url:
+            generation_approach = f"{model.split('/')[-1]}_image_to_video"
+        else:
+            generation_approach = f"{model.split('/')[-1]}_text_to_video"
 
         metadata = {
             "model_used": model,
