@@ -1092,6 +1092,7 @@ class VideoDuration(str, Enum):
 
 class VideoResolution(str, Enum):
     SD_480P = "sd_480p"
+    HD_720P = "hd_720p" 
     HD_1080P = "hd_1080p"
 
 

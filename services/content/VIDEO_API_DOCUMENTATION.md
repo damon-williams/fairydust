@@ -270,6 +270,117 @@ The video generation API has been updated to support asynchronous processing. Vi
 4. **Concurrent Jobs**: Users can have multiple jobs running simultaneously
 5. **Video Storage**: Videos are stored permanently in CloudFlare R2 with CDN distribution
 
+## Duration and Resolution Parameters
+
+### Duration Options
+The `duration` parameter controls video length and accepts these values:
+
+- **`"short"`**: 5 seconds of video
+- **`"medium"`**: 10 seconds of video  
+- **`"long"`**: 15 seconds of video
+
+**Important Notes:**
+- Longer videos take significantly more time to generate
+- Pricing varies by duration (per-second billing for some models)
+- Different models may have different duration limits
+
+### Resolution Options
+The `resolution` parameter controls video quality and accepts these values:
+
+- **`"sd_480p"`**: 480p Standard Definition (640x480)
+- **`"hd_720p"`**: 720p High Definition (1280x720)
+- **`"hd_1080p"`**: 1080p Full HD (1920x1080)
+- **`"4k_2160p"`**: 4K Ultra HD (3840x2160) - *Limited model support*
+
+**Model-Specific Support:**
+
+| Model | 480p | 720p | 1080p | 4K |
+|-------|------|------|-------|-----|
+| ByteDance SeeDance-1-Pro | ✅ | ❌ | ✅ | ❌ |
+| ByteDance SeeDance-1-Lite | ✅ | ❌ | ✅ | ❌ |
+| MiniMax Video-01 | ✅ | ✅ | ✅ | ❌ |
+
+**Performance Impact:**
+- Higher resolutions take longer to generate
+- Higher resolutions cost more (resolution-based pricing)
+- 480p: ~2-3 minutes generation time
+- 1080p: ~3-4 minutes generation time
+
+### Aspect Ratio Options
+The `aspect_ratio` parameter controls video dimensions:
+
+- **`"16:9"`**: Widescreen (landscape) - Default for most use cases
+- **`"9:16"`**: Vertical (portrait) - Ideal for mobile/social media
+- **`"1:1"`**: Square - Good for social media posts
+- **`"4:3"`**: Traditional TV format
+- **`"3:4"`**: Portrait orientation
+
+### Recommended Combinations
+
+**For Social Media (Mobile):**
+```json
+{
+  "duration": "short",
+  "resolution": "hd_1080p", 
+  "aspect_ratio": "9:16"
+}
+```
+
+**For Web/Desktop:**
+```json
+{
+  "duration": "medium",
+  "resolution": "hd_1080p",
+  "aspect_ratio": "16:9"
+}
+```
+
+**For Quick Previews:**
+```json
+{
+  "duration": "short",
+  "resolution": "sd_480p",
+  "aspect_ratio": "16:9"
+}
+```
+
+### Video Model Categories
+
+**Category 1: Text-to-Video**
+- Pure text prompts converted to video
+- No reference images or people
+- Best for: Abstract concepts, scenes, objects
+
+**Category 2: Text-to-Video with Reference Image**
+- Text prompts + reference image for style/composition
+- Uses reference image as a guide, not direct animation
+- Best for: Style-consistent videos, character references
+
+**Category 3: Image-to-Video** 
+- Animates existing static images
+- Brings photos/artwork to life
+- Best for: Photo animation, artwork enhancement
+
+### Model-Specific Behavior
+
+**ByteDance SeeDance-1-Pro:**
+- Supports: Text-to-video, Image-to-video
+- Resolutions: 480p, 1080p
+- Billing: Per-second pricing
+- Strengths: High quality, realistic motion
+
+**ByteDance SeeDance-1-Lite:**
+- Supports: Text-to-video, Image-to-video  
+- Resolutions: 480p, 1080p
+- Billing: Per-second pricing (50% cheaper than Pro)
+- Strengths: Faster generation, cost-effective
+
+**MiniMax Video-01:**
+- Supports: Text-to-video with reference people
+- Resolutions: All supported
+- Billing: Fixed cost per video
+- Strengths: Character consistency, person handling
+
 ## Migration Guide
 If you're currently using the synchronous endpoints:
 1. Update your generate/animate calls to handle the job response
