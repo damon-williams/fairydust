@@ -670,9 +670,14 @@ async def oauth_login(
     extracted_birthdate = user_info.get("birthdate") if user_info else None
 
     # Consolidated login response log
-    print(
-        f"✅ {provider.upper()} LOGIN: {user['fairyname']} | new_user: {is_new_user} | bonus_eligible: {daily_bonus_value} | balance: {user.get('dust_balance', 0)} DUST"
-    )
+    if is_new_user:
+        print(
+            f"✅ {provider.upper()} LOGIN: {user['fairyname']} | new_user: {is_new_user} | first_name: {extracted_first_name} | email: {user_info.get('email')} | bonus_eligible: {daily_bonus_value} | balance: {user.get('dust_balance', 0)} DUST"
+        )
+    else:
+        print(
+            f"✅ {provider.upper()} LOGIN: {user['fairyname']} | new_user: {is_new_user} | bonus_eligible: {daily_bonus_value} | balance: {user.get('dust_balance', 0)} DUST"
+        )
 
     response_data = AuthResponse(
         user=User(**user_dict),
