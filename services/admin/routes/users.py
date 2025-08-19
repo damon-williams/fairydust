@@ -591,15 +591,15 @@ async def get_user_payments(
         """
         SELECT
             id,
-            payment_method,
-            amount_usd,
-            dust_amount,
+            'mobile_app' as payment_method,
+            payment_amount_cents / 100.0 as amount_usd,
+            amount as dust_amount,
             status,
-            transaction_id,
+            payment_id as transaction_id,
             created_at,
-            completed_at
-        FROM payments
-        WHERE user_id = $1
+            CASE WHEN status = 'completed' THEN created_at ELSE NULL END as completed_at
+        FROM dust_transactions
+        WHERE user_id = $1 AND type = 'purchase'
         ORDER BY created_at DESC
         LIMIT $2
         """,

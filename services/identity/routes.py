@@ -576,7 +576,13 @@ async def oauth_login(
 
                 fairyname = f"{fairyname}{int(time.time() % 10000)}"
 
-            # Create user
+            # Create user with email/phone handling for constraint
+            email = user_info.get("email")
+            # For Apple SSO, if no email is provided (Hide My Email), use a placeholder
+            if provider == "apple" and not email:
+                # Generate a unique placeholder email for Apple users who hide their email
+                email = f"apple_user_{user_info.get('provider_id', user_id.hex[:8])}@private.fairydust.app"
+                
             user = await db.fetch_one(
                 """
                 INSERT INTO users (id, fairyname, email, dust_balance, auth_provider)
@@ -585,7 +591,7 @@ async def oauth_login(
                 """,
                 user_id,
                 fairyname,
-                user_info.get("email"),
+                email,
                 0,  # Starting balance is 0, app will handle initial grants
                 provider,
             )
@@ -664,9 +670,14 @@ async def oauth_login(
     extracted_birthdate = user_info.get("birthdate") if user_info else None
 
     # Consolidated login response log
-    print(
-        f"✅ {provider.upper()} LOGIN: {user['fairyname']} | new_user: {is_new_user} | bonus_eligible: {daily_bonus_value} | balance: {user.get('dust_balance', 0)} DUST"
-    )
+    if is_new_user:
+        print(
+            f"✅ {provider.upper()} LOGIN: {user['fairyname']} | new_user: {is_new_user} | first_name: {extracted_first_name} | email: {user_info.get('email')} | bonus_eligible: {daily_bonus_value} | balance: {user.get('dust_balance', 0)} DUST"
+        )
+    else:
+        print(
+            f"✅ {provider.upper()} LOGIN: {user['fairyname']} | new_user: {is_new_user} | bonus_eligible: {daily_bonus_value} | balance: {user.get('dust_balance', 0)} DUST"
+        )
 
     response_data = AuthResponse(
         user=User(**user_dict),

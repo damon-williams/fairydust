@@ -18,7 +18,6 @@ logger = logging.getLogger(__name__)
 
 from contextlib import asynccontextmanager
 
-from activity_routes import router as activity_router
 from character_routes import router as character_router
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -26,7 +25,6 @@ from fortune_routes import router as fortune_router
 from image_routes import image_router
 from inspire_routes import router as inspire_router
 from recipe_routes import router as recipe_router
-from restaurant_routes import router as restaurant_router
 from routes import content_router
 from story_routes import router as story_router
 from twenty_questions_routes import router as twenty_questions_router
@@ -123,8 +121,6 @@ endpoint_limits = {
     "/recipes": 10 * 1024 * 1024,  # 10MB for recipe content
     "/content/stories/generate": 50 * 1024,  # 50KB for story generation requests
     "/content/stories": 1 * 1024 * 1024,  # 1MB for story content
-    "/restaurant": 100 * 1024,  # 100KB for restaurant requests
-    "/activity/search": 50 * 1024,  # 50KB for activity search requests
     "/apps/inspire/generate": 50 * 1024,  # 50KB for inspire generation requests
     "/apps/recipe/generate": 50 * 1024,  # 50KB for recipe generation requests
     "/apps/story/generate": 50 * 1024,  # 50KB for story generation requests
@@ -217,8 +213,6 @@ async def log_requests(request, call_next):
 # Include routers
 app.include_router(content_router, prefix="/recipes", tags=["recipes"])
 app.include_router(story_router, tags=["stories"])
-app.include_router(restaurant_router, prefix="/restaurant", tags=["restaurants"])
-app.include_router(activity_router, tags=["activities"])
 app.include_router(inspire_router, tags=["inspire"])
 app.include_router(recipe_router, tags=["recipes-new"])
 app.include_router(fortune_router, tags=["fortune-teller"])
