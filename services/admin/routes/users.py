@@ -412,7 +412,7 @@ async def grant_dust_api(
         await conn.execute(
             """
             INSERT INTO dust_transactions (user_id, amount, type, description)
-            VALUES ($1, $2, 'admin_grant', $3)
+            VALUES ($1, $2, 'grant', $3)
             """,
             user_id,
             amount,
