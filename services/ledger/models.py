@@ -10,6 +10,7 @@ from pydantic import BaseModel, Field, validator
 # Enums
 class TransactionType(str, Enum):
     GRANT = "grant"
+    ADMIN_GRANT = "admin_grant"  # Admin-initiated grants
     CONSUME = "consume"
     PURCHASE = "purchase"
     REFUND = "refund"
