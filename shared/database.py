@@ -805,7 +805,7 @@ async def create_tables():
         CREATE TABLE IF NOT EXISTS user_stories (
             id UUID PRIMARY KEY,
             user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-            title VARCHAR(255) NOT NULL,
+            title VARCHAR(500) NOT NULL,
             content TEXT NOT NULL,
             story_length VARCHAR(20) NOT NULL,
             characters_involved JSONB DEFAULT '[]',
@@ -846,13 +846,19 @@ async def create_tables():
         """
     )
 
+    # Increase title length from 255 to 500 characters to match model definition
+    await db.execute_schema(
+        """
+        ALTER TABLE user_stories ALTER COLUMN title TYPE VARCHAR(500);
+        """
+    )
+
     # Create index for target_audience after column is added
     await db.execute_schema(
         """
         CREATE INDEX IF NOT EXISTS idx_user_stories_target_audience ON user_stories(target_audience);
         """
     )
-
 
     # Story images table for tracking individual image generation
     await db.execute_schema(
@@ -915,8 +921,6 @@ async def create_tables():
         )
     except Exception as e:
         logger.warning(f"Could not create retry status index: {e}")
-
-
 
     # User Inspirations table for Inspire app
     await db.execute_schema(
