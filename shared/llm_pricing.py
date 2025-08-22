@@ -63,9 +63,9 @@ PRICING_CONFIG = {
             "1080p": {"cost_per_second": 0.15},
         },
         "bytedance/seedance-1-lite": {
-            "480p": {"cost_per_second": 0.018},  
+            "480p": {"cost_per_second": 0.018},
             "720p": {"cost_per_second": 0.036},
-            "1080p": {"cost_per_second": 0.072}, 
+            "1080p": {"cost_per_second": 0.072},
         },
         "minimax/video-01": {"cost": 0.50},  # Fixed cost per video
     },
