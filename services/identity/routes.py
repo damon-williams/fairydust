@@ -582,7 +582,7 @@ async def oauth_login(
             if provider == "apple" and not email:
                 # Generate a unique placeholder email for Apple users who hide their email
                 email = f"apple_user_{user_info.get('provider_id', user_id.hex[:8])}@private.fairydust.app"
-                
+
             user = await db.fetch_one(
                 """
                 INSERT INTO users (id, fairyname, email, dust_balance, auth_provider)

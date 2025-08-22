@@ -96,11 +96,17 @@ class VideoGenerationService:
             # Text-to-video WITH reference person (Category 2)
             model = video_models.get("text_to_video_with_reference_model", "minimax/video-01")
             print(f"🎬 VIDEO_GENERATION: Using text-to-video with reference model: {model}")
-            
+
             # Route to correct generation function based on model
             if "minimax" in model:
                 video_url, metadata = await self._generate_with_minimax(
-                    model, prompt, duration, resolution, aspect_ratio, reference_person, camera_fixed
+                    model,
+                    prompt,
+                    duration,
+                    resolution,
+                    aspect_ratio,
+                    reference_person,
+                    camera_fixed,
                 )
             else:
                 # SeeDance models don't properly support reference persons, but try anyway
@@ -112,7 +118,7 @@ class VideoGenerationService:
             # Image-to-video (Category 3)
             model = video_models.get("image_to_video_model", "bytedance/seedance-1-pro")
             print(f"🎬 VIDEO_GENERATION: Using image-to-video model: {model}")
-            
+
             # Route to correct generation function based on model
             if "minimax" in model:
                 # Note: MiniMax doesn't support image-to-video, this will likely fail
@@ -122,13 +128,19 @@ class VideoGenerationService:
                 )
             else:
                 video_url, metadata = await self._generate_with_seedance(
-                    model, prompt, source_image_url, duration, resolution, aspect_ratio, camera_fixed
+                    model,
+                    prompt,
+                    source_image_url,
+                    duration,
+                    resolution,
+                    aspect_ratio,
+                    camera_fixed,
                 )
         else:
             # Text-to-video WITHOUT reference person (Category 1)
             model = video_models.get("text_to_video_model", "bytedance/seedance-1-pro")
             print(f"🎬 VIDEO_GENERATION: Using text-to-video model: {model}")
-            
+
             # Route to correct generation function based on model
             if "minimax" in model:
                 video_url, metadata = await self._generate_with_minimax(
