@@ -19,7 +19,7 @@ logger = logging.getLogger(__name__)
 from contextlib import asynccontextmanager
 
 from character_routes import router as character_router
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fortune_routes import router as fortune_router
 from image_routes import image_router
@@ -159,6 +159,24 @@ async def log_requests(request, call_next):
 
     start_time = time.time()
 
+    # Check if request is from a known bot/crawler
+    user_agent = request.headers.get("user-agent", "").lower()
+    is_bot = any(
+        bot in user_agent
+        for bot in [
+            "facebookexternalhit",
+            "facebookcatalog",
+            "twitterbot",
+            "linkedinbot",
+            "whatsapp",
+            "telegram",
+            "slackbot",
+            "discordbot",
+            "googlebot",
+            "bingbot",
+        ]
+    )
+
     try:
         response = await call_next(request)
 
@@ -168,30 +186,39 @@ async def log_requests(request, call_next):
 
             # Get client info
             client_ip = request.client.host if request.client else "unknown"
-            user_agent = request.headers.get("user-agent", "unknown")
+            user_agent_full = request.headers.get("user-agent", "unknown")
 
-            # Log basic request info
-            logger.error(
-                f"🔥 {request.method} {request.url.path} - {response.status_code} "
-                f"({duration_ms}ms) from {client_ip}"
-            )
+            # For bots, only log concise info for 404s, skip verbose logging
+            if is_bot and response.status_code == 404:
+                logger.info(
+                    f"🤖 Bot request: {request.method} {request.url.path} - {response.status_code} "
+                    f"({duration_ms}ms) - {user_agent_full.split('/')[0] if '/' in user_agent_full else user_agent_full[:20]}"
+                )
+            else:
+                # Log basic request info for non-bot errors or bot non-404 errors
+                logger.error(
+                    f"🔥 {request.method} {request.url.path} - {response.status_code} "
+                    f"({duration_ms}ms) from {client_ip}"
+                )
 
-            # Log query parameters if present
-            if request.query_params:
-                logger.error(f"   Query params: {dict(request.query_params)}")
+                # Only log detailed info for non-bot requests
+                if not is_bot:
+                    # Log query parameters if present
+                    if request.query_params:
+                        logger.error(f"   Query params: {dict(request.query_params)}")
 
-            # Log headers (excluding sensitive ones)
-            safe_headers = {
-                k: v
-                for k, v in request.headers.items()
-                if k.lower() not in ["authorization", "cookie", "x-api-key"]
-            }
-            if safe_headers:
-                logger.error(f"   Headers: {safe_headers}")
+                    # Log headers (excluding sensitive ones)
+                    safe_headers = {
+                        k: v
+                        for k, v in request.headers.items()
+                        if k.lower() not in ["authorization", "cookie", "x-api-key"]
+                    }
+                    if safe_headers:
+                        logger.error(f"   Headers: {safe_headers}")
 
-            # For 500 errors, try to read the response body for additional context
-            if response.status_code >= 500:
-                logger.error(f"   User-Agent: {user_agent}")
+                # For 500 errors, always log user agent
+                if response.status_code >= 500:
+                    logger.error(f"   User-Agent: {user_agent_full}")
 
         return response
 
@@ -231,6 +258,98 @@ async def root():
 @app.get("/health")
 async def health():
     return {"status": "healthy", "service": "content"}
+
+
+@app.get("/opengraph")
+async def opengraph_metadata(request: Request):
+    """
+    Default OpenGraph metadata for social media crawlers.
+    Returns basic metadata when bots try to fetch preview data.
+    """
+    from fastapi.responses import HTMLResponse
+
+    # Check if request is from a bot
+    user_agent = request.headers.get("user-agent", "").lower()
+    is_bot = any(
+        bot in user_agent
+        for bot in [
+            "facebookexternalhit",
+            "facebookcatalog",
+            "twitterbot",
+            "linkedinbot",
+            "whatsapp",
+            "telegram",
+            "slackbot",
+            "discordbot",
+        ]
+    )
+
+    # Return HTML with OpenGraph tags for bots
+    if is_bot:
+        html_content = """
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <meta property="og:title" content="fairydust - AI-Powered Creative Apps" />
+            <meta property="og:description" content="Create personalized stories, recipes, and more with AI-powered mini-apps using DUST virtual currency." />
+            <meta property="og:type" content="website" />
+            <meta property="og:url" content="https://fairydust.app" />
+            <meta property="og:site_name" content="fairydust" />
+            <meta name="twitter:card" content="summary" />
+            <meta name="twitter:title" content="fairydust - AI-Powered Creative Apps" />
+            <meta name="twitter:description" content="Create personalized stories, recipes, and more with AI-powered mini-apps." />
+        </head>
+        <body>
+            <h1>fairydust</h1>
+            <p>AI-Powered Creative Apps</p>
+        </body>
+        </html>
+        """
+        return HTMLResponse(content=html_content, status_code=200)
+
+    # For non-bot requests, return JSON
+    return {
+        "title": "fairydust - AI-Powered Creative Apps",
+        "description": "Create personalized stories, recipes, and more with AI-powered mini-apps using DUST virtual currency.",
+        "type": "website",
+    }
+
+
+# Catch-all route for bot requests to common paths
+@app.get("/{path:path}")
+async def catch_all(path: str, request: Request):
+    """
+    Catch-all route to handle bot requests to non-existent paths gracefully.
+    Returns appropriate responses for social media crawlers.
+    """
+    # Check if request is from a bot
+    user_agent = request.headers.get("user-agent", "").lower()
+    is_bot = any(
+        bot in user_agent
+        for bot in [
+            "facebookexternalhit",
+            "facebookcatalog",
+            "twitterbot",
+            "linkedinbot",
+            "whatsapp",
+            "telegram",
+            "slackbot",
+            "discordbot",
+            "googlebot",
+            "bingbot",
+        ]
+    )
+
+    # For bots, redirect to opengraph endpoint
+    if is_bot:
+        from fastapi.responses import RedirectResponse
+
+        return RedirectResponse(url="/opengraph", status_code=302)
+
+    # For non-bot requests, return standard 404
+    from fastapi import HTTPException
+
+    raise HTTPException(status_code=404, detail=f"Path not found: {path}")
 
 
 # Remove test endpoints - use only in development
